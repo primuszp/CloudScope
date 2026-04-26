@@ -37,9 +37,13 @@ namespace CloudScope
         private readonly OrbitCamera _cam = new();
         private float _cloudRadius = 50f;
 
-        // â”€â”€ Mouse state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // -- Mouse state ----------------------------------------------------------
         private int  _lastMX, _lastMY;
-        private bool _leftDown, _rightDown;
+        private bool _leftDown, _rightDown, _middleDown;
+
+        // -- Inertia velocities (screen pixels/frame) -----------------------------
+        private float _orbitVelX, _orbitVelY;
+        private float _panVelX,   _panVelY;
 
         // â”€â”€ Point rendering â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         private float _pointSize = 1.5f;
@@ -212,19 +216,40 @@ void main()
 
             // WASD FPS Movement
             float dt = (float)args.Time;
-            float moveSpeed = _cam.NavigationScale * 2.0f * dt; // Travels screen width in 1 second
+            float moveSpeed = _cam.NavigationScale * 2.0f * dt;
+            bool shift = KeyboardState.IsKeyDown(Keys.LeftShift) || KeyboardState.IsKeyDown(Keys.RightShift);
+            if (shift) moveSpeed *= 5f;
 
             float dx = 0, dy = 0, dz = 0;
-            if (KeyboardState.IsKeyDown(Keys.W)) dz -= moveSpeed; // Forward
-            if (KeyboardState.IsKeyDown(Keys.S)) dz += moveSpeed; // Backward
-            if (KeyboardState.IsKeyDown(Keys.A)) dx -= moveSpeed; // Left
-            if (KeyboardState.IsKeyDown(Keys.D)) dx += moveSpeed; // Right
-            if (KeyboardState.IsKeyDown(Keys.E)) dy += moveSpeed; // Up
-            if (KeyboardState.IsKeyDown(Keys.Q)) dy -= moveSpeed; // Down
+            if (KeyboardState.IsKeyDown(Keys.W)) dz -= moveSpeed;
+            if (KeyboardState.IsKeyDown(Keys.S)) dz += moveSpeed;
+            if (KeyboardState.IsKeyDown(Keys.A)) dx -= moveSpeed;
+            if (KeyboardState.IsKeyDown(Keys.D)) dx += moveSpeed;
+            if (KeyboardState.IsKeyDown(Keys.E)) dy += moveSpeed;
+            if (KeyboardState.IsKeyDown(Keys.Q)) dy -= moveSpeed;
 
             if (dx != 0 || dy != 0 || dz != 0)
-            {
                 _cam.MoveFPS(dx, dy, dz);
+
+            // Orbit inertia
+            if (!_leftDown && (_orbitVelX != 0f || _orbitVelY != 0f))
+            {
+                _cam.Rotate(_orbitVelX, _orbitVelY);
+                _orbitVelX *= 0.88f; _orbitVelY *= 0.88f;
+                if (MathF.Abs(_orbitVelX) < 0.05f) _orbitVelX = 0f;
+                if (MathF.Abs(_orbitVelY) < 0.05f) _orbitVelY = 0f;
+            }
+
+            // Pan inertia - use screen centre as fixed reference so picked depth stays valid
+            if (!_rightDown && !_middleDown && (_panVelX != 0f || _panVelY != 0f))
+            {
+                int cx = Size.X / 2, cy = Size.Y / 2;
+                int pdx = (int)MathF.Round(_panVelX), pdy = (int)MathF.Round(_panVelY);
+                if (pdx != 0 || pdy != 0)
+                    _cam.Pan(cx, cy, cx + pdx, cy + pdy);
+                _panVelX *= 0.88f; _panVelY *= 0.88f;
+                if (MathF.Abs(_panVelX) < 0.05f) _panVelX = 0f;
+                if (MathF.Abs(_panVelY) < 0.05f) _panVelY = 0f;
             }
         }
 
@@ -243,12 +268,21 @@ void main()
             {
                 _cam.SetOrbitPivotFromScreen(mx, my, 11);
                 _leftDown = true;
+                _orbitVelX = 0f; _orbitVelY = 0f;
             }
 
             if (e.Button == MouseButton.Right)
             {
                 _cam.PickDepthWindow(mx, my, 11);
                 _rightDown = true;
+                _panVelX = 0f; _panVelY = 0f;
+            }
+
+            if (e.Button == MouseButton.Middle)
+            {
+                _cam.PickDepthWindow(mx, my, 11);
+                _middleDown = true;
+                _panVelX = 0f; _panVelY = 0f;
             }
 
             _lastMX = mx;
@@ -258,8 +292,9 @@ void main()
         protected override void OnMouseUp(MouseButtonEventArgs e)
         {
             base.OnMouseUp(e);
-            if (e.Button == MouseButton.Left)  _leftDown  = false;
-            if (e.Button == MouseButton.Right) _rightDown = false;
+            if (e.Button == MouseButton.Left)   _leftDown   = false;
+            if (e.Button == MouseButton.Right)  _rightDown  = false;
+            if (e.Button == MouseButton.Middle) _middleDown = false;
         }
 
         protected override void OnMouseMove(MouseMoveEventArgs e)
@@ -270,15 +305,15 @@ void main()
 
             if (_leftDown)
             {
-                // Rotate: pixel delta
                 int dx = mx - _lastMX;
                 int dy = my - _lastMY;
                 _cam.Rotate(dx, dy);
+                _orbitVelX = dx; _orbitVelY = dy;
             }
-            else if (_rightDown)
+            else if (_rightDown || _middleDown)
             {
-                // Pan: from last pos -> to current pos
                 _cam.Pan(_lastMX, _lastMY, mx, my);
+                _panVelX = mx - _lastMX; _panVelY = my - _lastMY;
             }
 
             _lastMX = mx;
@@ -291,10 +326,12 @@ void main()
             int mx = (int)MouseState.Position.X;
             int my = (int)MouseState.Position.Y;
 
-            // PickDepthWindow at cursor, then zoom towards cursor
             _cam.PickDepthWindow(mx, my, 11);
 
-            float factor = e.OffsetY > 0 ? 1.25f : 1f / 1.25f;
+            // Adaptive zoom: larger steps when zoomed out, finer when zoomed in
+            float zoomRatio = Math.Clamp((float)(_cam.Hvs / _cloudRadius), 0.1f, 5f);
+            float step = Math.Clamp(zoomRatio * 0.25f, 0.1f, 0.5f);
+            float factor = e.OffsetY > 0 ? 1f + step : 1f / (1f + step);
             _cam.Zoom(mx, my, factor);
         }
 
