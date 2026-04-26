@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.MemoryMappedFiles;
@@ -8,6 +8,45 @@ using CloudScope.Library.Enums;
 
 namespace CloudScope.Library
 {
+    /// <summary>
+    /// LAS file reader with full support for all Point Data Record Formats (0-10),
+    /// LAS versions 1.0-1.4, Variable Length Records (VLRs), and Extended VLRs.
+    ///
+    /// Point Data Record Format byte layout (LAS 1.4 spec):
+    ///
+    /// Legacy formats (0-5) — core 20 bytes:
+    ///   [0-3]   X (int32)
+    ///   [4-7]   Y (int32)
+    ///   [8-11]  Z (int32)
+    ///   [12-13] Intensity (uint16)
+    ///   [14]    Return# (3b) | #Returns (3b) | ScanDir (1b) | EdgeOfFlight (1b)
+    ///   [15]    Classification (5b) | Synthetic (1b) | KeyPoint (1b) | Withheld (1b)
+    ///   [16]    Scan Angle Rank (int8, -90..+90)
+    ///   [17]    User Data (uint8)
+    ///   [18-19] Point Source ID (uint16)
+    ///   Format 1, 4, 5: [20-27] GPS Time (double)
+    ///   Format 2:       [20-25] RGB
+    ///   Format 3, 5:    [28-33] RGB
+    ///   Format 4:       [28-56] Waveform
+    ///   Format 5:       [34-62] Waveform
+    ///
+    /// Extended formats (6-10) — core 30 bytes:
+    ///   [0-3]   X (int32)
+    ///   [4-7]   Y (int32)
+    ///   [8-11]  Z (int32)
+    ///   [12-13] Intensity (uint16)
+    ///   [14]    Return# (4b) | #Returns (4b)
+    ///   [15]    ClassFlags (4b) | ScannerChannel (2b) | ScanDir (1b) | EdgeOfFlight (1b)
+    ///   [16]    Classification (uint8, 0-255)
+    ///   [17]    User Data (uint8)
+    ///   [18-19] Scan Angle (int16, 0.006 deg/unit)
+    ///   [20-21] Point Source ID (uint16)
+    ///   [22-29] GPS Time (double, mandatory)
+    ///   Format 7, 8, 10: [30-35] RGB
+    ///   Format 8:        [36-37] NIR
+    ///   Format 9:        [30-58] Waveform
+    ///   Format 10:       [36-37] NIR, [38-66] Waveform
+    /// </summary>
     public sealed class LasReader : IDisposable
     {
         private readonly MemoryMappedFile _mmf;
@@ -15,14 +54,16 @@ namespace CloudScope.Library
         private readonly LasHeader _header;
         private readonly long _fileSize;
         private readonly long _pointCount;
+        private readonly VariableLengthRecordManager _vlrManager;
 
         public LasHeader Header => _header;
         public long PointCount => _pointCount;
+        public VariableLengthRecordManager VlrManager => _vlrManager;
 
         public LasReader(string path)
         {
             if (!File.Exists(path))
-                throw new FileNotFoundException("LAS fĂˇjl nem talĂˇlhatĂł.", path);
+                throw new FileNotFoundException("LAS file not found.", path);
 
             var fileInfo = new FileInfo(path);
             _fileSize = fileInfo.Length;
@@ -30,25 +71,28 @@ namespace CloudScope.Library
             _mmf = MemoryMappedFile.CreateFromFile(path, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
             _accessor = _mmf.CreateViewAccessor(0, _fileSize, MemoryMappedFileAccess.Read);
 
-            // Olvassuk be a headert
             _header = new LasHeader(ReadStruct<HeaderBlock>(0));
 
-            // Alapesetben a legacy mezĹ‘bĹ‘l vesszĂĽk a pontszĂˇmot
+            // Legacy 32-bit point count
             _pointCount = _header.NumberOfPointRecords;
 
-            // LAS 1.4 javĂ­tĂˇs: Ha a verziĂł >= 1.4, megprĂłbĂˇljuk kiolvasni a 64 bites pontszĂˇmot
+            // LAS 1.4: Use 64-bit point count from offset 247 if available
             if (_header.VersionMajor == 1 && _header.VersionMinor >= 4)
             {
-                // A valĂłdi pontszĂˇm LAS 1.4-nĂ©l a 247. byte-tĂłl talĂˇlhatĂł (8 byte)
                 if (_fileSize >= 247 + 8)
                 {
                     ulong actualCount = _accessor.ReadUInt64(247);
                     if (actualCount > 0)
-                    {
                         _pointCount = (long)actualCount;
-                    }
                 }
             }
+
+            _vlrManager = new VariableLengthRecordManager(
+                _accessor,
+                _header.NumberOfVariableLengthRecords,
+                (uint)(_header.HeaderSize),
+                _header.OffsetToPointData
+            );
         }
 
         private T ReadStruct<T>(long offset) where T : struct
@@ -58,11 +102,12 @@ namespace CloudScope.Library
         }
 
         /// <summary>
-        /// SzekvenciĂˇlisan olvassa az Ă¶sszes pontot a fĂˇjlbĂłl zero-allocation megkĂ¶zelĂ­tĂ©ssel (csak egy puffert hasznĂˇlva).
-        /// A LasPoint egy struct, Ă­gy nincs szemĂ©tgyĹ±jtĂ©si overhead (GC).
+        /// Streams all point records using a single reused buffer (zero GC allocation per point).
+        /// Supports all Point Data Record Formats 0-10.
         /// </summary>
         public IEnumerable<LasPoint> GetPoints()
         {
+            byte formatId = _header.PointDataFormatId;
             long offset = _header.OffsetToPointData;
             int stride = _header.PointDataRecordLength;
             long total = PointCount;
@@ -71,9 +116,6 @@ namespace CloudScope.Library
             double sy = _header.YScaleFactor, oy = _header.YOffset;
             double sz = _header.ZScaleFactor, oz = _header.ZOffset;
 
-            int colorOffset = GetColorOffset(_header.PointDataFormatId);
-            
-            // Chunk size
             int chunkPts = (int)Math.Min(total, 16384);
             byte[] buffer = new byte[chunkPts * stride];
             long loaded = 0;
@@ -83,97 +125,163 @@ namespace CloudScope.Library
                 long remaining = total - loaded;
                 int wantPts = (int)Math.Min(chunkPts, remaining);
                 int wantBytes = wantPts * stride;
-                
+
                 _accessor.ReadArray(offset, buffer, 0, wantBytes);
                 offset += wantBytes;
 
                 for (int i = 0; i < wantPts; i++)
                 {
                     ReadOnlySpan<byte> span = buffer.AsSpan(i * stride, stride);
-
-                    int rawX = MemoryMarshal.Read<int>(span);
-                    int rawY = MemoryMarshal.Read<int>(span.Slice(4));
-                    int rawZ = MemoryMarshal.Read<int>(span.Slice(8));
-                    ushort intensity = MemoryMarshal.Read<ushort>(span.Slice(12));
-                    
-                    byte returnNumber, numberOfReturns, userData;
-                    sbyte scanDir, scanAngleRank;
-                    bool edgeOfFlightLine;
-                    ClassificationType classification;
-
-                    if (_header.PointDataFormatId >= 6)
-                    {
-                        // LAS 1.4 (Formats 6-10)
-                        byte retByte = span[14];
-                        returnNumber = (byte)(retByte & 0x0F);
-                        numberOfReturns = (byte)((retByte >> 4) & 0x0F);
-                        
-                        byte flagByte = span[15];
-                        scanDir = (sbyte)((flagByte >> 6) & 0x01);
-                        edgeOfFlightLine = (flagByte & 0x80) != 0;
-                        
-                        classification = (ClassificationType)span[16];
-                        userData = span[17];
-                        scanAngleRank = (sbyte)MemoryMarshal.Read<short>(span.Slice(18)); // 1.4-ben 2 bĂˇjtos
-                        // Point Source ID (20), GPS Time (22) - ezeket most nem tĂˇroljuk a LasPoint-ban de az offsetek stimmelnek
-                    }
-                    else
-                    {
-                        // Legacy LAS (Formats 0-5)
-                        byte flagByte = span[14];
-                        returnNumber = (byte)(flagByte & 0x07);
-                        numberOfReturns = (byte)((flagByte >> 3) & 0x07);
-                        scanDir = (sbyte)((flagByte >> 6) & 0x01);
-                        edgeOfFlightLine = (flagByte & 0x80) != 0;
-
-                        classification = (ClassificationType)(span[15] & 0x1F);
-                        scanAngleRank = (sbyte)span[16];
-                        userData = span[17];
-                    }
-
-                    ushort r = 0, g = 0, b = 0;
-                    if (colorOffset > 0 && stride >= colorOffset + 6)
-                    {
-                        r = MemoryMarshal.Read<ushort>(span.Slice(colorOffset));
-                        g = MemoryMarshal.Read<ushort>(span.Slice(colorOffset + 2));
-                        b = MemoryMarshal.Read<ushort>(span.Slice(colorOffset + 4));
-                    }
-
-                    yield return new LasPoint
-                    {
-                        X = rawX * sx + ox,
-                        Y = rawY * sy + oy,
-                        Z = rawZ * sz + oz,
-                        Intensity = intensity,
-                        Classification = classification,
-                        ReturnNumber = returnNumber,
-                        NumberOfReturns = numberOfReturns,
-                        ScanDirectionFlag = scanDir,
-                        EdgeOfFlightLine = edgeOfFlightLine,
-                        ScanAngleRank = scanAngleRank,
-                        UserData = userData,
-                        R = r,
-                        G = g,
-                        B = b
-                    };
+                    var point = ParsePoint(span, formatId, sx, ox, sy, oy, sz, oz);
+                    yield return point;
                 }
 
                 loaded += wantPts;
             }
         }
 
-        private static int GetColorOffset(byte formatId)
+        private static LasPoint ParsePoint(
+            ReadOnlySpan<byte> data, byte formatId,
+            double sx, double ox, double sy, double oy, double sz, double oz)
         {
-            return formatId switch
+            var p = new LasPoint();
+
+            // Core XYZ + Intensity: present in all formats
+            p.X = MemoryMarshal.Read<int>(data) * sx + ox;
+            p.Y = MemoryMarshal.Read<int>(data.Slice(4)) * sy + oy;
+            p.Z = MemoryMarshal.Read<int>(data.Slice(8)) * sz + oz;
+            p.Intensity = MemoryMarshal.Read<ushort>(data.Slice(12));
+
+            if (formatId <= 5)
+                ParseLegacy(data, formatId, ref p);
+            else
+                ParseExtended(data, formatId, ref p);
+
+            return p;
+        }
+
+        // ── Legacy formats (0-5) ────────────────────────────────────────────────
+        private static void ParseLegacy(ReadOnlySpan<byte> data, byte fmt, ref LasPoint p)
+        {
+            // Byte 14: return info (3+3+1+1 bits)
+            byte retByte = data[14];
+            p.ReturnNumber    = (byte)(retByte & 0x07);
+            p.NumberOfReturns = (byte)((retByte >> 3) & 0x07);
+            p.ScanDirectionFlag = (sbyte)((retByte >> 6) & 0x01);
+            p.EdgeOfFlightLine  = (retByte & 0x80) != 0;
+
+            // Byte 15: classification byte (5b class + 3b flags)
+            byte cls = data[15];
+            p.Classification          = (ClassificationType)(cls & 0x1F);
+            p.ClassificationSynthetic = (cls & 0x20) != 0;
+            p.ClassificationKeyPoint  = (cls & 0x40) != 0;
+            p.ClassificationWithheld  = (cls & 0x80) != 0;
+
+            p.ScanAngleRank = (sbyte)data[16];
+            p.UserData      = data[17];
+            p.PointSourceId = MemoryMarshal.Read<ushort>(data.Slice(18));
+
+            // Format 1, 3, 4, 5: GPS Time at byte 20
+            if (fmt == 1 || fmt == 3 || fmt == 4 || fmt == 5)
+                p.GpsTime = MemoryMarshal.Read<double>(data.Slice(20));
+
+            // Format 2: RGB at byte 20
+            if (fmt == 2)
             {
-                2 => 20,
-                3 => 28,
-                5 => 28,
-                7 => 30,
-                8 => 30,
-                10 => 30,
-                _ => 0
-            };
+                p.R = MemoryMarshal.Read<ushort>(data.Slice(20));
+                p.G = MemoryMarshal.Read<ushort>(data.Slice(22));
+                p.B = MemoryMarshal.Read<ushort>(data.Slice(24));
+            }
+
+            // Format 3, 5: RGB at byte 28 (after GPS Time)
+            if (fmt == 3 || fmt == 5)
+            {
+                p.R = MemoryMarshal.Read<ushort>(data.Slice(28));
+                p.G = MemoryMarshal.Read<ushort>(data.Slice(30));
+                p.B = MemoryMarshal.Read<ushort>(data.Slice(32));
+            }
+
+            // Format 4: Waveform at byte 28 (after GPS Time, no RGB)
+            if (fmt == 4)
+                ParseWaveform(data, 28, ref p);
+
+            // Format 5: Waveform at byte 34 (after GPS Time + RGB)
+            if (fmt == 5)
+                ParseWaveform(data, 34, ref p);
+        }
+
+        // ── Extended formats (6-10) ─────────────────────────────────────────────
+        private static void ParseExtended(ReadOnlySpan<byte> data, byte fmt, ref LasPoint p)
+        {
+            // Byte 14: return number (4b) + number of returns (4b)
+            byte retByte = data[14];
+            p.ReturnNumber    = (byte)(retByte & 0x0F);
+            p.NumberOfReturns = (byte)((retByte >> 4) & 0x0F);
+
+            // Byte 15: classification flags (4b) + scanner channel (2b) + scan dir (1b) + edge (1b)
+            byte flags = data[15];
+            p.ClassificationSynthetic = (flags & 0x01) != 0;
+            p.ClassificationKeyPoint  = (flags & 0x02) != 0;
+            p.ClassificationWithheld  = (flags & 0x04) != 0;
+            p.ClassificationOverlap   = (flags & 0x08) != 0;
+            p.ScannerChannel          = (byte)((flags >> 4) & 0x03);
+            p.ScanDirectionFlag       = (sbyte)((flags >> 6) & 0x01);
+            p.EdgeOfFlightLine        = (flags & 0x80) != 0;
+
+            // Byte 16: classification (full byte = 0-255)
+            p.Classification = (ClassificationType)data[16];
+            p.UserData       = data[17];
+
+            // Byte 18-19: scan angle (int16, 0.006 deg/unit, -30000..+30000)
+            p.ScanAngle     = MemoryMarshal.Read<short>(data.Slice(18));
+            p.PointSourceId = MemoryMarshal.Read<ushort>(data.Slice(20));
+
+            // Byte 22-29: GPS Time (mandatory for all extended formats)
+            p.GpsTime = MemoryMarshal.Read<double>(data.Slice(22));
+
+            // Format 7, 8, 10: RGB at byte 30
+            if (fmt == 7 || fmt == 8 || fmt == 10)
+            {
+                p.R = MemoryMarshal.Read<ushort>(data.Slice(30));
+                p.G = MemoryMarshal.Read<ushort>(data.Slice(32));
+                p.B = MemoryMarshal.Read<ushort>(data.Slice(34));
+            }
+
+            // Format 8: NIR at byte 36  (after RGB)
+            if (fmt == 8)
+                p.NIR = MemoryMarshal.Read<ushort>(data.Slice(36));
+
+            // Format 10: NIR at byte 36  (after RGB, before Waveform)
+            if (fmt == 10)
+                p.NIR = MemoryMarshal.Read<ushort>(data.Slice(36));
+
+            // Format 9:  Waveform at byte 30 (no RGB/NIR before it)
+            if (fmt == 9)
+                ParseWaveform(data, 30, ref p);
+
+            // Format 10: Waveform at byte 38 (after RGB 6B + NIR 2B)
+            if (fmt == 10)
+                ParseWaveform(data, 38, ref p);
+        }
+
+        // ── Waveform packet fields ──────────────────────────────────────────────
+        // Waveform Packet Descriptor (29 bytes total):
+        //   [0]    Wave Packet Descriptor Index (uint8)
+        //   [1-8]  Byte offset to waveform data (uint64)
+        //   [9-12] Waveform packet size in bytes (uint32)
+        //   [13-16] Return Point Waveform Location (float)
+        //   [17-20] X(t) (float)
+        //   [21-24] Y(t) (float)
+        //   [25-28] Z(t) (float)
+        private static void ParseWaveform(ReadOnlySpan<byte> data, int offset, ref LasPoint p)
+        {
+            p.WavePacketDescriptorIndex  = data[offset];
+            p.ByteOffsetToWaveformData   = MemoryMarshal.Read<ulong>(data.Slice(offset + 1));
+            p.WaveformPacketSize         = MemoryMarshal.Read<uint>(data.Slice(offset + 9));
+            p.ReturnPointWaveformLocation = MemoryMarshal.Read<float>(data.Slice(offset + 13));
+            p.WaveformParamX             = MemoryMarshal.Read<float>(data.Slice(offset + 17));
+            p.WaveformParamY             = MemoryMarshal.Read<float>(data.Slice(offset + 21));
+            p.WaveformParamZ             = MemoryMarshal.Read<float>(data.Slice(offset + 25));
         }
 
         public void Dispose()
@@ -183,5 +291,3 @@ namespace CloudScope.Library
         }
     }
 }
-
-

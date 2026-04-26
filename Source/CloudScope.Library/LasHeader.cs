@@ -78,6 +78,17 @@ namespace CloudScope.Library
         public ushort PointDataRecordLength => _header.PointDataRecordLength;
         public uint NumberOfPointRecords => _header.NumberOfPointRecords;
 
+        public unsafe uint[] GetNumberOfPointsByReturn()
+        {
+            uint[] result = new uint[5];
+            fixed (uint* p = _header.NumberOfPointsByReturn)
+            {
+                for (int i = 0; i < 5; i++)
+                    result[i] = p[i];
+            }
+            return result;
+        }
+
         public double XScaleFactor => _header.XScaleFactor;
         public double YScaleFactor => _header.YScaleFactor;
         public double ZScaleFactor => _header.ZScaleFactor;
@@ -92,7 +103,24 @@ namespace CloudScope.Library
         public double MinY => _header.MinY;
         public double MaxZ => _header.MaxZ;
         public double MinZ => _header.MinZ;
-        
+
+        // LAS 1.4 Extended fields
+        public ulong StartOfWaveformDataPacketRecord => _header.StartOfWaveformDataPacketRecord;
+        public ulong StartOfFirstExtendedVLR => _header.StartOfFirstExtendedVLR;
+        public uint NumberOfExtendedVLRs => _header.NumberOfExtendedVLRs;
+        public ulong NumberOfPointRecordsExtended => _header.NumberOfPointRecordsExtended;
+
+        public unsafe ulong[] GetNumberOfPointsByReturnExtended()
+        {
+            ulong[] result = new ulong[15];
+            fixed (ulong* p = _header.NumberOfPointsByReturnExtended)
+            {
+                for (int i = 0; i < 15; i++)
+                    result[i] = p[i];
+            }
+            return result;
+        }
+
         public HeaderBlock GetRawBlock() => _header;
     }
 }

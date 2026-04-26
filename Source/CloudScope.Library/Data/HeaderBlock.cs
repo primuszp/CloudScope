@@ -46,6 +46,15 @@ namespace CloudScope.Library.Data
         public double MinY;
         public double MaxZ;
         public double MinZ;
+
+        // LAS 1.4 Extensions (offset 227)
+        public ulong StartOfWaveformDataPacketRecord;
+        public ulong StartOfFirstExtendedVLR;
+        public uint NumberOfExtendedVLRs;
+        public ulong NumberOfPointRecordsExtended;
+
+        // LAS 1.4 Extended number of points by return (15 returns)
+        public fixed ulong NumberOfPointsByReturnExtended[15];
     }
 }
 
