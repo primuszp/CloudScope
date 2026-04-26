@@ -27,7 +27,8 @@ namespace CloudScope
 
         // ── View-to-World transformation (Hilton) ─────────────────────────────
         private Matrix4 _vtw = Matrix4.Identity;   // view->world rotation
-        private Vector3 _trn = Vector3.Zero;        // pivot (viewToWorldTrn)
+        private Vector3 _trn = Vector3.Zero;        // viewToWorldTrn
+        private Vector3 _orbitPivot = Vector3.Zero; // world-space rotation center
 
         // ── Euler angles ──────────────────────────────────────────────────────
         private float _az = 30f;
@@ -51,11 +52,17 @@ namespace CloudScope
         public float RotationSpeed  { get; set; } = 0.5f;
         public bool  ConstrainElev  { get; set; } = true;
 
-        /// <summary>Returns the world coordinates of the current focus/rotation center.</summary>
-        public Vector3 Pivot => _trn;
+        /// <summary>Returns the world coordinates of the current orbit center.</summary>
+        public Vector3 Pivot => _orbitPivot;
 
         /// <summary>The current "half screen size" at the pivot distance.</summary>
         public double Hvs => _hvs;
+
+        /// <summary>View-space scale used for keyboard navigation speed.</summary>
+        public float NavigationScale => Math.Max(EffectiveHalfViewSize(_picked.Z), 0.001f);
+
+        /// <summary>World-space radius used to keep the orbit gizmo a stable screen size.</summary>
+        public float PivotIndicatorScale => Math.Max(EffectiveHalfViewSize(WorldToView(_orbitPivot, _vtw).Z) * 0.3f, 0.001f);
 
         public OrbitCamera() { RebuildRot(); CalcViewVolume(); }
 
@@ -74,6 +81,7 @@ namespace CloudScope
             _sceneRadius  = radius > 0 ? radius : 50f;
             _hvs          = _sceneRadius;
             _trn          = Vector3.Zero;
+            _orbitPivot   = Vector3.Zero;
             CalcViewVolume();
         }
 
@@ -153,24 +161,7 @@ namespace CloudScope
         /// </summary>
         public void PickDepthWindow(int mouseX, int mouseY, int windowSize = 21)
         {
-            int half = windowSize / 2;
-
-            int glY = _vpH - 1 - mouseY;
-            int startX = Math.Max(0, mouseX - half);
-            int startY = Math.Max(0, glY - half);
-            int readW  = Math.Min(windowSize, _vpW - startX);
-            int readH  = Math.Min(windowSize, _vpH - startY);
-
-            float sd = 1f;
-            if (readW > 0 && readH > 0)
-            {
-                float[] depthData = new float[readW * readH];
-                GL.ReadPixels(startX, startY, readW, readH,
-                              PixelFormat.DepthComponent, PixelType.Float, depthData);
-                foreach (float d in depthData)
-                    if (d < 0.9999f && d < sd) sd = d;
-            }
-
+            float sd = ReadClosestDepthWindow(mouseX, mouseY, windowSize);
             _pickedDepth = sd;
 
             float viewZ;
@@ -187,28 +178,38 @@ namespace CloudScope
             _picked = ScreenToView(mouseX, mouseY, viewZ);
         }
 
+        /// <summary>Sets the orbit center from the depth under a screen-space marker.</summary>
+        public bool SetOrbitPivotFromScreen(int screenX, int screenY, int windowSize = 11)
+        {
+            float depth = ReadClosestDepthWindow(screenX, screenY, windowSize);
+            if (depth >= 0.9999f)
+                return false;
+
+            float viewZ = DepthToViewZ(depth);
+            _orbitPivot = ViewToWorld(ScreenToView(screenX, screenY, viewZ));
+            return true;
+        }
+
         /// <summary>Rotation - pixel delta. Orbits around _trn (world origin after FitToCloud).</summary>
         public void Rotate(float dx, float dy)
         {
+            Matrix4 oldVtw = _vtw;
+            Vector3 pivotView = WorldToView(_orbitPivot, oldVtw);
+
             _az -= dx * RotationSpeed;
             _el -= dy * RotationSpeed;
             if (ConstrainElev) _el = Math.Clamp(_el, -89f, 89f);
             RebuildRot();
+
+            _trn = _orbitPivot - MulDir(pivotView, _vtw);
         }
 
         /// <summary>FPS style navigation in view space (W, A, S, D, Q, E).</summary>
         public void MoveFPS(float dx, float dy, float dz)
         {
-            if (_vang == 0.0 && dz != 0)
-            {
-                float scaleFactor = 1.0f + (dz / (float)_hvs);
-                if (scaleFactor < 0.1f) scaleFactor = 0.1f;
-                _hvs = Math.Clamp(_hvs * scaleFactor, 0.001, 1_000_000.0);
-                CalcViewVolume();
-                dz = 0f;
-            }
-
-            _trn += MulDir(new Vector3(dx, dy, dz), _vtw);
+            Vector3 deltaWorld = MulDir(new Vector3(dx, dy, dz), _vtw);
+            _trn += deltaWorld;
+            _orbitPivot += deltaWorld;
         }
 
         /// <summary>
@@ -233,11 +234,15 @@ namespace CloudScope
         public void Zoom(int mouseX, int mouseY, float factor)
         {
             float viewZ = _picked.Z;
-            var before = ScreenToView(mouseX, mouseY, viewZ);
+            Vector3 anchorWorld = ViewToWorld(ScreenToView(mouseX, mouseY, viewZ));
             _hvs = Math.Clamp(_hvs / factor, 0.001, 1_000_000.0);
+
+            if (_vang != 0.0)
+                viewZ /= factor;
+
             CalcViewVolume();
-            var after  = ScreenToView(mouseX, mouseY, viewZ);
-            _trn -= MulDir(after - before, _vtw);
+            _trn = anchorWorld - MulDir(ScreenToView(mouseX, mouseY, viewZ), _vtw);
+            _picked = ScreenToView(mouseX, mouseY, viewZ);
         }
 
         /// <summary>
@@ -247,11 +252,23 @@ namespace CloudScope
         public void ToggleProjection(int mouseX, int mouseY)
         {
             float viewZ = _picked.Z;
-            var before = ScreenToView(mouseX, mouseY, viewZ);
-            _vang = _vang == 0.0 ? 45.0 * Math.PI / 180.0 : 0.0;
+            Vector3 anchorWorld = ViewToWorld(ScreenToView(mouseX, mouseY, viewZ));
+
+            if (_vang == 0.0)
+            {
+                double targetAngle = 45.0 * Math.PI / 180.0;
+                float tanHalf = (float)Math.Tan(0.5 * targetAngle);
+                _hvs = Math.Clamp(_hvs + viewZ * tanHalf, 0.001, 1_000_000.0);
+                _vang = targetAngle;
+            }
+            else
+            {
+                _hvs = Math.Clamp(_hvs * (1.0 - viewZ * iez), 0.001, 1_000_000.0);
+                _vang = 0.0;
+            }
+
             CalcViewVolume();
-            var after  = ScreenToView(mouseX, mouseY, viewZ);
-            _trn -= MulDir(after - before, _vtw);
+            _trn = anchorWorld - MulDir(ScreenToView(mouseX, mouseY, viewZ), _vtw);
         }
 
         // ── Standard views and reset ──────────────────────────────────────────
@@ -268,6 +285,7 @@ namespace CloudScope
         {
             _az   = 30f; _el = 25f;
             _trn  = Vector3.Zero;
+            _orbitPivot = Vector3.Zero;
             _vang = 45.0 * Math.PI / 180.0;
             FitToCloud(cloudRadius);
         }
@@ -279,8 +297,11 @@ namespace CloudScope
             hw = hh = (float)_hvs;
             tsx = tsy = 0f;
 
-            zn = _sceneRadius * 2f;
-            zf = -_sceneRadius * 2f;
+            float depthExtent = MathF.Max(_sceneRadius * 2f, (float)_hvs * 8f);
+            depthExtent = MathF.Max(depthExtent, MathF.Abs(WorldToView(_orbitPivot, _vtw).Z) + _sceneRadius * 2f);
+            depthExtent = MathF.Max(depthExtent, MathF.Abs(_picked.Z) + _sceneRadius * 2f);
+            zn = depthExtent;
+            zf = -depthExtent;
 
             if (_vpW >= _vpH)
                 hw *= (float)_vpW / _vpH;
@@ -339,7 +360,55 @@ namespace CloudScope
             _az  = az;
             _el  = ConstrainElev ? Math.Clamp(el, -89f, 89f) : el;
             _trn = Vector3.Zero;
+            _orbitPivot = Vector3.Zero;
             RebuildRot();
+        }
+
+        private float ReadClosestDepthWindow(int mouseX, int mouseY, int windowSize)
+        {
+            int half = windowSize / 2;
+            int glY = _vpH - 1 - mouseY;
+            int startX = Math.Max(0, mouseX - half);
+            int startY = Math.Max(0, glY - half);
+            int readW  = Math.Min(windowSize, _vpW - startX);
+            int readH  = Math.Min(windowSize, _vpH - startY);
+
+            float sd = 1f;
+            if (readW > 0 && readH > 0)
+            {
+                float[] depthData = new float[readW * readH];
+                GL.ReadPixels(startX, startY, readW, readH,
+                              PixelFormat.DepthComponent, PixelType.Float, depthData);
+                foreach (float d in depthData)
+                    if (d < 0.9999f && d < sd) sd = d;
+            }
+
+            return sd;
+        }
+
+        private float DepthToViewZ(float screenDepth)
+        {
+            float m33 = -(1f - zf * iez) / (zn - zf);
+            return (screenDepth + m33 * zn) / (screenDepth * iez + m33);
+        }
+
+        private float EffectiveHalfViewSize(float viewZ)
+        {
+            if (_vang == 0.0)
+                return (float)_hvs;
+
+            return MathF.Max((float)_hvs * (1f - viewZ * iez), 0.001f);
+        }
+
+        private Vector3 ViewToWorld(Vector3 viewPoint) => _trn + MulDir(viewPoint, _vtw);
+
+        private Vector3 WorldToView(Vector3 worldPoint, Matrix4 vtw)
+        {
+            Vector3 d = worldPoint - _trn;
+            return new Vector3(
+                d.X * vtw.M11 + d.Y * vtw.M12 + d.Z * vtw.M13,
+                d.X * vtw.M21 + d.Y * vtw.M22 + d.Z * vtw.M23,
+                d.X * vtw.M31 + d.Y * vtw.M32 + d.Z * vtw.M33);
         }
 
         // Row-vector x matrix 3x3 part (direction only, no translation)

@@ -212,7 +212,7 @@ void main()
 
             // WASD FPS Movement
             float dt = (float)args.Time;
-            float moveSpeed = (float)_cam.Hvs * 2.0f * dt; // Travels screen width in 1 second
+            float moveSpeed = _cam.NavigationScale * 2.0f * dt; // Travels screen width in 1 second
 
             float dx = 0, dy = 0, dz = 0;
             if (KeyboardState.IsKeyDown(Keys.W)) dz -= moveSpeed; // Forward
@@ -239,11 +239,17 @@ void main()
             int mx = (int)MouseState.Position.X;
             int my = (int)MouseState.Position.Y;
 
-            // AdvancedZPR: PickDepthWindow ensures we hit sparse point clouds
-            _cam.PickDepthWindow(mx, my, 11);
+            if (e.Button == MouseButton.Left)
+            {
+                _cam.SetOrbitPivotFromScreen(mx, my, 11);
+                _leftDown = true;
+            }
 
-            if (e.Button == MouseButton.Left)  _leftDown  = true;
-            if (e.Button == MouseButton.Right) _rightDown = true;
+            if (e.Button == MouseButton.Right)
+            {
+                _cam.PickDepthWindow(mx, my, 11);
+                _rightDown = true;
+            }
 
             _lastMX = mx;
             _lastMY = my;
@@ -416,8 +422,8 @@ void main()
             // Draw Trackball Lines
             GL.UseProgram(_lineShader);
             
-            // Trackball scale: dynamic to keep it roughly constant size on screen
-            float scale = (float)_cam.Hvs * 0.3f;
+            // Trackball scale follows the actual projected size at the orbit pivot.
+            float scale = _cam.PivotIndicatorScale;
             Matrix4 model = Matrix4.CreateScale(scale) * Matrix4.CreateTranslation(p);
             Matrix4 mv = model * view;
             
