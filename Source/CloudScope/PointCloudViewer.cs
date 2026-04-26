@@ -239,8 +239,8 @@ void main()
             int mx = (int)MouseState.Position.X;
             int my = (int)MouseState.Position.Y;
 
-            // AdvancedZPR: PickDepth on every button down (at cursor position)
-            _cam.PickDepth(mx, my);
+            // AdvancedZPR: PickDepthWindow ensures we hit sparse point clouds
+            _cam.PickDepthWindow(mx, my, 11);
 
             if (e.Button == MouseButton.Left)  _leftDown  = true;
             if (e.Button == MouseButton.Right) _rightDown = true;
@@ -285,8 +285,8 @@ void main()
             int mx = (int)MouseState.Position.X;
             int my = (int)MouseState.Position.Y;
 
-            // PickDepth at cursor, then zoom towards cursor
-            _cam.PickDepth(mx, my);
+            // PickDepthWindow at cursor, then zoom towards cursor
+            _cam.PickDepthWindow(mx, my, 11);
 
             float factor = e.OffsetY > 0 ? 1.25f : 1f / 1.25f;
             _cam.Zoom(mx, my, factor);
@@ -297,10 +297,10 @@ void main()
             base.OnKeyDown(e);
             if (e.Key == Keys.Space)
             {
-                int cx = Size.X / 2;
-                int cy = Size.Y / 2;
-                _cam.PickDepth(cx, cy);
-                _cam.ToggleProjection(cx, cy);
+                int mx = (int)MouseState.Position.X;
+                int my = (int)MouseState.Position.Y;
+                _cam.PickDepthWindow(mx, my, 11);
+                _cam.ToggleProjection(mx, my);
             }
         }
 
