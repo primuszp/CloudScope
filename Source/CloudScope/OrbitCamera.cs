@@ -289,9 +289,12 @@ namespace CloudScope
         /// <summary>Pan - from/to screen coordinates.</summary>
         public void Pan(int fromX, int fromY, int toX, int toY)
         {
-            // Since PickDepth called FocusOnPickedPoint, _picked.Z = 0
-            var vFrom  = ScreenToView(fromX, fromY, 0f);
-            var vTo    = ScreenToView(toX,   toY,   0f);
+            // In perspective the picked depth controls the pan scale: points at the
+            // picked depth stay exactly under the cursor.  In ortho iez=0 so viewZ
+            // has no effect on x/y and both give identical results.
+            float viewZ = _picked.Z;
+            var vFrom  = ScreenToView(fromX, fromY, viewZ);
+            var vTo    = ScreenToView(toX,   toY,   viewZ);
             var deltaV = vTo - vFrom;
             _trn -= MulDir(deltaV, _vtw);
         }
