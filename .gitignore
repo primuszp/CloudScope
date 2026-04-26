@@ -1,0 +1,33 @@
+# Build results
+bin/
+obj/
+.vs/
+*.dll
+*.exe
+*.pdb
+*.nupkg
+
+# Visual Studio
+.vscode/
+*.user
+*.userprefs
+*.sln.iml
+
+# Test Results
+TestResults/
+
+# Runtime
+*.so
+*.dylib
+
+# OS
+.DS_Store
+Thumbs.db
+
+# LAS files (data files, not source)
+*.las
+*.laz
+
+# NuGet
+.nuget/
+packages/
