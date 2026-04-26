@@ -2,14 +2,13 @@ using System;
 using System.Diagnostics;
 using CloudScope;
 
-// â”€â”€ File path from CLI or fallback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-//string lasFile = args.Length > 0
-//    ? args[0]
-//    : @"D:\Personal\OneDrive\BorderEye\data\jeli_parkolo.las";
-
 string lasFile = args.Length > 0
     ? args[0]
-    : @"D:\Personal\OneDrive\Sarrang_colorized.las";
+    : @"D:\Personal\OneDrive\BorderEye\data\jeli_parkolo.las";
+
+//string lasFile = args.Length > 0
+//    ? args[0]
+//    : @"D:\Personal\OneDrive\Sarrang_colorized.las";
 
 if (!System.IO.File.Exists(lasFile))
 {

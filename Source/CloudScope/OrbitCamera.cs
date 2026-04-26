@@ -155,8 +155,9 @@ namespace CloudScope
         {
             int half = windowSize / 2;
 
+            int glY = _vpH - 1 - mouseY;
             int startX = Math.Max(0, mouseX - half);
-            int startY = Math.Max(0, _vpH - mouseY - half);
+            int startY = Math.Max(0, glY - half);
             int readW  = Math.Min(windowSize, _vpW - startX);
             int readH  = Math.Min(windowSize, _vpH - startY);
 
@@ -294,7 +295,8 @@ namespace CloudScope
             {
                 float eyeZ = Math.Min(hw, hh) / (float)Math.Tan(0.5 * _vang);
                 iez = 1f / eyeZ;
-                const float kMinNear = 1e-3f;
+                // Ensure near plane is not too close (use proportional distance to prevent depth precision loss)
+                float kMinNear = eyeZ * 0.05f;
                 if (zn > eyeZ - kMinNear)
                     zn = eyeZ - kMinNear;
             }
