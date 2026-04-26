@@ -32,10 +32,17 @@ namespace CloudScope
         private int _uView, _uProj, _uPointSize;
         private int _uViewLine, _uProjLine;
         private int _uViewSphere, _uProjSphere, _uPointSizeSphere;
+        private int _uAlphaLine, _uAlphaSphere;
 
-        // â”€â”€ Camera â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // -- Camera â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         private readonly OrbitCamera _cam = new();
         private float _cloudRadius = 50f;
+
+        // -- Pivot indicator animation ----------------------------------------
+        private float _pivotFade     = PivotDimAlpha; // 0=invisible 1=full
+        private float _pivotFlash    = 0f;            // brief pulse on new pivot pick
+        private float _interactTimer = 0f;            // seconds since last interaction
+        private const float PivotDimAlpha = 0.15f;
 
         // -- Mouse state ----------------------------------------------------------
         private int  _lastMX, _lastMY;
@@ -90,10 +97,11 @@ void main()
 #version 330 core
 in  vec3 vColor;
 out vec4 FragColor;
+uniform float uAlpha;
 
 void main()
 {
-    FragColor = vec4(vColor, 1.0);
+    FragColor = vec4(vColor, uAlpha);
 }
 ";
 
@@ -101,21 +109,26 @@ void main()
         private const string SphereFragSrc = @"
 #version 330 core
 out vec4 FragColor;
+uniform float uAlpha;
 
 void main()
 {
     vec2 p = gl_PointCoord * 2.0 - vec2(1.0);
     float r2 = dot(p, p);
     if (r2 > 1.0) discard;
-    
+
+    // soft edge glow ring
+    float edge = smoothstep(0.85, 1.0, sqrt(r2));
+
     float z = sqrt(1.0 - r2);
     vec3 normal = vec3(p.x, -p.y, z);
-    
-    vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
-    float diff = max(dot(normal, lightDir), 0.3);
-    
-    vec3 color = vec3(1.0, 0.9, 0.1) * diff; // Yellow
-    FragColor = vec4(color, 1.0);
+    vec3 lightDir = normalize(vec3(1.0, 1.5, 1.0));
+    float diff = max(dot(normal, lightDir), 0.25);
+
+    vec3 core  = vec3(1.0, 0.92, 0.2) * diff;
+    vec3 glow  = vec3(1.0, 0.7, 0.0);
+    vec3 color = mix(core, glow, edge);
+    FragColor  = vec4(color, uAlpha);
 }
 ";
 
@@ -152,6 +165,12 @@ void main()
             _uViewSphere  = GL.GetUniformLocation(_sphereShader, "view");
             _uProjSphere  = GL.GetUniformLocation(_sphereShader, "projection");
             _uPointSizeSphere = GL.GetUniformLocation(_sphereShader, "pointSize");
+
+            _uAlphaLine   = GL.GetUniformLocation(_lineShader,   "uAlpha");
+            _uAlphaSphere = GL.GetUniformLocation(_sphereShader, "uAlpha");
+
+            GL.Enable(EnableCap.Blend);
+            GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
             _cam.SetViewportSize(Size.X, Size.Y);
         }
@@ -198,6 +217,7 @@ void main()
         protected override void OnUpdateFrame(FrameEventArgs args)
         {
             base.OnUpdateFrame(args);
+            float dt = (float)args.Time;
 
             if (KeyboardState.IsKeyPressed(Keys.Escape)) Close();
 
@@ -215,7 +235,6 @@ void main()
             if (KeyboardState.IsKeyPressed(Keys.R))       _cam.ResetView(_cloudRadius);
 
             // WASD FPS Movement
-            float dt = (float)args.Time;
             float moveSpeed = _cam.NavigationScale * 2.0f * dt;
             bool shift = KeyboardState.IsKeyDown(Keys.LeftShift) || KeyboardState.IsKeyDown(Keys.RightShift);
             if (shift) moveSpeed *= 5f;
@@ -229,7 +248,18 @@ void main()
             if (KeyboardState.IsKeyDown(Keys.Q)) dy -= moveSpeed;
 
             if (dx != 0 || dy != 0 || dz != 0)
+            {
                 _cam.MoveFPS(dx, dy, dz);
+                _interactTimer = 0.6f;
+            }
+
+            // Pivot indicator fade animation
+            _interactTimer = Math.Max(0f, _interactTimer - dt);
+            bool anyDown   = _leftDown || _rightDown || _middleDown;
+            float pivotTarget = (anyDown || _interactTimer > 0f) ? 1f : PivotDimAlpha;
+            float pivotRate   = pivotTarget > _pivotFade ? 8f : 3f;
+            _pivotFade += (pivotTarget - _pivotFade) * Math.Min(pivotRate * dt, 1f);
+            if (_pivotFlash > 0f) _pivotFlash = Math.Max(0f, _pivotFlash - dt * 2.5f);
 
             // Orbit inertia
             if (!_leftDown && (_orbitVelX != 0f || _orbitVelY != 0f))
@@ -266,8 +296,9 @@ void main()
 
             if (e.Button == MouseButton.Left)
             {
-                _cam.SetOrbitPivotFromScreen(mx, my, 11);
-                _leftDown = true;
+                if (_cam.SetOrbitPivotFromScreen(mx, my, 11))
+                    _pivotFlash = 1.0f;
+                _leftDown  = true;
                 _orbitVelX = 0f; _orbitVelY = 0f;
             }
 
@@ -285,6 +316,7 @@ void main()
                 _panVelX = 0f; _panVelY = 0f;
             }
 
+            _interactTimer = 1.2f;
             _lastMX = mx;
             _lastMY = my;
         }
@@ -327,6 +359,7 @@ void main()
             int my = (int)MouseState.Position.Y;
 
             _cam.PickDepthWindow(mx, my, 11);
+            _interactTimer = 1.2f;
 
             // Adaptive zoom: larger steps when zoomed out, finer when zoomed in
             float zoomRatio = Math.Clamp((float)(_cam.Hvs / _cloudRadius), 0.1f, 5f);
@@ -368,16 +401,15 @@ void main()
                 GL.DrawArrays(PrimitiveType.Points, 0, _pointCount);
             }
 
-            // 2. Draw 3D pivot point indicator (only when user orbits)
-            if (_leftDown)
-            {
+            // 2. Pivot indicator - always visible, alpha fades in on interaction
+            if (_pivotFade > 0.01f || _pivotFlash > 0.01f)
                 RenderPivotIndicator(ref view, ref proj);
-            }
-            else
-            {
-                // 3. Draw 2D Center Crosshair (visible when not orbiting)
-                RenderCenterCrosshair();
-            }
+
+            // 3. Center crosshair - fades out while pivot is active, fades in at rest
+            float crossAlpha = 1f - Math.Max(0f,
+                (_pivotFade - PivotDimAlpha) / (1f - PivotDimAlpha));
+            if (crossAlpha > 0.01f)
+                RenderCenterCrosshair(crossAlpha);
 
             SwapBuffers();
         }
@@ -390,55 +422,42 @@ void main()
         {
             if (_pivotVao == -1)
             {
-                // Generate trackball geometry (axes + circles)
-                // We use GL_LINES.
-                int segments = 64;
-                // 3 axes * 2 verts = 6
-                // 3 circles * segments * 2 verts = 3 * 128 = 384
-                // Total = 390 vertices (2340 floats)
+                const int segments = 96;
+                // 3 short axes (±0.55) + 3 circles @ 96 segments = 6 + 576 = 582 verts
                 _pivotVertexCount = 6 + 3 * segments * 2;
                 float[] pivotData = new float[_pivotVertexCount * 6];
                 int idx = 0;
 
-                // Helper to add a vertex
                 void AddV(float x, float y, float z, float r, float g, float b)
                 {
                     pivotData[idx++] = x; pivotData[idx++] = y; pivotData[idx++] = z;
                     pivotData[idx++] = r; pivotData[idx++] = g; pivotData[idx++] = b;
                 }
 
-                // 1. Axes (Red X, Green Y, Blue Z)
-                AddV(-1f, 0f, 0f, 1f, 0f, 0f); AddV(1f, 0f, 0f, 1f, 0f, 0f); // X
-                AddV(0f, -1f, 0f, 0f, 1f, 0f); AddV(0f, 1f, 0f, 0f, 1f, 0f); // Y
-                AddV(0f, 0f, -1f, 0f, 0f, 1f); AddV(0f, 0f, 1f, 0f, 0f, 1f); // Z
+                // Short axis stubs — 55 % of circle radius, slightly brightened
+                const float ax = 0.55f;
+                AddV(-ax, 0f, 0f, 1f, 0.3f, 0.3f); AddV(ax, 0f, 0f, 1f, 0.3f, 0.3f);
+                AddV(0f, -ax, 0f, 0.3f, 1f, 0.3f); AddV(0f, ax, 0f, 0.3f, 1f, 0.3f);
+                AddV(0f, 0f, -ax, 0.3f, 0.5f, 1f); AddV(0f, 0f, ax, 0.3f, 0.5f, 1f);
 
-                // 2. Circles
+                // Orbit circles — softer, slightly desaturated colours
                 float step = MathF.PI * 2f / segments;
+                (float r, float g, float b)[] cols = {
+                    (1f, 0.35f, 0.35f), // YZ — warm red
+                    (0.35f, 1f, 0.35f), // XZ — green
+                    (0.35f, 0.6f,  1f), // XY — cool blue
+                };
                 for (int c = 0; c < 3; c++)
                 {
-                    float r = c == 0 ? 1f : 0f; // Red for X (YZ plane)
-                    float g = c == 1 ? 1f : 0f; // Green for Y (XZ plane)
-                    float b = c == 2 ? 1f : 0f; // Blue for Z (XY plane)
-
+                    var (cr, cg, cb) = cols[c];
                     for (int i = 0; i < segments; i++)
                     {
-                        float a1 = i * step;
-                        float a2 = (i + 1) * step;
+                        float a1 = i * step, a2 = (i + 1) * step;
                         float c1 = MathF.Cos(a1), s1 = MathF.Sin(a1);
                         float c2 = MathF.Cos(a2), s2 = MathF.Sin(a2);
-
-                        if (c == 0) // YZ plane
-                        {
-                            AddV(0, c1, s1, r, g, b); AddV(0, c2, s2, r, g, b);
-                        }
-                        else if (c == 1) // XZ plane
-                        {
-                            AddV(c1, 0, s1, r, g, b); AddV(c2, 0, s2, r, g, b);
-                        }
-                        else // XY plane
-                        {
-                            AddV(c1, s1, 0, r, g, b); AddV(c2, s2, 0, r, g, b);
-                        }
+                        if (c == 0) { AddV(0, c1, s1, cr, cg, cb); AddV(0, c2, s2, cr, cg, cb); }
+                        else if (c == 1) { AddV(c1, 0, s1, cr, cg, cb); AddV(c2, 0, s2, cr, cg, cb); }
+                        else             { AddV(c1, s1, 0, cr, cg, cb); AddV(c2, s2, 0, cr, cg, cb); }
                     }
                 }
 
@@ -447,43 +466,43 @@ void main()
                 GL.BindVertexArray(_pivotVao);
                 GL.BindBuffer(BufferTarget.ArrayBuffer, _pivotVbo);
                 GL.BufferData(BufferTarget.ArrayBuffer, pivotData.Length * sizeof(float), pivotData, BufferUsageHint.StaticDraw);
-                
                 GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 24, 0);
                 GL.EnableVertexAttribArray(0);
                 GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, 24, 12);
                 GL.EnableVertexAttribArray(1);
             }
 
-            Vector3 p = _cam.Pivot;
-            
-            // Draw Trackball Lines
-            GL.UseProgram(_lineShader);
-            
-            // Trackball scale follows the actual projected size at the orbit pivot.
-            float scale = _cam.PivotIndicatorScale;
+            // Effective alpha: fade + flash boost, sphere gets extra size during flash
+            float eff        = Math.Clamp(_pivotFade + _pivotFlash, 0f, 1f);
+            float spherePx   = 11f + 11f * _pivotFade + _pivotFlash * 14f;
+
+            Vector3 p     = _cam.Pivot;
+            float   scale = _cam.PivotIndicatorScale;
             Matrix4 model = Matrix4.CreateScale(scale) * Matrix4.CreateTranslation(p);
-            Matrix4 mv = model * view;
-            
+            Matrix4 mv    = model * view;
+
+            // ── Lines ─────────────────────────────────────────────────────────
+            GL.UseProgram(_lineShader);
             GL.UniformMatrix4(_uViewLine, false, ref mv);
             GL.UniformMatrix4(_uProjLine, false, ref proj);
-
             GL.BindVertexArray(_pivotVao);
-            
-            GL.Disable(EnableCap.DepthTest);
-            GL.LineWidth(2.0f);
-            GL.DrawArrays(PrimitiveType.Lines, 0, _pivotVertexCount);
-            GL.LineWidth(1.0f);
-            
-            // Draw Yellow Sphere at center
-            GL.UseProgram(_sphereShader);
-            GL.UniformMatrix4(_uViewSphere, false, ref view);
-            GL.UniformMatrix4(_uProjSphere, false, ref proj);
-            GL.Uniform1(_uPointSizeSphere, 20.0f); 
 
-            // We can just draw the first vertex of the trackball but scaled to 0 (which is the center? No, first vertex is -1,0,0)
-            // Let's quickly update a 1-point VBO for the sphere, or just draw the origin
-            float[] sphereData = new float[] { p.X, p.Y, p.Z };
-            // Actually, we can reuse _vbo or a separate one, but let's just make a small buffer for the sphere
+            // Pass 1 — depth-tested: rings are properly embedded in 3D space
+            GL.Enable(EnableCap.DepthTest);
+            GL.DepthMask(false);
+            GL.Uniform1(_uAlphaLine, eff);
+            GL.LineWidth(1f + eff);
+            GL.DrawArrays(PrimitiveType.Lines, 0, _pivotVertexCount);
+
+            // Pass 2 — X-ray ghost: occluded portions remain faintly visible
+            GL.Disable(EnableCap.DepthTest);
+            GL.Uniform1(_uAlphaLine, eff * 0.20f);
+            GL.LineWidth(1.0f);
+            GL.DrawArrays(PrimitiveType.Lines, 0, _pivotVertexCount);
+
+            GL.DepthMask(true);
+
+            // ── Sphere impostor — always on top ───────────────────────────────
             if (_sphereVao == -1)
             {
                 _sphereVao = GL.GenVertexArray();
@@ -493,15 +512,19 @@ void main()
                 GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 12, 0);
                 GL.EnableVertexAttribArray(0);
             }
+
+            float[] sphereData = { p.X, p.Y, p.Z };
             GL.BindVertexArray(_sphereVao);
             GL.BindBuffer(BufferTarget.ArrayBuffer, _sphereVbo);
             GL.BufferData(BufferTarget.ArrayBuffer, 3 * sizeof(float), sphereData, BufferUsageHint.DynamicDraw);
-            
-            GL.Enable(EnableCap.Blend);
-            GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+
+            GL.UseProgram(_sphereShader);
+            GL.UniformMatrix4(_uViewSphere,       false, ref view);
+            GL.UniformMatrix4(_uProjSphere,       false, ref proj);
+            GL.Uniform1(_uPointSizeSphere, spherePx);
+            GL.Uniform1(_uAlphaSphere,     eff);
+
             GL.DrawArrays(PrimitiveType.Points, 0, 1);
-            GL.Disable(EnableCap.Blend);
-            
             GL.Enable(EnableCap.DepthTest);
         }
 
@@ -511,7 +534,7 @@ void main()
         private int _crosshairVao = -1;
         private int _crosshairVbo = -1;
 
-        private void RenderCenterCrosshair()
+        private void RenderCenterCrosshair(float alpha = 1.0f)
         {
             if (_crosshairVao == -1)
             {
@@ -549,12 +572,14 @@ void main()
             GL.BufferData(BufferTarget.ArrayBuffer, crossData.Length * sizeof(float), crossData, BufferUsageHint.DynamicDraw);
 
             GL.UseProgram(_lineShader);
+            GL.Uniform1(_uAlphaLine, alpha * 0.55f); // shadow pass uses reduced alpha
             Matrix4 ident = Matrix4.Identity;
             GL.UniformMatrix4(_uViewLine, false, ref ident);
             GL.UniformMatrix4(_uProjLine, false, ref ident);
 
             GL.Disable(EnableCap.DepthTest);
-            // Draw a subtle dark shadow line first
+
+            // Shadow pass (subtle dark offset)
             Matrix4 shadow = Matrix4.CreateTranslation(1f/Size.X, -1f/Size.Y, 0);
             GL.UniformMatrix4(_uViewLine, false, ref shadow);
             float[] shadowData = new float[]
@@ -567,11 +592,12 @@ void main()
             GL.BufferData(BufferTarget.ArrayBuffer, shadowData.Length * sizeof(float), shadowData, BufferUsageHint.DynamicDraw);
             GL.DrawArrays(PrimitiveType.Lines, 0, 4);
 
-            // Then draw gray lines
+            // Main crosshair
+            GL.Uniform1(_uAlphaLine, alpha);
             GL.UniformMatrix4(_uViewLine, false, ref ident);
             GL.BufferData(BufferTarget.ArrayBuffer, crossData.Length * sizeof(float), crossData, BufferUsageHint.DynamicDraw);
             GL.DrawArrays(PrimitiveType.Lines, 0, 4);
-            
+
             GL.Enable(EnableCap.DepthTest);
         }
 
