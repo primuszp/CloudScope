@@ -48,6 +48,9 @@ namespace CloudScope
         private Vector3 _picked = Vector3.Zero;
         private float   _pickedDepth = 1f;
 
+        // ── Cached depth read buffer (avoids per-event allocation) ────────────
+        private float[] _depthWindow = new float[1024]; // 32x32 max
+
         // ── Configurable parameters ───────────────────────────────────────────
         public float RotationSpeed  { get; set; } = 0.5f;
         public bool  ConstrainElev  { get; set; } = true;
@@ -357,11 +360,11 @@ namespace CloudScope
 
         private void ApplyView(float az, float el)
         {
-            _az  = az;
-            _el  = ConstrainElev ? Math.Clamp(el, -89f, 89f) : el;
-            _trn = Vector3.Zero;
-            _orbitPivot = Vector3.Zero;
+            float pivotZ = WorldToView(_orbitPivot, _vtw).Z;
+            _az = az;
+            _el = ConstrainElev ? Math.Clamp(el, -89f, 89f) : el;
             RebuildRot();
+            _trn = _orbitPivot - MulDir(new Vector3(0f, 0f, pivotZ), _vtw);
         }
 
         private float ReadClosestDepthWindow(int mouseX, int mouseY, int windowSize)
@@ -376,11 +379,13 @@ namespace CloudScope
             float sd = 1f;
             if (readW > 0 && readH > 0)
             {
-                float[] depthData = new float[readW * readH];
+                int needed = readW * readH;
+                if (_depthWindow.Length < needed)
+                    _depthWindow = new float[needed];
                 GL.ReadPixels(startX, startY, readW, readH,
-                              PixelFormat.DepthComponent, PixelType.Float, depthData);
-                foreach (float d in depthData)
-                    if (d < 0.9999f && d < sd) sd = d;
+                              PixelFormat.DepthComponent, PixelType.Float, _depthWindow);
+                for (int i = 0; i < needed; i++)
+                    if (_depthWindow[i] < 0.9999f && _depthWindow[i] < sd) sd = _depthWindow[i];
             }
 
             return sd;
