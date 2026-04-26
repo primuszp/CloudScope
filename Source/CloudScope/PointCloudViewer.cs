@@ -239,22 +239,11 @@ void main()
             int mx = (int)MouseState.Position.X;
             int my = (int)MouseState.Position.Y;
 
-            if (e.Button == MouseButton.Left)
-            {
-                _leftDown = true;
-                // For orbiting, pivot around the center crosshair with a window search
-                _cam.PickDepthWindow(Size.X / 2, Size.Y / 2);
-            }
-            else if (e.Button == MouseButton.Right)
-            {
-                _rightDown = true;
-                // For panning, pick exactly under the cursor so it stays under the mouse
-                _cam.PickDepth(mx, my);
-            }
-            else
-            {
-                _cam.PickDepth(mx, my);
-            }
+            // AdvancedZPR: PickDepth on every button down (at cursor position)
+            _cam.PickDepth(mx, my);
+
+            if (e.Button == MouseButton.Left)  _leftDown  = true;
+            if (e.Button == MouseButton.Right) _rightDown = true;
 
             _lastMX = mx;
             _lastMY = my;
