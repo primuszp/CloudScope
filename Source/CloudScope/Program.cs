@@ -2,13 +2,13 @@ using System;
 using System.Diagnostics;
 using CloudScope;
 
-//string lasFile = args.Length > 0
-//    ? args[0]
-//    : @"D:\Personal\OneDrive\BorderEye\data\jeli_parkolo.las";
-
 string lasFile = args.Length > 0
     ? args[0]
-    : @"D:\Personal\OneDrive\Ut1_colorized.las";
+    : @"D:\Personal\OneDrive\BorderEye\data\jeli_parkolo.las";
+
+//string lasFile = args.Length > 0
+//    ? args[0]
+//    : @"D:\Personal\OneDrive\Ut1_colorized.las";
 
 if (!System.IO.File.Exists(lasFile))
 {
@@ -17,7 +17,7 @@ if (!System.IO.File.Exists(lasFile))
     return 1;
 }
 
-long maxPoints = args.Length > 1 && long.TryParse(args[1], out long m) ? m : 30_000_000;
+long maxPoints = args.Length > 1 && long.TryParse(args[1], out long m) ? m : 50_000_000;
 
 // ── Open and report header ───────────────────────────────────────────────────
 Console.WriteLine($"LAS file: {lasFile}");
@@ -48,36 +48,37 @@ double cy = (hdr.MinY + hdr.MaxY) * 0.5;
 double cz = (hdr.MinZ + hdr.MaxZ) * 0.5;
 double spanZ = hdr.MaxZ - hdr.MinZ;
 
-long loaded = 0;
-int lastPct = -1;
+// ── Load all points in parallel into raw buffer ──────────────────────────────
+var rawPoints = new CloudScope.Library.LasPoint[total];
+long loaded = reader.FillBuffer(rawPoints, total);
+Console.Write($"\rParsed  {loaded:N0} points");
 
-// ── Smart color scale detection ──────────────────────────────────────────────
+// ── Smart color scale detection from first 1000 points ───────────────────────
 // Some files store 8-bit colors (0-255) in 16-bit fields.
-// If all color channels in the first 1000 points are <= 255, we treat them as 8-bit.
 float colorScale = 1.0f / 65535.0f;
 if (hasColor)
 {
     ushort maxC = 0;
-    int checkCount = 0;
-    foreach (var pt in reader.GetPoints())
+    long checkCount = Math.Min(1000, loaded);
+    for (long i = 0; i < checkCount; i++)
     {
-        if (pt.R > maxC) maxC = pt.R;
-        if (pt.G > maxC) maxC = pt.G;
-        if (pt.B > maxC) maxC = pt.B;
-        if (++checkCount > 1000) break;
+        if (rawPoints[i].R > maxC) maxC = rawPoints[i].R;
+        if (rawPoints[i].G > maxC) maxC = rawPoints[i].G;
+        if (rawPoints[i].B > maxC) maxC = rawPoints[i].B;
     }
     if (maxC > 0 && maxC <= 255)
     {
         colorScale = 1.0f / 255.0f;
-        Console.WriteLine("Info: Detected 8-bit colors (0-255). Scaling corrected.");
+        Console.WriteLine("\nInfo: Detected 8-bit colors (0-255). Scaling corrected.");
     }
 }
 
-foreach (var pt in reader.GetPoints())
+// ── Convert to GPU-ready PointData ───────────────────────────────────────────
+int lastPct = -1;
+for (long i = 0; i < loaded; i++)
 {
-    if (loaded >= total) break;
-
-    ref PointData p = ref points[loaded];
+    ref var pt = ref rawPoints[i];
+    ref PointData p = ref points[i];
     p.X = (float)(pt.X - cx);
     p.Y = (float)(pt.Y - cy);
     p.Z = (float)(pt.Z - cz);
@@ -97,12 +98,11 @@ foreach (var pt in reader.GetPoints())
         p.B = 1f - t;
     }
 
-    loaded++;
-    int pct = (int)(loaded * 100L / total);
+    int pct = (int)((i + 1) * 100L / loaded);
     if (pct / 5 != lastPct / 5)
     {
         lastPct = pct;
-        Console.Write($"\rLoading {pct,3}%");
+        Console.Write($"\rConverting {pct,3}%");
     }
 }
 

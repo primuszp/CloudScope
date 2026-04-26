@@ -104,6 +104,7 @@ namespace CloudScope.Library
         /// <summary>
         /// Streams all point records using a single reused buffer (zero GC allocation per point).
         /// Supports all Point Data Record Formats 0-10.
+        /// For maximum throughput on large files use FillBuffer() instead.
         /// </summary>
         public IEnumerable<LasPoint> GetPoints()
         {
@@ -116,7 +117,7 @@ namespace CloudScope.Library
             double sy = _header.YScaleFactor, oy = _header.YOffset;
             double sz = _header.ZScaleFactor, oz = _header.ZOffset;
 
-            int chunkPts = (int)Math.Min(total, 16384);
+            int chunkPts = (int)Math.Min(total, 65536);
             byte[] buffer = new byte[chunkPts * stride];
             long loaded = 0;
 
@@ -138,6 +139,53 @@ namespace CloudScope.Library
 
                 loaded += wantPts;
             }
+        }
+
+        /// <summary>
+        /// Fills a pre-allocated array using parallel threads and direct MMF pointer access.
+        /// Avoids the managed ReadArray copy overhead and uses all available CPU cores.
+        /// Returns the number of points written.
+        /// </summary>
+        public unsafe long FillBuffer(LasPoint[] buffer, long maxPoints = 0)
+        {
+            long count = maxPoints > 0
+                ? Math.Min(maxPoints, Math.Min(PointCount, (long)buffer.Length))
+                : Math.Min(PointCount, (long)buffer.Length);
+
+            byte formatId = _header.PointDataFormatId;
+            long dataOffset = _header.OffsetToPointData;
+            int stride = _header.PointDataRecordLength;
+            double sx = _header.XScaleFactor, ox = _header.XOffset;
+            double sy = _header.YScaleFactor, oy = _header.YOffset;
+            double sz = _header.ZScaleFactor, oz = _header.ZOffset;
+
+            int numThreads = Environment.ProcessorCount;
+            long chunkSize = (count + numThreads - 1) / numThreads;
+
+            byte* basePtr = null;
+            _accessor.SafeMemoryMappedViewHandle.AcquirePointer(ref basePtr);
+            try
+            {
+                System.Threading.Tasks.Parallel.For(0, numThreads, t =>
+                {
+                    long start = t * chunkSize;
+                    long end = Math.Min(start + chunkSize, count);
+                    if (start >= end) return;
+
+                    byte* ptr = basePtr + dataOffset + start * stride;
+                    for (long i = start; i < end; i++, ptr += stride)
+                    {
+                        ReadOnlySpan<byte> span = new ReadOnlySpan<byte>(ptr, stride);
+                        buffer[i] = ParsePoint(span, formatId, sx, ox, sy, oy, sz, oz);
+                    }
+                });
+            }
+            finally
+            {
+                _accessor.SafeMemoryMappedViewHandle.ReleasePointer();
+            }
+
+            return count;
         }
 
         private static LasPoint ParsePoint(
