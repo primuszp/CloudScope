@@ -433,11 +433,11 @@ void main()
                         int mx = (int)MouseState.Position.X;
                         int my = (int)MouseState.Position.Y;
                         CurrentTool.OnMouseUp(mx, my);
-                        // For box tool: finalize 3D box from screen rect
-                        if (_activeToolType == SelectionToolType.Box && _boxTool.IsEditing)
+                        // For box tool: Phase is still Drawing after OnMouseUp (not Idle = valid rect)
+                        if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Drawing)
                         {
                             _boxTool.FinalizeBoxFromScreen(_cam);
-                            Console.WriteLine("Box placed — use handles, G/S/R, or scroll to edit. Enter to confirm.");
+                            Console.WriteLine("Box drawn — move mouse to set depth, click to confirm.");
                         }
                         else if (CurrentTool.IsEditing)
                             Console.WriteLine("Selection placed — G/S/R + drag to edit, Enter to confirm.");
