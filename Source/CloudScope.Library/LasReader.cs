@@ -142,11 +142,13 @@ namespace CloudScope.Library
         }
 
         /// <summary>
-        /// Fills a pre-allocated array using parallel threads and direct MMF pointer access.
-        /// Avoids the managed ReadArray copy overhead and uses all available CPU cores.
+        /// Fills a pre-allocated array with parsed points. Uses sequential I/O (one chunk at
+        /// a time) so the OS read-ahead prefetcher stays effective, then parses each chunk in
+        /// parallel across all CPU cores.  Prefer GetPoints() for streaming use-cases to avoid
+        /// allocating a large intermediate LasPoint[].
         /// Returns the number of points written.
         /// </summary>
-        public unsafe long FillBuffer(LasPoint[] buffer, long maxPoints = 0)
+        public long FillBuffer(LasPoint[] buffer, long maxPoints = 0)
         {
             long count = maxPoints > 0
                 ? Math.Min(maxPoints, Math.Min(PointCount, (long)buffer.Length))
@@ -159,30 +161,31 @@ namespace CloudScope.Library
             double sy = _header.YScaleFactor, oy = _header.YOffset;
             double sz = _header.ZScaleFactor, oz = _header.ZOffset;
 
-            int numThreads = Environment.ProcessorCount;
-            long chunkSize = (count + numThreads - 1) / numThreads;
+            // 128 K points per chunk — large enough for parallel parse to amortise overhead,
+            // small enough to stay in L3 cache and keep sequential I/O read-ahead happy.
+            const int ChunkPts = 1 << 17;
+            int rawSize = (int)Math.Min(ChunkPts, count) * stride;
+            byte[] raw = new byte[rawSize];
+            long processed = 0;
 
-            byte* basePtr = null;
-            _accessor.SafeMemoryMappedViewHandle.AcquirePointer(ref basePtr);
-            try
+            while (processed < count)
             {
-                System.Threading.Tasks.Parallel.For(0, numThreads, t =>
+                int batch = (int)Math.Min(count - processed, ChunkPts);
+                int batchBytes = batch * stride;
+
+                // Sequential read — lets the OS prefetch the next chunk while we parse this one.
+                _accessor.ReadArray(dataOffset + processed * stride, raw, 0, batchBytes);
+
+                // Parallel parse — pure CPU work, no I/O.
+                long procSnapshot = processed;
+                System.Threading.Tasks.Parallel.For(0, batch, i =>
                 {
-                    long start = t * chunkSize;
-                    long end = Math.Min(start + chunkSize, count);
-                    if (start >= end) return;
-
-                    byte* ptr = basePtr + dataOffset + start * stride;
-                    for (long i = start; i < end; i++, ptr += stride)
-                    {
-                        ReadOnlySpan<byte> span = new ReadOnlySpan<byte>(ptr, stride);
-                        buffer[i] = ParsePoint(span, formatId, sx, ox, sy, oy, sz, oz);
-                    }
+                    buffer[procSnapshot + i] = ParsePoint(
+                        raw.AsSpan(i * stride, stride),
+                        formatId, sx, ox, sy, oy, sz, oz);
                 });
-            }
-            finally
-            {
-                _accessor.SafeMemoryMappedViewHandle.ReleasePointer();
+
+                processed += batch;
             }
 
             return count;
