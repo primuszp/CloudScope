@@ -4,322 +4,375 @@ using OpenTK.Mathematics;
 
 namespace CloudScope.Selection
 {
+    public enum ToolPhase { Idle, Drawing, Extruding, Editing }
+
     /// <summary>
-    /// 3D Oriented Bounding Box selection tool with handle-based editing.
-    ///
-    /// Phase 1 (Placement): Draw 2D rectangle on screen → auto-creates 3D box
-    ///   aligned to camera view with depth from depth-buffer sampling.
-    /// Phase 2 (Editing): 15 interactive handles (6 face + 8 corner + 1 center)
-    ///   for direct manipulation, plus G/S/R keyboard shortcuts.
-    /// Enter to confirm, Escape to cancel.
+    /// 3-phase OBB selection tool.
+    ///   Phase 1 – Drawing:   drag to create 2D screen rectangle
+    ///   Phase 2 – Extruding: move mouse to set depth (click to confirm)
+    ///   Phase 3 – Editing:   6 face handles, 8 corner handles, 1 center handle,
+    ///                         3 rotation rings (local X/Y/Z)
     /// </summary>
     public sealed class BoxSelectionTool : ISelectionTool
     {
         public SelectionToolType ToolType => SelectionToolType.Box;
-        public bool IsActive { get; private set; }
-        public bool IsEditing { get; private set; }
-        public bool HasVolume => (IsActive || IsEditing) &&
-                                 HalfExtents.X > 1e-4f && HalfExtents.Y > 1e-4f && HalfExtents.Z > 1e-4f;
 
-        // ── OBB parameters (world-space) ──────────────────────────────────────
-        public Vector3 Center;
-        public Vector3 HalfExtents;
+        // ISelectionTool compat
+        public bool IsActive  => Phase == ToolPhase.Drawing;
+        public bool IsEditing => Phase == ToolPhase.Extruding || Phase == ToolPhase.Editing;
+        public bool HasVolume => Phase != ToolPhase.Idle && HalfExtents.LengthSquared > 1e-8f;
+
+        public ToolPhase Phase { get; private set; } = ToolPhase.Idle;
+
+        // ── OBB ──────────────────────────────────────────────────────────────
+        public Vector3    Center;
+        public Vector3    HalfExtents;
         public Quaternion Rotation = Quaternion.Identity;
 
-        // ── Placement state (screen-space 2D rectangle) ───────────────────────
-        public int StartX, StartY, EndX, EndY;  // screen pixels
-        private bool _placementDrag;
+        // ── Phase 1: Drawing ─────────────────────────────────────────────────
+        public int StartX, StartY, EndX, EndY;
 
-        // ── Handle system ─────────────────────────────────────────────────────
-        public const int HandleCount = 15;
-        public const int HoverNone = -1;
+        // ── Phase 2: Extruding ───────────────────────────────────────────────
+        private Vector3 _screenFaceCenter;   // world pos of the front face center (fixed)
+        private float   _worldPerPixel;      // lateral world units per screen pixel at front-face depth
+        private int     _extrudeRefY;        // screen Y at which extrude started
+
+        // ── Handle system ────────────────────────────────────────────────────
+        // 0-5:  face centers (-X,+X,-Y,+Y,-Z,+Z)
+        // 6-13: corners
+        // 14:   center
+        // 15-17: rotation rings (local X, Y, Z)
+        public const int HandleCount = 18;
+        public const int HoverNone   = -1;
         public int HoveredHandle = HoverNone;
 
-        /// <summary>Handle local positions in OBB space (range -1 to +1).</summary>
-        public static readonly Vector3[] HandleLocalPos =
+        public static readonly Vector3[] HandleLocalPos = new Vector3[15];
+        static BoxSelectionTool()
         {
-            // 0-5: Face centers
-            new(-1, 0, 0), // 0 FaceLeft   (-X)
-            new( 1, 0, 0), // 1 FaceRight  (+X)
-            new( 0,-1, 0), // 2 FaceBottom (-Y)
-            new( 0, 1, 0), // 3 FaceTop    (+Y)
-            new( 0, 0,-1), // 4 FaceNear   (-Z)
-            new( 0, 0, 1), // 5 FaceFar    (+Z)
-            // 6-13: Corners
-            new(-1,-1,-1), new( 1,-1,-1), new(-1, 1,-1), new( 1, 1,-1),
-            new(-1,-1, 1), new( 1,-1, 1), new(-1, 1, 1), new( 1, 1, 1),
-            // 14: Center
-            new( 0, 0, 0),
-        };
+            HandleLocalPos[0]  = new(-1, 0, 0);  HandleLocalPos[1]  = new( 1, 0, 0);
+            HandleLocalPos[2]  = new( 0,-1, 0);  HandleLocalPos[3]  = new( 0, 1, 0);
+            HandleLocalPos[4]  = new( 0, 0,-1);  HandleLocalPos[5]  = new( 0, 0, 1);
+            HandleLocalPos[6]  = new(-1,-1,-1);   HandleLocalPos[7]  = new( 1,-1,-1);
+            HandleLocalPos[8]  = new(-1, 1,-1);   HandleLocalPos[9]  = new( 1, 1,-1);
+            HandleLocalPos[10] = new(-1,-1, 1);   HandleLocalPos[11] = new( 1,-1, 1);
+            HandleLocalPos[12] = new(-1, 1, 1);   HandleLocalPos[13] = new( 1, 1, 1);
+            HandleLocalPos[14] = Vector3.Zero;
+        }
 
-        public static bool IsFaceHandle(int i) => i >= 0 && i <= 5;
-        public static bool IsCornerHandle(int i) => i >= 6 && i <= 13;
+        public static bool IsFaceHandle(int i)  => i >= 0  && i <= 5;
+        public static bool IsCornerHandle(int i) => i >= 6  && i <= 13;
         public static bool IsCenterHandle(int i) => i == 14;
+        public static bool IsRingHandle(int i)   => i >= 15 && i <= 17;
+        public static int  RingAxis(int i)        => i - 15; // 0=X, 1=Y, 2=Z
 
-        // ── Edit state ────────────────────────────────────────────────────────
-        private EditAction _action = EditAction.None;
-        private int _axis = -1;
-        private int _activeHandle = HoverNone;
-        private int _editStartX, _editStartY;
-        private float _editViewZ;  // cached view-space depth for smooth dragging
-        private Vector3 _editStartCenter;
-        private Vector3 _editStartExtents;
+        // ── Edit state ───────────────────────────────────────────────────────
+        private int        _activeHandle     = HoverNone;
+        private int        _editStartX, _editStartY;
+        private float      _editViewZ;
+        private Vector3    _editStartCenter;
+        private Vector3    _editStartExtents;
         private Quaternion _editStartRotation;
+        private float      _ringStartAngle;  // screen-angle at ring drag start
 
-        // ── Phase 1: Placement (2D screen rectangle) ──────────────────────────
+        // G/S/R keyboard edit state
+        private EditAction _kbAction = EditAction.None;
+        private int        _kbAxis   = -1;
+
+        // ────────────────────────────────────────────────────────────────────
+        // Phase 1: Drawing
+        // ────────────────────────────────────────────────────────────────────
 
         public void OnMouseDown(int mx, int my, OrbitCamera camera)
         {
             StartX = EndX = mx;
             StartY = EndY = my;
-            _placementDrag = true;
-            IsActive = true;
-            IsEditing = false;
+            Phase = ToolPhase.Drawing;
             HalfExtents = Vector3.Zero;
+            Rotation = Quaternion.Identity;
         }
 
         public void OnMouseMove(int mx, int my, OrbitCamera camera)
         {
-            if (!_placementDrag) return;
-            EndX = mx;
-            EndY = my;
+            if (Phase == ToolPhase.Drawing) { EndX = mx; EndY = my; }
         }
 
         public void OnMouseUp(int mx, int my)
         {
-            if (!_placementDrag) return;
-            EndX = mx;
-            EndY = my;
-            _placementDrag = false;
-            IsActive = false;
-
-            // Need minimum size (at least 5 pixels)
+            if (Phase != ToolPhase.Drawing) return;
+            EndX = mx; EndY = my;
             if (Math.Abs(EndX - StartX) < 5 && Math.Abs(EndY - StartY) < 5)
-                return;
-
-            // Box creation will be finalized by FinalizeBoxFromScreen()
-            // called from PointCloudViewer after mouse-up
-            IsEditing = true;
+                Phase = ToolPhase.Idle;
+            // FinalizeBoxFromScreen called by viewer after this
         }
 
-        /// <summary>
-        /// Creates the 3D box from the screen rectangle, aligned to the camera view.
-        /// Must be called after OnMouseUp while the GL context is active.
-        /// </summary>
         public void FinalizeBoxFromScreen(OrbitCamera cam)
         {
             int x0 = Math.Min(StartX, EndX), x1 = Math.Max(StartX, EndX);
             int y0 = Math.Min(StartY, EndY), y1 = Math.Max(StartY, EndY);
-            int cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+            int cxs = (x0 + x1) / 2, cys = (y0 + y1) / 2;
 
-            // Sample depth at center of rectangle
-            var (centerWorld, centerHit) = cam.ScreenToWorldPoint(cx, cy, 11);
+            var (centerWorld, _) = cam.ScreenToWorldPoint(cxs, cys, 11);
             float refViewZ = cam.WorldToViewZ(centerWorld);
 
-            // Sample depth at edges and corners for depth range
-            float minViewZ = refViewZ, maxViewZ = refViewZ;
-            int[] sampleXs = { x0, cx, x1, x0, x1, x0, cx, x1 };
-            int[] sampleYs = { y0, y0, y0, cy, cy, y1, y1, y1 };
-            for (int i = 0; i < sampleXs.Length; i++)
-            {
-                var (pt, hit) = cam.ScreenToWorldPoint(sampleXs[i], sampleYs[i], 5);
-                if (hit)
-                {
-                    float vz = cam.WorldToViewZ(pt);
-                    if (vz < minViewZ) minViewZ = vz;
-                    if (vz > maxViewZ) maxViewZ = vz;
-                }
-            }
-
-            // Get world-space corners at reference depth
             Vector3 topLeft  = cam.ScreenToWorldAtDepth(x0, y0, refViewZ);
             Vector3 topRight = cam.ScreenToWorldAtDepth(x1, y0, refViewZ);
             Vector3 botLeft  = cam.ScreenToWorldAtDepth(x0, y1, refViewZ);
 
-            // Box orientation from camera view axes
-            Vector3 axisX = (topRight - topLeft);
-            Vector3 axisY = (topLeft - botLeft);
+            Vector3 axisX = topRight - topLeft;
+            Vector3 axisY = topLeft  - botLeft;
             float halfW = axisX.Length * 0.5f;
             float halfH = axisY.Length * 0.5f;
 
-            if (halfW < 0.001f || halfH < 0.001f)
-            {
-                IsEditing = false;
-                return;
-            }
+            if (halfW < 0.001f || halfH < 0.001f) { Phase = ToolPhase.Idle; return; }
 
             axisX.Normalize();
             axisY.Normalize();
             Vector3 axisZ = Vector3.Cross(axisX, axisY).Normalized();
-            // Re-orthogonalize Y to ensure a proper orthonormal basis
             axisY = Vector3.Cross(axisZ, axisX).Normalized();
 
-            // Build rotation: in row-major convention (v * M), rows are the transformed basis
-            // Row0 = where local X maps to in world = axisX
-            // Row1 = where local Y maps to in world = axisY
-            // Row2 = where local Z maps to in world = axisZ
+            // Build rotation: in OpenTK row-major convention, rows map local→world axes
             Matrix3 rotMat = new Matrix3(axisX, axisY, axisZ);
             Rotation = Quaternion.FromMatrix(rotMat);
             Rotation.Normalize();
 
-            // Verify round-trip: quaternion→matrix should reproduce the same rotation
-            Matrix3 check = Matrix3.CreateFromQuaternion(Rotation);
-            Console.WriteLine($"Box created: extents=({halfW:F2},{halfH:F2}), rot check dot={Vector3.Dot(check.Row0, axisX):F4}");
+            _screenFaceCenter = cam.ScreenToWorldAtDepth(cxs, cys, refViewZ);
+            _worldPerPixel    = cam.ScreenToWorldRadius(_screenFaceCenter, cxs + 1, cys);
+            _extrudeRefY      = cys; // reference: center of drawn rect
 
-            // Depth extent from depth samples
-            float depthRange = Math.Abs(maxViewZ - minViewZ);
-            float halfD = Math.Max(depthRange * 0.5f, Math.Max(halfW, halfH) * 0.3f);
-
-            // Center at the midpoint of the depth range
-            float midViewZ = (minViewZ + maxViewZ) * 0.5f;
-            Center = cam.ScreenToWorldAtDepth(cx, cy, midViewZ);
-
-            HalfExtents = new Vector3(halfW, halfH, halfD);
+            Center      = _screenFaceCenter;
+            HalfExtents = new Vector3(halfW, halfH, 0.001f);
+            Phase       = ToolPhase.Extruding;
         }
 
-        // ── Phase 2: Handle interaction ───────────────────────────────────────
+        // ────────────────────────────────────────────────────────────────────
+        // Phase 2: Extruding
+        // ────────────────────────────────────────────────────────────────────
 
-        /// <summary>
-        /// Test which handle is under the mouse cursor. Returns handle index or HoverNone.
-        /// </summary>
+        public void UpdateExtrude(int mx, int my)
+        {
+            if (Phase != ToolPhase.Extruding) return;
+            int dy = _extrudeRefY - my;         // move up = deeper
+            float halfD = Math.Max(Math.Abs(dy) * _worldPerPixel, 0.001f);
+
+            // Extend along local Z (the camera view-Z axis of the drawn rect).
+            // Front face stays at _screenFaceCenter, back face moves.
+            // Center = frontFace + localZ * halfD
+            Matrix3 invRot = Matrix3.Transpose(Matrix3.CreateFromQuaternion(Rotation));
+            Vector3 worldZ  = invRot * Vector3.UnitZ;   // local +Z in world
+            Center      = _screenFaceCenter + worldZ * halfD;
+            HalfExtents = new Vector3(HalfExtents.X, HalfExtents.Y, halfD);
+        }
+
+        public void ConfirmExtrude()
+        {
+            if (Phase == ToolPhase.Extruding) Phase = ToolPhase.Editing;
+        }
+
+        // ────────────────────────────────────────────────────────────────────
+        // Phase 3: Handle interaction
+        // ────────────────────────────────────────────────────────────────────
+
         public int HitTestHandles(int mx, int my, OrbitCamera cam, float threshold = 12f)
         {
-            int best = HoverNone;
+            if (Phase != ToolPhase.Editing) return HoverNone;
+
+            int   best     = HoverNone;
             float bestDist = threshold;
 
-            for (int i = 0; i < HandleCount; i++)
+            // Face / corner / center handles
+            for (int i = 0; i < 15; i++)
             {
-                Vector3 worldPos = HandleWorldPosition(i);
-                var (sx, sy, behind) = cam.WorldToScreen(worldPos);
+                var (sx, sy, behind) = cam.WorldToScreen(HandleWorldPosition(i));
                 if (behind) continue;
-
-                float dist = MathF.Sqrt((sx - mx) * (sx - mx) + (sy - my) * (sy - my));
-                if (dist < bestDist)
-                {
-                    bestDist = dist;
-                    best = i;
-                }
+                float d = MathF.Sqrt((sx - mx) * (sx - mx) + (sy - my) * (sy - my));
+                if (d < bestDist) { bestDist = d; best = i; }
             }
+
+            // Rotation ring handles
+            for (int r = 0; r < 3; r++)
+            {
+                float d = RingScreenDistance(r, mx, my, cam);
+                if (d < bestDist) { bestDist = d; best = 15 + r; }
+            }
+
             return best;
         }
 
-        /// <summary>World-space position of handle i, computed via the model matrix
-        /// to guarantee exact alignment with the wireframe.</summary>
         public Vector3 HandleWorldPosition(int i)
         {
+            if (i >= 15) return Center;
             Matrix4 model = GetModelMatrix();
             Vector4 wp = new Vector4(HandleLocalPos[i], 1f) * model;
             return wp.Xyz;
         }
 
-        /// <summary>Start dragging a specific handle.</summary>
         public void BeginHandleDrag(int handleIdx, int mx, int my, OrbitCamera cam)
         {
-            _activeHandle = handleIdx;
-            _editStartX = mx; _editStartY = my;
-            _editStartCenter = Center;
-            _editStartExtents = HalfExtents;
-            _editViewZ = cam.WorldToViewZ(HandleWorldPosition(handleIdx));
+            _activeHandle      = handleIdx;
+            _editStartX        = mx;
+            _editStartY        = my;
+            _editStartCenter   = Center;
+            _editStartExtents  = HalfExtents;
+            _editStartRotation = Rotation;
+
+            if (IsRingHandle(handleIdx))
+            {
+                var (cx, cy, _) = cam.WorldToScreen(Center);
+                _ringStartAngle = MathF.Atan2(my - cy, mx - cx);
+            }
+            else
+            {
+                _editViewZ = cam.WorldToViewZ(HandleWorldPosition(handleIdx));
+            }
         }
 
-        /// <summary>Update handle drag.</summary>
         public void UpdateHandleDrag(int mx, int my, OrbitCamera cam)
         {
             if (_activeHandle == HoverNone) return;
 
-            // Get world delta from mouse movement at consistent depth
+            if (IsRingHandle(_activeHandle))
+            {
+                UpdateRingDrag(mx, my, cam);
+                return;
+            }
+
             Vector3 startWorld = cam.ScreenToWorldAtDepth(_editStartX, _editStartY, _editViewZ);
-            Vector3 curWorld = cam.ScreenToWorldAtDepth(mx, my, _editViewZ);
+            Vector3 curWorld   = cam.ScreenToWorldAtDepth(mx, my, _editViewZ);
             Vector3 worldDelta = curWorld - startWorld;
 
             if (IsCenterHandle(_activeHandle))
             {
-                // Move the entire box
                 Center = _editStartCenter + worldDelta;
+                return;
             }
-            else
+
+            // rotMat * v = world→local;  invRotMat * v = local→world
+            Matrix3 rotMat    = Matrix3.CreateFromQuaternion(Rotation);
+            Matrix3 invRotMat = Matrix3.Transpose(rotMat);
+            Vector3 localDelta = rotMat * worldDelta;
+
+            if (IsFaceHandle(_activeHandle))
             {
-                // OpenTK Matrix3 * Vector3 does column-vector multiplication:
-                //   rotMat * v  → projects v onto each row (world→local)
-                //   invRotMat * v (= rotMat^T * v) → expresses local v in world coords (local→world)
-                Matrix3 rotMat    = Matrix3.CreateFromQuaternion(Rotation);
-                Matrix3 invRotMat = Matrix3.Transpose(rotMat);
+                int   faceAxis = _activeHandle / 2;
+                float sign     = (_activeHandle % 2 == 0) ? -1f : 1f;
 
-                // World delta → local delta: project world movement onto box axes
-                Vector3 localDelta = rotMat * worldDelta;
-
-                if (IsFaceHandle(_activeHandle))
+                float axisDelta = faceAxis switch
                 {
-                    // Single-axis resize: move one face, opposite face stays fixed
-                    int faceAxis = _activeHandle / 2;  // 0,1→X  2,3→Y  4,5→Z
-                    float sign = (_activeHandle % 2 == 0) ? -1f : 1f; // even=negative, odd=positive face
+                    0 => localDelta.X * sign,
+                    1 => localDelta.Y * sign,
+                    _ => localDelta.Z * sign,
+                };
 
-                    float axisDelta = faceAxis switch
-                    {
-                        0 => localDelta.X * sign,
-                        1 => localDelta.Y * sign,
-                        _ => localDelta.Z * sign,
-                    };
+                float newExtent    = Math.Max(_editStartExtents[faceAxis] + axisDelta * 0.5f, 0.01f);
+                float extentChange = newExtent - _editStartExtents[faceAxis];
 
-                    float newExtent = Math.Max(_editStartExtents[faceAxis] + axisDelta * 0.5f, 0.01f);
-                    float extentChange = newExtent - _editStartExtents[faceAxis];
-
-                    // Update extent
-                    HalfExtents = faceAxis switch
-                    {
-                        0 => new Vector3(newExtent, _editStartExtents.Y, _editStartExtents.Z),
-                        1 => new Vector3(_editStartExtents.X, newExtent, _editStartExtents.Z),
-                        _ => new Vector3(_editStartExtents.X, _editStartExtents.Y, newExtent),
-                    };
-
-                    // Shift center so opposite face stays in place (local→world)
-                    Vector3 localAxisDir = faceAxis switch
-                    {
-                        0 => Vector3.UnitX, 1 => Vector3.UnitY, _ => Vector3.UnitZ
-                    };
-                    Vector3 worldAxisDir = invRotMat * localAxisDir;
-                    Center = _editStartCenter + worldAxisDir * (sign * extentChange);
-                }
-                else // Corner handle
+                HalfExtents = faceAxis switch
                 {
-                    // Corner resize: 3-axis resize, opposite corner stays fixed
-                    Vector3 cornerSign = HandleLocalPos[_activeHandle]; // (±1, ±1, ±1)
-                    float dex = localDelta.X * cornerSign.X;
-                    float dey = localDelta.Y * cornerSign.Y;
-                    float dez = localDelta.Z * cornerSign.Z;
+                    0 => new(newExtent, _editStartExtents.Y, _editStartExtents.Z),
+                    1 => new(_editStartExtents.X, newExtent, _editStartExtents.Z),
+                    _ => new(_editStartExtents.X, _editStartExtents.Y, newExtent),
+                };
 
-                    Vector3 newExtents = new Vector3(
-                        Math.Max(_editStartExtents.X + dex * 0.5f, 0.01f),
-                        Math.Max(_editStartExtents.Y + dey * 0.5f, 0.01f),
-                        Math.Max(_editStartExtents.Z + dez * 0.5f, 0.01f));
+                Vector3 localAxis = faceAxis switch { 0 => Vector3.UnitX, 1 => Vector3.UnitY, _ => Vector3.UnitZ };
+                Center = _editStartCenter + invRotMat * localAxis * (sign * extentChange);
+            }
+            else // corner
+            {
+                Vector3 cs  = HandleLocalPos[_activeHandle]; // (±1,±1,±1)
+                Vector3 de  = new(localDelta.X * cs.X, localDelta.Y * cs.Y, localDelta.Z * cs.Z);
 
-                    Vector3 extentChange = newExtents - _editStartExtents;
-                    HalfExtents = newExtents;
+                Vector3 newExt = new(
+                    Math.Max(_editStartExtents.X + de.X * 0.5f, 0.01f),
+                    Math.Max(_editStartExtents.Y + de.Y * 0.5f, 0.01f),
+                    Math.Max(_editStartExtents.Z + de.Z * 0.5f, 0.01f));
 
-                    // Shift center so opposite corner stays fixed (local→world)
-                    Vector3 localShift = new Vector3(
-                        cornerSign.X * extentChange.X,
-                        cornerSign.Y * extentChange.Y,
-                        cornerSign.Z * extentChange.Z);
-                    Center = _editStartCenter + invRotMat * localShift;
-                }
+                Vector3 shift = newExt - _editStartExtents;
+                HalfExtents   = newExt;
+                Center        = _editStartCenter + invRotMat * new Vector3(cs.X * shift.X, cs.Y * shift.Y, cs.Z * shift.Z);
             }
         }
 
-        /// <summary>End handle drag.</summary>
-        public void EndHandleDrag()
+        private void UpdateRingDrag(int mx, int my, OrbitCamera cam)
         {
-            _activeHandle = HoverNone;
+            var (cx, cy, _) = cam.WorldToScreen(Center);
+            float currentAngle = MathF.Atan2(my - cy, mx - cx);
+            float delta = currentAngle - _ringStartAngle;
+
+            // Normalize to [-π, π]
+            while (delta >  MathF.PI) delta -= MathF.Tau;
+            while (delta < -MathF.PI) delta += MathF.Tau;
+
+            int axis = RingAxis(_activeHandle);
+            Matrix3 invRot    = Matrix3.Transpose(Matrix3.CreateFromQuaternion(_editStartRotation));
+            Vector3 localAxis = axis switch { 0 => Vector3.UnitX, 1 => Vector3.UnitY, _ => Vector3.UnitZ };
+            Vector3 worldAxis = invRot * localAxis;
+
+            // Flip when axis points away from camera (right-hand rule with Y-down screen)
+            if (Vector3.Dot(worldAxis, cam.CameraForward) > 0f) delta = -delta;
+
+            Rotation = _editStartRotation * Quaternion.FromAxisAngle(worldAxis.Normalized(), delta);
+            Rotation.Normalize();
         }
 
+        public void EndHandleDrag()  => _activeHandle = HoverNone;
         public bool IsHandleDragging => _activeHandle != HoverNone;
 
-        // ── ISelectionTool: G/S/R keyboard editing (kept for convenience) ─────
+        // Distance from mouse to projected ring arc (for hit-testing)
+        public float RingScreenDistance(int axis, int mx, int my, OrbitCamera cam)
+        {
+            const int N      = 32;
+            float     radius = RingRadius;
+
+            Matrix3 invRot = Matrix3.Transpose(Matrix3.CreateFromQuaternion(Rotation));
+
+            float minDist  = float.MaxValue;
+            float prevSx = 0, prevSy = 0;
+            bool  prevOk = false;
+
+            for (int j = 0; j <= N; j++)
+            {
+                float theta = j * MathF.Tau / N;
+                float ct = MathF.Cos(theta), st = MathF.Sin(theta);
+
+                Vector3 local = axis switch
+                {
+                    0 => new Vector3(0, ct, st),
+                    1 => new Vector3(ct, 0, st),
+                    _ => new Vector3(ct, st, 0),
+                } * radius;
+
+                Vector3 world = Center + invRot * local;
+                var (sx, sy, behind) = cam.WorldToScreen(world);
+
+                if (!behind && prevOk)
+                {
+                    float d = PointToSegmentDist(mx, my, prevSx, prevSy, sx, sy);
+                    if (d < minDist) minDist = d;
+                }
+                prevSx = sx; prevSy = sy; prevOk = !behind;
+            }
+            return minDist;
+        }
+
+        private static float PointToSegmentDist(float px, float py,
+                                                 float ax, float ay, float bx, float by)
+        {
+            float dx = bx - ax, dy = by - ay;
+            float lenSq = dx * dx + dy * dy;
+            if (lenSq < 1e-6f) return MathF.Sqrt((px - ax) * (px - ax) + (py - ay) * (py - ay));
+            float t  = Math.Clamp(((px - ax) * dx + (py - ay) * dy) / lenSq, 0f, 1f);
+            float qx = ax + t * dx - px, qy = ay + t * dy - py;
+            return MathF.Sqrt(qx * qx + qy * qy);
+        }
+
+        // ────────────────────────────────────────────────────────────────────
+        // G/S/R keyboard editing (kept for convenience)
+        // ────────────────────────────────────────────────────────────────────
 
         public void BeginGrab(int mx, int my, OrbitCamera camera)
         {
             if (!IsEditing) return;
-            _action = EditAction.Grab;
+            _kbAction = EditAction.Grab;
             _editStartX = mx; _editStartY = my;
             _editStartCenter = Center;
             _editViewZ = camera.WorldToViewZ(Center);
@@ -328,16 +381,16 @@ namespace CloudScope.Selection
         public void BeginScale(int mx, int my, OrbitCamera camera)
         {
             if (!IsEditing) return;
-            _action = EditAction.Scale;
-            _editStartX = mx; _editStartY = my;
+            _kbAction = EditAction.Scale;
+            _editStartX = mx;
             _editStartExtents = HalfExtents;
         }
 
         public void BeginRotate(int mx, int my, OrbitCamera camera)
         {
             if (!IsEditing) return;
-            _action = EditAction.Rotate;
-            _editStartX = mx; _editStartY = my;
+            _kbAction = EditAction.Rotate;
+            _editStartX = mx;
             _editStartRotation = Rotation;
         }
 
@@ -346,88 +399,104 @@ namespace CloudScope.Selection
             if (!IsEditing) return;
             int dx = mx - _editStartX;
 
-            switch (_action)
+            switch (_kbAction)
             {
                 case EditAction.Grab:
                 {
-                    Vector3 startW = camera.ScreenToWorldAtDepth(_editStartX, _editStartY, _editViewZ);
-                    Vector3 curW = camera.ScreenToWorldAtDepth(mx, my, _editViewZ);
-                    Vector3 delta = curW - startW;
-                    if (_axis >= 0)
+                    Vector3 s = camera.ScreenToWorldAtDepth(_editStartX, _editStartY, _editViewZ);
+                    Vector3 c = camera.ScreenToWorldAtDepth(mx, my, _editViewZ);
+                    Vector3 d = c - s;
+                    if (_kbAxis >= 0)
                     {
-                        Vector3 mask = _axis switch { 0 => Vector3.UnitX, 1 => Vector3.UnitY, _ => Vector3.UnitZ };
-                        delta = mask * Vector3.Dot(delta, mask);
+                        Vector3 m = _kbAxis switch { 0 => Vector3.UnitX, 1 => Vector3.UnitY, _ => Vector3.UnitZ };
+                        d = m * Vector3.Dot(d, m);
                     }
-                    Center = _editStartCenter + delta;
+                    Center = _editStartCenter + d;
                     break;
                 }
                 case EditAction.Scale:
                 {
-                    float factor = MathF.Max(1f + dx * 0.005f, 0.05f);
-                    if (_axis < 0)
-                        HalfExtents = _editStartExtents * factor;
+                    float f = MathF.Max(1f + dx * 0.005f, 0.05f);
+                    if (_kbAxis < 0)
+                    {
+                        HalfExtents = _editStartExtents * f;
+                    }
                     else
                     {
-                        HalfExtents = _editStartExtents;
-                        float val = MathF.Max(_editStartExtents[_axis] * factor, 0.01f);
-                        HalfExtents = _axis switch
+                        float v = MathF.Max(_editStartExtents[_kbAxis] * f, 0.01f);
+                        HalfExtents = _kbAxis switch
                         {
-                            0 => new Vector3(val, HalfExtents.Y, HalfExtents.Z),
-                            1 => new Vector3(HalfExtents.X, val, HalfExtents.Z),
-                            _ => new Vector3(HalfExtents.X, HalfExtents.Y, val),
+                            0 => new(v, _editStartExtents.Y, _editStartExtents.Z),
+                            1 => new(_editStartExtents.X, v, _editStartExtents.Z),
+                            _ => new(_editStartExtents.X, _editStartExtents.Y, v),
                         };
                     }
                     break;
                 }
                 case EditAction.Rotate:
                 {
-                    float angle = dx * 0.5f * MathF.PI / 180f;
-                    Vector3 rotAxis = _axis switch
-                    {
-                        0 => Vector3.UnitX, 1 => Vector3.UnitY, _ => Vector3.UnitZ,
-                    };
-                    Rotation = _editStartRotation * Quaternion.FromAxisAngle(rotAxis, angle);
+                    float   angle = dx * 0.5f * MathF.PI / 180f;
+                    Vector3 ax    = _kbAxis switch { 0 => Vector3.UnitX, 1 => Vector3.UnitY, _ => Vector3.UnitZ };
+                    Rotation = _editStartRotation * Quaternion.FromAxisAngle(ax, angle);
                     Rotation.Normalize();
                     break;
                 }
             }
         }
 
-        public void EndEdit()
-        {
-            _action = EditAction.None;
-            _axis = -1;
-        }
+        public void EndEdit() { _kbAction = EditAction.None; _kbAxis = -1; }
 
         public void AdjustScale(float delta)
         {
             if (!IsEditing) return;
-            float factor = MathF.Max(1f + delta * 0.08f, 0.05f);
-            if (_axis < 0) HalfExtents *= factor;
+            // In extruding phase: wheel adjusts depth
+            if (Phase == ToolPhase.Extruding)
+            {
+                float halfD = Math.Max(HalfExtents.Z * MathF.Max(1f + delta * 0.15f, 0.05f), 0.001f);
+                Matrix3 invRot = Matrix3.Transpose(Matrix3.CreateFromQuaternion(Rotation));
+                Vector3 worldZ = invRot * Vector3.UnitZ;
+                Center      = _screenFaceCenter + worldZ * halfD;
+                HalfExtents = new Vector3(HalfExtents.X, HalfExtents.Y, halfD);
+                return;
+            }
+            float fac = MathF.Max(1f + delta * 0.08f, 0.05f);
+            if (_kbAxis < 0)
+            {
+                HalfExtents *= fac;
+            }
             else
             {
-                float val = MathF.Max(HalfExtents[_axis] * factor, 0.01f);
-                HalfExtents = _axis switch
+                float v = MathF.Max(HalfExtents[_kbAxis] * fac, 0.01f);
+                HalfExtents = _kbAxis switch
                 {
-                    0 => new Vector3(val, HalfExtents.Y, HalfExtents.Z),
-                    1 => new Vector3(HalfExtents.X, val, HalfExtents.Z),
-                    _ => new Vector3(HalfExtents.X, HalfExtents.Y, val),
+                    0 => new(v, HalfExtents.Y, HalfExtents.Z),
+                    1 => new(HalfExtents.X, v, HalfExtents.Z),
+                    _ => new(HalfExtents.X, HalfExtents.Y, v),
                 };
             }
         }
 
-        public void SetAxisConstraint(int axis) => _axis = axis;
+        public void SetAxisConstraint(int axis) => _kbAxis = axis;
 
-        public void Confirm() { IsEditing = false; IsActive = false; }
+        public void Confirm()
+        {
+            // If called during extrude, confirm extrude first then apply label
+            if (Phase == ToolPhase.Extruding) Phase = ToolPhase.Editing;
+            Phase = ToolPhase.Idle;
+        }
 
         public void Cancel()
         {
-            IsActive = false; IsEditing = false; _placementDrag = false;
-            _action = EditAction.None; _axis = -1; _activeHandle = HoverNone;
+            Phase = ToolPhase.Idle;
             HalfExtents = Vector3.Zero;
+            _activeHandle = HoverNone;
+            _kbAction = EditAction.None;
+            _kbAxis   = -1;
         }
 
-        // ── Selection resolution ──────────────────────────────────────────────
+        // ────────────────────────────────────────────────────────────────────
+        // Selection resolution
+        // ────────────────────────────────────────────────────────────────────
 
         public HashSet<int> ResolveSelection(PointData[] points, OrbitCamera camera, int vpW, int vpH)
         {
@@ -435,10 +504,9 @@ namespace CloudScope.Selection
             if (HalfExtents.X < 1e-4f || HalfExtents.Y < 1e-4f || HalfExtents.Z < 1e-4f)
                 return result;
 
-            // rotMat * v = world→local (rows are box axes; dot-products project v onto each axis)
             Matrix3 rotMat = Matrix3.CreateFromQuaternion(Rotation);
             float hx = HalfExtents.X, hy = HalfExtents.Y, hz = HalfExtents.Z;
-            float cx = Center.X, cy = Center.Y, cz = Center.Z;
+            float cx = Center.X,      cy = Center.Y,       cz = Center.Z;
 
             for (int i = 0; i < points.Length; i++)
             {
@@ -449,16 +517,19 @@ namespace CloudScope.Selection
             return result;
         }
 
-        // ── Helpers for renderer ──────────────────────────────────────────────
+        // ────────────────────────────────────────────────────────────────────
+        // Renderer helpers
+        // ────────────────────────────────────────────────────────────────────
 
-        public EditAction CurrentAction => _activeHandle != HoverNone ? EditAction.Grab : _action;
-        public int AxisConstraint => _axis;
+        public EditAction CurrentAction   => _kbAction;
+        public int        AxisConstraint  => _kbAxis;
+        public Vector3    ScreenFaceCenter => _screenFaceCenter;
 
-        public Matrix4 GetModelMatrix()
-        {
-            return Matrix4.CreateScale(HalfExtents)
-                 * Matrix4.CreateFromQuaternion(Rotation)
-                 * Matrix4.CreateTranslation(Center);
-        }
+        public float RingRadius => MathF.Max(MathF.Max(HalfExtents.X, HalfExtents.Y), HalfExtents.Z) * 1.3f;
+
+        public Matrix4 GetModelMatrix() =>
+            Matrix4.CreateScale(HalfExtents)
+          * Matrix4.CreateFromQuaternion(Rotation)
+          * Matrix4.CreateTranslation(Center);
     }
 }

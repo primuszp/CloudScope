@@ -620,8 +620,12 @@ namespace CloudScope
 
         // ── Selection helpers ─────────────────────────────────────────────────
 
-        /// <summary>Camera right axis in world space (used for sphere radius gizmo).</summary>
-        public Vector3 CameraRight => new(_vtw.M11, _vtw.M21, _vtw.M31);
+        /// <summary>Camera right axis in world space.</summary>
+        public Vector3 CameraRight   => new(_vtw.M11, _vtw.M21, _vtw.M31);
+        /// <summary>Camera up axis in world space.</summary>
+        public Vector3 CameraUp      => new(_vtw.M12, _vtw.M22, _vtw.M32);
+        /// <summary>Camera forward direction in world space (into the scene).</summary>
+        public Vector3 CameraForward => new(-_vtw.M13, -_vtw.M23, -_vtw.M33);
 
         /// <summary>
         /// Picks the closest world-space point under a screen pixel using depth buffer.

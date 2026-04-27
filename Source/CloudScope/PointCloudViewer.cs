@@ -344,8 +344,16 @@ void main()
             {
                 if (_mode == InteractionMode.Label)
                 {
-                    // Priority 1: Handle click (box tool in editing mode)
-                    if (_activeToolType == SelectionToolType.Box && _boxTool.IsEditing)
+                    // Priority 0: Confirm extrude phase → enter editing
+                    if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Extruding)
+                    {
+                        _boxTool.ConfirmExtrude();
+                        Console.WriteLine("Extrude confirmed — drag handles or rotation rings to adjust. Enter to label.");
+                        return;
+                    }
+
+                    // Priority 1: Handle/ring click (box tool in editing phase only)
+                    if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Editing)
                     {
                         int handle = _boxTool.HitTestHandles(mx, my, _cam);
                         if (handle != BoxSelectionTool.HoverNone)
@@ -450,7 +458,13 @@ void main()
 
             if (_mode == InteractionMode.Label)
             {
-                // Handle drag (box tool)
+                // Extrude phase: mouse Y controls depth (no button needed)
+                if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Extruding)
+                {
+                    _boxTool.UpdateExtrude(mx, my);
+                }
+
+                // Handle / ring drag (box tool editing phase)
                 if (_activeToolType == SelectionToolType.Box && _boxTool.IsHandleDragging)
                 {
                     _boxTool.UpdateHandleDrag(mx, my, _cam);
@@ -465,12 +479,12 @@ void main()
                 {
                     CurrentTool.OnMouseMove(mx, my, _cam);
                 }
-                // Hover detection (update handle highlight)
-                else if (_activeToolType == SelectionToolType.Box && _boxTool.IsEditing)
+                // Hover detection (handles + rings) — editing phase only
+                else if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Editing)
                 {
                     _boxTool.HoveredHandle = _boxTool.HitTestHandles(mx, my, _cam);
                 }
-                // Pan via right/middle
+                // Pan via right/middle (always available in label mode)
                 else if (_rightDown || _middleDown)
                 {
                     _cam.Pan(_lastMX, _lastMY, mx, my);
