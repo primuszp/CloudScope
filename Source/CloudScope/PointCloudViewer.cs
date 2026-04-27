@@ -352,19 +352,14 @@ void main()
                         _boxTool.OnMouseDown(mx, my, _cam);
                         toolConsumed = true;
                     }
-                    // Drawing: continue drawing (IsActive = Phase==Drawing)
+                    // Drawing in progress: block orbit
                     else if (CurrentTool.IsActive)
                     {
-                        toolConsumed = true; // drawing in progress, no orbit
-                    }
-                    // Extruding: click confirms extrude → editing phase
-                    else if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Extruding)
-                    {
-                        _boxTool.ConfirmExtrude();
-                        Console.WriteLine("Box ready — drag handles or rings to adjust. Enter to label.");
                         toolConsumed = true;
                     }
-                    // Editing: click on handle/ring starts drag; otherwise fall through to orbit
+                    // Extruding: camera is FREE — no click-consume here
+                    // (depth set by scroll, confirmed by Enter)
+                    // Editing: click on handle/ring → drag; otherwise orbit
                     else if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Editing)
                     {
                         int handle = _boxTool.HitTestHandles(mx, my, _cam);
@@ -388,11 +383,13 @@ void main()
                     }
                 }
 
-                // Orbit: always active unless tool consumed the click
+                // Orbit: always active unless tool consumed the click.
+                // Suppress pivot flash in label mode when box is visible (avoid visual conflict).
                 if (!toolConsumed)
                 {
-                    if (_cam.SetOrbitPivotFromScreen(mx, my, 11))
-                        _pivotFlash = 1.0f;
+                    bool pivotHit = _cam.SetOrbitPivotFromScreen(mx, my, 11);
+                    bool showFlash = _mode != InteractionMode.Label || !_boxTool.HasVolume;
+                    if (pivotHit && showFlash) _pivotFlash = 1.0f;
                     _leftDown  = true;
                     _orbitVelX = 0f; _orbitVelY = 0f;
                 }
@@ -583,22 +580,32 @@ void main()
 
             if (_mode == InteractionMode.Label)
             {
-                // ── Enter: Confirm selection and apply label ──────────────────
-                if (e.Key == Keys.Enter && CurrentTool.IsEditing)
+                // ── Enter: two-stage confirm ──────────────────────────────────
+                if (e.Key == Keys.Enter)
                 {
-                    CurrentTool.Confirm();
-                    if (_pointsCPU != null)
+                    // Stage 1: Extruding → confirm depth, enter editing
+                    if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Extruding)
                     {
-                        var selected = CurrentTool.ResolveSelection(
-                            _pointsCPU, _cam, Size.X, Size.Y);
-                        if (selected.Count > 0)
+                        _boxTool.ConfirmExtrude();
+                        Console.WriteLine("Depth set — adjust handles/rings, Enter again to label.");
+                    }
+                    // Stage 2: Editing → apply label
+                    else if (CurrentTool.IsEditing)
+                    {
+                        CurrentTool.Confirm();
+                        if (_pointsCPU != null)
                         {
-                            _labelManager.ApplyLabel(selected, _currentLabel);
-                            Console.WriteLine($"Labeled {selected.Count} points as '{_currentLabel}'  (total: {_labelManager.Count})");
-                        }
-                        else
-                        {
-                            Console.WriteLine("No points in selection volume");
+                            var selected = CurrentTool.ResolveSelection(
+                                _pointsCPU, _cam, Size.X, Size.Y);
+                            if (selected.Count > 0)
+                            {
+                                _labelManager.ApplyLabel(selected, _currentLabel);
+                                Console.WriteLine($"Labeled {selected.Count} points as '{_currentLabel}'  (total: {_labelManager.Count})");
+                            }
+                            else
+                            {
+                                Console.WriteLine("No points in selection volume");
+                            }
                         }
                     }
                 }
