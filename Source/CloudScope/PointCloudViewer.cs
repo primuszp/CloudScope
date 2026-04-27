@@ -39,10 +39,8 @@ namespace CloudScope
         private float _cloudRadius = 50f;
 
         // -- Pivot indicator animation ----------------------------------------
-        private float _pivotFade     = PivotDimAlpha; // 0=invisible 1=full
-        private float _pivotFlash    = 0f;            // brief pulse on new pivot pick
-        private float _interactTimer = 0f;            // seconds since last interaction
-        private const float PivotDimAlpha = 0.15f;
+        private float _pivotFade  = 0f;  // 0=hidden 1=fully visible (only during orbit)
+        private float _pivotFlash = 0f;  // brief size pulse when pivot is picked
 
         // -- Mouse state ----------------------------------------------------------
         private int  _lastMX, _lastMY;
@@ -251,17 +249,14 @@ void main()
             {
                 _cam.CancelTransition();
                 _cam.MoveFPS(dx, dy, dz);
-                _interactTimer = 0.6f;
             }
 
             // Smooth camera transition tick (view presets, focus)
             _cam.TickTransition(dt);
 
-            // Pivot indicator fade animation
-            _interactTimer = Math.Max(0f, _interactTimer - dt);
-            bool anyDown   = _leftDown || _rightDown || _middleDown;
-            float pivotTarget = (anyDown || _interactTimer > 0f) ? 1f : PivotDimAlpha;
-            float pivotRate   = pivotTarget > _pivotFade ? 8f : 3f;
+            // Pivot indicator: visible only during orbit (left drag), hidden otherwise
+            float pivotTarget = _leftDown ? 1f : 0f;
+            float pivotRate   = pivotTarget > _pivotFade ? 8f : 5f;
             _pivotFade += (pivotTarget - _pivotFade) * Math.Min(pivotRate * dt, 1f);
             if (_pivotFlash > 0f) _pivotFlash = Math.Max(0f, _pivotFlash - dt * 2.5f);
 
@@ -330,7 +325,6 @@ void main()
                 _panVelX = 0f; _panVelY = 0f;
             }
 
-            _interactTimer = 1.2f;
             _lastMX = mx;
             _lastMY = my;
         }
@@ -373,7 +367,6 @@ void main()
             int my = (int)MouseState.Position.Y;
 
             _cam.PickDepthWindow(mx, my, 11);
-            _interactTimer = 1.2f;
 
             // Adaptive zoom: larger steps when zoomed out, finer when zoomed in
             float zoomRatio = Math.Clamp((float)(_cam.Hvs / _cloudRadius), 0.1f, 5f);
@@ -398,7 +391,6 @@ void main()
                 int mx = (int)MouseState.Position.X;
                 int my = (int)MouseState.Position.Y;
                 _cam.FocusOnCursor(mx, my);
-                _interactTimer = 1.2f;
             }
         }
 
@@ -423,13 +415,12 @@ void main()
                 GL.DrawArrays(PrimitiveType.Points, 0, _pointCount);
             }
 
-            // 2. Pivot indicator - always visible, alpha fades in on interaction
+            // 2. Pivot indicator — only during orbit, fades in/out smoothly
             if (_pivotFade > 0.01f || _pivotFlash > 0.01f)
                 RenderPivotIndicator(ref view, ref proj);
 
-            // 3. Center crosshair - fades out while pivot is active, fades in at rest
-            float crossAlpha = 1f - Math.Max(0f,
-                (_pivotFade - PivotDimAlpha) / (1f - PivotDimAlpha));
+            // 3. Center crosshair — fades out as pivot fades in, full when pivot is hidden
+            float crossAlpha = 1f - _pivotFade;
             if (crossAlpha > 0.01f)
                 RenderCenterCrosshair(crossAlpha);
 
