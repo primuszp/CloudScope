@@ -212,25 +212,21 @@ namespace CloudScope
         }
 
         /// <summary>
-        /// Rotation via pixel delta. Orbits around _orbitPivot with two corrections:
-        ///  • Adaptive speed  — scales with hvs/sceneRadius so close-up rotation is
-        ///    finer and far-away rotation is faster (same visual feel at any zoom).
-        ///  • Cosine azimuth  — reduces horizontal sensitivity near the poles so the
-        ///    world doesn't spin when looking straight up/down (Z-up preserved).
+        /// Rotation via pixel delta. Orbits around _orbitPivot.
+        /// Speed scales with hvs/sceneRadius: finer when zoomed in, faster when
+        /// zoomed out. No azimuth correction is applied so Z-axis rotation works
+        /// uniformly at all elevations including shallow/flat-angle views.
         /// </summary>
         public void Rotate(float dx, float dy)
         {
             Vector3 pivotView = WorldToView(_orbitPivot, _vtw);
 
-            // Scale speed with zoom: zoomed in → finer, zoomed out → faster
-            float speedScale = Math.Clamp((float)(_hvs / _sceneRadius), 0.05f, 4f);
+            // Adaptive speed: zoomed-in → finer control, zoomed-out → faster sweep
+            // Minimum 0.25 so rotation never feels unresponsive even when very close
+            float speedScale = Math.Clamp((float)(_hvs / _sceneRadius), 0.25f, 4f);
             float speed = RotationSpeed * speedScale;
 
-            // Cosine correction: azimuth slows near poles, elevation always full speed
-            float elRad  = _el * MathF.PI / 180f;
-            float azScale = MathF.Max(MathF.Cos(elRad), 0.08f);
-
-            _az -= dx * speed * azScale;
+            _az -= dx * speed;
             _el -= dy * speed;
             if (ConstrainElev) _el = Math.Clamp(_el, -89f, 89f);
             RebuildRot();
