@@ -480,8 +480,6 @@ namespace CloudScope.Selection
 
         public void Confirm()
         {
-            // If called during extrude, confirm extrude first then apply label
-            if (Phase == ToolPhase.Extruding) Phase = ToolPhase.Editing;
             Phase = ToolPhase.Idle;
         }
 
