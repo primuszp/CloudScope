@@ -442,7 +442,7 @@ void main()
                         if (_boxTool.Phase == ToolPhase.Drawing) // valid rect (not cancelled)
                         {
                             _boxTool.FinalizeBoxFromScreen(_cam);
-                            Console.WriteLine("Box drawn — scroll to set depth, click to confirm.");
+                            Console.WriteLine("Box drawn — scroll to adjust depth, Enter to confirm.");
                         }
                     }
                     else if (CurrentTool.IsActive) // sphere or other tool

@@ -137,10 +137,15 @@ namespace CloudScope.Selection
 
             _screenFaceCenter = cam.ScreenToWorldAtDepth(cxs, cys, refViewZ);
             _worldPerPixel    = cam.ScreenToWorldRadius(_screenFaceCenter, cxs + 1, cys);
-            _extrudeRefY      = cys; // reference: center of drawn rect
+            _extrudeRefY      = cys;
 
-            Center      = _screenFaceCenter;
-            HalfExtents = new Vector3(halfW, halfH, 0.001f);
+            // Start with a visible depth equal to the larger screen dimension
+            float initialHalfD = Math.Max(halfW, halfH);
+
+            Matrix3 initInvRot = Matrix3.Transpose(Matrix3.CreateFromQuaternion(Rotation));
+            Vector3 initWorldZ = initInvRot * Vector3.UnitZ;
+            Center      = _screenFaceCenter + initWorldZ * initialHalfD;
+            HalfExtents = new Vector3(halfW, halfH, initialHalfD);
             Phase       = ToolPhase.Extruding;
         }
 
