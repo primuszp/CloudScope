@@ -15,15 +15,18 @@ namespace CloudScope
     /// Modern OpenGL 3.3 point-cloud viewer.
     ///
     /// Camera controls (AdvancedZPR mapping):
-    ///   Left drag     Orbit (azimuth / elevation)
-    ///   Right drag    Pan  â€” the clicked point stays under the cursor
-    ///   Scroll        Zoom â€” zooms toward the point under the cursor
+    ///   Left drag     Orbit (azimuth / elevation)  — suppressed when selection tool active
+    ///   Right drag    Pan  — the clicked point stays under the cursor
+    ///   Scroll        Zoom — zooms toward the point under the cursor
     ///   Space         Toggle orthographic / perspective
     ///   Num1/3/7      Front / Right / Top
     ///   Num5          Isometric
-    ///   R             Reset view
+    ///   Home          Reset view
     ///   +/-           Point size up / down
-    ///   Escape        Quit
+    ///   T             Rectangle selection tool
+    ///   G             Sphere selection tool
+    ///   Del           Clear selection
+    ///   Escape        Deactivate selection tool (if active) / quit
     /// </summary>
     public sealed class PointCloudViewer : GameWindow
     {
@@ -264,7 +267,7 @@ void main()
             if (KeyboardState.IsKeyPressed(Keys.KeyPad3)) _cam.SetRightView();
             if (KeyboardState.IsKeyPressed(Keys.KeyPad7)) _cam.SetTopView();
             if (KeyboardState.IsKeyPressed(Keys.KeyPad5)) _cam.SetIsometric();
-            if (KeyboardState.IsKeyPressed(Keys.R))       _cam.ResetView(_cloudRadius);
+            if (KeyboardState.IsKeyPressed(Keys.Home))     _cam.ResetView(_cloudRadius);
 
             // WASD FPS Movement
             float moveSpeed = _cam.NavigationScale * 2.0f * dt;
