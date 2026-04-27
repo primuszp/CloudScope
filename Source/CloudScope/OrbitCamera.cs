@@ -41,6 +41,15 @@ namespace CloudScope
         // ── Fixed scene depth range (does not change with zoom) ───────────────
         private float _sceneRadius = 50f;
 
+        // ── Smooth transition state ───────────────────────────────────────────
+        private float   _txStartAz, _txTargetAz;
+        private float   _txStartEl, _txTargetEl;
+        private double  _txStartHvs, _txTargetHvs;
+        private Vector3 _txStartTrn,   _txTargetTrn;
+        private Vector3 _txStartPivot, _txTargetPivot;
+        private float   _txTime, _txDur;
+        private bool    _txActive;
+
         // ── Viewport size ─────────────────────────────────────────────────────
         private int _vpW = 1600, _vpH = 900;
 
@@ -286,11 +295,82 @@ namespace CloudScope
 
         public void ResetView(float cloudRadius = 50f)
         {
-            _az   = 30f; _el = 25f;
-            _trn  = Vector3.Zero;
-            _orbitPivot = Vector3.Zero;
+            _sceneRadius = cloudRadius > 0 ? cloudRadius : 50f;
             _vang = 45.0 * Math.PI / 180.0;
-            FitToCloud(cloudRadius);
+            CalcViewVolume();
+            BeginTransition(30f, 25f, _sceneRadius, Vector3.Zero, Vector3.Zero, dur: 0.50f);
+        }
+
+        // ── Smooth animated transitions ───────────────────────────────────────
+
+        /// <summary>Queues a smooth fly-to transition. Any existing transition is replaced.</summary>
+        public void BeginTransition(float targetAz, float targetEl, double targetHvs,
+                                    Vector3 targetTrn, Vector3 targetPivot, float dur = 0.32f)
+        {
+            _txStartAz    = _az;          _txTargetAz    = targetAz;
+            _txStartEl    = _el;          _txTargetEl    = ConstrainElev ? Math.Clamp(targetEl, -89f, 89f) : targetEl;
+            _txStartHvs   = _hvs;         _txTargetHvs   = Math.Max(targetHvs, 0.001);
+            _txStartTrn   = _trn;         _txTargetTrn   = targetTrn;
+            _txStartPivot = _orbitPivot;  _txTargetPivot = targetPivot;
+            _txTime = 0f; _txDur = MathF.Max(dur, 0.001f);
+            _txActive = true;
+        }
+
+        /// <summary>Advances the transition by dt seconds. Call once per frame in UpdateFrame.</summary>
+        public bool TickTransition(float dt)
+        {
+            if (!_txActive) return false;
+            _txTime = Math.Min(_txTime + dt, _txDur);
+            float t = _txTime / _txDur;
+            float s = t * t * (3f - 2f * t);   // smoothstep — ease in/out
+
+            // Shortest-path azimuth (handles wrap-around 350 -> 10 correctly)
+            float azDiff = ((_txTargetAz - _txStartAz) % 360f + 540f) % 360f - 180f;
+            _az = _txStartAz + azDiff * s;
+            _el = _txStartEl + (_txTargetEl - _txStartEl) * s;
+
+            // Log-space hvs: perceptually uniform zoom speed regardless of magnitude
+            _hvs = Math.Exp(Math.Log(_txStartHvs) +
+                            (Math.Log(_txTargetHvs) - Math.Log(_txStartHvs)) * s);
+
+            _trn        = Vector3.Lerp(_txStartTrn,   _txTargetTrn,   s);
+            _orbitPivot = Vector3.Lerp(_txStartPivot, _txTargetPivot, s);
+            RebuildRot();
+            CalcViewVolume();
+
+            if (t >= 1f) _txActive = false;
+            return true;
+        }
+
+        /// <summary>Immediately stops any in-progress transition (call on mouse down).</summary>
+        public void CancelTransition() => _txActive = false;
+
+        /// <summary>True while a smooth fly-to animation is in progress.</summary>
+        public bool IsTransitioning => _txActive;
+
+        /// <summary>
+        /// Reads depth under the cursor, then smoothly flies the camera to that
+        /// world-space point, centering and zooming so the feature fills ~40% of view.
+        /// No-op if no geometry is under the cursor.
+        /// </summary>
+        public void FocusOnCursor(int screenX, int screenY)
+        {
+            float depth = ReadClosestDepthWindow(screenX, screenY, 21);
+            if (depth >= 0.9999f) return;
+
+            float   viewZ      = DepthToViewZ(depth);
+            Vector3 focusWorld = ViewToWorld(ScreenToView(screenX, screenY, viewZ));
+
+            // Target hvs: fill ~40% of view with the region near the focus point
+            double targetHvs = _vang != 0.0
+                ? Math.Max(Math.Abs(viewZ) * Math.Tan(0.5 * _vang) * 0.40, 0.01)
+                : Math.Max(_hvs * 0.25, 0.01);
+
+            // Target trn: centre the focus point horizontally on screen
+            float   pivotViewZ = WorldToView(focusWorld, _vtw).Z;
+            Vector3 targetTrn  = focusWorld - MulDir(new Vector3(0f, 0f, pivotViewZ), _vtw);
+
+            BeginTransition(_az, _el, targetHvs, targetTrn, focusWorld, dur: 0.40f);
         }
 
         // ── Hilton internal functions (private) - 1:1 AdvancedZPR ─────────────
@@ -343,28 +423,28 @@ namespace CloudScope
             return new Vector3(x, y, viewZ);
         }
 
-        private void RebuildRot()
+        private static Matrix4 BuildRot(float az, float el)
         {
-            float azR = _az * MathF.PI / 180f;
-            float elR = _el * MathF.PI / 180f;
+            float azR = az * MathF.PI / 180f;
+            float elR = el * MathF.PI / 180f;
             float cz = MathF.Cos(azR), sz = MathF.Sin(azR);
             float cx = MathF.Cos(elR), sx = MathF.Sin(elR);
-
-            // Rz(azimuth) * Rx(elevation) - identical to AdvancedZPR code
-            _vtw = new Matrix4(
+            return new Matrix4(
                  cz,       sz,       0f,  0f,
                 -sz * cx,  cz * cx,  sx,  0f,
                  sz * sx, -cz * sx,  cx,  0f,
                  0f,       0f,       0f,  1f);
         }
 
+        private void RebuildRot() => _vtw = BuildRot(_az, _el);
+
         private void ApplyView(float az, float el)
         {
-            float pivotZ = WorldToView(_orbitPivot, _vtw).Z;
-            _az = az;
-            _el = ConstrainElev ? Math.Clamp(el, -89f, 89f) : el;
-            RebuildRot();
-            _trn = _orbitPivot - MulDir(new Vector3(0f, 0f, pivotZ), _vtw);
+            el = ConstrainElev ? Math.Clamp(el, -89f, 89f) : el;
+            float   pivotZ    = WorldToView(_orbitPivot, _vtw).Z;
+            Matrix4 targetVtw = BuildRot(az, el);
+            Vector3 targetTrn = _orbitPivot - MulDir(new Vector3(0f, 0f, pivotZ), targetVtw);
+            BeginTransition(az, el, _hvs, targetTrn, _orbitPivot);
         }
 
         private float ReadClosestDepthWindow(int mouseX, int mouseY, int windowSize)

@@ -249,9 +249,13 @@ void main()
 
             if (dx != 0 || dy != 0 || dz != 0)
             {
+                _cam.CancelTransition();
                 _cam.MoveFPS(dx, dy, dz);
                 _interactTimer = 0.6f;
             }
+
+            // Smooth camera transition tick (view presets, focus)
+            _cam.TickTransition(dt);
 
             // Pivot indicator fade animation
             _interactTimer = Math.Max(0f, _interactTimer - dt);
@@ -261,25 +265,33 @@ void main()
             _pivotFade += (pivotTarget - _pivotFade) * Math.Min(pivotRate * dt, 1f);
             if (_pivotFlash > 0f) _pivotFlash = Math.Max(0f, _pivotFlash - dt * 2.5f);
 
-            // Orbit inertia
-            if (!_leftDown && (_orbitVelX != 0f || _orbitVelY != 0f))
+            // Suppress inertia while a transition is playing (avoids fighting)
+            if (_cam.IsTransitioning)
             {
-                _cam.Rotate(_orbitVelX, _orbitVelY);
-                _orbitVelX *= 0.88f; _orbitVelY *= 0.88f;
-                if (MathF.Abs(_orbitVelX) < 0.05f) _orbitVelX = 0f;
-                if (MathF.Abs(_orbitVelY) < 0.05f) _orbitVelY = 0f;
+                _orbitVelX = _orbitVelY = _panVelX = _panVelY = 0f;
             }
-
-            // Pan inertia - use screen centre as fixed reference so picked depth stays valid
-            if (!_rightDown && !_middleDown && (_panVelX != 0f || _panVelY != 0f))
+            else
             {
-                int cx = Size.X / 2, cy = Size.Y / 2;
-                int pdx = (int)MathF.Round(_panVelX), pdy = (int)MathF.Round(_panVelY);
-                if (pdx != 0 || pdy != 0)
-                    _cam.Pan(cx, cy, cx + pdx, cy + pdy);
-                _panVelX *= 0.88f; _panVelY *= 0.88f;
-                if (MathF.Abs(_panVelX) < 0.05f) _panVelX = 0f;
-                if (MathF.Abs(_panVelY) < 0.05f) _panVelY = 0f;
+                // Orbit inertia
+                if (!_leftDown && (_orbitVelX != 0f || _orbitVelY != 0f))
+                {
+                    _cam.Rotate(_orbitVelX, _orbitVelY);
+                    _orbitVelX *= 0.88f; _orbitVelY *= 0.88f;
+                    if (MathF.Abs(_orbitVelX) < 0.05f) _orbitVelX = 0f;
+                    if (MathF.Abs(_orbitVelY) < 0.05f) _orbitVelY = 0f;
+                }
+
+                // Pan inertia
+                if (!_rightDown && !_middleDown && (_panVelX != 0f || _panVelY != 0f))
+                {
+                    int cx = Size.X / 2, cy = Size.Y / 2;
+                    int pdx = (int)MathF.Round(_panVelX), pdy = (int)MathF.Round(_panVelY);
+                    if (pdx != 0 || pdy != 0)
+                        _cam.Pan(cx, cy, cx + pdx, cy + pdy);
+                    _panVelX *= 0.88f; _panVelY *= 0.88f;
+                    if (MathF.Abs(_panVelX) < 0.05f) _panVelX = 0f;
+                    if (MathF.Abs(_panVelY) < 0.05f) _panVelY = 0f;
+                }
             }
         }
 
@@ -293,6 +305,8 @@ void main()
             
             int mx = (int)MouseState.Position.X;
             int my = (int)MouseState.Position.Y;
+
+            _cam.CancelTransition();
 
             if (e.Button == MouseButton.Left)
             {
@@ -377,6 +391,14 @@ void main()
                 int my = (int)MouseState.Position.Y;
                 _cam.PickDepthWindow(mx, my, 11);
                 _cam.ToggleProjection(mx, my);
+            }
+
+            if (e.Key == Keys.F)
+            {
+                int mx = (int)MouseState.Position.X;
+                int my = (int)MouseState.Position.Y;
+                _cam.FocusOnCursor(mx, my);
+                _interactTimer = 1.2f;
             }
         }
 
