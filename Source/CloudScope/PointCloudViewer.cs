@@ -1,9 +1,13 @@
 using System;
+using System.Collections.Generic;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using OpenTK.Windowing.GraphicsLibraryFramework;
+using CloudScope.Selection;
+using CloudScope.Labeling;
+using CloudScope.Rendering;
 
 namespace CloudScope
 {
@@ -34,7 +38,7 @@ namespace CloudScope
         private int _uViewSphere, _uProjSphere, _uPointSizeSphere;
         private int _uAlphaLine, _uAlphaSphere;
 
-        // -- Camera â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // -- Camera ────────────────────────────────────────────────────────────
         private readonly OrbitCamera _cam = new();
         private float _cloudRadius = 50f;
 
@@ -42,18 +46,43 @@ namespace CloudScope
         private float _pivotFade  = 0f;  // 0=hidden 1=fully visible (only during orbit)
         private float _pivotFlash = 0f;  // brief size pulse when pivot is picked
 
-        // -- Mouse state ----------------------------------------------------------
+        // ── Labeling state ────────────────────────────────────────────────────
+        private InteractionMode _mode = InteractionMode.Navigate;
+        private SelectionToolType _activeToolType = SelectionToolType.Box;
+
+        private readonly BoxSelectionTool _boxTool = new();
+        private readonly SphereSelectionTool _sphereTool = new();
+        private ISelectionTool CurrentTool => _activeToolType == SelectionToolType.Box
+            ? _boxTool : _sphereTool;
+
+        private EditAction _pendingAction = EditAction.None;  // set by G/S/R keydown
+        private bool _editDragging;  // true during an active edit drag
+
+        private readonly LabelManager _labelManager = new();
+        private string _currentLabel = "Ground";
+        private PointData[]? _pointsCPU;
+        private string _lasFilePath = "";
+
+        private static readonly string[] LabelPresets =
+            { "Ground", "Building", "Vegetation", "Vehicle", "Road", "Water", "Wire" };
+
+        // ── Labeling renderers ────────────────────────────────────────────────
+        private readonly BoxGizmoRenderer _boxGizmoRenderer = new();
+        private readonly SphereGizmoRenderer _sphereGizmoRenderer = new();
+        private readonly HighlightRenderer _highlightRenderer = new();
+
+        // -- Mouse state ────────────────────────────────────────────────----------
         private int  _lastMX, _lastMY;
         private bool _leftDown, _rightDown, _middleDown;
 
-        // -- Inertia velocities (screen pixels/frame) -----------------------------
+        // -- Inertia velocities (screen pixels/frame) ────────────────-------------
         private float _orbitVelX, _orbitVelY;
         private float _panVelX,   _panVelY;
 
-        // â”€â”€ Point rendering â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Point rendering ───────────────────────────────────────────────────
         private float _pointSize = 1.5f;
 
-        // â”€â”€ Vertex shader â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Vertex shader ─────────────────────────────────────────────────────
         // No distance attenuation: gl_PointSize = pointSize (constant screen pixels).
         // This keeps points crisp and small regardless of zoom.
         private const string VertSrc = @"
@@ -178,7 +207,9 @@ void main()
         {
             _pointCount  = pts.Length;
             _cloudRadius = cloudRadius;
+            _pointsCPU   = pts;  // keep CPU reference for selection resolution
             _cam.FitToCloud(cloudRadius);
+            _labelManager.LabelsChanged += _highlightRenderer.MarkDirty;
 
             _vao = GL.GenVertexArray();
             GL.BindVertexArray(_vao);
@@ -207,6 +238,9 @@ void main()
 
             GL.BindVertexArray(0);
         }
+
+        /// <summary>Set the source LAS path for label file I/O.</summary>
+        public void SetLasFilePath(string path) => _lasFilePath = path;
 
         // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Keyboard (non-mouse controls)
@@ -298,7 +332,6 @@ void main()
         protected override void OnMouseDown(MouseButtonEventArgs e)
         {
             base.OnMouseDown(e);
-            
             int mx = (int)MouseState.Position.X;
             int my = (int)MouseState.Position.Y;
 
@@ -306,10 +339,43 @@ void main()
 
             if (e.Button == MouseButton.Left)
             {
-                if (_cam.SetOrbitPivotFromScreen(mx, my, 11))
-                    _pivotFlash = 1.0f;
-                _leftDown  = true;
-                _orbitVelX = 0f; _orbitVelY = 0f;
+                if (_mode == InteractionMode.Label)
+                {
+                    // Priority 1: Handle click (box tool in editing mode)
+                    if (_activeToolType == SelectionToolType.Box && _boxTool.IsEditing)
+                    {
+                        int handle = _boxTool.HitTestHandles(mx, my, _cam);
+                        if (handle != BoxSelectionTool.HoverNone)
+                        {
+                            _boxTool.BeginHandleDrag(handle, mx, my, _cam);
+                            return;
+                        }
+                    }
+
+                    // Priority 2: G/S/R pending action
+                    if (CurrentTool.IsEditing && _pendingAction != EditAction.None)
+                    {
+                        _editDragging = true;
+                        switch (_pendingAction)
+                        {
+                            case EditAction.Grab:   CurrentTool.BeginGrab(mx, my, _cam);   break;
+                            case EditAction.Scale:  CurrentTool.BeginScale(mx, my, _cam);  break;
+                            case EditAction.Rotate: CurrentTool.BeginRotate(mx, my, _cam); break;
+                        }
+                    }
+                    // Priority 3: Start new placement (only if not editing)
+                    else if (!CurrentTool.IsEditing && !CurrentTool.IsActive)
+                    {
+                        CurrentTool.OnMouseDown(mx, my, _cam);
+                    }
+                }
+                else
+                {
+                    if (_cam.SetOrbitPivotFromScreen(mx, my, 11))
+                        _pivotFlash = 1.0f;
+                    _leftDown  = true;
+                    _orbitVelX = 0f; _orbitVelY = 0f;
+                }
             }
 
             if (e.Button == MouseButton.Right)
@@ -333,7 +399,42 @@ void main()
         protected override void OnMouseUp(MouseButtonEventArgs e)
         {
             base.OnMouseUp(e);
-            if (e.Button == MouseButton.Left)   _leftDown   = false;
+
+            if (e.Button == MouseButton.Left)
+            {
+                if (_mode == InteractionMode.Label)
+                {
+                    // End handle drag
+                    if (_activeToolType == SelectionToolType.Box && _boxTool.IsHandleDragging)
+                    {
+                        _boxTool.EndHandleDrag();
+                    }
+                    // End G/S/R edit drag
+                    else if (_editDragging)
+                    {
+                        CurrentTool.EndEdit();
+                        _editDragging = false;
+                        _pendingAction = EditAction.None;
+                    }
+                    // End placement → create 3D box
+                    else if (CurrentTool.IsActive)
+                    {
+                        int mx = (int)MouseState.Position.X;
+                        int my = (int)MouseState.Position.Y;
+                        CurrentTool.OnMouseUp(mx, my);
+                        // For box tool: finalize 3D box from screen rect
+                        if (_activeToolType == SelectionToolType.Box && _boxTool.IsEditing)
+                        {
+                            _boxTool.FinalizeBoxFromScreen(_cam);
+                            Console.WriteLine("Box placed — use handles, G/S/R, or scroll to edit. Enter to confirm.");
+                        }
+                        else if (CurrentTool.IsEditing)
+                            Console.WriteLine("Selection placed — G/S/R + drag to edit, Enter to confirm.");
+                    }
+                }
+                _leftDown = false;
+            }
+
             if (e.Button == MouseButton.Right)  _rightDown  = false;
             if (e.Button == MouseButton.Middle) _middleDown = false;
         }
@@ -344,7 +445,36 @@ void main()
             int mx = (int)e.X;
             int my = (int)e.Y;
 
-            if (_leftDown)
+            if (_mode == InteractionMode.Label)
+            {
+                // Handle drag (box tool)
+                if (_activeToolType == SelectionToolType.Box && _boxTool.IsHandleDragging)
+                {
+                    _boxTool.UpdateHandleDrag(mx, my, _cam);
+                }
+                // G/S/R edit drag
+                else if (_editDragging)
+                {
+                    CurrentTool.UpdateEdit(mx, my, _cam);
+                }
+                // Placement drag
+                else if (CurrentTool.IsActive)
+                {
+                    CurrentTool.OnMouseMove(mx, my, _cam);
+                }
+                // Hover detection (update handle highlight)
+                else if (_activeToolType == SelectionToolType.Box && _boxTool.IsEditing)
+                {
+                    _boxTool.HoveredHandle = _boxTool.HitTestHandles(mx, my, _cam);
+                }
+                // Pan via right/middle
+                else if (_rightDown || _middleDown)
+                {
+                    _cam.Pan(_lastMX, _lastMY, mx, my);
+                    _panVelX = mx - _lastMX; _panVelY = my - _lastMY;
+                }
+            }
+            else if (_leftDown)
             {
                 int dx = mx - _lastMX;
                 int dy = my - _lastMY;
@@ -367,6 +497,13 @@ void main()
             int mx = (int)MouseState.Position.X;
             int my = (int)MouseState.Position.Y;
 
+            // In label mode editing: scroll adjusts selection size
+            if (_mode == InteractionMode.Label && CurrentTool.IsEditing)
+            {
+                CurrentTool.AdjustScale(e.OffsetY);
+                return;
+            }
+
             _cam.PickDepthWindow(mx, my, 11);
 
             // Adaptive zoom: larger steps when zoomed out, finer when zoomed in
@@ -379,6 +516,110 @@ void main()
         protected override void OnKeyDown(KeyboardKeyEventArgs e)
         {
             base.OnKeyDown(e);
+            bool ctrl = KeyboardState.IsKeyDown(Keys.LeftControl) || KeyboardState.IsKeyDown(Keys.RightControl);
+
+            // ── Labeling shortcuts ────────────────────────────────────────────
+            if (e.Key == Keys.L)
+            {
+                _mode = _mode == InteractionMode.Navigate
+                    ? InteractionMode.Label : InteractionMode.Navigate;
+                CurrentTool.Cancel();
+                _pendingAction = EditAction.None;
+                _editDragging = false;
+                Console.WriteLine($"Mode: {_mode}  (tool: {_activeToolType}, label: '{_currentLabel}')");
+            }
+
+            if (e.Key == Keys.Escape && _mode == InteractionMode.Label)
+            {
+                if (_editDragging)
+                {
+                    // Cancel in-progress edit drag
+                    CurrentTool.EndEdit();
+                    _editDragging = false;
+                    _pendingAction = EditAction.None;
+                }
+                else if (CurrentTool.IsEditing || CurrentTool.IsActive)
+                {
+                    CurrentTool.Cancel();
+                    _pendingAction = EditAction.None;
+                    Console.WriteLine("Selection cancelled");
+                }
+                else
+                {
+                    _mode = InteractionMode.Navigate;
+                    Console.WriteLine("Mode: Navigate");
+                }
+                return;
+            }
+
+            if (_mode == InteractionMode.Label)
+            {
+                // ── Enter: Confirm selection and apply label ──────────────────
+                if (e.Key == Keys.Enter && CurrentTool.IsEditing)
+                {
+                    CurrentTool.Confirm();
+                    if (_pointsCPU != null)
+                    {
+                        var selected = CurrentTool.ResolveSelection(
+                            _pointsCPU, _cam, Size.X, Size.Y);
+                        if (selected.Count > 0)
+                        {
+                            _labelManager.ApplyLabel(selected, _currentLabel);
+                            Console.WriteLine($"Labeled {selected.Count} points as '{_currentLabel}'  (total: {_labelManager.Count})");
+                        }
+                        else
+                        {
+                            Console.WriteLine("No points in selection volume");
+                        }
+                    }
+                }
+
+                // ── G/S/R: Set pending edit action (Blender-style) ───────────
+                if (CurrentTool.IsEditing)
+                {
+                    if (e.Key == Keys.G) { _pendingAction = EditAction.Grab;   Console.WriteLine("Grab — left-click + drag to move"); }
+                    if (e.Key == Keys.S) { _pendingAction = EditAction.Scale;  Console.WriteLine("Scale — left-click + drag to resize"); }
+                    if (e.Key == Keys.R) { _pendingAction = EditAction.Rotate; Console.WriteLine("Rotate — left-click + drag to rotate"); }
+
+                    // Axis constraints (work with any pending action)
+                    if (e.Key == Keys.X) { CurrentTool.SetAxisConstraint(0); Console.WriteLine("Constraint: X axis"); }
+                    if (e.Key == Keys.Y) { CurrentTool.SetAxisConstraint(1); Console.WriteLine("Constraint: Y axis"); }
+                    if (e.Key == Keys.Z) { CurrentTool.SetAxisConstraint(2); Console.WriteLine("Constraint: Z axis"); }
+                }
+
+                // ── Tool switch (only when not editing) ──────────────────────
+                if (!CurrentTool.IsEditing && !CurrentTool.IsActive)
+                {
+                    if (e.Key == Keys.D1) { _activeToolType = SelectionToolType.Box;    Console.WriteLine("Tool: Box"); }
+                    if (e.Key == Keys.D2) { _activeToolType = SelectionToolType.Sphere; Console.WriteLine("Tool: Sphere"); }
+                }
+
+                // Label presets (3-9 → index 0-6)
+                Keys[] presetKeys = { Keys.D3, Keys.D4, Keys.D5, Keys.D6, Keys.D7, Keys.D8, Keys.D9 };
+                for (int i = 0; i < presetKeys.Length && i < LabelPresets.Length; i++)
+                {
+                    if (e.Key == presetKeys[i])
+                    {
+                        _currentLabel = LabelPresets[i];
+                        Console.WriteLine($"Label: '{_currentLabel}'");
+                    }
+                }
+
+                // Undo
+                if (ctrl && e.Key == Keys.Z)
+                {
+                    if (_labelManager.Undo())
+                        Console.WriteLine($"Undo — labels: {_labelManager.Count}");
+                }
+
+                // Save / Load
+                if (ctrl && e.Key == Keys.S && !string.IsNullOrEmpty(_lasFilePath))
+                    LabelFileIO.Save(_lasFilePath, _labelManager);
+                if (ctrl && e.Key == Keys.O && !string.IsNullOrEmpty(_lasFilePath))
+                    LabelFileIO.Load(_lasFilePath, _labelManager);
+            }
+
+            // ── Camera shortcuts (always available) ───────────────────────────
             if (e.Key == Keys.Space)
             {
                 int mx = (int)MouseState.Position.X;
@@ -416,14 +657,47 @@ void main()
                 GL.DrawArrays(PrimitiveType.Points, 0, _pointCount);
             }
 
-            // 2. Pivot indicator — only during orbit, fades in/out smoothly
+            // 2. Labeled points highlight (second pass with label colors)
+            if (_pointsCPU != null && _labelManager.Count > 0)
+                _highlightRenderer.Render(_pointsCPU, _labelManager, ref view, ref proj, _pointSize);
+
+            // 3. Active selection tool gizmo
+            if (_mode == InteractionMode.Label)
+            {
+                if (_activeToolType == SelectionToolType.Box)
+                {
+                    if (_boxTool.IsActive)
+                    {
+                        // During placement: show 2D screen rectangle
+                        _boxGizmoRenderer.RenderPlacementRect(
+                            _boxTool.StartX, _boxTool.StartY, _boxTool.EndX, _boxTool.EndY,
+                            Size.X, Size.Y);
+                    }
+                    else if (_boxTool.HasVolume)
+                    {
+                        // During editing: show 3D wireframe with handles
+                        _boxGizmoRenderer.Render(_boxTool, view, proj, _cam);
+                    }
+                }
+                else if (CurrentTool.HasVolume)
+                {
+                    _sphereGizmoRenderer.Render(_sphereTool.Center, _sphereTool.Radius,
+                                                view, proj, _sphereTool.CurrentAction);
+                }
+            }
+
+            // 4. Pivot indicator — only during orbit, fades in/out smoothly
             if (_pivotFade > 0.01f || _pivotFlash > 0.01f)
                 RenderPivotIndicator(ref view, ref proj);
 
-            // 3. Center crosshair — fades out as pivot fades in, full when pivot is hidden
+            // 5. Center crosshair — fades out as pivot fades in, full when pivot is hidden
             float crossAlpha = 1f - _pivotFade;
             if (crossAlpha > 0.01f)
                 RenderCenterCrosshair(crossAlpha);
+
+            // 6. Mode indicator (label mode banner)
+            if (_mode == InteractionMode.Label)
+                RenderModeIndicator(ref view, ref proj);
 
             SwapBuffers();
         }
@@ -615,6 +889,47 @@ void main()
             GL.Enable(EnableCap.DepthTest);
         }
 
+        /// <summary>Renders a small colored dot in the top-left corner as label mode indicator.</summary>
+        private void RenderModeIndicator(ref Matrix4 view, ref Matrix4 proj)
+        {
+            // Small colored dot at top-left to indicate label mode
+            // Use the line shader with a single point
+            float dotX = -1f + 30f / Size.X;
+            float dotY =  1f - 30f / Size.Y;
+            float r = 0f, g = 0.8f, b = 1f; // cyan for label mode
+
+            if (_activeToolType == SelectionToolType.Sphere)
+            { r = 1f; g = 0.6f; b = 0.15f; } // orange for sphere tool
+
+            float[] dotData = { dotX, dotY, 0f, r, g, b };
+
+            GL.UseProgram(_lineShader);
+            GL.Uniform1(_uAlphaLine, 0.9f);
+            Matrix4 ident = Matrix4.Identity;
+            GL.UniformMatrix4(_uViewLine, false, ref ident);
+            GL.UniformMatrix4(_uProjLine, false, ref ident);
+
+            GL.Disable(EnableCap.DepthTest);
+
+            // Draw a small crosshair-like indicator
+            float sz = 8f / Size.X;
+            float szy = 8f / Size.Y;
+            float[] indData = {
+                dotX - sz, dotY, 0f, r, g, b,
+                dotX + sz, dotY, 0f, r, g, b,
+                dotX, dotY - szy, 0f, r, g, b,
+                dotX, dotY + szy, 0f, r, g, b,
+            };
+
+            GL.BindVertexArray(_crosshairVao);
+            GL.BindBuffer(BufferTarget.ArrayBuffer, _crosshairVbo);
+            GL.BufferData(BufferTarget.ArrayBuffer, indData.Length * sizeof(float), indData, BufferUsageHint.DynamicDraw);
+            GL.LineWidth(2.5f);
+            GL.DrawArrays(PrimitiveType.Lines, 0, 4);
+
+            GL.Enable(EnableCap.DepthTest);
+        }
+
         protected override void OnResize(ResizeEventArgs e)
         {
             base.OnResize(e);
@@ -640,6 +955,12 @@ void main()
             GL.DeleteProgram(_shader);
             GL.DeleteProgram(_lineShader);
             GL.DeleteProgram(_sphereShader);
+
+            // Labeling renderers
+            _boxGizmoRenderer.Dispose();
+            _sphereGizmoRenderer.Dispose();
+            _highlightRenderer.Dispose();
+
             base.OnUnload();
         }
 
