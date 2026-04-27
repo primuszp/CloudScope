@@ -389,6 +389,106 @@ namespace CloudScope
             BeginTransition(_az, _el, targetHvs, targetTrn, focusWorld, dur: 0.40f);
         }
 
+        // ── Public coordinate-conversion helpers (for labeling / selection) ────
+
+        /// <summary>Current viewport width in pixels.</summary>
+        public int ViewportWidth => _vpW;
+
+        /// <summary>Current viewport height in pixels.</summary>
+        public int ViewportHeight => _vpH;
+
+        /// <summary>
+        /// Converts a screen pixel to a world-space point by reading the depth buffer.
+        /// Must be called from the GL context thread.
+        /// Returns (worldPoint, hitGeometry).
+        /// </summary>
+        public (Vector3 point, bool hit) ScreenToWorldPoint(int screenX, int screenY, int windowSize = 11)
+        {
+            float depth = ReadClosestDepthWindow(screenX, screenY, windowSize);
+            if (depth >= 0.9999f)
+            {
+                // No geometry hit — project at current picked depth
+                return (ViewToWorld(ScreenToView(screenX, screenY, _picked.Z)), false);
+            }
+
+            float viewZ = DepthToViewZ(depth);
+            return (ViewToWorld(ScreenToView(screenX, screenY, viewZ)), true);
+        }
+
+        /// <summary>
+        /// Unprojects a screen pixel to world-space at a given view-space Z depth.
+        /// Does NOT read the depth buffer — used for smooth handle dragging at a fixed depth.
+        /// </summary>
+        public Vector3 ScreenToWorldAtDepth(int screenX, int screenY, float viewZ)
+        {
+            return ViewToWorld(ScreenToView(screenX, screenY, viewZ));
+        }
+
+        /// <summary>
+        /// Returns the view-space Z of a world point (how deep it is in front of the camera).
+        /// Used to cache depth for handle dragging.
+        /// </summary>
+        public float WorldToViewZ(Vector3 worldPoint)
+        {
+            return WorldToView(worldPoint, _vtw).Z;
+        }
+
+        /// <summary>
+        /// Projects a world-space point to Normalized Device Coordinates (NDC).
+        /// NDC x,y ∈ [-1,1], z = depth.  Returns (ndc, behindCamera).
+        /// This avoids reading GL state — purely CPU math on cached matrices.
+        /// </summary>
+        public (Vector3 ndc, bool behind) WorldToNDC(Vector3 worldPoint)
+        {
+            // World → View
+            Vector3 vp = WorldToView(worldPoint, _vtw);
+
+            // Perspective: point is behind the eye when viewZ > 1/iez
+            bool behind = false;
+            if (iez != 0f)
+            {
+                float eyeZ = 1f / iez;
+                if (vp.Z >= eyeZ) behind = true;
+            }
+
+            // View → Clip  (using the same Hilton projection as GetProjectionMatrix)
+            float clipX, clipY, clipZ, clipW;
+            if (iez == 0f)
+            {
+                // Orthographic
+                clipX = vp.X / hw;
+                clipY = vp.Y / hh;
+                clipZ = (-2f * vp.Z - (zn + zf)) / (zn - zf);
+                clipW = 1f;
+            }
+            else
+            {
+                float ez = 1f / iez;
+                clipX = ez * vp.X / hw;
+                clipY = ez * vp.Y / hh;
+                clipZ = (-(2f * ez - (zn + zf)) * vp.Z - 2f * (ez * (ez - (zn + zf)) + zn * zf)) / (zn - zf);
+                clipW = -vp.Z;
+            }
+
+            // Clip → NDC
+            if (MathF.Abs(clipW) < 1e-7f)
+                return (Vector3.Zero, true);
+
+            return (new Vector3(clipX / clipW, clipY / clipW, clipZ / clipW), behind);
+        }
+
+        /// <summary>
+        /// Projects a world-space point to screen pixel coordinates.
+        /// Returns (px, py, behindCamera).
+        /// </summary>
+        public (float px, float py, bool behind) WorldToScreen(Vector3 worldPoint)
+        {
+            var (ndc, behind) = WorldToNDC(worldPoint);
+            float px = (ndc.X + 1f) * 0.5f * _vpW;
+            float py = (1f - ndc.Y) * 0.5f * _vpH;
+            return (px, py, behind);
+        }
+
         // ── Hilton internal functions (private) - 1:1 AdvancedZPR ─────────────
 
         private void CalcViewVolume()

@@ -2,13 +2,13 @@ using System;
 using System.Diagnostics;
 using CloudScope;
 
-//string lasFile = args.Length > 0
-//    ? args[0]
-//    : @"D:\Personal\OneDrive\BorderEye\data\jeli_parkolo.las";
-
 string lasFile = args.Length > 0
     ? args[0]
-    : @"D:\Personal\OneDrive\Ut1_colorized.las";
+    : @"C:\Users\primu\OneDrive\BorderEye\data\jeli_parkolo.las";
+
+//string lasFile = args.Length > 0
+//    ? args[0]
+//    : @"D:\Personal\OneDrive\Ut1_colorized.las";
 
 if (!System.IO.File.Exists(lasFile))
 {
@@ -134,10 +134,26 @@ Console.WriteLine("  R              - Reset view (animated)");
 Console.WriteLine("  +/-            - Point size");
 Console.WriteLine("  Escape         - Exit");
 Console.WriteLine();
+Console.WriteLine("Labeling:");
+Console.WriteLine("  L              - Toggle Label mode");
+Console.WriteLine("  1 / 2          - Box / Sphere tool");
+Console.WriteLine("  Left drag      - Place selection volume");
+Console.WriteLine("  G + left drag  - Grab (move) selection");
+Console.WriteLine("  S + left drag  - Scale selection (X/Y/Z for per-axis)");
+Console.WriteLine("  R + left drag  - Rotate selection (X/Y/Z for per-axis)");
+Console.WriteLine("  Scroll         - Fine-tune size (in edit mode)");
+Console.WriteLine("  Enter          - Confirm selection and apply label");
+Console.WriteLine("  Escape         - Cancel selection");
+Console.WriteLine("  3-9            - Label presets (Ground, Building, Vegetation, ...)");
+Console.WriteLine("  Ctrl+Z         - Undo last label");
+Console.WriteLine("  Ctrl+S         - Save labels (.labels.json)");
+Console.WriteLine("  Ctrl+O         - Load labels");
+Console.WriteLine();
 
 // ── Launch viewer ────────────────────────────────────────────────────────────
 using var viewer = new PointCloudViewer(1600, 900);
 viewer.LoadPointCloud(points, radius);
+viewer.SetLasFilePath(lasFile);
 viewer.Run();
 
 return 0;
