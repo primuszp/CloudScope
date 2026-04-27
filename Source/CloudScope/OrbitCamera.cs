@@ -517,5 +517,56 @@ namespace CloudScope
             v.X * m.M11 + v.Y * m.M21 + v.Z * m.M31,
             v.X * m.M12 + v.Y * m.M22 + v.Z * m.M32,
             v.X * m.M13 + v.Y * m.M23 + v.Z * m.M33);
+
+        // ── Selection helpers ─────────────────────────────────────────────────
+
+        /// <summary>Camera right axis in world space (used for sphere radius gizmo).</summary>
+        public Vector3 CameraRight => new(_vtw.M11, _vtw.M21, _vtw.M31);
+
+        /// <summary>
+        /// Picks the closest world-space point under a screen pixel using depth buffer.
+        /// Falls back to current pivot when no geometry is hit.
+        /// </summary>
+        public bool TryPickWorldPoint(int sx, int sy, int window, out Vector3 worldPt)
+        {
+            float d = ReadClosestDepthWindow(sx, sy, window);
+            if (d >= 0.9999f) { worldPt = _orbitPivot; return false; }
+            worldPt = ViewToWorld(ScreenToView(sx, sy, DepthToViewZ(d)));
+            return true;
+        }
+
+        /// <summary>
+        /// Projects a world-space point to screen pixels (top-left origin).
+        /// Returns false when the point is behind the camera.
+        /// </summary>
+        public bool ProjectWorldToScreen(Vector3 worldPt, out float sx, out float sy)
+        {
+            Matrix4 view = GetViewMatrix();
+            Matrix4 proj = GetProjectionMatrix();
+            // row-vector convention: clip = worldPt * view * proj
+            float vx = worldPt.X * view.M11 + worldPt.Y * view.M21 + worldPt.Z * view.M31 + view.M41;
+            float vy = worldPt.X * view.M12 + worldPt.Y * view.M22 + worldPt.Z * view.M32 + view.M42;
+            float vz = worldPt.X * view.M13 + worldPt.Y * view.M23 + worldPt.Z * view.M33 + view.M43;
+            float vw = worldPt.X * view.M14 + worldPt.Y * view.M24 + worldPt.Z * view.M34 + view.M44;
+            float cx = vx * proj.M11 + vy * proj.M21 + vz * proj.M31 + vw * proj.M41;
+            float cy = vx * proj.M12 + vy * proj.M22 + vz * proj.M32 + vw * proj.M42;
+            float cw = vx * proj.M14 + vy * proj.M24 + vz * proj.M34 + vw * proj.M44;
+            if (cw <= 0f) { sx = sy = 0f; return false; }
+            sx = (cx / cw + 1f) * 0.5f * _vpW;
+            sy = (1f - cy / cw) * 0.5f * _vpH;
+            return true;
+        }
+
+        /// <summary>
+        /// Returns the world-space distance between the given world center and the screen
+        /// pixel (sx,sy), measured in the view plane at the center's depth.
+        /// Used to convert a sphere-radius drag distance to world scale.
+        /// </summary>
+        public float ScreenToWorldRadius(Vector3 worldCenter, int sx, int sy)
+        {
+            Vector3 vc = WorldToView(worldCenter, _vtw);
+            Vector3 vm = ScreenToView(sx, sy, vc.Z);
+            return (vm - vc).Length;
+        }
     }
 }

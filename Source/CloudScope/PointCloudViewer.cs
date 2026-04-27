@@ -11,15 +11,18 @@ namespace CloudScope
     /// Modern OpenGL 3.3 point-cloud viewer.
     ///
     /// Camera controls (AdvancedZPR mapping):
-    ///   Left drag     Orbit (azimuth / elevation)
-    ///   Right drag    Pan  â€” the clicked point stays under the cursor
-    ///   Scroll        Zoom â€” zooms toward the point under the cursor
+    ///   Left drag     Orbit (azimuth / elevation)  — suppressed when selection tool active
+    ///   Right drag    Pan  — the clicked point stays under the cursor
+    ///   Scroll        Zoom — zooms toward the point under the cursor
     ///   Space         Toggle orthographic / perspective
     ///   Num1/3/7      Front / Right / Top
     ///   Num5          Isometric
-    ///   R             Reset view
+    ///   Home          Reset view
     ///   +/-           Point size up / down
-    ///   Escape        Quit
+    ///   T             Rectangle selection tool
+    ///   G             Sphere selection tool
+    ///   Del           Clear selection
+    ///   Escape        Deactivate selection tool (if active) / quit
     /// </summary>
     public sealed class PointCloudViewer : GameWindow
     {
@@ -49,6 +52,13 @@ namespace CloudScope
         // -- Inertia velocities (screen pixels/frame) -----------------------------
         private float _orbitVelX, _orbitVelY;
         private float _panVelX,   _panVelY;
+
+        // ── Selection ─────────────────────────────────────────────────────────
+        private readonly SelectionManager _sel = new();
+        private PointData[]? _pts;
+        private int _selOverlayVao = -1, _selOverlayVbo = -1;
+        private float[] _selOverlayBuf = new float[4096];
+        private int _selOverlayCount = 0;
 
         // â”€â”€ Point rendering â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         private float _pointSize = 1.5f;
@@ -171,11 +181,37 @@ void main()
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
             _cam.SetViewportSize(Size.X, Size.Y);
+            _sel.SetViewportSize(Size.X, Size.Y);
+            _sel.SelectionChanged += OnSelectionChanged;
+
+            // Pre-allocate selection overlay VAO/VBO
+            _selOverlayVao = GL.GenVertexArray();
+            _selOverlayVbo = GL.GenBuffer();
+            GL.BindVertexArray(_selOverlayVao);
+            GL.BindBuffer(BufferTarget.ArrayBuffer, _selOverlayVbo);
+            GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 24, 0);
+            GL.EnableVertexAttribArray(0);
+            GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, 24, 12);
+            GL.EnableVertexAttribArray(1);
+            GL.BindVertexArray(0);
+        }
+
+        private void OnSelectionChanged()
+        {
+            string tool = _sel.ActiveTool switch
+            {
+                SelectionTool.Rect   => " [T] Téglalap",
+                SelectionTool.Sphere => " [G] Gömb",
+                _                    => "",
+            };
+            string sel = _sel.HasSelection ? $"  |  Kijelölve: {_sel.SelectedCount:N0} pont" : "";
+            Title = $"CloudScope - Point Cloud Viewer{tool}{sel}";
         }
 
         /// <summary>Upload point cloud to GPU. Must be called before Run().</summary>
         public void LoadPointCloud(PointData[] pts, float cloudRadius = 50f)
         {
+            _pts         = pts;
             _pointCount  = pts.Length;
             _cloudRadius = cloudRadius;
             _cam.FitToCloud(cloudRadius);
@@ -230,7 +266,7 @@ void main()
             if (KeyboardState.IsKeyPressed(Keys.KeyPad3)) _cam.SetRightView();
             if (KeyboardState.IsKeyPressed(Keys.KeyPad7)) _cam.SetTopView();
             if (KeyboardState.IsKeyPressed(Keys.KeyPad5)) _cam.SetIsometric();
-            if (KeyboardState.IsKeyPressed(Keys.R))       _cam.ResetView(_cloudRadius);
+            if (KeyboardState.IsKeyPressed(Keys.Home))     _cam.ResetView(_cloudRadius);
 
             // WASD FPS Movement
             float moveSpeed = _cam.NavigationScale * 2.0f * dt;
@@ -298,7 +334,7 @@ void main()
         protected override void OnMouseDown(MouseButtonEventArgs e)
         {
             base.OnMouseDown(e);
-            
+
             int mx = (int)MouseState.Position.X;
             int my = (int)MouseState.Position.Y;
 
@@ -306,9 +342,13 @@ void main()
 
             if (e.Button == MouseButton.Left)
             {
-                if (_cam.SetOrbitPivotFromScreen(mx, my, 11))
-                    _pivotFlash = 1.0f;
-                _leftDown  = true;
+                bool consumed = _sel.OnLeftDown(mx, my, _cam);
+                if (!consumed)
+                {
+                    if (_cam.SetOrbitPivotFromScreen(mx, my, 11))
+                        _pivotFlash = 1.0f;
+                    _leftDown = true;
+                }
                 _orbitVelX = 0f; _orbitVelY = 0f;
             }
 
@@ -333,7 +373,11 @@ void main()
         protected override void OnMouseUp(MouseButtonEventArgs e)
         {
             base.OnMouseUp(e);
-            if (e.Button == MouseButton.Left)   _leftDown   = false;
+            if (e.Button == MouseButton.Left)
+            {
+                _sel.OnLeftUp(_lastMX, _lastMY, _pts, _cam);
+                _leftDown = false;
+            }
             if (e.Button == MouseButton.Right)  _rightDown  = false;
             if (e.Button == MouseButton.Middle) _middleDown = false;
         }
@@ -357,6 +401,9 @@ void main()
                 _panVelX = mx - _lastMX; _panVelY = my - _lastMY;
             }
 
+            // Selection move always processed (even when camera not panning/orbiting)
+            _sel.OnLeftMove(mx, my, _cam);
+
             _lastMX = mx;
             _lastMY = my;
         }
@@ -379,6 +426,20 @@ void main()
         protected override void OnKeyDown(KeyboardKeyEventArgs e)
         {
             base.OnKeyDown(e);
+
+            if (e.Key == Keys.Escape)
+            {
+                if (_sel.ActiveTool != SelectionTool.None)
+                    _sel.SetTool(SelectionTool.None);
+                else
+                    Close();
+                return;
+            }
+
+            if (e.Key == Keys.T) { _sel.SetTool(SelectionTool.Rect);   return; }
+            if (e.Key == Keys.G) { _sel.SetTool(SelectionTool.Sphere); return; }
+            if (e.Key == Keys.Delete) { _sel.ClearSelection(); return; }
+
             if (e.Key == Keys.Space)
             {
                 int mx = (int)MouseState.Position.X;
@@ -425,7 +486,43 @@ void main()
             if (crossAlpha > 0.01f)
                 RenderCenterCrosshair(crossAlpha);
 
+            // 4. Selection overlay (rect / sphere shape + handles)
+            RenderSelectionOverlay(ref view, ref proj);
+
             SwapBuffers();
+        }
+
+        private void RenderSelectionOverlay(ref Matrix4 view, ref Matrix4 proj)
+        {
+            if (_sel.ActiveTool == SelectionTool.None) return;
+
+            // Build overlay verts; resize buffer if needed
+            int needed = _sel.BuildOverlayVerts(_selOverlayBuf, _cam);
+            if (needed > _selOverlayBuf.Length)
+            {
+                _selOverlayBuf = new float[needed + 512];
+                needed = _sel.BuildOverlayVerts(_selOverlayBuf, _cam);
+            }
+            _selOverlayCount = needed / 6; // 6 floats per vertex
+
+            if (_selOverlayCount == 0) return;
+
+            GL.BindVertexArray(_selOverlayVao);
+            GL.BindBuffer(BufferTarget.ArrayBuffer, _selOverlayVbo);
+            GL.BufferData(BufferTarget.ArrayBuffer,
+                needed * sizeof(float), _selOverlayBuf, BufferUsageHint.DynamicDraw);
+
+            GL.UseProgram(_lineShader);
+            Matrix4 ident = Matrix4.Identity;
+            GL.UniformMatrix4(_uViewLine, false, ref ident);
+            GL.UniformMatrix4(_uProjLine, false, ref ident);
+            GL.Uniform1(_uAlphaLine, 1f);
+
+            GL.Disable(EnableCap.DepthTest);
+            GL.LineWidth(1.5f);
+            GL.DrawArrays(PrimitiveType.Lines, 0, _selOverlayCount);
+            GL.Enable(EnableCap.DepthTest);
+            GL.LineWidth(1f);
         }
 
         private int _pivotVao = -1;
@@ -620,12 +717,16 @@ void main()
             base.OnResize(e);
             GL.Viewport(0, 0, e.Width, e.Height);
             _cam.SetViewportSize(e.Width, e.Height);
+            _sel.SetViewportSize(e.Width, e.Height);
         }
 
         // ── Cleanup ───────────────────────────────────────────────────────────
 
         protected override void OnUnload()
         {
+            if (_selOverlayVao != -1) GL.DeleteVertexArray(_selOverlayVao);
+            if (_selOverlayVbo != -1) GL.DeleteBuffer(_selOverlayVbo);
+
             if (_pivotVao != -1) GL.DeleteVertexArray(_pivotVao);
             if (_pivotVbo != -1) GL.DeleteBuffer(_pivotVbo);
             
