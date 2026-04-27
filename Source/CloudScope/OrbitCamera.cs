@@ -190,26 +190,48 @@ namespace CloudScope
             _picked = ScreenToView(mouseX, mouseY, viewZ);
         }
 
-        /// <summary>Sets the orbit center from the depth under a screen-space marker.</summary>
+        /// <summary>
+        /// Sets the orbit center from the depth under a screen-space marker.
+        /// If no geometry is found the pivot is projected onto a plane at the
+        /// current orbit-pivot depth so orbiting stays sensible even when the
+        /// user clicks on empty sky.
+        /// </summary>
         public bool SetOrbitPivotFromScreen(int screenX, int screenY, int windowSize = 11)
         {
             float depth = ReadClosestDepthWindow(screenX, screenY, windowSize);
-            if (depth >= 0.9999f)
-                return false;
+            if (depth < 0.9999f)
+            {
+                _orbitPivot = ViewToWorld(ScreenToView(screenX, screenY, DepthToViewZ(depth)));
+                return true;
+            }
 
-            float viewZ = DepthToViewZ(depth);
-            _orbitPivot = ViewToWorld(ScreenToView(screenX, screenY, viewZ));
-            return true;
+            // Fallback: no geometry hit — project cursor at current pivot depth
+            float pivotViewZ = WorldToView(_orbitPivot, _vtw).Z;
+            _orbitPivot = ViewToWorld(ScreenToView(screenX, screenY, pivotViewZ));
+            return false;
         }
 
-        /// <summary>Rotation - pixel delta. Orbits around _trn (world origin after FitToCloud).</summary>
+        /// <summary>
+        /// Rotation via pixel delta. Orbits around _orbitPivot with two corrections:
+        ///  • Adaptive speed  — scales with hvs/sceneRadius so close-up rotation is
+        ///    finer and far-away rotation is faster (same visual feel at any zoom).
+        ///  • Cosine azimuth  — reduces horizontal sensitivity near the poles so the
+        ///    world doesn't spin when looking straight up/down (Z-up preserved).
+        /// </summary>
         public void Rotate(float dx, float dy)
         {
-            Matrix4 oldVtw = _vtw;
-            Vector3 pivotView = WorldToView(_orbitPivot, oldVtw);
+            Vector3 pivotView = WorldToView(_orbitPivot, _vtw);
 
-            _az -= dx * RotationSpeed;
-            _el -= dy * RotationSpeed;
+            // Scale speed with zoom: zoomed in → finer, zoomed out → faster
+            float speedScale = Math.Clamp((float)(_hvs / _sceneRadius), 0.05f, 4f);
+            float speed = RotationSpeed * speedScale;
+
+            // Cosine correction: azimuth slows near poles, elevation always full speed
+            float elRad  = _el * MathF.PI / 180f;
+            float azScale = MathF.Max(MathF.Cos(elRad), 0.08f);
+
+            _az -= dx * speed * azScale;
+            _el -= dy * speed;
             if (ConstrainElev) _el = Math.Clamp(_el, -89f, 89f);
             RebuildRot();
 
@@ -226,17 +248,19 @@ namespace CloudScope
 
         /// <summary>
         /// Pan - from/to screen coordinates.
-        /// Uses pickedPointView.Z (= _picked.Z) exactly as in AdvancedZPR,
-        /// so the picked point stays under the cursor in both ortho and perspective.
-        /// In ortho iez=0 so viewZ has no effect on x/y.
+        /// Uses pickedPointView.Z (= _picked.Z) so the picked point stays under
+        /// the cursor in both ortho and perspective.
+        /// The orbit pivot is translated by the same world delta so that subsequent
+        /// orbiting (without a new click) stays coherent after a pan.
         /// </summary>
         public void Pan(int fromX, int fromY, int toX, int toY)
         {
-            float viewZ = _picked.Z;
-            var vFrom  = ScreenToView(fromX, fromY, viewZ);
-            var vTo    = ScreenToView(toX,   toY,   viewZ);
-            var deltaV = vTo - vFrom;
-            _trn -= MulDir(deltaV, _vtw);
+            float viewZ     = _picked.Z;
+            var   vFrom     = ScreenToView(fromX, fromY, viewZ);
+            var   vTo       = ScreenToView(toX,   toY,   viewZ);
+            var   worldDelta = MulDir(vTo - vFrom, _vtw);
+            _trn        -= worldDelta;
+            _orbitPivot -= worldDelta; // keep pivot view-relative so orbit after pan is stable
         }
 
         /// <summary>
