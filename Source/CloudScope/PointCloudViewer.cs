@@ -254,8 +254,9 @@ void main()
             // Smooth camera transition tick (view presets, focus)
             _cam.TickTransition(dt);
 
-            // Pivot indicator: visible only during orbit (left drag), hidden otherwise
-            float pivotTarget = _leftDown ? 1f : 0f;
+            // Pivot: visible for the full orbit gesture including inertia tail
+            bool orbiting   = _leftDown || _orbitVelX != 0f || _orbitVelY != 0f;
+            float pivotTarget = orbiting ? 1f : 0f;
             float pivotRate   = pivotTarget > _pivotFade ? 8f : 5f;
             _pivotFade += (pivotTarget - _pivotFade) * Math.Min(pivotRate * dt, 1f);
             if (_pivotFlash > 0f) _pivotFlash = Math.Max(0f, _pivotFlash - dt * 2.5f);
