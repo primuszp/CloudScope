@@ -342,29 +342,40 @@ void main()
 
             if (e.Button == MouseButton.Left)
             {
+                bool toolConsumed = false;
+
                 if (_mode == InteractionMode.Label)
                 {
-                    // Priority 0: Confirm extrude phase → enter editing
-                    if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Extruding)
+                    // Drawing: start new rect (only when Idle)
+                    if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Idle)
+                    {
+                        _boxTool.OnMouseDown(mx, my, _cam);
+                        toolConsumed = true;
+                    }
+                    // Drawing: continue drawing (IsActive = Phase==Drawing)
+                    else if (CurrentTool.IsActive)
+                    {
+                        toolConsumed = true; // drawing in progress, no orbit
+                    }
+                    // Extruding: click confirms extrude → editing phase
+                    else if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Extruding)
                     {
                         _boxTool.ConfirmExtrude();
-                        Console.WriteLine("Extrude confirmed — drag handles or rotation rings to adjust. Enter to label.");
-                        return;
+                        Console.WriteLine("Box ready — drag handles or rings to adjust. Enter to label.");
+                        toolConsumed = true;
                     }
-
-                    // Priority 1: Handle/ring click (box tool in editing phase only)
-                    if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Editing)
+                    // Editing: click on handle/ring starts drag; otherwise fall through to orbit
+                    else if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Editing)
                     {
                         int handle = _boxTool.HitTestHandles(mx, my, _cam);
                         if (handle != BoxSelectionTool.HoverNone)
                         {
                             _boxTool.BeginHandleDrag(handle, mx, my, _cam);
-                            return;
+                            toolConsumed = true;
                         }
                     }
-
-                    // Priority 2: G/S/R pending action
-                    if (CurrentTool.IsEditing && _pendingAction != EditAction.None)
+                    // G/S/R pending action
+                    else if (CurrentTool.IsEditing && _pendingAction != EditAction.None)
                     {
                         _editDragging = true;
                         switch (_pendingAction)
@@ -373,14 +384,12 @@ void main()
                             case EditAction.Scale:  CurrentTool.BeginScale(mx, my, _cam);  break;
                             case EditAction.Rotate: CurrentTool.BeginRotate(mx, my, _cam); break;
                         }
-                    }
-                    // Priority 3: Start new placement (only if not editing)
-                    else if (!CurrentTool.IsEditing && !CurrentTool.IsActive)
-                    {
-                        CurrentTool.OnMouseDown(mx, my, _cam);
+                        toolConsumed = true;
                     }
                 }
-                else
+
+                // Orbit: always active unless tool consumed the click
+                if (!toolConsumed)
                 {
                     if (_cam.SetOrbitPivotFromScreen(mx, my, 11))
                         _pivotFlash = 1.0f;
@@ -415,7 +424,7 @@ void main()
             {
                 if (_mode == InteractionMode.Label)
                 {
-                    // End handle drag
+                    // End handle/ring drag
                     if (_activeToolType == SelectionToolType.Box && _boxTool.IsHandleDragging)
                     {
                         _boxTool.EndHandleDrag();
@@ -427,20 +436,25 @@ void main()
                         _editDragging = false;
                         _pendingAction = EditAction.None;
                     }
-                    // End placement → create 3D box
-                    else if (CurrentTool.IsActive)
+                    // End placement drag → finalize box
+                    else if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Drawing)
                     {
                         int mx = (int)MouseState.Position.X;
                         int my = (int)MouseState.Position.Y;
-                        CurrentTool.OnMouseUp(mx, my);
-                        // For box tool: Phase is still Drawing after OnMouseUp (not Idle = valid rect)
-                        if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Drawing)
+                        _boxTool.OnMouseUp(mx, my);
+                        if (_boxTool.Phase == ToolPhase.Drawing) // valid rect (not cancelled)
                         {
                             _boxTool.FinalizeBoxFromScreen(_cam);
-                            Console.WriteLine("Box drawn — move mouse to set depth, click to confirm.");
+                            Console.WriteLine("Box drawn — scroll to set depth, click to confirm.");
                         }
-                        else if (CurrentTool.IsEditing)
-                            Console.WriteLine("Selection placed — G/S/R + drag to edit, Enter to confirm.");
+                    }
+                    else if (CurrentTool.IsActive) // sphere or other tool
+                    {
+                        int mx2 = (int)MouseState.Position.X;
+                        int my2 = (int)MouseState.Position.Y;
+                        CurrentTool.OnMouseUp(mx2, my2);
+                        if (CurrentTool.IsEditing)
+                            Console.WriteLine("Selection placed — Enter to confirm.");
                     }
                 }
                 _leftDown = false;
@@ -455,17 +469,18 @@ void main()
             base.OnMouseMove(e);
             int mx = (int)e.X;
             int my = (int)e.Y;
+            int dx = mx - _lastMX;
+            int dy = my - _lastMY;
 
             if (_mode == InteractionMode.Label)
             {
-                // Extrude phase: mouse Y controls depth (no button needed)
-                if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Extruding)
+                // Drawing drag: update rect end point
+                if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Drawing)
                 {
-                    _boxTool.UpdateExtrude(mx, my);
+                    _boxTool.OnMouseMove(mx, my, _cam);
                 }
-
-                // Handle / ring drag (box tool editing phase)
-                if (_activeToolType == SelectionToolType.Box && _boxTool.IsHandleDragging)
+                // Handle/ring drag
+                else if (_activeToolType == SelectionToolType.Box && _boxTool.IsHandleDragging)
                 {
                     _boxTool.UpdateHandleDrag(mx, my, _cam);
                 }
@@ -474,27 +489,22 @@ void main()
                 {
                     CurrentTool.UpdateEdit(mx, my, _cam);
                 }
-                // Placement drag
-                else if (CurrentTool.IsActive)
+                // Sphere placement drag
+                else if (CurrentTool.IsActive && _activeToolType != SelectionToolType.Box)
                 {
                     CurrentTool.OnMouseMove(mx, my, _cam);
                 }
-                // Hover detection (handles + rings) — editing phase only
+                // Hover detection: handles + rings (editing phase, no buttons held)
                 else if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Editing)
                 {
                     _boxTool.HoveredHandle = _boxTool.HitTestHandles(mx, my, _cam);
                 }
-                // Pan via right/middle (always available in label mode)
-                else if (_rightDown || _middleDown)
-                {
-                    _cam.Pan(_lastMX, _lastMY, mx, my);
-                    _panVelX = mx - _lastMX; _panVelY = my - _lastMY;
-                }
             }
-            else if (_leftDown)
+
+            // Camera navigation — always active in navigate mode,
+            // and in label mode whenever tool didn't consume the left button
+            if (_leftDown)
             {
-                int dx = mx - _lastMX;
-                int dy = my - _lastMY;
                 _cam.Rotate(dx, dy);
                 _orbitVelX = dx; _orbitVelY = dy;
             }
@@ -514,10 +524,12 @@ void main()
             int mx = (int)MouseState.Position.X;
             int my = (int)MouseState.Position.Y;
 
-            // In label mode editing: scroll adjusts selection size
-            if (_mode == InteractionMode.Label && CurrentTool.IsEditing)
+            // Extruding: scroll sets depth (don't zoom)
+            if (_mode == InteractionMode.Label &&
+                _activeToolType == SelectionToolType.Box &&
+                _boxTool.Phase == ToolPhase.Extruding)
             {
-                CurrentTool.AdjustScale(e.OffsetY);
+                _boxTool.AdjustScale(e.OffsetY);
                 return;
             }
 
