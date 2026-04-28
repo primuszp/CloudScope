@@ -153,7 +153,18 @@ namespace CloudScope.Selection
             int   best     = HoverNone;
             float bestDist = threshold;
 
-            for (int i = 0; i < 15; i++)
+            // Face handles (0-5): test the entire arrow shaft (base → tip)
+            for (int i = 0; i < 6; i++)
+            {
+                var (fx, fy, fb) = cam.WorldToScreen(HandleWorldPosition(i));
+                var (tx, ty, tb) = cam.WorldToScreen(FaceArrowTipWorldPosition(i));
+                if (fb && tb) continue;
+                float d = SegDist(mx, my, fx, fy, tx, ty);
+                if (d < bestDist) { bestDist = d; best = i; }
+            }
+
+            // Corner / center handles (6-14): single-point hit-test
+            for (int i = 6; i < 15; i++)
             {
                 var (sx, sy, behind) = cam.WorldToScreen(HandleWorldPosition(i));
                 if (behind) continue;
@@ -175,6 +186,17 @@ namespace CloudScope.Selection
             if (i >= 15) return Center;
             Vector4 wp = new Vector4(HandleLocalPos[i], 1f) * GetModelMatrix();
             return wp.Xyz;
+        }
+
+        public float ArrowWorldLength =>
+            MathF.Max(MathF.Max(HalfExtents.X, HalfExtents.Y), HalfExtents.Z) * 0.22f;
+
+        public Vector3 FaceArrowTipWorldPosition(int i)
+        {
+            Vector3 facePos  = HandleWorldPosition(i);
+            Matrix3 invRot   = Matrix3.Transpose(Matrix3.CreateFromQuaternion(Rotation));
+            Vector3 worldDir = (invRot * HandleLocalPos[i]).Normalized();
+            return facePos + worldDir * MathF.Max(ArrowWorldLength, 0.01f);
         }
 
         public void BeginHandleDrag(int handleIdx, int mx, int my, OrbitCamera cam)

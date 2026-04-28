@@ -12,21 +12,33 @@ using CloudScope.Rendering;
 namespace CloudScope
 {
     /// <summary>
-    /// Modern OpenGL 3.3 point-cloud viewer.
+    /// OpenGL 3.3 point-cloud viewer with interactive OBB labeling.
     ///
-    /// Camera controls (AdvancedZPR mapping):
-    ///   Left drag     Orbit (azimuth / elevation)  — suppressed when selection tool active
-    ///   Right drag    Pan  — the clicked point stays under the cursor
-    ///   Scroll        Zoom — zooms toward the point under the cursor
-    ///   Space         Toggle orthographic / perspective
-    ///   Num1/3/7      Front / Right / Top
-    ///   Num5          Isometric
-    ///   Home          Reset view
-    ///   +/-           Point size up / down
-    ///   T             Rectangle selection tool
-    ///   G             Sphere selection tool
-    ///   Del           Clear selection
-    ///   Escape        Deactivate selection tool (if active) / quit
+    /// Camera (always active):
+    ///   Left drag        Orbit  — around scene or active box center
+    ///   Right drag       Pan    — clicked point stays under cursor
+    ///   Scroll           Zoom   — toward point under cursor
+    ///   Space            Toggle orthographic / perspective
+    ///   Num1 / 3 / 7     Front / Right / Top view
+    ///   Num5             Isometric preset
+    ///   Home             Reset view
+    ///   +  /  -          Point size up / down
+    ///
+    /// Label mode  (T to toggle):
+    ///   Left drag        Draw selection rectangle  →  enters Edit mode
+    ///   Drag face arrow  Resize box on that axis
+    ///   Drag corner      Resize box diagonally
+    ///   Drag center dot  Move box
+    ///   Drag ring        Rotate box (local X / Y / Z axis)
+    ///   Enter            Confirm: label enclosed points with current label
+    ///   Escape           Cancel box / exit label mode
+    ///   Del              Clear last labeled selection
+    ///   1 – 7            Active label: Ground / Building / Vegetation /
+    ///                    Vehicle / Road / Water / Wire
+    ///   G / S / R        Grab / Scale / Rotate via mouse drag (keyboard edit)
+    ///   X / Y / Z        Constrain keyboard edit to axis
+    ///
+    /// Preview: enclosed points highlighted yellow while box is active.
     /// </summary>
     public sealed class PointCloudViewer : GameWindow
     {
@@ -81,6 +93,10 @@ namespace CloudScope
         // -- Inertia velocities (screen pixels/frame) ────────────────-------------
         private float _orbitVelX, _orbitVelY;
         private float _panVelX,   _panVelY;
+
+        // ── Box selection preview (throttled live highlight) ─────────────────
+        private float _previewTimer = 999f;   // force first rebuild
+        private const float PreviewInterval = 0.08f;  // ~12 fps refresh
 
         // ── Point rendering ───────────────────────────────────────────────────
         private float _pointSize = 1.5f;
@@ -299,6 +315,24 @@ void main()
             float pivotRate   = pivotTarget > _pivotFade ? 8f : 5f;
             _pivotFade += (pivotTarget - _pivotFade) * Math.Min(pivotRate * dt, 1f);
             if (_pivotFlash > 0f) _pivotFlash = Math.Max(0f, _pivotFlash - dt * 2.5f);
+
+            // Live preview: highlight points inside active box (throttled)
+            if (boxActive && _pointsCPU != null)
+            {
+                _previewTimer += dt;
+                if (_previewTimer >= PreviewInterval)
+                {
+                    _previewTimer = 0f;
+                    var preview = _boxTool.ResolveSelection(_pointsCPU, _cam,
+                                      (int)_cam.ViewportWidth, (int)_cam.ViewportHeight);
+                    _highlightRenderer.UpdatePreview(_pointsCPU, preview);
+                }
+            }
+            else if (!boxActive)
+            {
+                _highlightRenderer.UpdatePreview(null, null);
+                _previewTimer = 999f;
+            }
 
             // Suppress inertia while a transition is playing (avoids fighting)
             if (_cam.IsTransitioning)
@@ -680,6 +714,9 @@ void main()
             // 2. Labeled points highlight (second pass with label colors)
             if (_pointsCPU != null && _labelManager.Count > 0)
                 _highlightRenderer.Render(_pointsCPU, _labelManager, ref view, ref proj, _pointSize);
+
+            // 2b. Box selection preview — points currently inside the box, shown in yellow
+            _highlightRenderer.RenderPreview(ref view, ref proj, _pointSize);
 
             // 3. Active selection tool gizmo
             if (_mode == InteractionMode.Label)
