@@ -95,8 +95,10 @@ namespace CloudScope
         private float _panVelX,   _panVelY;
 
         // ── Box selection preview (throttled live highlight) ─────────────────
-        private float _previewTimer = 999f;   // force first rebuild
-        private const float PreviewInterval = 0.08f;  // ~12 fps refresh
+        private float _previewTimer = 999f;       // force first rebuild
+        private const float PreviewInterval = 0.08f;  // ~12 fps
+        private HashSet<int>? _previewIndices;    // computed in OnUpdateFrame, uploaded in OnRenderFrame
+        private bool _previewDirty;               // true when _previewIndices needs uploading
 
         // ── Point rendering ───────────────────────────────────────────────────
         private float _pointSize = 1.5f;
@@ -316,22 +318,24 @@ void main()
             _pivotFade += (pivotTarget - _pivotFade) * Math.Min(pivotRate * dt, 1f);
             if (_pivotFlash > 0f) _pivotFlash = Math.Max(0f, _pivotFlash - dt * 2.5f);
 
-            // Live preview: highlight points inside active box (throttled)
+            // Live preview: resolve which points are inside the box (CPU only, no GL).
+            // Actual GPU upload happens in OnRenderFrame.
             if (boxActive && _pointsCPU != null)
             {
                 _previewTimer += dt;
                 if (_previewTimer >= PreviewInterval)
                 {
                     _previewTimer = 0f;
-                    var preview = _boxTool.ResolveSelection(_pointsCPU, _cam,
-                                      (int)_cam.ViewportWidth, (int)_cam.ViewportHeight);
-                    _highlightRenderer.UpdatePreview(_pointsCPU, preview);
+                    _previewIndices = _boxTool.ResolveSelection(_pointsCPU, _cam,
+                                          (int)_cam.ViewportWidth, (int)_cam.ViewportHeight);
+                    _previewDirty = true;
                 }
             }
-            else if (!boxActive)
+            else if (!boxActive && _previewIndices != null)
             {
-                _highlightRenderer.UpdatePreview(null, null);
-                _previewTimer = 999f;
+                _previewIndices = null;
+                _previewDirty   = true;
+                _previewTimer   = 999f;
             }
 
             // Suppress inertia while a transition is playing (avoids fighting)
@@ -715,7 +719,13 @@ void main()
             if (_pointsCPU != null && _labelManager.Count > 0)
                 _highlightRenderer.Render(_pointsCPU, _labelManager, ref view, ref proj, _pointSize);
 
-            // 2b. Box selection preview — points currently inside the box, shown in yellow
+            // 2b. Box selection preview — points currently inside the box, shown in yellow.
+            // GPU upload happens here (not in OnUpdateFrame) to keep GL calls on the render thread.
+            if (_previewDirty)
+            {
+                _highlightRenderer.UpdatePreview(_pointsCPU, _previewIndices);
+                _previewDirty = false;
+            }
             _highlightRenderer.RenderPreview(ref view, ref proj, _pointSize);
 
             // 3. Active selection tool gizmo
