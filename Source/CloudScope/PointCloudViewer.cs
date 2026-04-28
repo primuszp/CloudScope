@@ -60,6 +60,7 @@ namespace CloudScope
         // -- Pivot indicator animation ----------------------------------------
         private float _pivotFade  = 0f;  // 0=hidden 1=fully visible (only during orbit)
         private float _pivotFlash = 0f;  // brief size pulse when pivot is picked
+        private Vector3 _displayPivot = Vector3.Zero; // fixed world pos; only updated on orbit click, not on pan
 
         // ── Labeling state ────────────────────────────────────────────────────
         private InteractionMode _mode = InteractionMode.Navigate;
@@ -451,11 +452,20 @@ void main()
                 {
                     // When a selection volume is active: orbit around its center, no pivot flash
                     if (_mode == InteractionMode.Label && _boxTool.HasVolume)
+                    {
                         _cam.SetOrbitPivot(_boxTool.Center);
+                        _displayPivot = _boxTool.Center;
+                    }
                     else if (_mode == InteractionMode.Label && _sphereTool.HasVolume)
+                    {
                         _cam.SetOrbitPivot(_sphereTool.Center);
+                        _displayPivot = _sphereTool.Center;
+                    }
                     else if (_cam.SetOrbitPivotFromScreen(mx, my, 11))
+                    {
+                        _displayPivot = _cam.Pivot;
                         _pivotFlash = 1.0f;
+                    }
                     _leftDown  = true;
                     _orbitVelX = 0f; _orbitVelY = 0f;
                 }
@@ -860,8 +870,8 @@ void main()
             float eff        = Math.Clamp(_pivotFade + _pivotFlash, 0f, 1f);
             float spherePx   = 11f + 11f * _pivotFade + _pivotFlash * 14f;
 
-            Vector3 p     = _cam.Pivot;
-            float   scale = _cam.PivotIndicatorScale;
+            Vector3 p     = _displayPivot;
+            float   scale = _cam.PivotIndicatorScaleAt(p);
             Matrix4 model = Matrix4.CreateScale(scale) * Matrix4.CreateTranslation(p);
             Matrix4 mv    = model * view;
 
