@@ -645,11 +645,10 @@ void main()
                     if (e.Key == Keys.Z) { CurrentTool.SetAxisConstraint(2); Console.WriteLine("Constraint: Z axis"); }
                 }
 
-                // ── Tool switch (only when not editing) ──────────────────────
+                // ── Tool switch — only Box tool is active ────────────────────
                 if (!CurrentTool.IsEditing && !CurrentTool.IsActive)
                 {
-                    if (e.Key == Keys.D1) { _activeToolType = SelectionToolType.Box;    Console.WriteLine("Tool: Box"); }
-                    if (e.Key == Keys.D2) { _activeToolType = SelectionToolType.Sphere; Console.WriteLine("Tool: Sphere"); }
+                    if (e.Key == Keys.D1) { _activeToolType = SelectionToolType.Box; Console.WriteLine("Tool: Box"); }
                 }
 
                 // Label presets (3-9 → index 0-6)
