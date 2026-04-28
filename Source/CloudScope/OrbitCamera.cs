@@ -464,10 +464,12 @@ namespace CloudScope
             else
             {
                 float ez = 1f / iez;
+                // View matrix includes tEye = Translate(0,0,-ez), so effective viewZ = vp.Z - ez
+                // clipW = -(vp.Z - ez) = ez - vp.Z  (not just -vp.Z)
                 clipX = ez * vp.X / hw;
                 clipY = ez * vp.Y / hh;
-                clipZ = (-(2f * ez - (zn + zf)) * vp.Z - 2f * (ez * (ez - (zn + zf)) + zn * zf)) / (zn - zf);
-                clipW = -vp.Z;
+                clipZ = (-(2f * ez - (zn + zf)) * (vp.Z - ez) - 2f * (ez * (ez - (zn + zf)) + zn * zf)) / (zn - zf);
+                clipW = ez - vp.Z;
             }
 
             // Clip → NDC
