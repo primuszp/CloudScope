@@ -310,10 +310,11 @@ void main()
             _cam.TickTransition(dt);
 
             // Pivot: visible for the full orbit gesture including inertia tail.
-            // Suppressed when the box tool is active (box center orbiting, no pivot distraction).
+            // Suppressed when any selection volume is active (orbiting around its center instead).
             bool boxActive    = _mode == InteractionMode.Label && _boxTool.HasVolume;
+            bool toolActive   = boxActive || (_mode == InteractionMode.Label && _sphereTool.HasVolume);
             bool orbiting     = _leftDown || _orbitVelX != 0f || _orbitVelY != 0f;
-            float pivotTarget = (orbiting && !boxActive) ? 1f : 0f;
+            float pivotTarget = (orbiting && !toolActive) ? 1f : 0f;
             float pivotRate   = pivotTarget > _pivotFade ? 8f : 5f;
             _pivotFade += (pivotTarget - _pivotFade) * Math.Min(pivotRate * dt, 1f);
             if (_pivotFlash > 0f) _pivotFlash = Math.Max(0f, _pivotFlash - dt * 2.5f);
@@ -386,47 +387,73 @@ void main()
 
                 if (_mode == InteractionMode.Label)
                 {
-                    // Drawing: start new rect (only when Idle)
-                    if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Idle)
+                    if (_activeToolType == SelectionToolType.Sphere)
                     {
-                        _boxTool.OnMouseDown(mx, my, _cam);
-                        toolConsumed = true;
-                    }
-                    // Drawing in progress: block orbit
-                    else if (CurrentTool.IsActive)
-                    {
-                        toolConsumed = true;
-                    }
-                    // Editing: click on handle/ring → drag; otherwise orbit
-                    else if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Editing)
-                    {
-                        int handle = _boxTool.HitTestHandles(mx, my, _cam);
-                        if (handle != BoxSelectionTool.HoverNone)
+                        if (!_sphereTool.IsEditing)
                         {
-                            _boxTool.BeginHandleDrag(handle, mx, my, _cam);
+                            // Start sphere placement
+                            _sphereTool.OnMouseDown(mx, my, _cam);
                             toolConsumed = true;
                         }
-                    }
-                    // G/S/R pending action
-                    else if (CurrentTool.IsEditing && _pendingAction != EditAction.None)
-                    {
-                        _editDragging = true;
-                        switch (_pendingAction)
+                        else if (_pendingAction != EditAction.None)
                         {
-                            case EditAction.Grab:   CurrentTool.BeginGrab(mx, my, _cam);   break;
-                            case EditAction.Scale:  CurrentTool.BeginScale(mx, my, _cam);  break;
-                            case EditAction.Rotate: CurrentTool.BeginRotate(mx, my, _cam); break;
+                            _editDragging = true;
+                            switch (_pendingAction)
+                            {
+                                case EditAction.Grab:   _sphereTool.BeginGrab(mx, my, _cam);   break;
+                                case EditAction.Scale:  _sphereTool.BeginScale(mx, my, _cam);  break;
+                                case EditAction.Rotate: _sphereTool.BeginRotate(mx, my, _cam); break;
+                            }
+                            toolConsumed = true;
                         }
-                        toolConsumed = true;
+                        // In editing state without pending action: let camera orbit freely
+                    }
+                    else // Box tool
+                    {
+                        // Drawing: start new rect (only when Idle)
+                        if (_boxTool.Phase == ToolPhase.Idle)
+                        {
+                            _boxTool.OnMouseDown(mx, my, _cam);
+                            toolConsumed = true;
+                        }
+                        // Drawing in progress: block orbit
+                        else if (_boxTool.IsActive)
+                        {
+                            toolConsumed = true;
+                        }
+                        // Editing: click on handle/ring → drag; otherwise orbit
+                        else if (_boxTool.Phase == ToolPhase.Editing)
+                        {
+                            int handle = _boxTool.HitTestHandles(mx, my, _cam);
+                            if (handle != BoxSelectionTool.HoverNone)
+                            {
+                                _boxTool.BeginHandleDrag(handle, mx, my, _cam);
+                                toolConsumed = true;
+                            }
+                        }
+                        // G/S/R pending action
+                        else if (_boxTool.IsEditing && _pendingAction != EditAction.None)
+                        {
+                            _editDragging = true;
+                            switch (_pendingAction)
+                            {
+                                case EditAction.Grab:   _boxTool.BeginGrab(mx, my, _cam);   break;
+                                case EditAction.Scale:  _boxTool.BeginScale(mx, my, _cam);  break;
+                                case EditAction.Rotate: _boxTool.BeginRotate(mx, my, _cam); break;
+                            }
+                            toolConsumed = true;
+                        }
                     }
                 }
 
                 // Orbit: always active unless tool consumed the click.
                 if (!toolConsumed)
                 {
-                    // When box is active: orbit around box center, no pivot flash
+                    // When a selection volume is active: orbit around its center, no pivot flash
                     if (_mode == InteractionMode.Label && _boxTool.HasVolume)
                         _cam.SetOrbitPivot(_boxTool.Center);
+                    else if (_mode == InteractionMode.Label && _sphereTool.HasVolume)
+                        _cam.SetOrbitPivot(_sphereTool.Center);
                     else if (_cam.SetOrbitPivotFromScreen(mx, my, 11))
                         _pivotFlash = 1.0f;
                     _leftDown  = true;
@@ -753,9 +780,10 @@ void main()
                 }
             }
 
-            // 4. Pivot indicator — only during orbit, fades in/out smoothly; hidden when box is active
-            bool boxActive = _mode == InteractionMode.Label && _boxTool.HasVolume;
-            if (!boxActive && (_pivotFade > 0.01f || _pivotFlash > 0.01f))
+            // 4. Pivot indicator — only during orbit; hidden when any selection volume is active
+            bool anyToolActive = _mode == InteractionMode.Label &&
+                                 (_boxTool.HasVolume || _sphereTool.HasVolume);
+            if (!anyToolActive && (_pivotFade > 0.01f || _pivotFlash > 0.01f))
                 RenderPivotIndicator(ref view, ref proj);
 
             // 5. Center crosshair — fades out as pivot fades in, full when pivot is hidden
