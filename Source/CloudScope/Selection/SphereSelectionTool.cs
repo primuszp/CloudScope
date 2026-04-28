@@ -42,6 +42,7 @@ namespace CloudScope.Selection
         private int _editStartX, _editStartY;
         private Vector3 _editStartCenter;
         private float _editStartRadius;
+        private float _editViewZ;  // view-space Z of the handle at drag start (for depth-correct projection)
         // Screen-space outward direction of the active pole handle (unit vector, set in BeginHandleDrag)
         private Vector2 _poleScreenDir;
 
@@ -112,7 +113,12 @@ namespace CloudScope.Selection
             _editStartCenter = Center;
             _editStartRadius = Radius;
 
-            if (handle > 0)
+            if (handle == 0)
+            {
+                // Cache depth of sphere center for depth-correct projection during drag
+                _editViewZ = cam.WorldToViewZ(Center);
+            }
+            else
             {
                 // Compute screen-space direction from center toward this pole.
                 // Dragging away from center → bigger; toward center → smaller.
@@ -130,9 +136,9 @@ namespace CloudScope.Selection
 
             if (_activeHandle == 0)
             {
-                // Center: world-space drag at sphere depth
-                var (startWorld, _) = cam.ScreenToWorldPoint(_editStartX, _editStartY, 21);
-                var (curWorld,   _2) = cam.ScreenToWorldPoint(mx, my, 21);
+                // Center: depth-correct world-space drag using cached view-Z
+                Vector3 startWorld = cam.ScreenToWorldAtDepth(_editStartX, _editStartY, _editViewZ);
+                Vector3 curWorld   = cam.ScreenToWorldAtDepth(mx, my, _editViewZ);
                 Center = _editStartCenter + (curWorld - startWorld);
             }
             else

@@ -291,13 +291,16 @@ namespace CloudScope.Selection
             while (delta < -MathF.PI) delta += MathF.Tau;
 
             int     axis      = RingAxis(_activeHandle);
-            Matrix3 invRot    = Matrix3.Transpose(Matrix3.CreateFromQuaternion(_editStartRotation));
+            // CreateFromQuaternion gives M where M*v rotates v; M*UnitX = local X axis in world space
+            Matrix3 rotMat    = Matrix3.CreateFromQuaternion(_editStartRotation);
             Vector3 localAxis = axis switch { 0 => Vector3.UnitX, 1 => Vector3.UnitY, _ => Vector3.UnitZ };
-            Vector3 worldAxis = invRot * localAxis;
+            Vector3 worldAxis = rotMat * localAxis;
 
+            // Screen Y is inverted; negate when axis faces toward camera so drag direction matches visual ring
             if (Vector3.Dot(worldAxis, cam.CameraForward) > 0f) delta = -delta;
 
-            Rotation = _editStartRotation * Quaternion.FromAxisAngle(worldAxis.Normalized(), delta);
+            // Apply world-space rotation: new = R_delta * R_start
+            Rotation = Quaternion.FromAxisAngle(worldAxis.Normalized(), delta) * _editStartRotation;
             Rotation.Normalize();
         }
 
