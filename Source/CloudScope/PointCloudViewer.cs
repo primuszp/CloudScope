@@ -357,8 +357,6 @@ void main()
                     {
                         toolConsumed = true;
                     }
-                    // Extruding: camera is FREE — no click-consume here
-                    // (depth set by scroll, confirmed by Enter)
                     // Editing: click on handle/ring → drag; otherwise orbit
                     else if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Editing)
                     {
@@ -442,7 +440,7 @@ void main()
                         if (_boxTool.Phase == ToolPhase.Drawing) // valid rect (not cancelled)
                         {
                             _boxTool.FinalizeBoxFromScreen(_cam);
-                            Console.WriteLine("Box drawn — scroll to adjust depth, Enter to confirm.");
+                            Console.WriteLine("Box drawn — drag the orange arrow (+Z) to extrude. Rings=rotate, corners=resize. Enter to label.");
                         }
                     }
                     else if (CurrentTool.IsActive) // sphere or other tool
@@ -521,15 +519,6 @@ void main()
             int mx = (int)MouseState.Position.X;
             int my = (int)MouseState.Position.Y;
 
-            // Extruding: scroll sets depth (don't zoom)
-            if (_mode == InteractionMode.Label &&
-                _activeToolType == SelectionToolType.Box &&
-                _boxTool.Phase == ToolPhase.Extruding)
-            {
-                _boxTool.AdjustScale(e.OffsetY);
-                return;
-            }
-
             _cam.PickDepthWindow(mx, my, 11);
 
             // Adaptive zoom: larger steps when zoomed out, finer when zoomed in
@@ -580,17 +569,9 @@ void main()
 
             if (_mode == InteractionMode.Label)
             {
-                // ── Enter: two-stage confirm ──────────────────────────────────
-                if (e.Key == Keys.Enter)
+                // ── Enter: confirm selection and apply label ──────────────────
+                if (e.Key == Keys.Enter && CurrentTool.IsEditing)
                 {
-                    // Stage 1: Extruding → confirm depth, enter editing
-                    if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Extruding)
-                    {
-                        _boxTool.ConfirmExtrude();
-                        Console.WriteLine("Depth set — adjust handles/rings, Enter again to label.");
-                    }
-                    // Stage 2: Editing → apply label
-                    else if (CurrentTool.IsEditing)
                     {
                         CurrentTool.Confirm();
                         if (_pointsCPU != null)

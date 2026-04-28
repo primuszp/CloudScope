@@ -6,10 +6,10 @@ using CloudScope.Selection;
 namespace CloudScope.Rendering
 {
     /// <summary>
-    /// Renders the BoxSelectionTool gizmo for all three phases.
-    ///   Phase Drawing:   2D screen rectangle overlay
-    ///   Phase Extruding: 3D wireframe with highlighted depth edges + extrude hint
-    ///   Phase Editing:   wireframe + face/corner/center handles + 3 rotation rings
+    /// Renders the BoxSelectionTool gizmo.
+    ///   Drawing phase:  2D rubber-band overlay
+    ///   Editing phase:  3D wireframe + handles + rotation rings
+    ///                   When box is flat: handle 5 (+Z) shows a large extrude arrow
     /// </summary>
     public sealed class BoxGizmoRenderer : IDisposable
     {
@@ -31,31 +31,26 @@ out vec4 FragColor;
 void main() { FragColor = uColor; }
 ";
 
-        // Unit cube edges: 0-7 = front face (Z=-1), 8-15 = back face (Z=+1), 16-23 = depth edges
+        // Unit-cube edges: 0-7 = front (Z=-1), 8-15 = back (Z=+1), 16-23 = depth edges
         private static readonly float[] UnitCubeEdges =
         {
             -1,-1,-1,  1,-1,-1,   1,-1,-1,  1, 1,-1,
-             1, 1,-1, -1, 1,-1,  -1, 1,-1, -1,-1,-1,  // front face
+             1, 1,-1, -1, 1,-1,  -1, 1,-1, -1,-1,-1,
             -1,-1, 1,  1,-1, 1,   1,-1, 1,  1, 1, 1,
-             1, 1, 1, -1, 1, 1,  -1, 1, 1, -1,-1, 1,  // back face
+             1, 1, 1, -1, 1, 1,  -1, 1, 1, -1,-1, 1,
             -1,-1,-1, -1,-1, 1,   1,-1,-1,  1,-1, 1,
-             1, 1,-1,  1, 1, 1,  -1, 1,-1, -1, 1, 1,  // depth edges
+             1, 1,-1,  1, 1, 1,  -1, 1,-1, -1, 1, 1,
         };
 
-        // ── Public entry points ──────────────────────────────────────────────
+        // ── Entry points ─────────────────────────────────────────────────────
 
         public void Render(BoxSelectionTool box, Matrix4 view, Matrix4 proj, OrbitCamera cam)
         {
             EnsureResources();
-
-            if (box.Phase == ToolPhase.Extruding)
-                RenderExtruding(box, view, proj, cam);
-            else if (box.Phase == ToolPhase.Editing)
-                RenderEditing(box, view, proj, cam);
+            RenderEditing(box, view, proj, cam);
         }
 
-        public void RenderPlacementRect(int startX, int startY, int endX, int endY,
-                                        int vpW, int vpH)
+        public void RenderPlacementRect(int startX, int startY, int endX, int endY, int vpW, int vpH)
         {
             EnsureResources();
 
@@ -63,7 +58,6 @@ void main() { FragColor = uColor; }
             float x1 = Math.Max(startX, endX) / (float)vpW * 2f - 1f;
             float y0 = 1f - Math.Max(startY, endY) / (float)vpH * 2f;
             float y1 = 1f - Math.Min(startY, endY) / (float)vpH * 2f;
-
             if (Math.Abs(x1 - x0) < 0.002f && Math.Abs(y1 - y0) < 0.002f) return;
 
             Matrix4 ident = Matrix4.Identity;
@@ -71,102 +65,33 @@ void main() { FragColor = uColor; }
             GL.UniformMatrix4(_uMVP, false, ref ident);
             GL.Disable(EnableCap.DepthTest);
 
-            // Filled interior
-            float[] fill = { x0,y0,0, x1,y0,0, x1,y1,0, x0,y0,0, x1,y1,0, x0,y1,0 };
-            UploadDynamic(fill);
-            SetColor(0.0f, 0.78f, 1.0f, 0.12f);
+            // Fill
+            Upload(new float[] { x0,y0,0, x1,y0,0, x1,y1,0, x0,y0,0, x1,y1,0, x0,y1,0 });
+            SetColor(0f, 0.78f, 1f, 0.12f);
             GL.DrawArrays(PrimitiveType.Triangles, 0, 6);
 
             // Border
-            float[] border = {
-                x0,y0,0, x1,y0,0,  x1,y0,0, x1,y1,0,
-                x1,y1,0, x0,y1,0,  x0,y1,0, x0,y0,0
-            };
-            UploadDynamic(border);
-            SetColor(0.0f, 0.82f, 1.0f, 0.85f);
+            Upload(new float[] { x0,y0,0, x1,y0,0, x1,y0,0, x1,y1,0, x1,y1,0, x0,y1,0, x0,y1,0, x0,y0,0 });
+            SetColor(0f, 0.82f, 1f, 0.85f);
             GL.LineWidth(1.5f);
             GL.DrawArrays(PrimitiveType.Lines, 0, 8);
 
             // Corner accents
             float d = Math.Max(Math.Min(Math.Abs(x1 - x0), Math.Abs(y1 - y0)) * 0.18f, 0.008f);
-            float[] corners = {
+            Upload(new float[] {
                 x0,y0,0, x0+d,y0,0,  x0,y0,0, x0,y0+d,0,
                 x1,y0,0, x1-d,y0,0,  x1,y0,0, x1,y0+d,0,
                 x1,y1,0, x1-d,y1,0,  x1,y1,0, x1,y1-d,0,
                 x0,y1,0, x0+d,y1,0,  x0,y1,0, x0,y1-d,0,
-            };
-            UploadDynamic(corners);
-            SetColor(1.0f, 1.0f, 1.0f, 0.95f);
-            GL.LineWidth(2.0f);
+            });
+            SetColor(1f, 1f, 1f, 0.95f);
+            GL.LineWidth(2f);
             GL.DrawArrays(PrimitiveType.Lines, 0, 16);
 
             GL.Enable(EnableCap.DepthTest);
         }
 
-        // ── Phase 2: Extruding ───────────────────────────────────────────────
-
-        private void RenderExtruding(BoxSelectionTool box, Matrix4 view, Matrix4 proj, OrbitCamera cam)
-        {
-            Matrix4 model = box.GetModelMatrix();
-            Matrix4 mvp   = model * view * proj;
-
-            GL.UseProgram(_shader);
-            GL.BindVertexArray(_vao);
-            GL.UniformMatrix4(_uMVP, false, ref mvp);
-
-            // Front/back faces: subtle cyan
-            GL.Enable(EnableCap.DepthTest);
-            GL.DepthMask(false);
-            SetColor(0.0f, 0.75f, 1.0f, 0.55f);
-            GL.LineWidth(1.2f);
-            GL.DrawArrays(PrimitiveType.Lines, 0, 16);  // front + back face edges
-
-            // Depth edges (Z-direction): bright orange → shows extrude direction
-            SetColor(1.0f, 0.55f, 0.0f, 0.9f);
-            GL.LineWidth(2.0f);
-            GL.DrawArrays(PrimitiveType.Lines, 16, 8);  // depth edges only
-
-            // Ghost pass
-            GL.Disable(EnableCap.DepthTest);
-            SetColor(0.0f, 0.75f, 1.0f, 0.15f);
-            GL.LineWidth(1.0f);
-            GL.DrawArrays(PrimitiveType.Lines, 0, 16);
-            SetColor(1.0f, 0.55f, 0.0f, 0.25f);
-            GL.DrawArrays(PrimitiveType.Lines, 16, 8);
-
-            // Extrude hint: small arrow along local +Z at center
-            RenderExtrudeArrow(box, cam);
-
-            GL.DepthMask(true);
-            GL.Enable(EnableCap.DepthTest);
-        }
-
-        private void RenderExtrudeArrow(BoxSelectionTool box, OrbitCamera cam)
-        {
-            // Draw a simple line from front face to center, indicating extrude axis
-            Matrix3 invRot = Matrix3.Transpose(Matrix3.CreateFromQuaternion(box.Rotation));
-            Vector3 worldZ = invRot * Vector3.UnitZ;
-            Vector3 tipWorld = box.Center + worldZ * (box.HalfExtents.Z * 1.6f);
-
-            var (sx0, sy0, b0) = cam.WorldToScreen(box.ScreenFaceCenter);
-            var (sx1, sy1, b1) = cam.WorldToScreen(tipWorld);
-            if (b0 || b1) return;
-
-            float vpW = cam.ViewportWidth, vpH = cam.ViewportHeight;
-            float nx0 = sx0 / vpW * 2f - 1f, ny0 = 1f - sy0 / vpH * 2f;
-            float nx1 = sx1 / vpW * 2f - 1f, ny1 = 1f - sy1 / vpH * 2f;
-
-            float[] arrow = { nx0, ny0, 0, nx1, ny1, 0 };
-            Matrix4 ident = Matrix4.Identity;
-            GL.UniformMatrix4(_uMVP, false, ref ident);
-            GL.Disable(EnableCap.DepthTest);
-            UploadDynamic(arrow);
-            SetColor(1.0f, 0.75f, 0.0f, 0.9f);
-            GL.LineWidth(2.5f);
-            GL.DrawArrays(PrimitiveType.Lines, 0, 2);
-        }
-
-        // ── Phase 3: Editing ─────────────────────────────────────────────────
+        // ── Editing phase ─────────────────────────────────────────────────────
 
         private void RenderEditing(BoxSelectionTool box, Matrix4 view, Matrix4 proj, OrbitCamera cam)
         {
@@ -176,7 +101,7 @@ void main() { FragColor = uColor; }
             GL.UseProgram(_shader);
             GL.BindVertexArray(_vao);
 
-            Vector4 wireColor = box.CurrentAction switch
+            Vector4 wire = box.CurrentAction switch
             {
                 EditAction.Grab   => new(0.2f, 1.0f, 0.3f, 0.8f),
                 EditAction.Scale  => new(1.0f, 0.6f, 0.1f, 0.8f),
@@ -184,34 +109,35 @@ void main() { FragColor = uColor; }
                 _                 => new(0.0f, 0.8f, 1.0f, 0.7f),
             };
 
-            // Depth-tested wireframe
             GL.Enable(EnableCap.DepthTest);
             GL.DepthMask(false);
             GL.UniformMatrix4(_uMVP, false, ref mvp);
-            SetColor(wireColor);
+            SetColor(wire);
             GL.LineWidth(1.5f);
             GL.DrawArrays(PrimitiveType.Lines, 0, 24);
 
-            // Ghost wireframe
             GL.Disable(EnableCap.DepthTest);
-            SetColor(wireColor.X, wireColor.Y, wireColor.Z, wireColor.W * 0.18f);
-            GL.LineWidth(1.0f);
+            SetColor(wire.X, wire.Y, wire.Z, wire.W * 0.18f);
+            GL.LineWidth(1f);
             GL.DrawArrays(PrimitiveType.Lines, 0, 24);
 
-            // Handles and rings
-            RenderHandles(box, cam, wireColor);
+            RenderHandles(box, cam, wire);
             RenderRings(box, cam);
+
+            if (box.IsFlat)
+                RenderExtrudeArrow(box, cam);
 
             GL.DepthMask(true);
             GL.Enable(EnableCap.DepthTest);
         }
 
-        private void RenderHandles(BoxSelectionTool box, OrbitCamera cam, Vector4 wireColor)
+        // ── Handles ──────────────────────────────────────────────────────────
+
+        private void RenderHandles(BoxSelectionTool box, OrbitCamera cam, Vector4 wire)
         {
             Matrix4 ident = Matrix4.Identity;
             GL.UniformMatrix4(_uMVP, false, ref ident);
             GL.Disable(EnableCap.DepthTest);
-
             float vpW = cam.ViewportWidth, vpH = cam.ViewportHeight;
 
             for (int i = 0; i < 15; i++)
@@ -221,70 +147,109 @@ void main() { FragColor = uColor; }
 
                 float nx = sx / vpW * 2f - 1f;
                 float ny = 1f - sy / vpH * 2f;
-
-                float size = BoxSelectionTool.IsCenterHandle(i) ? 6f
-                           : BoxSelectionTool.IsFaceHandle(i)   ? 5f : 4f;
+                bool  isExtrude = i == BoxSelectionTool.ExtrudeHandle && box.IsFlat;
+                float size = isExtrude ? 7f : BoxSelectionTool.IsCenterHandle(i) ? 6f : BoxSelectionTool.IsFaceHandle(i) ? 5f : 4f;
                 float hx = size / vpW, hy = size / vpH;
 
                 Vector4 col;
                 if (i == box.HoveredHandle)
-                    col = new(1f, 1f, 0.2f, 0.95f);         // hover: yellow
-                else if (box.IsHandleDragging)
-                    col = wireColor;
+                    col = new(1f, 1f, 0.15f, 1f);
+                else if (isExtrude)
+                    col = new(1f, 0.55f, 0f, 0.95f);           // orange = extrude
                 else if (BoxSelectionTool.IsCenterHandle(i))
-                    col = new(0.3f, 1f, 0.4f, 0.80f);        // center: green
+                    col = new(0.3f, 1f, 0.4f, 0.8f);
                 else if (BoxSelectionTool.IsFaceHandle(i))
-                    col = new(1f, 1f, 1f, 0.75f);             // face: white
+                    col = new(1f, 1f, 1f, 0.75f);
                 else
-                    col = new(0f, 0.85f, 1f, 0.70f);          // corner: cyan
+                    col = new(0f, 0.85f, 1f, 0.7f);
 
-                float[] diamond = {
-                    nx,    ny+hy, 0,  nx+hx, ny,    0,  nx,    ny-hy, 0,
-                    nx,    ny+hy, 0,  nx,    ny-hy, 0,  nx-hx, ny,    0,
-                };
-                UploadDynamic(diamond);
+                Upload(new float[] {
+                    nx, ny+hy, 0,  nx+hx, ny, 0,  nx, ny-hy, 0,
+                    nx, ny+hy, 0,  nx, ny-hy, 0,  nx-hx, ny, 0,
+                });
                 SetColor(col);
                 GL.DrawArrays(PrimitiveType.Triangles, 0, 6);
             }
         }
 
+        // ── Extrude arrow ─────────────────────────────────────────────────────
+
+        private void RenderExtrudeArrow(BoxSelectionTool box, OrbitCamera cam)
+        {
+            // Draw a screen-space arrow from the +Z face center outward
+            Matrix3 invRot  = Matrix3.Transpose(Matrix3.CreateFromQuaternion(box.Rotation));
+            Vector3 worldZ  = invRot * Vector3.UnitZ;
+            Vector3 facePos = box.HandleWorldPosition(BoxSelectionTool.ExtrudeHandle);
+            Vector3 tipPos  = facePos + worldZ * MathF.Max(box.HalfExtents.X, box.HalfExtents.Y) * 0.4f;
+
+            var (fx, fy, fb) = cam.WorldToScreen(facePos);
+            var (tx, ty, tb) = cam.WorldToScreen(tipPos);
+            if (fb || tb) return;
+
+            float vpW = cam.ViewportWidth, vpH = cam.ViewportHeight;
+            float fnx = fx / vpW * 2f - 1f, fny = 1f - fy / vpH * 2f;
+            float tnx = tx / vpW * 2f - 1f, tny = 1f - ty / vpH * 2f;
+
+            // Arrow shaft
+            Matrix4 ident = Matrix4.Identity;
+            GL.UniformMatrix4(_uMVP, false, ref ident);
+            GL.Disable(EnableCap.DepthTest);
+            Upload(new float[] { fnx, fny, 0, tnx, tny, 0 });
+            SetColor(1f, 0.6f, 0f, 0.9f);
+            GL.LineWidth(2.5f);
+            GL.DrawArrays(PrimitiveType.Lines, 0, 2);
+
+            // Arrowhead
+            float dx = tnx - fnx, dy = tny - fny;
+            float len = MathF.Sqrt(dx * dx + dy * dy);
+            if (len < 1e-4f) return;
+            float nx2 = dx / len, ny2 = dy / len;
+            float px = -ny2, py = nx2;  // perpendicular
+            float hs = 0.015f;
+            Upload(new float[] {
+                tnx, tny, 0,
+                tnx - nx2 * hs * 2f + px * hs, tny - ny2 * hs * 2f + py * hs, 0,
+                tnx - nx2 * hs * 2f - px * hs, tny - ny2 * hs * 2f - py * hs, 0,
+            });
+            SetColor(1f, 0.6f, 0f, 0.95f);
+            GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
+        }
+
+        // ── Rotation rings ───────────────────────────────────────────────────
+
         private void RenderRings(BoxSelectionTool box, OrbitCamera cam)
         {
-            const int N = 48;
-            float radius = box.RingRadius;
-
-            Matrix3 invRot = Matrix3.Transpose(Matrix3.CreateFromQuaternion(box.Rotation));
+            const int N      = 48;
+            float     radius = box.RingRadius;
+            Matrix3   invRot = Matrix3.Transpose(Matrix3.CreateFromQuaternion(box.Rotation));
             float vpW = cam.ViewportWidth, vpH = cam.ViewportHeight;
 
             Matrix4 ident = Matrix4.Identity;
             GL.UniformMatrix4(_uMVP, false, ref ident);
             GL.Disable(EnableCap.DepthTest);
 
-            // Ring colors: X=red, Y=green, Z=blue (standard 3D gizmo convention)
-            Vector4[] baseColors =
-            {
+            Vector4[] baseCol = {
                 new(1.0f, 0.25f, 0.25f, 0.75f),
                 new(0.25f, 1.0f, 0.35f, 0.75f),
                 new(0.25f, 0.55f, 1.0f, 0.75f),
             };
 
-            var ringVerts = new float[N * 2 * 3]; // N segments × 2 verts × 3 floats
+            var verts = new float[N * 6]; // N segments × 2 verts × 3 floats
 
             for (int axis = 0; axis < 3; axis++)
             {
-                bool hovered = (box.HoveredHandle == 15 + axis);
-                Vector4 col  = hovered ? new(1f, 1f, 0.2f, 0.95f) : baseColors[axis];
-                float lw     = hovered ? 2.5f : 1.8f;
+                bool    hov = box.HoveredHandle == 15 + axis;
+                Vector4 col = hov ? new(1f, 1f, 0.15f, 1f) : baseCol[axis];
+                GL.LineWidth(hov ? 2.5f : 1.8f);
 
-                int vc = 0;
-                float prevNx = 0, prevNy = 0;
-                bool  prevOk = false;
+                int    vc = 0;
+                float  psx = 0, psy = 0;
+                bool   pok = false;
 
                 for (int j = 0; j <= N; j++)
                 {
-                    float theta = j * MathF.Tau / N;
-                    float ct = MathF.Cos(theta), st = MathF.Sin(theta);
-
+                    float t = j * MathF.Tau / N;
+                    float ct = MathF.Cos(t), st = MathF.Sin(t);
                     Vector3 local = axis switch
                     {
                         0 => new Vector3(0, ct, st),
@@ -292,33 +257,27 @@ void main() { FragColor = uColor; }
                         _ => new Vector3(ct, st, 0),
                     } * radius;
 
-                    Vector3 world = box.Center + invRot * local;
-                    var (sx, sy, behind) = cam.WorldToScreen(world);
+                    var (sx, sy, behind) = cam.WorldToScreen(box.Center + invRot * local);
+                    float nx = sx / vpW * 2f - 1f, ny = 1f - sy / vpH * 2f;
 
-                    float nx = sx / vpW * 2f - 1f;
-                    float ny = 1f - sy / vpH * 2f;
-
-                    if (prevOk && !behind)
+                    if (pok && !behind)
                     {
-                        ringVerts[vc++] = prevNx; ringVerts[vc++] = prevNy; ringVerts[vc++] = 0;
-                        ringVerts[vc++] = nx;     ringVerts[vc++] = ny;     ringVerts[vc++] = 0;
+                        verts[vc++] = psx; verts[vc++] = psy; verts[vc++] = 0;
+                        verts[vc++] = nx;  verts[vc++] = ny;  verts[vc++] = 0;
                     }
-
-                    prevNx = nx; prevNy = ny; prevOk = !behind;
+                    psx = nx; psy = ny; pok = !behind;
                 }
 
                 if (vc == 0) continue;
-
-                UploadDynamic(ringVerts, vc);
+                Upload(verts, vc);
                 SetColor(col);
-                GL.LineWidth(lw);
                 GL.DrawArrays(PrimitiveType.Lines, 0, vc / 3);
             }
         }
 
         // ── GL helpers ───────────────────────────────────────────────────────
 
-        private void UploadDynamic(float[] data, int count = -1)
+        private void Upload(float[] data, int count = -1)
         {
             int bytes = (count < 0 ? data.Length : count) * sizeof(float);
             GL.BindVertexArray(_hVao);
@@ -326,11 +285,8 @@ void main() { FragColor = uColor; }
             GL.BufferData(BufferTarget.ArrayBuffer, bytes, data, BufferUsageHint.DynamicDraw);
         }
 
-        private void SetColor(float r, float g, float b, float a) =>
-            GL.Uniform4(_uColor, r, g, b, a);
-
-        private void SetColor(Vector4 c) =>
-            GL.Uniform4(_uColor, c.X, c.Y, c.Z, c.W);
+        private void SetColor(float r, float g, float b, float a) => GL.Uniform4(_uColor, r, g, b, a);
+        private void SetColor(Vector4 c) => GL.Uniform4(_uColor, c.X, c.Y, c.Z, c.W);
 
         private void EnsureResources()
         {
@@ -344,15 +300,14 @@ void main() { FragColor = uColor; }
             GL.AttachShader(_shader, v); GL.AttachShader(_shader, f);
             GL.LinkProgram(_shader);
             GL.DeleteShader(v); GL.DeleteShader(f);
-
             _uMVP   = GL.GetUniformLocation(_shader, "uMVP");
             _uColor = GL.GetUniformLocation(_shader, "uColor");
 
             _vao = GL.GenVertexArray(); _vbo = GL.GenBuffer();
             GL.BindVertexArray(_vao);
             GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
-            GL.BufferData(BufferTarget.ArrayBuffer,
-                UnitCubeEdges.Length * sizeof(float), UnitCubeEdges, BufferUsageHint.StaticDraw);
+            GL.BufferData(BufferTarget.ArrayBuffer, UnitCubeEdges.Length * sizeof(float),
+                          UnitCubeEdges, BufferUsageHint.StaticDraw);
             GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 12, 0);
             GL.EnableVertexAttribArray(0);
 
