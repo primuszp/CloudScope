@@ -620,6 +620,9 @@ namespace CloudScope
 
         // ── Selection helpers ─────────────────────────────────────────────────
 
+        /// <summary>Sets the orbit pivot to an explicit world-space point (no depth read).</summary>
+        public void SetOrbitPivot(Vector3 worldPos) => _orbitPivot = worldPos;
+
         /// <summary>Camera right axis in world space.</summary>
         public Vector3 CameraRight   => new(_vtw.M11, _vtw.M21, _vtw.M31);
         /// <summary>Camera up axis in world space.</summary>

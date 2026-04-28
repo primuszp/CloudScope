@@ -382,12 +382,13 @@ void main()
                 }
 
                 // Orbit: always active unless tool consumed the click.
-                // Suppress pivot flash in label mode when box is visible (avoid visual conflict).
                 if (!toolConsumed)
                 {
-                    bool pivotHit = _cam.SetOrbitPivotFromScreen(mx, my, 11);
-                    bool showFlash = _mode != InteractionMode.Label || !_boxTool.HasVolume;
-                    if (pivotHit && showFlash) _pivotFlash = 1.0f;
+                    // When box is active: orbit around box center, no pivot flash
+                    if (_mode == InteractionMode.Label && _boxTool.HasVolume)
+                        _cam.SetOrbitPivot(_boxTool.Center);
+                    else if (_cam.SetOrbitPivotFromScreen(mx, my, 11))
+                        _pivotFlash = 1.0f;
                     _leftDown  = true;
                     _orbitVelX = 0f; _orbitVelY = 0f;
                 }
