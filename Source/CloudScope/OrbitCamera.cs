@@ -76,6 +76,9 @@ namespace CloudScope
         /// <summary>World-space radius used to keep the orbit gizmo a stable screen size.</summary>
         public float PivotIndicatorScale => Math.Max(EffectiveHalfViewSize(WorldToView(_orbitPivot, _vtw).Z) * 0.3f, 0.001f);
 
+        /// <summary>Same as PivotIndicatorScale but for an arbitrary world position (e.g. display pivot).</summary>
+        public float PivotIndicatorScaleAt(Vector3 worldPos) => Math.Max(EffectiveHalfViewSize(WorldToView(worldPos, _vtw).Z) * 0.3f, 0.001f);
+
         public OrbitCamera() { RebuildRot(); CalcViewVolume(); }
 
         // ─────────────────────────────────────────────────────────────────────
