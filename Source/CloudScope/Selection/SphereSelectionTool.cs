@@ -42,6 +42,8 @@ namespace CloudScope.Selection
         private int _editStartX, _editStartY;
         private Vector3 _editStartCenter;
         private float _editStartRadius;
+        // Screen-space outward direction of the active pole handle (unit vector, set in BeginHandleDrag)
+        private Vector2 _poleScreenDir;
 
         // ── Placement ─────────────────────────────────────────────────────────
 
@@ -109,6 +111,17 @@ namespace CloudScope.Selection
             _editStartX = mx; _editStartY = my;
             _editStartCenter = Center;
             _editStartRadius = Radius;
+
+            if (handle > 0)
+            {
+                // Compute screen-space direction from center toward this pole.
+                // Dragging away from center → bigger; toward center → smaller.
+                var (cx, cy, _cb) = cam.WorldToScreen(Center);
+                var (px, py, _pb) = cam.WorldToScreen(HandleWorldPosition(handle));
+                float dx = px - cx, dy = py - cy;
+                float len = MathF.Sqrt(dx * dx + dy * dy);
+                _poleScreenDir = len > 0.5f ? new Vector2(dx / len, dy / len) : new Vector2(1f, 0f);
+            }
         }
 
         public void UpdateHandleDrag(int mx, int my, OrbitCamera cam)
@@ -124,9 +137,12 @@ namespace CloudScope.Selection
             }
             else
             {
-                // Pole: vertical drag — up (negative dy) = bigger, down = smaller
-                int dy = my - _editStartY;
-                float factor = 1f - dy * 0.005f;
+                // Project mouse delta onto the pole's outward screen direction.
+                // Moving away from center = bigger, toward center = smaller.
+                float ddx = mx - _editStartX;
+                float ddy = my - _editStartY;
+                float proj = ddx * _poleScreenDir.X + ddy * _poleScreenDir.Y;
+                float factor = 1f + proj * 0.005f;
                 Radius = MathF.Max(_editStartRadius * factor, 0.01f);
             }
         }
