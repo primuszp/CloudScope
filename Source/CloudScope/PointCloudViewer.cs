@@ -64,15 +64,16 @@ namespace CloudScope
 
         // ── Labeling state ────────────────────────────────────────────────────
         private InteractionMode _mode = InteractionMode.Navigate;
-        private SelectionToolType _activeToolType = SelectionToolType.Box;
 
-        private readonly BoxSelectionTool _boxTool = new();
+        private readonly BoxSelectionTool    _boxTool    = new();
         private readonly SphereSelectionTool _sphereTool = new();
-        private ISelectionTool CurrentTool => _activeToolType == SelectionToolType.Box
-            ? _boxTool : _sphereTool;
+        private readonly ISelectionTool[]    _tools;
+        private readonly GizmoRendererBase[] _renderers;
+        private int            _activeToolIndex = 0;
+        private ISelectionTool ActiveTool    => _tools[_activeToolIndex];
 
-        private EditAction _pendingAction = EditAction.None;  // set by G/S/R keydown
-        private bool _editDragging;  // true during an active edit drag
+        private EditAction _pendingAction = EditAction.None;
+        private bool _editDragging;
 
         private readonly LabelManager _labelManager = new();
         private string _currentLabel = "Ground";
@@ -83,9 +84,9 @@ namespace CloudScope
             { "Ground", "Building", "Vegetation", "Vehicle", "Road", "Water", "Wire" };
 
         // ── Labeling renderers ────────────────────────────────────────────────
-        private readonly BoxGizmoRenderer _boxGizmoRenderer = new();
+        private readonly BoxGizmoRenderer    _boxGizmoRenderer    = new();
         private readonly SphereGizmoRenderer _sphereGizmoRenderer = new();
-        private readonly HighlightRenderer _highlightRenderer = new();
+        private readonly HighlightRenderer   _highlightRenderer   = new();
 
         // -- Mouse state ────────────────────────────────────────────────----------
         private int  _lastMX, _lastMY;
@@ -188,7 +189,11 @@ void main()
                 Title      = "CloudScope - Point Cloud Viewer",
                 APIVersion = new Version(3, 3),
                 Profile    = ContextProfile.Core,
-            }) { }
+            })
+        {
+            _tools     = new ISelectionTool[]    { _boxTool, _sphereTool };
+            _renderers = new GizmoRendererBase[] { _boxGizmoRenderer, _sphereGizmoRenderer };
+        }
 
         // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Initialisation
@@ -310,10 +315,8 @@ void main()
             // Smooth camera transition tick (view presets, focus)
             _cam.TickTransition(dt);
 
-            // Pivot: visible for the full orbit gesture including inertia tail.
-            // Suppressed when any selection volume is active (orbiting around its center instead).
-            bool boxActive    = _mode == InteractionMode.Label && _boxTool.HasVolume;
-            bool toolActive   = boxActive || (_mode == InteractionMode.Label && _sphereTool.HasVolume);
+            // Pivot: suppressed when any selection volume is active.
+            bool toolActive   = _mode == InteractionMode.Label && ActiveTool.HasVolume;
             bool orbiting     = _leftDown || _orbitVelX != 0f || _orbitVelY != 0f;
             float pivotTarget = (orbiting && !toolActive) ? 1f : 0f;
             float pivotRate   = pivotTarget > _pivotFade ? 8f : 5f;
@@ -321,21 +324,16 @@ void main()
             if (_pivotFlash > 0f) _pivotFlash = Math.Max(0f, _pivotFlash - dt * 2.5f);
 
             // Live preview: resolve which points are inside the active selection volume.
-            // Actual GPU upload happens in OnRenderFrame.
-            bool sphereActive = _mode == InteractionMode.Label && _sphereTool.HasVolume;
-            bool anyPreviewActive = boxActive || sphereActive;
+            bool anyPreviewActive = _mode == InteractionMode.Label && ActiveTool.HasVolume;
             if (anyPreviewActive && _pointsCPU != null)
             {
                 _previewTimer += dt;
                 if (_previewTimer >= PreviewInterval)
                 {
-                    _previewTimer = 0f;
-                    _previewIndices = boxActive
-                        ? _boxTool.ResolveSelection(_pointsCPU, _cam,
-                              (int)_cam.ViewportWidth, (int)_cam.ViewportHeight)
-                        : _sphereTool.ResolveSelection(_pointsCPU, _cam,
-                              (int)_cam.ViewportWidth, (int)_cam.ViewportHeight);
-                    _previewDirty = true;
+                    _previewTimer   = 0f;
+                    _previewIndices = ActiveTool.ResolveSelection(_pointsCPU, _cam,
+                                          (int)_cam.ViewportWidth, (int)_cam.ViewportHeight);
+                    _previewDirty   = true;
                 }
             }
             else if (!anyPreviewActive && _previewIndices != null)
@@ -393,71 +391,34 @@ void main()
 
                 if (_mode == InteractionMode.Label)
                 {
-                    if (_activeToolType == SelectionToolType.Sphere)
+                    var tool = ActiveTool;
+                    if (tool.Phase == ToolPhase.Idle)
                     {
-                        if (!_sphereTool.IsEditing)
-                        {
-                            // Start sphere placement
-                            _sphereTool.OnMouseDown(mx, my, _cam);
-                            toolConsumed = true;
-                        }
-                        else
-                        {
-                            // Handle drag takes priority over G/S/R
-                            int h = _sphereTool.HitTestHandles(mx, my, _cam);
-                            if (h >= 0)
-                            {
-                                _sphereTool.BeginHandleDrag(h, mx, my, _cam);
-                                toolConsumed = true;
-                            }
-                            else if (_pendingAction != EditAction.None)
-                            {
-                                _editDragging = true;
-                                switch (_pendingAction)
-                                {
-                                    case EditAction.Grab:   _sphereTool.BeginGrab(mx, my, _cam);   break;
-                                    case EditAction.Scale:  _sphereTool.BeginScale(mx, my, _cam);  break;
-                                    case EditAction.Rotate: _sphereTool.BeginRotate(mx, my, _cam); break;
-                                }
-                                toolConsumed = true;
-                            }
-                            // No handle hit and no pending action: let camera orbit freely
-                        }
+                        tool.OnMouseDown(mx, my, _cam);
+                        toolConsumed = true;
                     }
-                    else // Box tool
+                    else if (tool.Phase == ToolPhase.Drawing)
                     {
-                        // Drawing: start new rect (only when Idle)
-                        if (_boxTool.Phase == ToolPhase.Idle)
+                        toolConsumed = true; // block orbit during active draw
+                    }
+                    else if (tool.Phase == ToolPhase.Editing)
+                    {
+                        int h = tool.HitTestHandles(mx, my, _cam);
+                        if (h >= 0)
                         {
-                            _boxTool.OnMouseDown(mx, my, _cam);
+                            tool.BeginHandleDrag(h, mx, my, _cam);
                             toolConsumed = true;
                         }
-                        // Drawing in progress: block orbit
-                        else if (_boxTool.IsActive)
+                        else if (_pendingAction != EditAction.None)
                         {
-                            toolConsumed = true;
-                        }
-                        // Editing: click on handle/ring → drag; otherwise orbit
-                        else if (_boxTool.Phase == ToolPhase.Editing)
-                        {
-                            int handle = _boxTool.HitTestHandles(mx, my, _cam);
-                            if (handle != BoxSelectionTool.HoverNone)
-                            {
-                                _boxTool.BeginHandleDrag(handle, mx, my, _cam);
-                                toolConsumed = true;
-                            }
-                        }
-                        // G/S/R pending action
-                        else if (_boxTool.IsEditing && _pendingAction != EditAction.None)
-                        {
-                            _editDragging = true;
                             switch (_pendingAction)
                             {
-                                case EditAction.Grab:   _boxTool.BeginGrab(mx, my, _cam);   break;
-                                case EditAction.Scale:  _boxTool.BeginScale(mx, my, _cam);  break;
-                                case EditAction.Rotate: _boxTool.BeginRotate(mx, my, _cam); break;
+                                case EditAction.Grab:   tool.BeginGrab(mx, my, _cam);   break;
+                                case EditAction.Scale:  tool.BeginScale(mx, my, _cam);  break;
+                                case EditAction.Rotate: tool.BeginRotate(mx, my, _cam); break;
                             }
-                            toolConsumed = true;
+                            _editDragging = true;
+                            toolConsumed  = true;
                         }
                     }
                 }
@@ -465,16 +426,10 @@ void main()
                 // Orbit: always active unless tool consumed the click.
                 if (!toolConsumed)
                 {
-                    // When a selection volume is active: orbit around its center, no pivot flash
-                    if (_mode == InteractionMode.Label && _boxTool.HasVolume)
+                    if (_mode == InteractionMode.Label && ActiveTool.HasVolume)
                     {
-                        _cam.SetOrbitPivot(_boxTool.Center);
-                        _displayPivot = _boxTool.Center;
-                    }
-                    else if (_mode == InteractionMode.Label && _sphereTool.HasVolume)
-                    {
-                        _cam.SetOrbitPivot(_sphereTool.Center);
-                        _displayPivot = _sphereTool.Center;
+                        _cam.SetOrbitPivot(ActiveTool.Center);
+                        _displayPivot = ActiveTool.Center;
                     }
                     else if (_cam.SetOrbitPivotFromScreen(mx, my, 11))
                     {
@@ -512,41 +467,36 @@ void main()
             {
                 if (_mode == InteractionMode.Label)
                 {
-                    // End handle/ring drag
-                    if (_activeToolType == SelectionToolType.Sphere && _sphereTool.IsHandleDragging)
+                    var tool = ActiveTool;
+                    if (tool.IsHandleDragging)
                     {
-                        _sphereTool.EndHandleDrag();
+                        tool.EndHandleDrag();
                     }
-                    else if (_activeToolType == SelectionToolType.Box && _boxTool.IsHandleDragging)
-                    {
-                        _boxTool.EndHandleDrag();
-                    }
-                    // End G/S/R edit drag
                     else if (_editDragging)
                     {
-                        CurrentTool.EndEdit();
-                        _editDragging = false;
+                        tool.EndEdit();
+                        _editDragging  = false;
                         _pendingAction = EditAction.None;
                     }
-                    // End placement drag → finalize box
-                    else if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Drawing)
+                    else if (tool.Phase == ToolPhase.Drawing)
                     {
                         int mx = (int)MouseState.Position.X;
                         int my = (int)MouseState.Position.Y;
-                        _boxTool.OnMouseUp(mx, my);
-                        if (_boxTool.Phase == ToolPhase.Drawing) // valid rect (not cancelled)
+                        if (tool is BoxSelectionTool box)
                         {
-                            _boxTool.FinalizeBoxFromScreen(_cam);
-                            Console.WriteLine("Box drawn — drag the orange arrow (+Z) to extrude. Rings=rotate, corners=resize. Enter to label.");
+                            box.OnMouseUp(mx, my);
+                            if (box.Phase == ToolPhase.Drawing)
+                            {
+                                box.FinalizeBoxFromScreen(_cam);
+                                Console.WriteLine("Box drawn — drag the orange arrow (+Z) to extrude. Rings=rotate, corners=resize. Enter to label.");
+                            }
                         }
-                    }
-                    else if (CurrentTool.IsActive) // sphere or other tool
-                    {
-                        int mx2 = (int)MouseState.Position.X;
-                        int my2 = (int)MouseState.Position.Y;
-                        CurrentTool.OnMouseUp(mx2, my2);
-                        if (CurrentTool.IsEditing)
-                            Console.WriteLine("Selection placed — Enter to confirm.");
+                        else
+                        {
+                            tool.OnMouseUp(mx, my);
+                            if (tool.IsEditing)
+                                Console.WriteLine("Selection placed — Enter to confirm.");
+                        }
                     }
                 }
                 _leftDown = false;
@@ -566,39 +516,15 @@ void main()
 
             if (_mode == InteractionMode.Label)
             {
-                // Drawing drag: update rect end point
-                if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Drawing)
-                {
-                    _boxTool.OnMouseMove(mx, my, _cam);
-                }
-                // Handle drag
-                else if (_activeToolType == SelectionToolType.Sphere && _sphereTool.IsHandleDragging)
-                {
-                    _sphereTool.UpdateHandleDrag(mx, my, _cam);
-                }
-                else if (_activeToolType == SelectionToolType.Box && _boxTool.IsHandleDragging)
-                {
-                    _boxTool.UpdateHandleDrag(mx, my, _cam);
-                }
-                // G/S/R edit drag
+                var tool = ActiveTool;
+                if (tool.Phase == ToolPhase.Drawing)
+                    tool.OnMouseMove(mx, my, _cam);
+                else if (tool.IsHandleDragging)
+                    tool.UpdateHandleDrag(mx, my, _cam);
                 else if (_editDragging)
-                {
-                    CurrentTool.UpdateEdit(mx, my, _cam);
-                }
-                // Sphere placement drag
-                else if (CurrentTool.IsActive && _activeToolType != SelectionToolType.Box)
-                {
-                    CurrentTool.OnMouseMove(mx, my, _cam);
-                }
-                // Hover detection (editing phase, no buttons held)
-                else if (_activeToolType == SelectionToolType.Sphere && _sphereTool.IsEditing)
-                {
-                    _sphereTool.HoveredHandle = _sphereTool.HitTestHandles(mx, my, _cam);
-                }
-                else if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Editing)
-                {
-                    _boxTool.HoveredHandle = _boxTool.HitTestHandles(mx, my, _cam);
-                }
+                    tool.UpdateEdit(mx, my, _cam);
+                else if (tool.Phase == ToolPhase.Editing)
+                    tool.HoveredHandle = tool.HitTestHandles(mx, my, _cam);
             }
 
             // Camera navigation — always active in navigate mode,
@@ -643,24 +569,23 @@ void main()
             {
                 _mode = _mode == InteractionMode.Navigate
                     ? InteractionMode.Label : InteractionMode.Navigate;
-                CurrentTool.Cancel();
+                ActiveTool.Cancel();
                 _pendingAction = EditAction.None;
-                _editDragging = false;
-                Console.WriteLine($"Mode: {_mode}  (tool: {_activeToolType}, label: '{_currentLabel}')");
+                _editDragging  = false;
+                Console.WriteLine($"Mode: {_mode}  (tool: {ActiveTool.ToolType}, label: '{_currentLabel}')");
             }
 
             if (e.Key == Keys.Escape && _mode == InteractionMode.Label)
             {
                 if (_editDragging)
                 {
-                    // Cancel in-progress edit drag
-                    CurrentTool.EndEdit();
-                    _editDragging = false;
+                    ActiveTool.EndEdit();
+                    _editDragging  = false;
                     _pendingAction = EditAction.None;
                 }
-                else if (CurrentTool.IsEditing || CurrentTool.IsActive)
+                else if (ActiveTool.IsEditing || ActiveTool.IsActive)
                 {
-                    CurrentTool.Cancel();
+                    ActiveTool.Cancel();
                     _pendingAction = EditAction.None;
                     Console.WriteLine("Selection cancelled");
                 }
@@ -675,13 +600,13 @@ void main()
             if (_mode == InteractionMode.Label)
             {
                 // ── Enter: confirm selection and apply label ──────────────────
-                if (e.Key == Keys.Enter && CurrentTool.IsEditing)
+                if (e.Key == Keys.Enter && ActiveTool.IsEditing)
                 {
                     {
-                        CurrentTool.Confirm();
+                        ActiveTool.Confirm();
                         if (_pointsCPU != null)
                         {
-                            var selected = CurrentTool.ResolveSelection(
+                            var selected = ActiveTool.ResolveSelection(
                                 _pointsCPU, _cam, Size.X, Size.Y);
                             if (selected.Count > 0)
                             {
@@ -697,23 +622,22 @@ void main()
                 }
 
                 // ── G/S/R: Set pending edit action (Blender-style) ───────────
-                if (CurrentTool.IsEditing)
+                if (ActiveTool.IsEditing)
                 {
                     if (e.Key == Keys.G) { _pendingAction = EditAction.Grab;   Console.WriteLine("Grab — left-click + drag to move"); }
                     if (e.Key == Keys.S) { _pendingAction = EditAction.Scale;  Console.WriteLine("Scale — left-click + drag to resize"); }
                     if (e.Key == Keys.R) { _pendingAction = EditAction.Rotate; Console.WriteLine("Rotate — left-click + drag to rotate"); }
 
-                    // Axis constraints (work with any pending action)
-                    if (e.Key == Keys.X) { CurrentTool.SetAxisConstraint(0); Console.WriteLine("Constraint: X axis"); }
-                    if (e.Key == Keys.Y) { CurrentTool.SetAxisConstraint(1); Console.WriteLine("Constraint: Y axis"); }
-                    if (e.Key == Keys.Z) { CurrentTool.SetAxisConstraint(2); Console.WriteLine("Constraint: Z axis"); }
+                    if (e.Key == Keys.X) { ActiveTool.SetAxisConstraint(0); Console.WriteLine("Constraint: X axis"); }
+                    if (e.Key == Keys.Y) { ActiveTool.SetAxisConstraint(1); Console.WriteLine("Constraint: Y axis"); }
+                    if (e.Key == Keys.Z) { ActiveTool.SetAxisConstraint(2); Console.WriteLine("Constraint: Z axis"); }
                 }
 
                 // ── Tool switch ──────────────────────────────────────────────
-                if (!CurrentTool.IsEditing && !CurrentTool.IsActive)
+                if (!ActiveTool.IsEditing && !ActiveTool.IsActive)
                 {
-                    if (e.Key == Keys.D1) { _activeToolType = SelectionToolType.Box;    Console.WriteLine("Tool: Box"); }
-                    if (e.Key == Keys.D2) { _activeToolType = SelectionToolType.Sphere; Console.WriteLine("Tool: Sphere"); }
+                    if (e.Key == Keys.D1) { _activeToolIndex = 0; Console.WriteLine("Tool: Box"); }
+                    if (e.Key == Keys.D2) { _activeToolIndex = 1; Console.WriteLine("Tool: Sphere"); }
                 }
 
                 // Label presets (3-9 → index 0-6)
@@ -799,32 +723,19 @@ void main()
             // 3. Active selection tool gizmo
             if (_mode == InteractionMode.Label)
             {
-                if (_activeToolType == SelectionToolType.Box)
+                var tool = ActiveTool;
+                if (tool is BoxSelectionTool box && box.Phase == ToolPhase.Drawing)
                 {
-                    if (_boxTool.IsActive)
-                    {
-                        // During placement: show 2D screen rectangle
-                        _boxGizmoRenderer.RenderPlacementRect(
-                            _boxTool.StartX, _boxTool.StartY, _boxTool.EndX, _boxTool.EndY,
-                            Size.X, Size.Y);
-                    }
-                    else if (_boxTool.HasVolume)
-                    {
-                        // During editing: show 3D wireframe with handles
-                        _boxGizmoRenderer.Render(_boxTool, view, proj, _cam);
-                    }
+                    _boxGizmoRenderer.RenderPlacementRect(box.StartX, box.StartY, box.EndX, box.EndY, Size.X, Size.Y);
                 }
-                else if (CurrentTool.HasVolume)
+                else if (tool.HasVolume)
                 {
-                    _sphereGizmoRenderer.Render(_sphereTool.Center, _sphereTool.Radius,
-                                                view, proj, _sphereTool.CurrentAction,
-                                                _cam, _sphereTool.HoveredHandle);
+                    _renderers[_activeToolIndex].Render(tool, view, proj, _cam);
                 }
             }
 
             // 4. Pivot indicator — only during orbit; hidden when any selection volume is active
-            bool anyToolActive = _mode == InteractionMode.Label &&
-                                 (_boxTool.HasVolume || _sphereTool.HasVolume);
+            bool anyToolActive = _mode == InteractionMode.Label && ActiveTool.HasVolume;
             if (!anyToolActive && (_pivotFade > 0.01f || _pivotFlash > 0.01f))
                 RenderPivotIndicator(ref view, ref proj);
 
@@ -1036,7 +947,7 @@ void main()
             float dotY =  1f - 30f / Size.Y;
             float r = 0f, g = 0.8f, b = 1f; // cyan for label mode
 
-            if (_activeToolType == SelectionToolType.Sphere)
+            if (ActiveTool.ToolType == SelectionToolType.Sphere)
             { r = 1f; g = 0.6f; b = 0.15f; } // orange for sphere tool
 
             float[] dotData = { dotX, dotY, 0f, r, g, b };

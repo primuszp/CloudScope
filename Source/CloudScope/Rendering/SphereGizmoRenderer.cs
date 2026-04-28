@@ -14,51 +14,27 @@ namespace CloudScope.Rendering
     ///   3. Three great-circle rings       (axis-colored, depth-tested + ghost)
     ///   4. Handle diamonds                (center=green, poles=white, hover=yellow)
     /// </summary>
-    public sealed class SphereGizmoRenderer : IDisposable
+    public sealed class SphereGizmoRenderer : GizmoRendererBase
     {
-        // GL resources
-        private int _fillVao = -1, _fillVbo = -1;    // UV-sphere fill triangles
-        private int _circVao = -1, _circVbo = -1;    // 3 great-circle line loops
-        private int _axisVao = -1, _axisVbo = -1;    // 3 diameter lines
-        private int _dynVao  = -1, _dynVbo  = -1;    // dynamic: handle diamonds
-        private int _shader  = -1;
-        private int _uMVP, _uColor;
+        private int _fillVao = -1, _fillVbo = -1;
+        private int _circVao = -1, _circVbo = -1;
+        private int _axisVao = -1, _axisVbo = -1;
 
         private int _fillVertCount;
-        private const int Seg   = 64;   // circle segments
-        private const int Lat   = 16;   // UV sphere latitudes
-        private const int Lon   = 32;   // UV sphere longitudes
+        private const int Seg = 64;
+        private const int Lat = 16;
+        private const int Lon = 32;
 
-        // Same axis colors as BoxGizmoRenderer
-        private static readonly Vector4[] AxisColor =
+        // ── Public entry point ────────────────────────────────────────────────
+
+        public override void Render(ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera cam)
         {
-            new(0.95f, 0.20f, 0.20f, 1.00f),  // X  red
-            new(0.20f, 0.95f, 0.30f, 1.00f),  // Y  green
-            new(0.25f, 0.55f, 1.00f, 1.00f),  // Z  blue
-        };
+            var sphere = (SphereSelectionTool)tool;
+            if (sphere.Radius < 1e-5f) return;
 
-        private const string VertSrc = @"
-#version 330 core
-layout(location = 0) in vec3 aPos;
-uniform mat4 uMVP;
-void main() { gl_Position = uMVP * vec4(aPos, 1.0); }
-";
-        private const string FragSrc = @"
-#version 330 core
-uniform vec4 uColor;
-out vec4 FragColor;
-void main() { FragColor = uColor; }
-";
-
-        // ── Public entry points ───────────────────────────────────────────────
-
-        public void Render(Vector3 center, float radius, Matrix4 view, Matrix4 proj,
-                           EditAction action, OrbitCamera cam, int hoveredHandle)
-        {
-            if (radius < 1e-5f) return;
             EnsureResources();
 
-            Matrix4 model = Matrix4.CreateScale(radius) * Matrix4.CreateTranslation(center);
+            Matrix4 model = Matrix4.CreateScale(sphere.Radius) * Matrix4.CreateTranslation(sphere.Center);
             Matrix4 mvp   = model * view * proj;
 
             GL.Enable(EnableCap.Blend);
@@ -67,18 +43,12 @@ void main() { FragColor = uColor; }
             RenderFill(mvp);
             RenderAxes(mvp);
             RenderCircles(mvp);
-            if (cam != null)
-                RenderHandles(center, radius, cam, hoveredHandle);
+            RenderHandles(sphere, cam);
 
             GL.Disable(EnableCap.Blend);
         }
 
-        // Backwards-compatible overload (no handles)
-        public void Render(Vector3 center, float radius, Matrix4 view, Matrix4 proj,
-                           EditAction action = EditAction.None)
-            => Render(center, radius, view, proj, action, null!, SphereSelectionTool.HoverNone);
-
-        // ── Layer 1: Transparent sphere fill ─────────────────────────────────
+        // ── Layer 1: Transparent fill ─────────────────────────────────────────
 
         private void RenderFill(Matrix4 mvp)
         {
@@ -113,7 +83,7 @@ void main() { FragColor = uColor; }
             GL.Enable(EnableCap.DepthTest);
         }
 
-        // ── Layer 3: Great-circle rings (axis-colored, depth + ghost) ─────────
+        // ── Layer 3: Great-circle rings (depth + ghost) ───────────────────────
 
         private void RenderCircles(Matrix4 mvp)
         {
@@ -124,7 +94,7 @@ void main() { FragColor = uColor; }
 
             for (int ax = 0; ax < 3; ax++)
             {
-                var c = AxisColor[ax];
+                var c      = AxisColor[ax];
                 int offset = ax * Seg * 2;
 
                 GL.Enable(EnableCap.DepthTest);
@@ -144,89 +114,44 @@ void main() { FragColor = uColor; }
 
         // ── Layer 4: Handle diamonds (screen-space NDC) ───────────────────────
 
-        private void RenderHandles(Vector3 center, float radius, OrbitCamera cam, int hoveredHandle)
+        private void RenderHandles(SphereSelectionTool sphere, OrbitCamera cam)
         {
-            float vpW = cam.ViewportWidth, vpH = cam.ViewportHeight;
-            Matrix4 id = Matrix4.Identity;
+            float   vpW = cam.ViewportWidth, vpH = cam.ViewportHeight;
+            Matrix4 id  = Matrix4.Identity;
             GL.UseProgram(_shader);
             GL.UniformMatrix4(_uMVP, false, ref id);
             GL.Disable(EnableCap.DepthTest);
             GL.DepthMask(false);
 
-            for (int i = 0; i < SphereSelectionTool.HandleCount; i++)
+            for (int i = 0; i < sphere.HandleCount; i++)
             {
-                Vector3 worldPos = SphereHandleWorld(center, radius, i);
-                var (sx, sy, behind) = cam.WorldToScreen(worldPos);
+                var (sx, sy, behind) = cam.WorldToScreen(sphere.HandleWorldPosition(i));
                 if (behind) continue;
 
-                float nx = sx / vpW * 2f - 1f, ny = 1f - sy / vpH * 2f;
-                float size = 12f;
-                float hx = size / vpW, hy = size / vpH;
+                float nx = sx/vpW*2f-1f, ny = 1f-sy/vpH*2f;
+                float hx = 12f/vpW, hy = 12f/vpH;
 
-                Vector4 col = i == hoveredHandle
+                Vector4 col = i == sphere.HoveredHandle
                     ? new(1f, 1f, 0.15f, 1f)
                     : i == 0
                         ? new(0.3f, 1f, 0.45f, 0.85f)
                         : new(0.9f, 0.9f, 0.9f, 0.80f);
 
-                Dyn(new[] {
-                    nx,    ny+hy, 0f,  nx+hx, ny,    0f,  nx,    ny-hy, 0f,
-                    nx,    ny+hy, 0f,  nx,    ny-hy, 0f,  nx-hx, ny,    0f,
-                });
-                SetColor(col);
-                GL.DrawArrays(PrimitiveType.Triangles, 0, 6);
-
-                Dyn(new[] { nx, ny+hy, 0f, nx+hx, ny, 0f, nx, ny-hy, 0f, nx-hx, ny, 0f, nx, ny+hy, 0f });
-                SetColor(col.X * 0.4f, col.Y * 0.4f, col.Z * 0.4f, 0.7f);
-                GL.LineWidth(1f);
-                GL.DrawArrays(PrimitiveType.LineStrip, 0, 5);
+                DrawDiamond(nx, ny, hx, hy, col);
             }
 
             GL.DepthMask(true);
             GL.Enable(EnableCap.DepthTest);
         }
 
-        private static Vector3 SphereHandleWorld(Vector3 center, float radius, int i) => i switch
-        {
-            1 => center + new Vector3( radius, 0f, 0f),
-            2 => center + new Vector3(-radius, 0f, 0f),
-            3 => center + new Vector3(0f,  radius, 0f),
-            4 => center + new Vector3(0f, -radius, 0f),
-            5 => center + new Vector3(0f, 0f,  radius),
-            6 => center + new Vector3(0f, 0f, -radius),
-            _ => center
-        };
-
-        // ── Helpers ───────────────────────────────────────────────────────────
-
-        private void Dyn(float[] data)
-        {
-            GL.BindVertexArray(_dynVao);
-            GL.BindBuffer(BufferTarget.ArrayBuffer, _dynVbo);
-            GL.BufferData(BufferTarget.ArrayBuffer, data.Length * sizeof(float), data, BufferUsageHint.DynamicDraw);
-        }
-
-        private void SetColor(float r, float g, float b, float a) => GL.Uniform4(_uColor, r, g, b, a);
-        private void SetColor(Vector4 c) => GL.Uniform4(_uColor, c.X, c.Y, c.Z, c.W);
-
         // ── Resource init ─────────────────────────────────────────────────────
 
         private void EnsureResources()
         {
-            if (_shader != -1) return;
+            EnsureBaseResources();
+            if (_fillVao != -1) return;
 
-            int v = GL.CreateShader(ShaderType.VertexShader);
-            GL.ShaderSource(v, VertSrc); GL.CompileShader(v);
-            int f = GL.CreateShader(ShaderType.FragmentShader);
-            GL.ShaderSource(f, FragSrc); GL.CompileShader(f);
-            _shader = GL.CreateProgram();
-            GL.AttachShader(_shader, v); GL.AttachShader(_shader, f);
-            GL.LinkProgram(_shader);
-            GL.DeleteShader(v); GL.DeleteShader(f);
-            _uMVP   = GL.GetUniformLocation(_shader, "uMVP");
-            _uColor = GL.GetUniformLocation(_shader, "uColor");
-
-            // ── UV-sphere fill (Lat stacks × Lon slices) ─────────────────────
+            // UV-sphere fill
             _fillVertCount = Lat * Lon * 6;
             float[] fill = new float[_fillVertCount * 3];
             int fi = 0;
@@ -242,78 +167,53 @@ void main() { FragColor = uColor; }
                     float th1 = MathF.Tau * (lo + 1) / Lon;
                     float ct0 = MathF.Cos(th0), st0 = MathF.Sin(th0);
                     float ct1 = MathF.Cos(th1), st1 = MathF.Sin(th1);
-                    // v00, v10, v11,  v00, v11, v01
                     void P(float cp, float sp, float ct, float st)
-                    { fill[fi++] = cp * ct; fill[fi++] = sp; fill[fi++] = cp * st; }
+                    { fill[fi++] = cp*ct; fill[fi++] = sp; fill[fi++] = cp*st; }
                     P(cp0,sp0,ct0,st0); P(cp1,sp1,ct0,st0); P(cp1,sp1,ct1,st1);
                     P(cp0,sp0,ct0,st0); P(cp1,sp1,ct1,st1); P(cp0,sp0,ct1,st1);
                 }
             }
             MakeStaticVao(ref _fillVao, ref _fillVbo, fill);
 
-            // ── 3 great-circle rings (axis-colored) ───────────────────────────
-            // Circle 0 (YZ, around X): red   → verts: (0, cos, sin)
-            // Circle 1 (XZ, around Y): green → verts: (cos, 0, sin)
-            // Circle 2 (XY, around Z): blue  → verts: (cos, sin, 0)
+            // 3 great-circle rings
             float[] circ = new float[3 * Seg * 2 * 3];
             int ci = 0;
             float step = MathF.Tau / Seg;
             for (int s = 0; s < Seg; s++)
             {
                 float a1 = s * step, a2 = (s + 1) * step;
-                // X-axis ring (YZ plane)
                 circ[ci++]=0f; circ[ci++]=MathF.Cos(a1); circ[ci++]=MathF.Sin(a1);
                 circ[ci++]=0f; circ[ci++]=MathF.Cos(a2); circ[ci++]=MathF.Sin(a2);
             }
             for (int s = 0; s < Seg; s++)
             {
                 float a1 = s * step, a2 = (s + 1) * step;
-                // Y-axis ring (XZ plane)
                 circ[ci++]=MathF.Cos(a1); circ[ci++]=0f; circ[ci++]=MathF.Sin(a1);
                 circ[ci++]=MathF.Cos(a2); circ[ci++]=0f; circ[ci++]=MathF.Sin(a2);
             }
             for (int s = 0; s < Seg; s++)
             {
                 float a1 = s * step, a2 = (s + 1) * step;
-                // Z-axis ring (XY plane)
                 circ[ci++]=MathF.Cos(a1); circ[ci++]=MathF.Sin(a1); circ[ci++]=0f;
                 circ[ci++]=MathF.Cos(a2); circ[ci++]=MathF.Sin(a2); circ[ci++]=0f;
             }
             MakeStaticVao(ref _circVao, ref _circVbo, circ);
 
-            // ── 3 axis diameter lines ─────────────────────────────────────────
+            // 3 axis diameter lines
             float[] axes = {
-                -1f, 0f, 0f,   1f, 0f, 0f,   // X
-                 0f,-1f, 0f,   0f, 1f, 0f,   // Y
-                 0f, 0f,-1f,   0f, 0f, 1f,   // Z
+                -1f, 0f, 0f,   1f, 0f, 0f,
+                 0f,-1f, 0f,   0f, 1f, 0f,
+                 0f, 0f,-1f,   0f, 0f, 1f,
             };
             MakeStaticVao(ref _axisVao, ref _axisVbo, axes);
-
-            // ── Dynamic (handles) ─────────────────────────────────────────────
-            _dynVao = GL.GenVertexArray(); _dynVbo = GL.GenBuffer();
-            GL.BindVertexArray(_dynVao);
-            GL.BindBuffer(BufferTarget.ArrayBuffer, _dynVbo);
-            GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 12, 0);
-            GL.EnableVertexAttribArray(0);
         }
 
-        private static void MakeStaticVao(ref int vao, ref int vbo, float[] data)
+        public override void Dispose()
         {
-            vao = GL.GenVertexArray(); vbo = GL.GenBuffer();
-            GL.BindVertexArray(vao);
-            GL.BindBuffer(BufferTarget.ArrayBuffer, vbo);
-            GL.BufferData(BufferTarget.ArrayBuffer, data.Length * sizeof(float), data, BufferUsageHint.StaticDraw);
-            GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 12, 0);
-            GL.EnableVertexAttribArray(0);
-        }
-
-        public void Dispose()
-        {
-            if (_shader  != -1) GL.DeleteProgram(_shader);
-            if (_fillVao != -1) { GL.DeleteVertexArray(_fillVao); GL.DeleteBuffer(_fillVbo); }
-            if (_circVao != -1) { GL.DeleteVertexArray(_circVao); GL.DeleteBuffer(_circVbo); }
-            if (_axisVao != -1) { GL.DeleteVertexArray(_axisVao); GL.DeleteBuffer(_axisVbo); }
-            if (_dynVao  != -1) { GL.DeleteVertexArray(_dynVao);  GL.DeleteBuffer(_dynVbo);  }
+            if (_fillVao != -1) { GL.DeleteVertexArray(_fillVao); GL.DeleteBuffer(_fillVbo); _fillVao = -1; }
+            if (_circVao != -1) { GL.DeleteVertexArray(_circVao); GL.DeleteBuffer(_circVbo); _circVao = -1; }
+            if (_axisVao != -1) { GL.DeleteVertexArray(_axisVao); GL.DeleteBuffer(_axisVbo); _axisVao = -1; }
+            base.Dispose();
         }
     }
 }
