@@ -432,16 +432,26 @@ namespace CloudScope.Selection
             if (HalfExtents.X < 1e-4f || HalfExtents.Y < 1e-4f || HalfExtents.Z < 1e-4f)
                 return new HashSet<int>();
 
-            Matrix3 rotMat = Matrix3.CreateFromQuaternion(Rotation);
+            Matrix3 r = Matrix3.CreateFromQuaternion(Rotation);
+            // Matrix3 * Vector3 = Row[i] · v  (standard M*v)
+            float r00 = r.M11, r01 = r.M12, r02 = r.M13;  // Row0
+            float r10 = r.M21, r11 = r.M22, r12 = r.M23;  // Row1
+            float r20 = r.M31, r21 = r.M32, r22 = r.M33;  // Row2
             float hx = HalfExtents.X, hy = HalfExtents.Y, hz = HalfExtents.Z;
             float cx = Center.X, cy = Center.Y, cz = Center.Z;
 
             var list = new List<int>();
             for (int i = 0; i < points.Length; i++)
             {
-                Vector3 local = rotMat * new Vector3(points[i].X - cx, points[i].Y - cy, points[i].Z - cz);
-                if (MathF.Abs(local.X) <= hx && MathF.Abs(local.Y) <= hy && MathF.Abs(local.Z) <= hz)
-                    list.Add(i);
+                float dx = points[i].X - cx;
+                float dy = points[i].Y - cy;
+                float dz = points[i].Z - cz;
+                float lx = r00 * dx + r01 * dy + r02 * dz;
+                if (MathF.Abs(lx) > hx) continue;
+                float ly = r10 * dx + r11 * dy + r12 * dz;
+                if (MathF.Abs(ly) > hy) continue;
+                float lz = r20 * dx + r21 * dy + r22 * dz;
+                if (MathF.Abs(lz) <= hz) list.Add(i);
             }
             return new HashSet<int>(list);
         }
