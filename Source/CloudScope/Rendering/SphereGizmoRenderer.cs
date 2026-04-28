@@ -160,7 +160,7 @@ void main() { FragColor = uColor; }
                 if (behind) continue;
 
                 float nx = sx / vpW * 2f - 1f, ny = 1f - sy / vpH * 2f;
-                float size = i == 0 ? 9f : 12f;
+                float size = 12f;
                 float hx = size / vpW, hy = size / vpH;
 
                 Vector4 col = i == hoveredHandle

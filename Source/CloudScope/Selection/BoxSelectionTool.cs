@@ -298,6 +298,8 @@ namespace CloudScope.Selection
 
             // Screen Y is inverted; negate when axis faces toward camera so drag direction matches visual ring
             if (Vector3.Dot(worldAxis, cam.CameraForward) > 0f) delta = -delta;
+            // Z ring (XY plane) is wound opposite to X/Y rings visually — flip to match expectation
+            if (axis == 2) delta = -delta;
 
             // Apply world-space rotation: new = R_delta * R_start
             Rotation = Quaternion.FromAxisAngle(worldAxis.Normalized(), delta) * _editStartRotation;
