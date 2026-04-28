@@ -432,29 +432,16 @@ namespace CloudScope.Selection
             if (HalfExtents.X < 1e-4f || HalfExtents.Y < 1e-4f || HalfExtents.Z < 1e-4f)
                 return new HashSet<int>();
 
-            // Inline the rotation matrix elements to avoid per-point struct overhead.
-            // Matrix3.CreateFromQuaternion gives the world→local transform (OpenTK column convention).
-            Matrix3 m = Matrix3.CreateFromQuaternion(Rotation);
-            float m00 = m.M11, m01 = m.M12, m02 = m.M13;
-            float m10 = m.M21, m11 = m.M22, m12 = m.M23;
-            float m20 = m.M31, m21 = m.M32, m22 = m.M33;
+            Matrix3 rotMat = Matrix3.CreateFromQuaternion(Rotation);
             float hx = HalfExtents.X, hy = HalfExtents.Y, hz = HalfExtents.Z;
             float cx = Center.X, cy = Center.Y, cz = Center.Z;
 
-            // Collect into a List first (no per-add bucket resize overhead), then wrap in HashSet.
             var list = new List<int>();
             for (int i = 0; i < points.Length; i++)
             {
-                float dx = points[i].X - cx;
-                float dy = points[i].Y - cy;
-                float dz = points[i].Z - cz;
-                // OpenTK Matrix3 * Vector3: result = columns-of-M dotted with v
-                float lx = m00 * dx + m10 * dy + m20 * dz;
-                if (MathF.Abs(lx) > hx) continue;
-                float ly = m01 * dx + m11 * dy + m21 * dz;
-                if (MathF.Abs(ly) > hy) continue;
-                float lz = m02 * dx + m12 * dy + m22 * dz;
-                if (MathF.Abs(lz) <= hz) list.Add(i);
+                Vector3 local = rotMat * new Vector3(points[i].X - cx, points[i].Y - cy, points[i].Z - cz);
+                if (MathF.Abs(local.X) <= hx && MathF.Abs(local.Y) <= hy && MathF.Abs(local.Z) <= hz)
+                    list.Add(i);
             }
             return new HashSet<int>(list);
         }
