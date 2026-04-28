@@ -124,9 +124,9 @@ namespace CloudScope.Selection
             }
             else
             {
-                // Pole: horizontal pixel delta → scale radius
-                int dx = mx - _editStartX;
-                float factor = 1f + dx * 0.005f;
+                // Pole: vertical drag — up (negative dy) = bigger, down = smaller
+                int dy = my - _editStartY;
+                float factor = 1f - dy * 0.005f;
                 Radius = MathF.Max(_editStartRadius * factor, 0.01f);
             }
         }
