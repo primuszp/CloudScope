@@ -320,20 +320,25 @@ void main()
             _pivotFade += (pivotTarget - _pivotFade) * Math.Min(pivotRate * dt, 1f);
             if (_pivotFlash > 0f) _pivotFlash = Math.Max(0f, _pivotFlash - dt * 2.5f);
 
-            // Live preview: resolve which points are inside the box (CPU only, no GL).
+            // Live preview: resolve which points are inside the active selection volume.
             // Actual GPU upload happens in OnRenderFrame.
-            if (boxActive && _pointsCPU != null)
+            bool sphereActive = _mode == InteractionMode.Label && _sphereTool.HasVolume;
+            bool anyPreviewActive = boxActive || sphereActive;
+            if (anyPreviewActive && _pointsCPU != null)
             {
                 _previewTimer += dt;
                 if (_previewTimer >= PreviewInterval)
                 {
                     _previewTimer = 0f;
-                    _previewIndices = _boxTool.ResolveSelection(_pointsCPU, _cam,
-                                          (int)_cam.ViewportWidth, (int)_cam.ViewportHeight);
+                    _previewIndices = boxActive
+                        ? _boxTool.ResolveSelection(_pointsCPU, _cam,
+                              (int)_cam.ViewportWidth, (int)_cam.ViewportHeight)
+                        : _sphereTool.ResolveSelection(_pointsCPU, _cam,
+                              (int)_cam.ViewportWidth, (int)_cam.ViewportHeight);
                     _previewDirty = true;
                 }
             }
-            else if (!boxActive && _previewIndices != null)
+            else if (!anyPreviewActive && _previewIndices != null)
             {
                 _previewIndices = null;
                 _previewDirty   = true;
@@ -396,18 +401,28 @@ void main()
                             _sphereTool.OnMouseDown(mx, my, _cam);
                             toolConsumed = true;
                         }
-                        else if (_pendingAction != EditAction.None)
+                        else
                         {
-                            _editDragging = true;
-                            switch (_pendingAction)
+                            // Handle drag takes priority over G/S/R
+                            int h = _sphereTool.HitTestHandles(mx, my, _cam);
+                            if (h >= 0)
                             {
-                                case EditAction.Grab:   _sphereTool.BeginGrab(mx, my, _cam);   break;
-                                case EditAction.Scale:  _sphereTool.BeginScale(mx, my, _cam);  break;
-                                case EditAction.Rotate: _sphereTool.BeginRotate(mx, my, _cam); break;
+                                _sphereTool.BeginHandleDrag(h, mx, my, _cam);
+                                toolConsumed = true;
                             }
-                            toolConsumed = true;
+                            else if (_pendingAction != EditAction.None)
+                            {
+                                _editDragging = true;
+                                switch (_pendingAction)
+                                {
+                                    case EditAction.Grab:   _sphereTool.BeginGrab(mx, my, _cam);   break;
+                                    case EditAction.Scale:  _sphereTool.BeginScale(mx, my, _cam);  break;
+                                    case EditAction.Rotate: _sphereTool.BeginRotate(mx, my, _cam); break;
+                                }
+                                toolConsumed = true;
+                            }
+                            // No handle hit and no pending action: let camera orbit freely
                         }
-                        // In editing state without pending action: let camera orbit freely
                     }
                     else // Box tool
                     {
@@ -498,7 +513,11 @@ void main()
                 if (_mode == InteractionMode.Label)
                 {
                     // End handle/ring drag
-                    if (_activeToolType == SelectionToolType.Box && _boxTool.IsHandleDragging)
+                    if (_activeToolType == SelectionToolType.Sphere && _sphereTool.IsHandleDragging)
+                    {
+                        _sphereTool.EndHandleDrag();
+                    }
+                    else if (_activeToolType == SelectionToolType.Box && _boxTool.IsHandleDragging)
                     {
                         _boxTool.EndHandleDrag();
                     }
@@ -552,7 +571,11 @@ void main()
                 {
                     _boxTool.OnMouseMove(mx, my, _cam);
                 }
-                // Handle/ring drag
+                // Handle drag
+                else if (_activeToolType == SelectionToolType.Sphere && _sphereTool.IsHandleDragging)
+                {
+                    _sphereTool.UpdateHandleDrag(mx, my, _cam);
+                }
                 else if (_activeToolType == SelectionToolType.Box && _boxTool.IsHandleDragging)
                 {
                     _boxTool.UpdateHandleDrag(mx, my, _cam);
@@ -567,7 +590,11 @@ void main()
                 {
                     CurrentTool.OnMouseMove(mx, my, _cam);
                 }
-                // Hover detection: handles + rings (editing phase, no buttons held)
+                // Hover detection (editing phase, no buttons held)
+                else if (_activeToolType == SelectionToolType.Sphere && _sphereTool.IsEditing)
+                {
+                    _sphereTool.HoveredHandle = _sphereTool.HitTestHandles(mx, my, _cam);
+                }
                 else if (_activeToolType == SelectionToolType.Box && _boxTool.Phase == ToolPhase.Editing)
                 {
                     _boxTool.HoveredHandle = _boxTool.HitTestHandles(mx, my, _cam);
@@ -790,7 +817,8 @@ void main()
                 else if (CurrentTool.HasVolume)
                 {
                     _sphereGizmoRenderer.Render(_sphereTool.Center, _sphereTool.Radius,
-                                                view, proj, _sphereTool.CurrentAction);
+                                                view, proj, _sphereTool.CurrentAction,
+                                                _cam, _sphereTool.HoveredHandle);
                 }
             }
 

@@ -7,11 +7,20 @@ namespace CloudScope.Selection
     /// <summary>
     /// World-space sphere selection with two-phase workflow.
     /// Placement: click center, drag radius. Release → editing mode.
-    /// Editing: G=grab center, S=scale radius, scroll=fine-tune radius.
+    /// Editing: interactive handle drag (center + 6 poles), G/S keyboard, scroll=fine-tune.
     /// Enter to confirm, Escape to cancel.
+    ///
+    /// Handle indices:
+    ///   0  = center (move)
+    ///   1  = +X pole,  2 = -X pole
+    ///   3  = +Y pole,  4 = -Y pole
+    ///   5  = +Z pole,  6 = -Z pole
     /// </summary>
     public sealed class SphereSelectionTool : ISelectionTool
     {
+        public const int HoverNone = -1;
+        public const int HandleCount = 7;
+
         public SelectionToolType ToolType => SelectionToolType.Sphere;
         public bool IsActive { get; private set; }
         public bool IsEditing { get; private set; }
@@ -20,9 +29,16 @@ namespace CloudScope.Selection
         public Vector3 Center { get; set; }
         public float Radius { get; set; }
 
-        // ── Edit state ────────────────────────────────────────────────────────
+        // ── Handle state ──────────────────────────────────────────────────────
+        public int HoveredHandle { get; set; } = HoverNone;
+        public bool IsHandleDragging => _activeHandle >= 0;
+        private int _activeHandle = HoverNone;
+
+        // ── G/S/R keyboard edit state ─────────────────────────────────────────
         private EditAction _action = EditAction.None;
         private int _axis = -1;
+
+        // Shared start state for both handle drag and G/S/R edit
         private int _editStartX, _editStartY;
         private Vector3 _editStartCenter;
         private float _editStartRadius;
@@ -53,7 +69,74 @@ namespace CloudScope.Selection
                 IsEditing = true;
         }
 
-        // ── Editing ───────────────────────────────────────────────────────────
+        // ── Handle positions ──────────────────────────────────────────────────
+
+        public Vector3 HandleWorldPosition(int i) => i switch
+        {
+            0 => Center,
+            1 => Center + new Vector3( Radius, 0f, 0f),
+            2 => Center + new Vector3(-Radius, 0f, 0f),
+            3 => Center + new Vector3(0f,  Radius, 0f),
+            4 => Center + new Vector3(0f, -Radius, 0f),
+            5 => Center + new Vector3(0f, 0f,  Radius),
+            6 => Center + new Vector3(0f, 0f, -Radius),
+            _ => Center
+        };
+
+        // ── Handle hit-test ───────────────────────────────────────────────────
+
+        public int HitTestHandles(int mx, int my, OrbitCamera cam, float threshold = 12f)
+        {
+            if (!IsEditing) return HoverNone;
+            int best = HoverNone;
+            float bestDist = threshold;
+            for (int i = 0; i < HandleCount; i++)
+            {
+                var (sx, sy, behind) = cam.WorldToScreen(HandleWorldPosition(i));
+                if (behind) continue;
+                float d = MathF.Sqrt((sx - mx) * (sx - mx) + (sy - my) * (sy - my));
+                if (d < bestDist) { bestDist = d; best = i; }
+            }
+            return best;
+        }
+
+        // ── Handle drag ───────────────────────────────────────────────────────
+
+        public void BeginHandleDrag(int handle, int mx, int my, OrbitCamera cam)
+        {
+            if (!IsEditing) return;
+            _activeHandle = handle;
+            _editStartX = mx; _editStartY = my;
+            _editStartCenter = Center;
+            _editStartRadius = Radius;
+        }
+
+        public void UpdateHandleDrag(int mx, int my, OrbitCamera cam)
+        {
+            if (_activeHandle < 0) return;
+
+            if (_activeHandle == 0)
+            {
+                // Center: world-space drag at sphere depth
+                var (startWorld, _) = cam.ScreenToWorldPoint(_editStartX, _editStartY, 21);
+                var (curWorld,   _2) = cam.ScreenToWorldPoint(mx, my, 21);
+                Center = _editStartCenter + (curWorld - startWorld);
+            }
+            else
+            {
+                // Pole: horizontal pixel delta → scale radius
+                int dx = mx - _editStartX;
+                float factor = 1f + dx * 0.005f;
+                Radius = MathF.Max(_editStartRadius * factor, 0.01f);
+            }
+        }
+
+        public void EndHandleDrag()
+        {
+            _activeHandle = HoverNone;
+        }
+
+        // ── G/S/R keyboard editing ────────────────────────────────────────────
 
         public void BeginGrab(int mx, int my, OrbitCamera camera)
         {
@@ -85,7 +168,7 @@ namespace CloudScope.Selection
                 case EditAction.Grab:
                 {
                     var (startWorld, _) = camera.ScreenToWorldPoint(_editStartX, _editStartY, 21);
-                    var (curWorld, _2) = camera.ScreenToWorldPoint(mx, my, 21);
+                    var (curWorld, _2)  = camera.ScreenToWorldPoint(mx, my, 21);
                     Vector3 delta = curWorld - startWorld;
                     if (_axis >= 0)
                     {
@@ -127,6 +210,8 @@ namespace CloudScope.Selection
         {
             IsEditing = false;
             IsActive = false;
+            HoveredHandle = HoverNone;
+            _activeHandle = HoverNone;
         }
 
         public void Cancel()
@@ -135,6 +220,8 @@ namespace CloudScope.Selection
             IsEditing = false;
             _action = EditAction.None;
             _axis = -1;
+            _activeHandle = HoverNone;
+            HoveredHandle = HoverNone;
             Radius = 0f;
         }
 
