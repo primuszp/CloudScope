@@ -133,8 +133,11 @@ namespace CloudScope.Selection
             Vector3 axisZ = Vector3.Cross(axisX, axisY).Normalized();
             axisY = Vector3.Cross(axisZ, axisX).Normalized();
 
+            // OpenTK: CreateFromQuaternion(FromMatrix(M)) = M^T  (not M).
+            // We want CreateFromQuaternion(Rotation) = M_row (rows = local axes),
+            // so we must feed FromMatrix the transpose: FromMatrix(M_row^T).
             Matrix3 rotMat = new Matrix3(axisX, axisY, axisZ);
-            Rotation = Quaternion.FromMatrix(rotMat);
+            Rotation = Quaternion.FromMatrix(Matrix3.Transpose(rotMat));
             Rotation.Normalize();
 
             // Start flat: very thin in Z so the extrude handle is clearly on the drawn plane
