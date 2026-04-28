@@ -291,9 +291,11 @@ void main()
             // Smooth camera transition tick (view presets, focus)
             _cam.TickTransition(dt);
 
-            // Pivot: visible for the full orbit gesture including inertia tail
-            bool orbiting   = _leftDown || _orbitVelX != 0f || _orbitVelY != 0f;
-            float pivotTarget = orbiting ? 1f : 0f;
+            // Pivot: visible for the full orbit gesture including inertia tail.
+            // Suppressed when the box tool is active (box center orbiting, no pivot distraction).
+            bool boxActive    = _mode == InteractionMode.Label && _boxTool.HasVolume;
+            bool orbiting     = _leftDown || _orbitVelX != 0f || _orbitVelY != 0f;
+            float pivotTarget = (orbiting && !boxActive) ? 1f : 0f;
             float pivotRate   = pivotTarget > _pivotFade ? 8f : 5f;
             _pivotFade += (pivotTarget - _pivotFade) * Math.Min(pivotRate * dt, 1f);
             if (_pivotFlash > 0f) _pivotFlash = Math.Max(0f, _pivotFlash - dt * 2.5f);
@@ -704,8 +706,9 @@ void main()
                 }
             }
 
-            // 4. Pivot indicator — only during orbit, fades in/out smoothly
-            if (_pivotFade > 0.01f || _pivotFlash > 0.01f)
+            // 4. Pivot indicator — only during orbit, fades in/out smoothly; hidden when box is active
+            bool boxActive = _mode == InteractionMode.Label && _boxTool.HasVolume;
+            if (!boxActive && (_pivotFade > 0.01f || _pivotFlash > 0.01f))
                 RenderPivotIndicator(ref view, ref proj);
 
             // 5. Center crosshair — fades out as pivot fades in, full when pivot is hidden
