@@ -113,6 +113,17 @@ foreach (var pt in reader.GetPoints())
 sw.Stop();
 Console.WriteLine($"\rLoaded : {loaded:N0} points  ({sw.Elapsed.TotalSeconds:F1} s)");
 
+// ── Fisher-Yates shuffle so first-K points give uniform spatial coverage ────
+// CLOD in the viewer draws only the first N points based on zoom level.
+{
+    var rng = new Random(42);
+    for (long i = loaded - 1; i > 0; i--)
+    {
+        long j = (long)(rng.NextDouble() * (i + 1));
+        (points[i], points[j]) = (points[j], points[i]);
+    }
+    Console.WriteLine("Shuffled  : points reordered for CLOD");
+}
 
 // ── Compute cloud radius for initial camera fit ──────────────────────────────
 float rangeX = (float)(hdr.MaxX - hdr.MinX) * 0.5f;

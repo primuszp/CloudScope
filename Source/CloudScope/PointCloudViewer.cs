@@ -744,12 +744,16 @@ void main()
             GL.UniformMatrix4(_uView, false, ref view);
             GL.UniformMatrix4(_uProj, false, ref proj);
 
-            // 1. Draw point cloud
+            // 1. Draw point cloud — CLOD: draw fewer points when zoomed far out.
+            // Points were shuffled at load time so the first K form a uniform spatial sample.
             if (_pointCount > 0)
             {
+                float lodRatio = (float)(_cloudRadius / Math.Max(_cam.Hvs, _cloudRadius * 0.001));
+                float lodFactor = Math.Clamp(lodRatio * lodRatio, 0.005f, 1f);
+                int drawCount = Math.Max((int)(_pointCount * lodFactor), Math.Min(100_000, _pointCount));
                 GL.Uniform1(_uPointSize, _pointSize);
                 GL.BindVertexArray(_vao);
-                GL.DrawArrays(PrimitiveType.Points, 0, _pointCount);
+                GL.DrawArrays(PrimitiveType.Points, 0, drawCount);
             }
 
             // 2. Labeled points highlight (second pass with label colors)
