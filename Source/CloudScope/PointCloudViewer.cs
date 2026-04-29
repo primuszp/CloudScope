@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
@@ -98,11 +100,12 @@ namespace CloudScope
         private float _orbitVelX, _orbitVelY;
         private float _panVelX,   _panVelY;
 
-        // ── Box selection preview (throttled live highlight) ─────────────────
-        private float _previewTimer = 999f;       // force first rebuild
+        // ── Selection preview (background thread, throttled) ─────────────────
+        private float _previewTimer = 999f;       // time since last launch
         private const float PreviewInterval = 0.08f;  // ~12 fps
-        private HashSet<int>? _previewIndices;    // computed in OnUpdateFrame, uploaded in OnRenderFrame
-        private bool _previewDirty;               // true when _previewIndices needs uploading
+        private HashSet<int>? _previewIndices;    // latest result, set by background task
+        private bool _previewDirty;               // true when _previewIndices needs GPU upload
+        private volatile bool _previewRunning;    // background task in flight
 
         // ── Point rendering ───────────────────────────────────────────────────
         private float _pointSize = 1.5f;
@@ -326,16 +329,27 @@ void main()
             if (_pivotFlash > 0f) _pivotFlash = Math.Max(0f, _pivotFlash - dt * 2.5f);
 
             // Live preview: resolve which points are inside the active selection volume.
+            // ResolveSelection can iterate millions of points — run it on a background thread
+            // so the render loop is never blocked.
             bool anyPreviewActive = _mode == InteractionMode.Label && ActiveTool.HasVolume;
             if (anyPreviewActive && _pointsCPU != null)
             {
                 _previewTimer += dt;
-                if (_previewTimer >= PreviewInterval)
+                if (_previewTimer >= PreviewInterval && !_previewRunning)
                 {
                     _previewTimer   = 0f;
-                    _previewIndices = ActiveTool.ResolveSelection(_pointsCPU, _cam,
-                                          (int)_cam.ViewportWidth, (int)_cam.ViewportHeight);
-                    _previewDirty   = true;
+                    _previewRunning = true;
+                    var tool   = ActiveTool;
+                    var points = _pointsCPU;
+                    int vpW    = (int)_cam.ViewportWidth;
+                    int vpH    = (int)_cam.ViewportHeight;
+                    Task.Run(() =>
+                    {
+                        var result = tool.ResolveSelection(points, _cam, vpW, vpH);
+                        _previewIndices = result;
+                        _previewDirty   = true;
+                        _previewRunning = false;
+                    });
                 }
             }
             else if (!anyPreviewActive && _previewIndices != null)
