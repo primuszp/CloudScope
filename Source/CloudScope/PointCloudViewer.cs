@@ -339,13 +339,11 @@ void main()
                 {
                     _previewTimer   = 0f;
                     _previewRunning = true;
-                    var tool   = ActiveTool;
+                    var query  = ActiveTool.CreateQuery();
                     var points = _pointsCPU;
-                    int vpW    = (int)_cam.ViewportWidth;
-                    int vpH    = (int)_cam.ViewportHeight;
                     Task.Run(() =>
                     {
-                        var result = tool.ResolveSelection(points, _cam, vpW, vpH);
+                        var result = query.Resolve(points);
                         _previewIndices = result;
                         _previewDirty   = true;
                         _previewRunning = false;
@@ -618,21 +616,20 @@ void main()
                 // ── Enter: confirm selection and apply label ──────────────────
                 if (e.Key == Keys.Enter && ActiveTool.IsEditing)
                 {
-                    ActiveTool.Confirm();
-                        if (_pointsCPU != null)
+                    if (_pointsCPU != null)
+                    {
+                        var selected = ActiveTool.CreateQuery().Resolve(_pointsCPU);
+                        if (selected.Count > 0)
                         {
-                            var selected = ActiveTool.ResolveSelection(
-                                _pointsCPU, _cam, Size.X, Size.Y);
-                            if (selected.Count > 0)
-                            {
-                                _labelManager.ApplyLabel(selected, _currentLabel);
-                                Console.WriteLine($"Labeled {selected.Count} points as '{_currentLabel}'  (total: {_labelManager.Count})");
-                            }
-                            else
-                            {
-                                Console.WriteLine("No points in selection volume");
-                            }
+                            _labelManager.ApplyLabel(selected, _currentLabel);
+                            Console.WriteLine($"Labeled {selected.Count} points as '{_currentLabel}'  (total: {_labelManager.Count})");
                         }
+                        else
+                        {
+                            Console.WriteLine("No points in selection volume");
+                        }
+                    }
+                    ActiveTool.Confirm();
                 }
 
                 // ── G/S/R: Set pending edit action (Blender-style) ───────────

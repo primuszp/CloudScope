@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using CloudScope;
+using CloudScope.Loading;
 
 string lasFile = args.Length > 0
     ? args[0]
@@ -40,98 +41,21 @@ if (maxPoints < reader.PointCount)
 Console.Write("Loading");
 var sw = Stopwatch.StartNew();
 
-long total = maxPoints > 0 ? Math.Min(maxPoints, reader.PointCount) : reader.PointCount;
-var points = new PointData[total];
-
-double cx = (hdr.MinX + hdr.MaxX) * 0.5;
-double cy = (hdr.MinY + hdr.MaxY) * 0.5;
-double cz = (hdr.MinZ + hdr.MaxZ) * 0.5;
-double spanZ = hdr.MaxZ - hdr.MinZ;
-
-// Some files store 8-bit colors (0-255) in 16-bit fields — detect from first 1000 points.
-float colorScale = 1.0f / 65535.0f;
-ushort colorMax = 0;
-bool colorScaleSet = !hasColor; // skip detection for non-color formats
-
-long loaded = 0;
-int lastPct = -1;
-
-foreach (var pt in reader.GetPoints())
-{
-    if (loaded >= total) break;
-
-    // Inline color scale detection from first 1000 points
-    if (!colorScaleSet)
-    {
-        if (loaded < 1000)
-        {
-            if (pt.R > colorMax) colorMax = pt.R;
-            if (pt.G > colorMax) colorMax = pt.G;
-            if (pt.B > colorMax) colorMax = pt.B;
-        }
-        else
-        {
-            if (colorMax > 0 && colorMax <= 255)
-            {
-                colorScale = 1.0f / 255.0f;
-                Console.WriteLine("\nInfo: Detected 8-bit colors (0-255). Scaling corrected.");
-            }
-            colorScaleSet = true;
-        }
-    }
-
-    ref PointData p = ref points[loaded];
-    p.X = (float)(pt.X - cx);
-    p.Y = (float)(pt.Y - cy);
-    p.Z = (float)(pt.Z - cz);
-
-    if (hasColor)
-    {
-        p.R = pt.R * colorScale;
-        p.G = pt.G * colorScale;
-        p.B = pt.B * colorScale;
-    }
-    else
-    {
-        float t = spanZ > 0 ? (float)((pt.Z - hdr.MinZ) / spanZ) : 0.5f;
-        t = Math.Clamp(t, 0f, 1f);
-        p.R = t;
-        p.G = 1f - MathF.Abs(2f * t - 1f);
-        p.B = 1f - t;
-    }
-
-    loaded++;
-
-    int pct = (int)(loaded * 100L / total);
-    if (pct / 5 != lastPct / 5)
-    {
-        lastPct = pct;
-        Console.Write($"\rLoading {pct,3}%");
-    }
-}
+var progress = new Progress<int>(pct => Console.Write($"\rLoading {pct,3}%"));
+var cloud = PointCloudLoader.Load(reader, maxPoints, progress);
 
 sw.Stop();
-Console.WriteLine($"\rLoaded : {loaded:N0} points  ({sw.Elapsed.TotalSeconds:F1} s)");
+Console.WriteLine($"\rLoaded : {cloud.LoadedCount:N0} points  ({sw.Elapsed.TotalSeconds:F1} s)");
+if (cloud.HasColor && Math.Abs(cloud.ColorScale - (1.0f / 255.0f)) < 0.000001f)
+    Console.WriteLine("Info: Detected 8-bit colors (0-255). Scaling corrected.");
 
 // ── Fisher-Yates shuffle so first-K points give uniform spatial coverage ────
 // CLOD in the viewer draws only the first N points based on zoom level.
-{
-    var rng = new Random(42);
-    for (long i = loaded - 1; i > 0; i--)
-    {
-        long j = (long)(rng.NextDouble() * (i + 1));
-        (points[i], points[j]) = (points[j], points[i]);
-    }
-    Console.WriteLine("Shuffled  : points reordered for CLOD");
-}
+PointCloudLoader.ShuffleForProgressiveLod(cloud.Points, cloud.LoadedCount);
+Console.WriteLine("Shuffled  : points reordered for CLOD");
 
 // ── Compute cloud radius for initial camera fit ──────────────────────────────
-float rangeX = (float)(hdr.MaxX - hdr.MinX) * 0.5f;
-float rangeY = (float)(hdr.MaxY - hdr.MinY) * 0.5f;
-float rangeZ = (float)(hdr.MaxZ - hdr.MinZ) * 0.5f;
-float radius = MathF.Sqrt(rangeX * rangeX + rangeY * rangeY + rangeZ * rangeZ);
-
-Console.WriteLine($"Cloud radius: {radius:F1} m");
+Console.WriteLine($"Cloud radius: {cloud.Radius:F1} m");
 Console.WriteLine();
 Console.WriteLine("Camera controls:");
 Console.WriteLine("  Left drag      - Orbit");
@@ -167,7 +91,7 @@ Console.WriteLine();
 
 // ── Launch viewer ────────────────────────────────────────────────────────────
 using var viewer = new PointCloudViewer(1600, 900);
-viewer.LoadPointCloud(points, radius);
+viewer.LoadPointCloud(cloud.Points, cloud.Radius);
 viewer.SetLasFilePath(lasFile);
 viewer.Run();
 

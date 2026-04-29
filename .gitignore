@@ -13,6 +13,9 @@ obj/
 *.userprefs
 *.sln.iml
 
+# Local agent worktrees
+.claude/worktrees/
+
 # Test Results
 TestResults/
 
