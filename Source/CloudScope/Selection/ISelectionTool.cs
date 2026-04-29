@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Threading;
 using OpenTK.Mathematics;
 
 namespace CloudScope.Selection
@@ -46,7 +45,7 @@ namespace CloudScope.Selection
         void Confirm();
         void Cancel();
 
-        HashSet<int> ResolveSelection(PointData[] points, OrbitCamera camera, int vpW, int vpH, CancellationToken ct = default);
+        HashSet<int> ResolveSelection(PointData[] points, OrbitCamera camera, int vpW, int vpH);
 
         // ── Renderer helpers ──────────────────────────────────────────────────
         EditAction CurrentAction { get; }
