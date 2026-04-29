@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using OpenTK.Mathematics;
 
 namespace CloudScope.Selection
@@ -381,7 +382,7 @@ namespace CloudScope.Selection
 
         // ── Selection resolution ─────────────────────────────────────────────
 
-        public override HashSet<int> ResolveSelection(PointData[] points, OrbitCamera camera, int vpW, int vpH)
+        public override HashSet<int> ResolveSelection(PointData[] points, OrbitCamera camera, int vpW, int vpH, CancellationToken ct = default)
         {
             if (HalfExtents.X < 1e-4f || HalfExtents.Y < 1e-4f || HalfExtents.Z < 1e-4f)
                 return new HashSet<int>();
@@ -396,6 +397,8 @@ namespace CloudScope.Selection
             var list = new List<int>();
             for (int i = 0; i < points.Length; i++)
             {
+                if ((i & 0xFFFF) == 0 && ct.IsCancellationRequested) return new HashSet<int>();
+
                 float dx = points[i].X - cx;
                 float dy = points[i].Y - cy;
                 float dz = points[i].Z - cz;

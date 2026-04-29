@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using OpenTK.Mathematics;
 
 namespace CloudScope.Selection
@@ -46,7 +47,7 @@ namespace CloudScope.Selection
         public abstract void   OnMouseUp(int mx, int my);
         public abstract void   UpdateHandleDrag(int mx, int my, OrbitCamera cam);
         public abstract void   AdjustScale(float delta);
-        public abstract HashSet<int> ResolveSelection(PointData[] points, OrbitCamera camera, int vpW, int vpH);
+        public abstract HashSet<int> ResolveSelection(PointData[] points, OrbitCamera camera, int vpW, int vpH, CancellationToken ct = default);
 
         // ── Handle interaction ────────────────────────────────────────────────
 
