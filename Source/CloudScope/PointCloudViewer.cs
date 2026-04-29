@@ -65,10 +65,11 @@ namespace CloudScope
         // ── Labeling state ────────────────────────────────────────────────────
         private InteractionMode _mode = InteractionMode.Navigate;
 
-        private readonly BoxSelectionTool    _boxTool    = new();
-        private readonly SphereSelectionTool _sphereTool = new();
-        private readonly ISelectionTool[]    _tools;
-        private readonly GizmoRendererBase[] _renderers;
+        private readonly BoxSelectionTool      _boxTool      = new();
+        private readonly SphereSelectionTool   _sphereTool   = new();
+        private readonly CylinderSelectionTool _cylinderTool = new();
+        private readonly ISelectionTool[]      _tools;
+        private readonly GizmoRendererBase[]   _renderers;
         private int            _activeToolIndex = 0;
         private ISelectionTool ActiveTool    => _tools[_activeToolIndex];
 
@@ -84,8 +85,9 @@ namespace CloudScope
             { "Ground", "Building", "Vegetation", "Vehicle", "Road", "Water", "Wire" };
 
         // ── Labeling renderers ────────────────────────────────────────────────
-        private readonly BoxGizmoRenderer    _boxGizmoRenderer    = new();
-        private readonly SphereGizmoRenderer _sphereGizmoRenderer = new();
+        private readonly BoxGizmoRenderer      _boxGizmoRenderer      = new();
+        private readonly SphereGizmoRenderer   _sphereGizmoRenderer   = new();
+        private readonly CylinderGizmoRenderer _cylinderGizmoRenderer = new();
         private readonly HighlightRenderer   _highlightRenderer   = new();
 
         // -- Mouse state ────────────────────────────────────────────────----------
@@ -191,8 +193,8 @@ void main()
                 Profile    = ContextProfile.Core,
             })
         {
-            _tools     = new ISelectionTool[]    { _boxTool, _sphereTool };
-            _renderers = new GizmoRendererBase[] { _boxGizmoRenderer, _sphereGizmoRenderer };
+            _tools     = new ISelectionTool[]    { _boxTool, _sphereTool, _cylinderTool };
+            _renderers = new GizmoRendererBase[] { _boxGizmoRenderer, _sphereGizmoRenderer, _cylinderGizmoRenderer };
         }
 
         // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -636,10 +638,11 @@ void main()
                 {
                     if (e.Key == Keys.D1) { _activeToolIndex = 0; Console.WriteLine("Tool: Box"); }
                     if (e.Key == Keys.D2) { _activeToolIndex = 1; Console.WriteLine("Tool: Sphere"); }
+                    if (e.Key == Keys.D3) { _activeToolIndex = 2; Console.WriteLine("Tool: Cylinder"); }
                 }
 
-                // Label presets (3-9 → index 0-6)
-                Keys[] presetKeys = { Keys.D3, Keys.D4, Keys.D5, Keys.D6, Keys.D7, Keys.D8, Keys.D9 };
+                // Label presets (4-9 → index 0-5; D3 is now Cylinder tool)
+                Keys[] presetKeys = { Keys.D4, Keys.D5, Keys.D6, Keys.D7, Keys.D8, Keys.D9 };
                 for (int i = 0; i < presetKeys.Length && i < LabelPresets.Length; i++)
                 {
                     if (e.Key == presetKeys[i])
@@ -946,7 +949,9 @@ void main()
             float r = 0f, g = 0.8f, b = 1f; // cyan for label mode
 
             if (ActiveTool.ToolType == SelectionToolType.Sphere)
-            { r = 1f; g = 0.6f; b = 0.15f; } // orange for sphere tool
+            { r = 1f;    g = 0.6f;  b = 0.15f; } // orange for sphere tool
+            else if (ActiveTool.ToolType == SelectionToolType.Cylinder)
+            { r = 0.75f; g = 0.25f; b = 1f;    } // purple for cylinder tool
 
             GL.UseProgram(_lineShader);
             GL.Uniform1(_uAlphaLine, 0.9f);
@@ -1002,6 +1007,7 @@ void main()
             // Labeling renderers
             _boxGizmoRenderer.Dispose();
             _sphereGizmoRenderer.Dispose();
+            _cylinderGizmoRenderer.Dispose();
             _highlightRenderer.Dispose();
 
             base.OnUnload();

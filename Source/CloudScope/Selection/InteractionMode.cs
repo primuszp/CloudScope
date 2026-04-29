@@ -9,7 +9,8 @@ namespace CloudScope.Selection
     public enum SelectionToolType
     {
         Box,
-        Sphere
+        Sphere,
+        Cylinder
     }
 
     /// <summary>
