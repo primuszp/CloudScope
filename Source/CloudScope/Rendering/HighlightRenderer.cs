@@ -93,7 +93,7 @@ void main()
         /// Upload the current box-selection preview: points inside the box shown in yellow.
         /// Call once per update tick (throttled externally). Pass null/empty to clear.
         /// </summary>
-        public void UpdatePreview(PointData[]? points, HashSet<int>? indices)
+        public void UpdatePreview(PointData[]? points, IReadOnlyList<int>? indices)
         {
             EnsureResources();
             if (points == null || indices == null || indices.Count == 0) { _previewCount = 0; return; }

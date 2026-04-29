@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using CloudScope.Library;
 
 namespace CloudScope.Loading
@@ -7,12 +6,17 @@ namespace CloudScope.Loading
     public static class PointCloudLoader
     {
         private const int ColorSampleSize = 1000;
+        private const int BatchSize = 1 << 17;
 
         public static LoadedPointCloud Load(LasReader reader, long maxPoints, IProgress<int>? progress = null)
         {
             var hdr = reader.Header;
             bool hasColor = hdr.PointDataFormatId is 2 or 3 or 5 or 7 or 8 or 10;
-            long total = maxPoints > 0 ? Math.Min(maxPoints, reader.PointCount) : reader.PointCount;
+            long requested = maxPoints > 0 ? Math.Min(maxPoints, reader.PointCount) : reader.PointCount;
+            if (requested > int.MaxValue)
+                throw new InvalidOperationException($"Point limit {requested:N0} exceeds the in-memory viewer limit of {int.MaxValue:N0} points.");
+
+            int total = (int)requested;
             var points = new PointData[total];
 
             double cx = (hdr.MinX + hdr.MaxX) * 0.5;
@@ -21,34 +25,24 @@ namespace CloudScope.Loading
             double spanZ = hdr.MaxZ - hdr.MinZ;
 
             float colorScale = 1.0f / 65535.0f;
-            var colorSample = hasColor
-                ? new List<LasPoint>((int)Math.Min(ColorSampleSize, total))
-                : null;
+            var batch = new LasPoint[(int)Math.Min(BatchSize, Math.Max(total, 1))];
+            var rawBatch = new byte[batch.Length * hdr.PointDataRecordLength];
 
-            long loaded = 0;
+            int loaded = 0;
             int lastPct = -1;
 
-            foreach (var pt in reader.GetPoints())
+            while (loaded < total)
             {
-                if (loaded >= total) break;
+                int read = reader.ReadBatch(loaded, batch, Math.Min(batch.Length, total - loaded), rawBatch);
+                if (read == 0) break;
 
-                if (colorSample != null && colorSample.Count < ColorSampleSize)
-                {
-                    colorSample.Add(pt);
-                    loaded++;
+                if (hasColor && loaded == 0)
+                    colorScale = DetectColorScale(batch, Math.Min(read, ColorSampleSize));
 
-                    if (colorSample.Count == ColorSampleSize || loaded == total)
-                    {
-                        colorScale = DetectColorScale(colorSample);
-                        for (int i = 0; i < colorSample.Count; i++)
-                            WritePoint(ref points[i], colorSample[i], cx, cy, cz, spanZ, hasColor, colorScale, hdr.MinZ);
-                        ReportProgress(loaded, total, progress, ref lastPct);
-                    }
-                    continue;
-                }
+                for (int i = 0; i < read; i++)
+                    WritePoint(ref points[loaded + i], batch[i], cx, cy, cz, spanZ, hasColor, colorScale, hdr.MinZ);
 
-                WritePoint(ref points[loaded], pt, cx, cy, cz, spanZ, hasColor, colorScale, hdr.MinZ);
-                loaded++;
+                loaded += read;
                 ReportProgress(loaded, total, progress, ref lastPct);
             }
 
@@ -70,11 +64,12 @@ namespace CloudScope.Loading
             }
         }
 
-        private static float DetectColorScale(List<LasPoint> sample)
+        private static float DetectColorScale(LasPoint[] sample, int count)
         {
             ushort max = 0;
-            foreach (var pt in sample)
+            for (int i = 0; i < count; i++)
             {
+                var pt = sample[i];
                 if (pt.R > max) max = pt.R;
                 if (pt.G > max) max = pt.G;
                 if (pt.B > max) max = pt.B;

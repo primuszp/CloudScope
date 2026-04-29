@@ -191,6 +191,45 @@ namespace CloudScope.Library
             return count;
         }
 
+        /// <summary>
+        /// Reads a contiguous point range into a caller-owned buffer.
+        /// This avoids iterator overhead while keeping peak memory bounded by the batch size.
+        /// </summary>
+        public int ReadBatch(long startIndex, LasPoint[] buffer, int count)
+            => ReadBatch(startIndex, buffer, count, null);
+
+        /// <summary>
+        /// Reads a contiguous point range using caller-owned point and raw byte buffers.
+        /// </summary>
+        public int ReadBatch(long startIndex, LasPoint[] buffer, int count, byte[]? rawBuffer)
+        {
+            if (startIndex < 0 || startIndex >= PointCount || count <= 0 || buffer.Length == 0)
+                return 0;
+
+            int actual = (int)Math.Min(Math.Min((long)count, (long)buffer.Length), PointCount - startIndex);
+            byte formatId = _header.PointDataFormatId;
+            int stride = _header.PointDataRecordLength;
+            long dataOffset = _header.OffsetToPointData + startIndex * stride;
+            double sx = _header.XScaleFactor, ox = _header.XOffset;
+            double sy = _header.YScaleFactor, oy = _header.YOffset;
+            double sz = _header.ZScaleFactor, oz = _header.ZOffset;
+
+            int byteCount = actual * stride;
+            byte[] raw = rawBuffer != null && rawBuffer.Length >= byteCount
+                ? rawBuffer
+                : new byte[byteCount];
+            _accessor.ReadArray(dataOffset, raw, 0, byteCount);
+
+            System.Threading.Tasks.Parallel.For(0, actual, i =>
+            {
+                buffer[i] = ParsePoint(
+                    raw.AsSpan(i * stride, stride),
+                    formatId, sx, ox, sy, oy, sz, oz);
+            });
+
+            return actual;
+        }
+
         private static LasPoint ParsePoint(
             ReadOnlySpan<byte> data, byte formatId,
             double sx, double ox, double sy, double oy, double sz, double oz)

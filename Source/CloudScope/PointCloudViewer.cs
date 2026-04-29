@@ -103,9 +103,7 @@ namespace CloudScope
         // ── Selection preview (background thread, throttled) ─────────────────
         private float _previewTimer = 999f;       // time since last launch
         private const float PreviewInterval = 0.08f;  // ~12 fps
-        private HashSet<int>? _previewIndices;    // latest result, set by background task
-        private bool _previewDirty;               // true when _previewIndices needs GPU upload
-        private volatile bool _previewRunning;    // background task in flight
+        private readonly SelectionPreviewWorker _previewWorker = new();
 
         // ── Point rendering ───────────────────────────────────────────────────
         private float _pointSize = 1.5f;
@@ -249,19 +247,8 @@ void main()
             _vbo = GL.GenBuffer();
             GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
 
-            // Layout: X Y Z R G B  (6 floats = 24 bytes per vertex)
-            var data = new float[pts.Length * 6];
-            for (int i = 0; i < pts.Length; i++)
-            {
-                data[i * 6 + 0] = pts[i].X;
-                data[i * 6 + 1] = pts[i].Y;
-                data[i * 6 + 2] = pts[i].Z;
-                data[i * 6 + 3] = pts[i].R;
-                data[i * 6 + 4] = pts[i].G;
-                data[i * 6 + 5] = pts[i].B;
-            }
             GL.BufferData(BufferTarget.ArrayBuffer,
-                data.Length * sizeof(float), data, BufferUsageHint.StaticDraw);
+                pts.Length * 24, pts, BufferUsageHint.StaticDraw);
 
             GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 24, 0);
             GL.EnableVertexAttribArray(0);
@@ -335,25 +322,15 @@ void main()
             if (anyPreviewActive && _pointsCPU != null)
             {
                 _previewTimer += dt;
-                if (_previewTimer >= PreviewInterval && !_previewRunning)
+                if (_previewTimer >= PreviewInterval)
                 {
                     _previewTimer   = 0f;
-                    _previewRunning = true;
-                    var query  = ActiveTool.CreateQuery();
-                    var points = _pointsCPU;
-                    Task.Run(() =>
-                    {
-                        var result = query.Resolve(points);
-                        _previewIndices = result;
-                        _previewDirty   = true;
-                        _previewRunning = false;
-                    });
+                    _previewWorker.Request(ActiveTool.CreateQuery(), _pointsCPU);
                 }
             }
-            else if (!anyPreviewActive && _previewIndices != null)
+            else if (!anyPreviewActive)
             {
-                _previewIndices = null;
-                _previewDirty   = true;
+                _previewWorker.Clear();
                 _previewTimer   = 999f;
             }
 
@@ -725,10 +702,9 @@ void main()
 
             // 2b. Box selection preview — points currently inside the box, shown in yellow.
             // GPU upload happens here (not in OnUpdateFrame) to keep GL calls on the render thread.
-            if (_previewDirty)
+            if (_previewWorker.TryTakeLatest(out var previewIndices))
             {
-                _highlightRenderer.UpdatePreview(_pointsCPU, _previewIndices);
-                _previewDirty = false;
+                _highlightRenderer.UpdatePreview(_pointsCPU, previewIndices);
             }
             _highlightRenderer.RenderPreview(ref view, ref proj, _pointSize);
 
@@ -1020,6 +996,7 @@ void main()
             _sphereGizmoRenderer.Dispose();
             _cylinderGizmoRenderer.Dispose();
             _highlightRenderer.Dispose();
+            _previewWorker.Dispose();
 
             base.OnUnload();
         }

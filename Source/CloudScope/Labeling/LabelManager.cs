@@ -36,7 +36,7 @@ namespace CloudScope.Labeling
         /// Apply <paramref name="labelName"/> to every index in <paramref name="pointIndices"/>.
         /// Previous labels (or null for unlabeled) are recorded for undo.
         /// </summary>
-        public void ApplyLabel(HashSet<int> pointIndices, string labelName)
+        public void ApplyLabel(IReadOnlyCollection<int> pointIndices, string labelName)
         {
             if (pointIndices.Count == 0) return;
 
@@ -52,7 +52,7 @@ namespace CloudScope.Labeling
         }
 
         /// <summary>Remove labels from a set of points (for eraser tool or clear).</summary>
-        public void RemoveLabels(HashSet<int> pointIndices)
+        public void RemoveLabels(IReadOnlyCollection<int> pointIndices)
         {
             if (pointIndices.Count == 0) return;
 
