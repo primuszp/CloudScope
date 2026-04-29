@@ -34,8 +34,8 @@ namespace CloudScope.Selection
         public Quaternion Rotation   = DefaultRotation;
 
         // Local Y → world Z (upright in Z-up LiDAR scenes)
-        private static readonly Quaternion DefaultRotation =
-            Quaternion.FromAxisAngle(Vector3.UnitX, MathF.PI / 2f);
+        // Identity: local Y = world Y = up (Y-up scene)
+        private static readonly Quaternion DefaultRotation = Quaternion.Identity;
 
         // Local axes derived from rotation
         public  Vector3 Axis   => Vector3.Transform(Vector3.UnitY, Rotation);
