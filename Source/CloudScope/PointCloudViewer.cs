@@ -356,7 +356,7 @@ void main()
                 if (!_leftDown && (_orbitVelX != 0f || _orbitVelY != 0f))
                 {
                     _cam.Rotate(_orbitVelX, _orbitVelY);
-                    _orbitVelX *= 0.75f; _orbitVelY *= 0.75f;
+                    _orbitVelX *= 0.60f; _orbitVelY *= 0.60f;
                     if (MathF.Abs(_orbitVelX) < 0.05f) _orbitVelX = 0f;
                     if (MathF.Abs(_orbitVelY) < 0.05f) _orbitVelY = 0f;
                 }
@@ -368,7 +368,7 @@ void main()
                     int pdx = (int)MathF.Round(_panVelX), pdy = (int)MathF.Round(_panVelY);
                     if (pdx != 0 || pdy != 0)
                         _cam.Pan(cx, cy, cx + pdx, cy + pdy);
-                    _panVelX *= 0.75f; _panVelY *= 0.75f;
+                    _panVelX *= 0.60f; _panVelY *= 0.60f;
                     if (MathF.Abs(_panVelX) < 0.05f) _panVelX = 0f;
                     if (MathF.Abs(_panVelY) < 0.05f) _panVelY = 0f;
                 }
@@ -951,7 +951,7 @@ void main()
             if (ActiveTool.ToolType == SelectionToolType.Sphere)
             { r = 1f;    g = 0.6f;  b = 0.15f; } // orange for sphere tool
             else if (ActiveTool.ToolType == SelectionToolType.Cylinder)
-            { r = 0.75f; g = 0.25f; b = 1f;    } // purple for cylinder tool
+            { r = 0.60f; g = 0.25f; b = 1f;    } // purple for cylinder tool
 
             GL.UseProgram(_lineShader);
             GL.Uniform1(_uAlphaLine, 0.9f);
