@@ -47,7 +47,7 @@ namespace CloudScope.Rendering
 
             if (cyl.Radius < 1e-5f || cyl.HalfHeight < 1e-5f) return;
 
-            Matrix4 model = Matrix4.CreateScale(cyl.Radius, cyl.HalfHeight, cyl.Radius)
+            Matrix4 model = Matrix4.CreateScale(cyl.Radius, cyl.Radius, cyl.HalfHeight)
                           * Matrix4.CreateFromQuaternion(cyl.Rotation)
                           * Matrix4.CreateTranslation(cyl.Center);
             Matrix4 mvp = model * view * proj;
@@ -316,34 +316,34 @@ namespace CloudScope.Rendering
 
             for (int la = 0; la < LatSeg; la++)
             {
-                float y0 = -1f + 2f * la       / LatSeg;
-                float y1 = -1f + 2f * (la + 1) / LatSeg;
+                float z0 = -1f + 2f * la       / LatSeg;
+                float z1 = -1f + 2f * (la + 1) / LatSeg;
                 for (int s = 0; s < CapSeg; s++)
                 {
                     float a0 = s * step, a1 = (s + 1) * step;
                     float c0 = MathF.Cos(a0), s0 = MathF.Sin(a0);
                     float c1 = MathF.Cos(a1), s1 = MathF.Sin(a1);
-                    fill[fi++]=c0; fill[fi++]=y0; fill[fi++]=s0;
-                    fill[fi++]=c1; fill[fi++]=y0; fill[fi++]=s1;
-                    fill[fi++]=c1; fill[fi++]=y1; fill[fi++]=s1;
-                    fill[fi++]=c0; fill[fi++]=y0; fill[fi++]=s0;
-                    fill[fi++]=c1; fill[fi++]=y1; fill[fi++]=s1;
-                    fill[fi++]=c0; fill[fi++]=y1; fill[fi++]=s0;
+                    fill[fi++]=c0; fill[fi++]=s0; fill[fi++]=z0;
+                    fill[fi++]=c1; fill[fi++]=s1; fill[fi++]=z0;
+                    fill[fi++]=c1; fill[fi++]=s1; fill[fi++]=z1;
+                    fill[fi++]=c0; fill[fi++]=s0; fill[fi++]=z0;
+                    fill[fi++]=c1; fill[fi++]=s1; fill[fi++]=z1;
+                    fill[fi++]=c0; fill[fi++]=s0; fill[fi++]=z1;
                 }
             }
             for (int s = 0; s < CapSeg; s++)
             {
                 float a0 = s * step, a1 = (s + 1) * step;
-                fill[fi++]=0f; fill[fi++]=1f; fill[fi++]=0f;
-                fill[fi++]=MathF.Cos(a0); fill[fi++]=1f; fill[fi++]=MathF.Sin(a0);
-                fill[fi++]=MathF.Cos(a1); fill[fi++]=1f; fill[fi++]=MathF.Sin(a1);
+                fill[fi++]=0f; fill[fi++]=0f; fill[fi++]=1f;
+                fill[fi++]=MathF.Cos(a0); fill[fi++]=MathF.Sin(a0); fill[fi++]=1f;
+                fill[fi++]=MathF.Cos(a1); fill[fi++]=MathF.Sin(a1); fill[fi++]=1f;
             }
             for (int s = 0; s < CapSeg; s++)
             {
                 float a0 = s * step, a1 = (s + 1) * step;
-                fill[fi++]=0f; fill[fi++]=-1f; fill[fi++]=0f;
-                fill[fi++]=MathF.Cos(a1); fill[fi++]=-1f; fill[fi++]=MathF.Sin(a1);
-                fill[fi++]=MathF.Cos(a0); fill[fi++]=-1f; fill[fi++]=MathF.Sin(a0);
+                fill[fi++]=0f; fill[fi++]=0f; fill[fi++]=-1f;
+                fill[fi++]=MathF.Cos(a1); fill[fi++]=MathF.Sin(a1); fill[fi++]=-1f;
+                fill[fi++]=MathF.Cos(a0); fill[fi++]=MathF.Sin(a0); fill[fi++]=-1f;
             }
             MakeStaticVao(ref _fillVao, ref _fillVbo, fill);
 
@@ -352,21 +352,21 @@ namespace CloudScope.Rendering
             for (int s = 0; s < CapSeg; s++)
             {
                 float a0 = s * step, a1 = (s + 1) * step;
-                circ[ci++]=MathF.Cos(a0); circ[ci++]=1f;  circ[ci++]=MathF.Sin(a0);
-                circ[ci++]=MathF.Cos(a1); circ[ci++]=1f;  circ[ci++]=MathF.Sin(a1);
+                circ[ci++]=MathF.Cos(a0); circ[ci++]=MathF.Sin(a0); circ[ci++]= 1f;
+                circ[ci++]=MathF.Cos(a1); circ[ci++]=MathF.Sin(a1); circ[ci++]= 1f;
             }
             for (int s = 0; s < CapSeg; s++)
             {
                 float a0 = s * step, a1 = (s + 1) * step;
-                circ[ci++]=MathF.Cos(a0); circ[ci++]=-1f; circ[ci++]=MathF.Sin(a0);
-                circ[ci++]=MathF.Cos(a1); circ[ci++]=-1f; circ[ci++]=MathF.Sin(a1);
+                circ[ci++]=MathF.Cos(a0); circ[ci++]=MathF.Sin(a0); circ[ci++]=-1f;
+                circ[ci++]=MathF.Cos(a1); circ[ci++]=MathF.Sin(a1); circ[ci++]=-1f;
             }
             float[] edgeAngles = { 0f, MathF.PI * 0.5f, MathF.PI, MathF.PI * 1.5f };
             foreach (float a in edgeAngles)
             {
                 float c = MathF.Cos(a), s2 = MathF.Sin(a);
-                circ[ci++]=c; circ[ci++]= 1f; circ[ci++]=s2;
-                circ[ci++]=c; circ[ci++]=-1f; circ[ci++]=s2;
+                circ[ci++]=c; circ[ci++]=s2; circ[ci++]= 1f;
+                circ[ci++]=c; circ[ci++]=s2; circ[ci++]=-1f;
             }
             MakeStaticVao(ref _circVao, ref _circVbo, circ);
         }

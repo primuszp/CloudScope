@@ -57,7 +57,6 @@ namespace CloudScope.Selection
         // ── Box-specific edit state ───────────────────────────────────────────
         private Vector3    _editStartExtents;
         private Quaternion _editStartRotation;
-        private float      _ringStartAngle;
 
         // ── Phase 1: Drawing ─────────────────────────────────────────────────
 
@@ -181,11 +180,7 @@ namespace CloudScope.Selection
         {
             _editStartExtents  = HalfExtents;
             _editStartRotation = Rotation;
-            if (IsRingHandle(handle))
-            {
-                var (cx, cy, _) = cam.WorldToScreen(Center);
-                _ringStartAngle = MathF.Atan2(my - cy, mx - cx);
-            }
+            // _ringStartAngle unused — ring drag uses _editStartX/Y directly
         }
 
         public override void UpdateHandleDrag(int mx, int my, OrbitCamera cam)
@@ -247,21 +242,24 @@ namespace CloudScope.Selection
 
         private void UpdateRingDrag(int mx, int my, OrbitCamera cam)
         {
-            var (cx, cy, _) = cam.WorldToScreen(Center);
-            float cur   = MathF.Atan2(my - cy, mx - cx);
-            float delta = cur - _ringStartAngle;
-            while (delta >  MathF.PI) delta -= MathF.Tau;
-            while (delta < -MathF.PI) delta += MathF.Tau;
-
             int     axis      = RingAxis(_activeHandle);
-            Matrix3 rotMat    = Matrix3.CreateFromQuaternion(_editStartRotation);
+            Matrix3 invRot    = Matrix3.Transpose(Matrix3.CreateFromQuaternion(_editStartRotation));
             Vector3 localAxis = axis switch { 0 => Vector3.UnitX, 1 => Vector3.UnitY, _ => Vector3.UnitZ };
-            Vector3 worldAxis = rotMat * localAxis;
+            Vector3 worldAxis = (invRot * localAxis).Normalized();
 
-            if (Vector3.Dot(worldAxis, cam.CameraForward) > 0f) delta = -delta;
-            if (axis == 2) delta = -delta;
+            float   viewZ = cam.WorldToViewZ(Center);
+            Vector3 p0    = cam.ScreenToWorldAtDepth(_editStartX, _editStartY, viewZ);
+            Vector3 p1    = cam.ScreenToWorldAtDepth(mx, my, viewZ);
 
-            Rotation = Quaternion.FromAxisAngle(worldAxis.Normalized(), delta) * _editStartRotation;
+            Vector3 v0 = p0 - Center; v0 -= Vector3.Dot(v0, worldAxis) * worldAxis;
+            Vector3 v1 = p1 - Center; v1 -= Vector3.Dot(v1, worldAxis) * worldAxis;
+            if (v0.LengthSquared < 1e-8f || v1.LengthSquared < 1e-8f) return;
+
+            v0 = v0.Normalized(); v1 = v1.Normalized();
+            float angle = MathF.Acos(Math.Clamp(Vector3.Dot(v0, v1), -1f, 1f));
+            if (Vector3.Dot(Vector3.Cross(v0, v1), worldAxis) < 0f) angle = -angle;
+
+            Rotation = Quaternion.FromAxisAngle(worldAxis, angle) * _editStartRotation;
             Rotation.Normalize();
         }
 
