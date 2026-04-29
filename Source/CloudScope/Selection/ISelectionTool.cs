@@ -45,7 +45,7 @@ namespace CloudScope.Selection
         void Confirm();
         void Cancel();
 
-        HashSet<int> ResolveSelection(PointData[] points, OrbitCamera camera, int vpW, int vpH);
+        IPointSelectionQuery CreateQuery();
 
         // ── Renderer helpers ──────────────────────────────────────────────────
         EditAction CurrentAction { get; }

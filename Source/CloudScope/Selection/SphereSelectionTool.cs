@@ -131,23 +131,38 @@ namespace CloudScope.Selection
 
         // ── Resolution ────────────────────────────────────────────────────────
 
-        public override HashSet<int> ResolveSelection(PointData[] points, OrbitCamera camera, int vpW, int vpH)
+        public override IPointSelectionQuery CreateQuery()
+            => new SphereSelectionQuery(Center, Radius);
+
+        private sealed class SphereSelectionQuery : IPointSelectionQuery
         {
-            if (Radius < 1e-4f) return new HashSet<int>();
+            private readonly float _cx, _cy, _cz, _r2;
 
-            float r2 = Radius * Radius;
-            float cx = Center.X, cy = Center.Y, cz = Center.Z;
-
-            var list = new List<int>();
-            for (int i = 0; i < points.Length; i++)
+            public SphereSelectionQuery(Vector3 center, float radius)
             {
-                float dx = points[i].X - cx;
-                float dy = points[i].Y - cy;
-                if (dx * dx + dy * dy > r2) continue;
-                float dz = points[i].Z - cz;
-                if (dx * dx + dy * dy + dz * dz <= r2) list.Add(i);
+                _cx = center.X;
+                _cy = center.Y;
+                _cz = center.Z;
+                _r2 = radius * radius;
             }
-            return new HashSet<int>(list);
+
+            public HashSet<int> Resolve(PointData[] points)
+            {
+                if (_r2 < 1e-8f) return new HashSet<int>();
+
+                var list = new List<int>();
+                for (int i = 0; i < points.Length; i++)
+                {
+                    float dx = points[i].X - _cx;
+                    float dy = points[i].Y - _cy;
+                    float dxy = dx * dx + dy * dy;
+                    if (dxy > _r2) continue;
+                    float dz = points[i].Z - _cz;
+                    if (dxy + dz * dz <= _r2) list.Add(i);
+                }
+
+                return new HashSet<int>(list);
+            }
         }
     }
 }

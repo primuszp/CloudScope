@@ -320,29 +320,43 @@ namespace CloudScope.Selection
 
         // ── Resolution — fast dot-product path, no per-point quaternion ───────
 
-        public override HashSet<int> ResolveSelection(PointData[] points, OrbitCamera camera, int vpW, int vpH)
+        public override IPointSelectionQuery CreateQuery()
+            => new CylinderSelectionQuery(Center, Axis, Radius, HalfHeight);
+
+        private sealed class CylinderSelectionQuery : IPointSelectionQuery
         {
-            if (Radius < 1e-4f || HalfHeight < 1e-4f) return new HashSet<int>();
+            private readonly float _cx, _cy, _cz;
+            private readonly float _ax, _ay, _az;
+            private readonly float _r2, _halfHeight;
 
-            float   r2 = Radius * Radius;
-            float   hh = HalfHeight;
-            float   cx = Center.X, cy = Center.Y, cz = Center.Z;
-            Vector3 ax = Axis;
-
-            var list = new List<int>(capacity: 256);
-            for (int i = 0; i < points.Length; i++)
+            public CylinderSelectionQuery(Vector3 center, Vector3 axis, float radius, float halfHeight)
             {
-                float dx = points[i].X - cx;
-                float dy = points[i].Y - cy;
-                float dz = points[i].Z - cz;
-
-                float h       = dx * ax.X + dy * ax.Y + dz * ax.Z;
-                if (MathF.Abs(h) > hh) continue;
-
-                float radial2 = dx * dx + dy * dy + dz * dz - h * h;
-                if (radial2 <= r2) list.Add(i);
+                _cx = center.X; _cy = center.Y; _cz = center.Z;
+                _ax = axis.X; _ay = axis.Y; _az = axis.Z;
+                _r2 = radius * radius;
+                _halfHeight = halfHeight;
             }
-            return new HashSet<int>(list);
+
+            public HashSet<int> Resolve(PointData[] points)
+            {
+                if (_r2 < 1e-8f || _halfHeight < 1e-4f) return new HashSet<int>();
+
+                var list = new List<int>(capacity: 256);
+                for (int i = 0; i < points.Length; i++)
+                {
+                    float dx = points[i].X - _cx;
+                    float dy = points[i].Y - _cy;
+                    float dz = points[i].Z - _cz;
+
+                    float h = dx * _ax + dy * _ay + dz * _az;
+                    if (MathF.Abs(h) > _halfHeight) continue;
+
+                    float radial2 = dx * dx + dy * dy + dz * dz - h * h;
+                    if (radial2 <= _r2) list.Add(i);
+                }
+
+                return new HashSet<int>(list);
+            }
         }
     }
 }

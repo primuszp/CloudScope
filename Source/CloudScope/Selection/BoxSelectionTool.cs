@@ -381,32 +381,48 @@ namespace CloudScope.Selection
 
         // ── Selection resolution ─────────────────────────────────────────────
 
-        public override HashSet<int> ResolveSelection(PointData[] points, OrbitCamera camera, int vpW, int vpH)
+        public override IPointSelectionQuery CreateQuery()
+            => new BoxSelectionQuery(Center, HalfExtents, Rotation);
+
+        private sealed class BoxSelectionQuery : IPointSelectionQuery
         {
-            if (HalfExtents.X < 1e-4f || HalfExtents.Y < 1e-4f || HalfExtents.Z < 1e-4f)
-                return new HashSet<int>();
+            private readonly float _r00, _r01, _r02;
+            private readonly float _r10, _r11, _r12;
+            private readonly float _r20, _r21, _r22;
+            private readonly float _hx, _hy, _hz;
+            private readonly float _cx, _cy, _cz;
 
-            Matrix3 r = Matrix3.CreateFromQuaternion(Rotation);
-            float r00 = r.M11, r01 = r.M12, r02 = r.M13;
-            float r10 = r.M21, r11 = r.M22, r12 = r.M23;
-            float r20 = r.M31, r21 = r.M32, r22 = r.M33;
-            float hx = HalfExtents.X, hy = HalfExtents.Y, hz = HalfExtents.Z;
-            float cx = Center.X, cy = Center.Y, cz = Center.Z;
-
-            var list = new List<int>();
-            for (int i = 0; i < points.Length; i++)
+            public BoxSelectionQuery(Vector3 center, Vector3 halfExtents, Quaternion rotation)
             {
-                float dx = points[i].X - cx;
-                float dy = points[i].Y - cy;
-                float dz = points[i].Z - cz;
-                float lx = r00 * dx + r01 * dy + r02 * dz;
-                if (MathF.Abs(lx) > hx) continue;
-                float ly = r10 * dx + r11 * dy + r12 * dz;
-                if (MathF.Abs(ly) > hy) continue;
-                float lz = r20 * dx + r21 * dy + r22 * dz;
-                if (MathF.Abs(lz) <= hz) list.Add(i);
+                Matrix3 r = Matrix3.CreateFromQuaternion(rotation);
+                _r00 = r.M11; _r01 = r.M12; _r02 = r.M13;
+                _r10 = r.M21; _r11 = r.M22; _r12 = r.M23;
+                _r20 = r.M31; _r21 = r.M32; _r22 = r.M33;
+                _hx = halfExtents.X; _hy = halfExtents.Y; _hz = halfExtents.Z;
+                _cx = center.X; _cy = center.Y; _cz = center.Z;
             }
-            return new HashSet<int>(list);
+
+            public HashSet<int> Resolve(PointData[] points)
+            {
+                if (_hx < 1e-4f || _hy < 1e-4f || _hz < 1e-4f)
+                    return new HashSet<int>();
+
+                var list = new List<int>();
+                for (int i = 0; i < points.Length; i++)
+                {
+                    float dx = points[i].X - _cx;
+                    float dy = points[i].Y - _cy;
+                    float dz = points[i].Z - _cz;
+                    float lx = _r00 * dx + _r01 * dy + _r02 * dz;
+                    if (MathF.Abs(lx) > _hx) continue;
+                    float ly = _r10 * dx + _r11 * dy + _r12 * dz;
+                    if (MathF.Abs(ly) > _hy) continue;
+                    float lz = _r20 * dx + _r21 * dy + _r22 * dz;
+                    if (MathF.Abs(lz) <= _hz) list.Add(i);
+                }
+
+                return new HashSet<int>(list);
+            }
         }
 
         // ── Renderer helpers ─────────────────────────────────────────────────
