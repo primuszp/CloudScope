@@ -35,12 +35,12 @@ namespace CloudScope.Selection
 
         // Rotate 90° around X: local Y → world Z (upright, Z is up in LiDAR coordinates)
         private static readonly Quaternion DefaultRotation =
-            Quaternion.FromAxisAngle(Vector3.UnitX, MathF.PI / 2f);
+            Quaternion.FromAxisAngle(Vector3.UnitX, -MathF.PI / 2f);
 
         // Local axes derived from rotation
-        public  Vector3 Axis   => Vector3.Transform(Vector3.UnitY, Rotation);
+        public  Vector3 Axis   => Vector3.Transform(Vector3.UnitZ, Rotation);
         private Vector3 LocalX => Vector3.Transform(Vector3.UnitX, Rotation);
-        private Vector3 LocalZ => Vector3.Transform(Vector3.UnitZ, Rotation);
+        private Vector3 LocalY => Vector3.Transform(Vector3.UnitY, Rotation);
 
         // Ring radius: slightly larger than the cylinder for visual clarity
         public float RingRadius => MathF.Max(Radius, HalfHeight) * 1.35f;
@@ -53,7 +53,6 @@ namespace CloudScope.Selection
         private float      _editStartHalfHeight;
         private Quaternion _editStartRotation;
         private Vector2    _radialScreenDir;
-        private float      _ringStartAngle;
 
         // ── Phase 1: Placement ────────────────────────────────────────────────
 
@@ -94,8 +93,8 @@ namespace CloudScope.Selection
             2 => Center - Axis *  HalfHeight,
             3 => Center + LocalX *  Radius,
             4 => Center + LocalX * -Radius,
-            5 => Center + LocalZ *  Radius,
-            6 => Center + LocalZ * -Radius,
+            5 => Center + LocalY *  Radius,
+            6 => Center + LocalY * -Radius,
             _ => Center  // rings 7-9: return center (hit-tested separately)
         };
 
@@ -172,12 +171,7 @@ namespace CloudScope.Selection
             _editStartHalfHeight = HalfHeight;
             _editStartRotation   = Rotation;
 
-            if (IsRingHandle(handle))
-            {
-                var (cx, cy, _) = cam.WorldToScreen(Center);
-                _ringStartAngle  = MathF.Atan2(my - cy, mx - cx);
-            }
-            else if (handle >= 3 && handle <= 6)
+            if (handle >= 3 && handle <= 6)
             {
                 var (cx, cy, _) = cam.WorldToScreen(Center);
                 var (px, py, _) = cam.WorldToScreen(HandleWorldPosition(handle));
@@ -244,21 +238,24 @@ namespace CloudScope.Selection
 
         private void UpdateRingDrag(int mx, int my, OrbitCamera cam)
         {
-            var (cx, cy, _) = cam.WorldToScreen(Center);
-            float cur   = MathF.Atan2(my - cy, mx - cx);
-            float delta = cur - _ringStartAngle;
-            while (delta >  MathF.PI) delta -= MathF.Tau;
-            while (delta < -MathF.PI) delta += MathF.Tau;
-
             int     axis      = RingAxis(_activeHandle);
-            Matrix3 rotMat    = Matrix3.CreateFromQuaternion(_editStartRotation);
+            Matrix3 invRot    = Matrix3.Transpose(Matrix3.CreateFromQuaternion(_editStartRotation));
             Vector3 localAxis = axis switch { 0 => Vector3.UnitX, 1 => Vector3.UnitY, _ => Vector3.UnitZ };
-            Vector3 worldAxis = rotMat * localAxis;
+            Vector3 worldAxis = (invRot * localAxis).Normalized();
 
-            if (Vector3.Dot(worldAxis, cam.CameraForward) > 0f) delta = -delta;
-            if (axis == 2) delta = -delta;
+            float   viewZ = cam.WorldToViewZ(Center);
+            Vector3 p0    = cam.ScreenToWorldAtDepth(_editStartX, _editStartY, viewZ);
+            Vector3 p1    = cam.ScreenToWorldAtDepth(mx, my, viewZ);
 
-            Rotation = Quaternion.FromAxisAngle(worldAxis.Normalized(), delta) * _editStartRotation;
+            Vector3 v0 = p0 - Center; v0 -= Vector3.Dot(v0, worldAxis) * worldAxis;
+            Vector3 v1 = p1 - Center; v1 -= Vector3.Dot(v1, worldAxis) * worldAxis;
+            if (v0.LengthSquared < 1e-8f || v1.LengthSquared < 1e-8f) return;
+
+            v0 = v0.Normalized(); v1 = v1.Normalized();
+            float angle = MathF.Acos(Math.Clamp(Vector3.Dot(v0, v1), -1f, 1f));
+            if (Vector3.Dot(Vector3.Cross(v0, v1), worldAxis) < 0f) angle = -angle;
+
+            Rotation = Quaternion.FromAxisAngle(worldAxis, angle) * _editStartRotation;
             Rotation.Normalize();
         }
 
@@ -286,8 +283,8 @@ namespace CloudScope.Selection
                 case EditAction.Scale:
                 {
                     float f = 1f + dx * MouseDragSensitivity;
-                    if      (_kbAxis == 1)                 HalfHeight = MathF.Max(_editStartHalfHeight * f, 0.01f);
-                    else if (_kbAxis == 0 || _kbAxis == 2) Radius     = MathF.Max(_editStartRadius * f, 0.01f);
+                    if      (_kbAxis == 2)                 HalfHeight = MathF.Max(_editStartHalfHeight * f, 0.01f);
+                    else if (_kbAxis == 0 || _kbAxis == 1) Radius     = MathF.Max(_editStartRadius * f, 0.01f);
                     else
                     {
                         Radius     = MathF.Max(_editStartRadius     * f, 0.01f);

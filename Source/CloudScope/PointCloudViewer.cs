@@ -356,7 +356,7 @@ void main()
                 if (!_leftDown && (_orbitVelX != 0f || _orbitVelY != 0f))
                 {
                     _cam.Rotate(_orbitVelX, _orbitVelY);
-                    _orbitVelX *= 0.88f; _orbitVelY *= 0.88f;
+                    _orbitVelX *= 0.75f; _orbitVelY *= 0.75f;
                     if (MathF.Abs(_orbitVelX) < 0.05f) _orbitVelX = 0f;
                     if (MathF.Abs(_orbitVelY) < 0.05f) _orbitVelY = 0f;
                 }
@@ -368,7 +368,7 @@ void main()
                     int pdx = (int)MathF.Round(_panVelX), pdy = (int)MathF.Round(_panVelY);
                     if (pdx != 0 || pdy != 0)
                         _cam.Pan(cx, cy, cx + pdx, cy + pdy);
-                    _panVelX *= 0.88f; _panVelY *= 0.88f;
+                    _panVelX *= 0.75f; _panVelY *= 0.75f;
                     if (MathF.Abs(_panVelX) < 0.05f) _panVelX = 0f;
                     if (MathF.Abs(_panVelY) < 0.05f) _panVelY = 0f;
                 }
