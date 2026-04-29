@@ -405,13 +405,6 @@ void main()
                     }
                     else if (tool.Phase == ToolPhase.Editing)
                     {
-                        // Cylinder extrude: left-click confirms height
-                        if (tool is CylinderSelectionTool cyl2 && cyl2.IsExtruding)
-                        {
-                            cyl2.ConfirmExtrude();
-                            toolConsumed = true;
-                        }
-
                         int h = tool.HitTestHandles(mx, my, _cam);
                         if (h >= 0)
                         {
@@ -500,20 +493,11 @@ void main()
                                 Console.WriteLine("Box drawn — drag the orange arrow (+Z) to extrude. Rings=rotate, corners=resize. Enter to label.");
                             }
                         }
-                        else if (tool is CylinderSelectionTool cyl)
-                        {
-                            cyl.OnMouseUp(mx, my);
-                            if (cyl.Phase == ToolPhase.Drawing)
-                            {
-                                cyl.FinalizeDiskFromScreen(_cam);
-                                Console.WriteLine("Cylinder disk drawn — move mouse to extrude height, click to confirm. Enter to label.");
-                            }
-                        }
                         else
                         {
                             tool.OnMouseUp(mx, my);
                             if (tool.IsEditing)
-                                Console.WriteLine("Selection placed — Enter to confirm.");
+                                Console.WriteLine("Selection placed — drag orange arrow to set height. Enter to label.");
                         }
                     }
                 }
@@ -537,8 +521,6 @@ void main()
                 var tool = ActiveTool;
                 if (tool.Phase == ToolPhase.Drawing)
                     tool.OnMouseMove(mx, my, _cam);
-                else if (tool is CylinderSelectionTool cyl && cyl.IsExtruding)
-                    cyl.UpdateExtrude(mx, my, _cam);
                 else if (tool.IsHandleDragging)
                     tool.UpdateHandleDrag(mx, my, _cam);
                 else if (_editDragging)
@@ -620,8 +602,7 @@ void main()
             if (_mode == InteractionMode.Label)
             {
                 // ── Enter: confirm selection and apply label ──────────────────
-                bool extruding = ActiveTool is CylinderSelectionTool c && c.IsExtruding;
-                if (e.Key == Keys.Enter && ActiveTool.IsEditing && !extruding)
+                if (e.Key == Keys.Enter && ActiveTool.IsEditing)
                 {
                     ActiveTool.Confirm();
                         if (_pointsCPU != null)
