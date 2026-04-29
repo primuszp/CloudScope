@@ -33,8 +33,9 @@ namespace CloudScope.Rendering
 
             EnsureResources();
 
-            // Model: scale X/Z by radius, Y by halfHeight, then translate
+            // Model: scale → rotate → translate
             Matrix4 model = Matrix4.CreateScale(cyl.Radius, cyl.HalfHeight, cyl.Radius)
+                          * Matrix4.CreateFromQuaternion(cyl.Rotation)
                           * Matrix4.CreateTranslation(cyl.Center);
             Matrix4 mvp   = model * view * proj;
 
