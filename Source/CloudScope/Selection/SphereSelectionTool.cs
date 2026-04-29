@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using OpenTK.Mathematics;
 
 namespace CloudScope.Selection
@@ -146,13 +147,16 @@ namespace CloudScope.Selection
                 _r2 = radius * radius;
             }
 
-            public HashSet<int> Resolve(PointData[] points)
+            public IReadOnlyList<int> Resolve(PointData[] points, CancellationToken cancellationToken = default)
             {
-                if (_r2 < 1e-8f) return new HashSet<int>();
+                if (_r2 < 1e-8f) return Array.Empty<int>();
 
                 var list = new List<int>();
                 for (int i = 0; i < points.Length; i++)
                 {
+                    if ((i & 4095) == 0)
+                        cancellationToken.ThrowIfCancellationRequested();
+
                     float dx = points[i].X - _cx;
                     float dy = points[i].Y - _cy;
                     float dxy = dx * dx + dy * dy;
@@ -161,7 +165,7 @@ namespace CloudScope.Selection
                     if (dxy + dz * dz <= _r2) list.Add(i);
                 }
 
-                return new HashSet<int>(list);
+                return list;
             }
         }
     }
