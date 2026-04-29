@@ -729,7 +729,7 @@ void main()
                 {
                     _boxGizmoRenderer.RenderPlacementRect(box.StartX, box.StartY, box.EndX, box.EndY, Size.X, Size.Y);
                 }
-                else if (tool.HasVolume)
+                else if (tool.HasVolume || tool.Phase == ToolPhase.Drawing)
                 {
                     _renderers[_activeToolIndex].Render(tool, view, proj, _cam);
                 }
