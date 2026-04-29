@@ -20,6 +20,7 @@ namespace CloudScope.Rendering
         private int _highlightCount;
         private int _previewCount;
         private bool _dirty = true;
+        private float[] _vertexScratch = Array.Empty<float>();
 
         // ── Label → Color palette ─────────────────────────────────────────────
         private static readonly Dictionary<string, Vector3> Palette = new(StringComparer.OrdinalIgnoreCase)
@@ -98,7 +99,7 @@ void main()
             EnsureResources();
             if (points == null || indices == null || indices.Count == 0) { _previewCount = 0; return; }
 
-            float[] data = new float[indices.Count * 6];
+            float[] data = RentVertexScratch(indices.Count);
             int idx = 0;
             foreach (int i in indices)
             {
@@ -176,7 +177,7 @@ void main()
             if (_highlightCount == 0) return;
 
             // 6 floats per vertex: X Y Z R G B
-            float[] data = new float[_highlightCount * 6];
+            float[] data = RentVertexScratch(_highlightCount);
             int idx = 0;
 
             foreach (var (ptIdx, labelName) in allLabels)
@@ -194,6 +195,14 @@ void main()
             GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
             GL.BufferData(BufferTarget.ArrayBuffer, idx * sizeof(float),
                           data, BufferUsageHint.DynamicDraw);
+        }
+
+        private float[] RentVertexScratch(int vertexCount)
+        {
+            int required = vertexCount * 6;
+            if (_vertexScratch.Length < required)
+                _vertexScratch = new float[required];
+            return _vertexScratch;
         }
 
         private void EnsureResources()

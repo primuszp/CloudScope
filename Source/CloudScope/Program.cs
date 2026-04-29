@@ -50,9 +50,9 @@ if (cloud.HasColor && Math.Abs(cloud.ColorScale - (1.0f / 255.0f)) < 0.000001f)
     Console.WriteLine("Info: Detected 8-bit colors (0-255). Scaling corrected.");
 
 // ── Fisher-Yates shuffle so first-K points give uniform spatial coverage ────
-// CLOD in the viewer draws only the first N points based on zoom level.
-PointCloudLoader.ShuffleForProgressiveLod(cloud.Points, cloud.LoadedCount);
-Console.WriteLine("Shuffled  : points reordered for CLOD");
+// ProgressiveSubsample draws only the first N points based on zoom level.
+PointCloudLoader.ShuffleForProgressiveSubsample(cloud.Points, cloud.LoadedCount);
+Console.WriteLine("Shuffled  : points reordered for ProgressiveSubsample");
 
 // ── Compute cloud radius for initial camera fit ──────────────────────────────
 Console.WriteLine($"Cloud radius: {cloud.Radius:F1} m");

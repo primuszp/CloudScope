@@ -54,7 +54,7 @@ namespace CloudScope.Loading
             return new LoadedPointCloud(points, loaded, radius, hasColor, colorScale, cx, cy, cz);
         }
 
-        public static void ShuffleForProgressiveLod(PointData[] points, long count, int seed = 42)
+        public static void ShuffleForProgressiveSubsample(PointData[] points, long count, int seed = 42)
         {
             var rng = new Random(seed);
             for (long i = count - 1; i > 0; i--)
