@@ -100,12 +100,12 @@ namespace CloudScope
         private float _orbitVelX, _orbitVelY;
         private float _panVelX,   _panVelY;
 
-        // ── Selection preview (background thread, throttled) ─────────────────
-        private float _previewTimer = 999f;       // time since last launch
+        // ── Selection preview (background thread, cancellable) ───────────────
+        private float _previewTimer = 999f;
         private const float PreviewInterval = 0.08f;  // ~12 fps
-        private HashSet<int>? _previewIndices;    // latest result, set by background task
+        private HashSet<int>? _previewIndices;    // latest result, written by background task
         private bool _previewDirty;               // true when _previewIndices needs GPU upload
-        private volatile bool _previewRunning;    // background task in flight
+        private CancellationTokenSource _previewCts = new();
 
         // ── Point rendering ───────────────────────────────────────────────────
         private float _pointSize = 1.5f;
@@ -329,31 +329,37 @@ void main()
             if (_pivotFlash > 0f) _pivotFlash = Math.Max(0f, _pivotFlash - dt * 2.5f);
 
             // Live preview: resolve which points are inside the active selection volume.
-            // ResolveSelection can iterate millions of points — run it on a background thread
-            // so the render loop is never blocked.
+            // Runs on a background thread; cancel + restart whenever the timer fires so
+            // that dragging the selection gives fresh results with minimal lag.
             bool anyPreviewActive = _mode == InteractionMode.Label && ActiveTool.HasVolume;
             if (anyPreviewActive && _pointsCPU != null)
             {
                 _previewTimer += dt;
-                if (_previewTimer >= PreviewInterval && !_previewRunning)
+                if (_previewTimer >= PreviewInterval)
                 {
-                    _previewTimer   = 0f;
-                    _previewRunning = true;
+                    _previewTimer = 0f;
+                    // Cancel any in-flight computation and launch a fresh one.
+                    _previewCts.Cancel();
+                    _previewCts = new CancellationTokenSource();
+                    var cts    = _previewCts;
                     var tool   = ActiveTool;
                     var points = _pointsCPU;
                     int vpW    = (int)_cam.ViewportWidth;
                     int vpH    = (int)_cam.ViewportHeight;
                     Task.Run(() =>
                     {
-                        var result = tool.ResolveSelection(points, _cam, vpW, vpH);
-                        _previewIndices = result;
-                        _previewDirty   = true;
-                        _previewRunning = false;
+                        var result = tool.ResolveSelection(points, _cam, vpW, vpH, cts.Token);
+                        if (!cts.Token.IsCancellationRequested)
+                        {
+                            _previewIndices = result;
+                            _previewDirty   = true;
+                        }
                     });
                 }
             }
             else if (!anyPreviewActive && _previewIndices != null)
             {
+                _previewCts.Cancel();
                 _previewIndices = null;
                 _previewDirty   = true;
                 _previewTimer   = 999f;
