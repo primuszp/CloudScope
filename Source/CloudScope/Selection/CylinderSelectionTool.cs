@@ -33,9 +33,9 @@ namespace CloudScope.Selection
         public float      HalfHeight { get; set; }
         public Quaternion Rotation   = DefaultRotation;
 
-        // Local Y → world Z (upright in Z-up LiDAR scenes)
-        // Identity: local Y = world Y = up (Y-up scene)
-        private static readonly Quaternion DefaultRotation = Quaternion.Identity;
+        // Rotate 90° around X: local Y → world Z (upright, Z is up in LiDAR coordinates)
+        private static readonly Quaternion DefaultRotation =
+            Quaternion.FromAxisAngle(Vector3.UnitX, MathF.PI / 2f);
 
         // Local axes derived from rotation
         public  Vector3 Axis   => Vector3.Transform(Vector3.UnitY, Rotation);
@@ -71,9 +71,10 @@ namespace CloudScope.Selection
         {
             if (!IsActive) return;
             var (worldPt, _) = camera.ScreenToWorldPoint(mx, my, 11);
+            // Horizontal distance in XY plane (Z is up)
             float dx = worldPt.X - Center.X;
-            float dz = worldPt.Z - Center.Z; // Z-up: measure horizontal distance in XZ
-            Radius = MathF.Max(MathF.Sqrt(dx * dx + dz * dz), 0f);
+            float dy = worldPt.Y - Center.Y;
+            Radius = MathF.Max(MathF.Sqrt(dx * dx + dy * dy), 0f);
         }
 
         public override void OnMouseUp(int mx, int my)
@@ -207,14 +208,28 @@ namespace CloudScope.Selection
                     Center = _editStartCenter + (c - s);
                     break;
                 }
-                case 1:  // Top cap — drag along +axis
-                case 2:  // Bottom cap — drag along -axis
+                case 1:  // Top cap — fix bottom, move top only
                 {
                     Vector3 s    = cam.ScreenToWorldAtDepth(_editStartX, _editStartY, _editViewZ);
                     Vector3 c    = cam.ScreenToWorldAtDepth(mx, my, _editViewZ);
                     float   proj = Vector3.Dot(c - s, Axis);
-                    float   sign = _activeHandle == 1 ? 1f : -1f;
-                    HalfHeight   = MathF.Max(_editStartHalfHeight + sign * proj, 0.01f);
+                    // Fixed end = bottom at drag start
+                    Vector3 fixedEnd  = _editStartCenter - Axis * _editStartHalfHeight;
+                    float   newHeight = MathF.Max(_editStartHalfHeight * 2f + proj, 0.02f);
+                    HalfHeight = newHeight * 0.5f;
+                    Center     = fixedEnd + Axis * HalfHeight;
+                    break;
+                }
+                case 2:  // Bottom cap — fix top, move bottom only
+                {
+                    Vector3 s    = cam.ScreenToWorldAtDepth(_editStartX, _editStartY, _editViewZ);
+                    Vector3 c    = cam.ScreenToWorldAtDepth(mx, my, _editViewZ);
+                    float   proj = Vector3.Dot(c - s, Axis);
+                    // Fixed end = top at drag start
+                    Vector3 fixedEnd  = _editStartCenter + Axis * _editStartHalfHeight;
+                    float   newHeight = MathF.Max(_editStartHalfHeight * 2f - proj, 0.02f);
+                    HalfHeight = newHeight * 0.5f;
+                    Center     = fixedEnd - Axis * HalfHeight;
                     break;
                 }
                 default: // Radial handles 3-6
