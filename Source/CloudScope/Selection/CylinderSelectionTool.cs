@@ -5,145 +5,84 @@ using OpenTK.Mathematics;
 namespace CloudScope.Selection
 {
     /// <summary>
-    /// World-space upright cylinder (axis = world Z) — two-phase workflow matching the box tool.
+    /// World-space upright cylinder (axis = world Z) — two-phase workflow.
     ///
     /// Phase 1 – Drawing:
-    ///   Left-drag on screen defines the base circle (center + radius).
-    ///   Mouse-up triggers FinalizeDiskFromScreen (called by viewer), which places a flat disk
-    ///   on the surface and auto-begins extruding upward.
-    ///
-    /// Phase 1b – Extruding (IsExtruding == true, Phase == Editing):
-    ///   Mouse move live-adjusts HalfHeight along world Z.
-    ///   Left-click confirms.
+    ///   Click sets center on the point cloud, drag sets radius (world-space distance).
+    ///   Release → thin disk placed, Phase = Editing.
     ///
     /// Phase 2 – Editing:
-    ///   7 handles: center(0), top(1), bottom(2), ±local-X(3/4), ±local-Z(5/6).
+    ///   10 handles:
+    ///     0  = center        (move)
+    ///     1  = top cap       (extrude arrow — drag to set height)
+    ///     2  = bottom cap    (drag to lower base)
+    ///     3  = +local-X radial,   4 = -local-X radial
+    ///     5  = +local-Z radial,   6 = -local-Z radial
+    ///     7  = X-rotation ring,   8 = Y-rotation ring,   9 = Z-rotation ring
     ///   G/S/R + X/Y/Z axis constraints, scroll = fine-tune.
     /// </summary>
     public sealed class CylinderSelectionTool : SelectionToolBase
     {
         public override SelectionToolType ToolType    => SelectionToolType.Cylinder;
-        public override int               HandleCount => 7;
+        public override int               HandleCount => 10;
 
-        // HasVolume false while extruding prevents premature preview/label
         public override bool HasVolume =>
-            IsEditing && !_extruding && Radius > 1e-4f && HalfHeight > 1e-4f;
+            IsEditing && Radius > 1e-4f && HalfHeight > 1e-4f;
 
         public float      Radius     { get; set; }
         public float      HalfHeight { get; set; }
-        // Default rotation: local Y → world Z (cylinder stands upright in Z-up scene)
-        private static readonly Quaternion UprightRot =
+        public Quaternion Rotation   = DefaultRotation;
+
+        // Local Y → world Z (upright in Z-up LiDAR scenes)
+        private static readonly Quaternion DefaultRotation =
             Quaternion.FromAxisAngle(Vector3.UnitX, MathF.PI / 2f);
-
-        public Quaternion Rotation = Quaternion.FromAxisAngle(Vector3.UnitX, MathF.PI / 2f);
-
-        // Drawing screen coords
-        public int StartX, StartY, EndX, EndY;
-
-        // Extrude state
-        public bool IsExtruding  => _extruding;
-        private bool    _extruding;
-        private float   _extrudeBaseZ;      // world Z of the placed disk surface
-        private Vector2 _extrudeScreenDir;  // screen-space direction of world +Z
 
         // Local axes derived from rotation
         public  Vector3 Axis   => Vector3.Transform(Vector3.UnitY, Rotation);
         private Vector3 LocalX => Vector3.Transform(Vector3.UnitX, Rotation);
         private Vector3 LocalZ => Vector3.Transform(Vector3.UnitZ, Rotation);
 
-        // Drag / edit state
+        // Ring radius: slightly larger than the cylinder for visual clarity
+        public float RingRadius => MathF.Max(Radius, HalfHeight) * 1.35f;
+
+        public static bool IsRingHandle(int i) => i >= 7 && i <= 9;
+        public static int  RingAxis(int i)     => i - 7;
+
+        // ── Drag/edit state ───────────────────────────────────────────────────
         private float      _editStartRadius;
         private float      _editStartHalfHeight;
         private Quaternion _editStartRotation;
         private Vector2    _radialScreenDir;
+        private float      _ringStartAngle;
 
-        // ── Placement ─────────────────────────────────────────────────────────
+        // ── Phase 1: Placement ────────────────────────────────────────────────
 
         public override void OnMouseDown(int mx, int my, OrbitCamera camera)
         {
-            StartX = EndX = mx;
-            StartY = EndY = my;
+            var (worldPt, _) = camera.ScreenToWorldPoint(mx, my, 11);
+            Center     = worldPt;
             Radius     = 0f;
             HalfHeight = 0f;
-            Rotation   = Quaternion.FromAxisAngle(Vector3.UnitX, MathF.PI / 2f);
-            _extruding = false;
+            Rotation   = DefaultRotation;
             Phase      = ToolPhase.Drawing;
         }
 
         public override void OnMouseMove(int mx, int my, OrbitCamera camera)
         {
-            if (Phase == ToolPhase.Drawing) { EndX = mx; EndY = my; }
+            if (!IsActive) return;
+            var (worldPt, _) = camera.ScreenToWorldPoint(mx, my, 11);
+            float dx = worldPt.X - Center.X;
+            float dz = worldPt.Z - Center.Z; // Z-up: measure horizontal distance in XZ
+            Radius = MathF.Max(MathF.Sqrt(dx * dx + dz * dz), 0f);
         }
 
         public override void OnMouseUp(int mx, int my)
         {
-            if (Phase != ToolPhase.Drawing) return;
-            EndX = mx; EndY = my;
-            if (Math.Abs(EndX - StartX) < 5 && Math.Abs(EndY - StartY) < 5)
-                Phase = ToolPhase.Idle;
-            // FinalizeDiskFromScreen called by viewer
-        }
-
-        /// <summary>
-        /// Projects the drawn screen circle onto the point cloud surface,
-        /// places a flat disk, then begins height extrude along world Z.
-        /// Called by viewer after OnMouseUp while Phase == Drawing.
-        /// </summary>
-        public void FinalizeDiskFromScreen(OrbitCamera cam)
-        {
-            int x0 = Math.Min(StartX, EndX), x1 = Math.Max(StartX, EndX);
-            int y0 = Math.Min(StartY, EndY), y1 = Math.Max(StartY, EndY);
-            int cxs = (x0 + x1) / 2, cys = (y0 + y1) / 2;
-
-            var (centerWorld, hit) = cam.ScreenToWorldPoint(cxs, cys, 11);
-            if (!hit) { Phase = ToolPhase.Idle; return; }
-
-            float refViewZ = cam.WorldToViewZ(centerWorld);
-            Center = cam.ScreenToWorldAtDepth(cxs, cys, refViewZ);
-
-            // Radius = horizontal world distance from center to right edge
-            Vector3 edge = cam.ScreenToWorldAtDepth(x1, cys, refViewZ);
-            Radius = MathF.Max((edge - Center).Length, 0.001f);
-
-            // Rotation stays upright (local Y = world Z, set in OnMouseDown)
-            HalfHeight    = 0.001f;
-            _extrudeBaseZ = Center.Z;
-
-            // Screen-space direction of world +Z at the center point:
-            // project center and center+Z to screen, compare pixel positions
-            var (sx0, sy0, _) = cam.WorldToScreen(Center);
-            var (sx1, sy1, _) = cam.WorldToScreen(Center + new Vector3(0f, 0f, 1f));
-            float ddx = sx1 - sx0, ddy = sy1 - sy0;
-            float dlen = MathF.Sqrt(ddx * ddx + ddy * ddy);
-            // If world Z is nearly perpendicular to screen (top-down view), use screen -Y
-            _extrudeScreenDir = dlen > 0.5f
-                ? new Vector2(ddx / dlen, ddy / dlen)
-                : new Vector2(0f, -1f);
-
+            if (!IsActive) return;
+            if (Radius < 0.01f) { Phase = ToolPhase.Idle; return; }
+            HalfHeight = Radius;   // default: cube-ish proportions, user extrudes from here
             Phase      = ToolPhase.Editing;
-            _extruding = true;
         }
-
-        /// <summary>Mouse move while extruding — adjusts HalfHeight along world Z.</summary>
-        public void UpdateExtrude(int mx, int my, OrbitCamera cam)
-        {
-            if (!_extruding) return;
-
-            // Project mouse delta (from draw-end position) onto the screen-space Z direction
-            int dsx = mx - EndX, dsy = my - EndY;
-            float proj = dsx * _extrudeScreenDir.X + dsy * _extrudeScreenDir.Y;
-
-            // Convert screen pixels → world units using NavigationScale
-            float worldPerPixel = cam.NavigationScale / (cam.ViewportHeight * 0.5f);
-            float height = MathF.Max(-proj * worldPerPixel * 100f, 0.001f);
-            // negative proj because moving toward Z+ = moving opposite to screen dir
-
-            HalfHeight = height;
-            Center = new Vector3(Center.X, Center.Y, _extrudeBaseZ + HalfHeight);
-        }
-
-        /// <summary>Left-click during extrude confirms height.</summary>
-        public void ConfirmExtrude() => _extruding = false;
 
         // ── Handle positions ──────────────────────────────────────────────────
 
@@ -156,8 +95,73 @@ namespace CloudScope.Selection
             4 => Center + LocalX * -Radius,
             5 => Center + LocalZ *  Radius,
             6 => Center + LocalZ * -Radius,
-            _ => Center
+            _ => Center  // rings 7-9: return center (hit-tested separately)
         };
+
+        // ── Handle hit test (overrides base to add ring proximity test) ───────
+
+        public override int HitTestHandles(int mx, int my, OrbitCamera cam, float threshold = 12f)
+        {
+            if (Phase != ToolPhase.Editing) return HoverNone;
+
+            int   best     = HoverNone;
+            float bestDist = threshold;
+
+            // Point handles 0-6
+            for (int i = 0; i < 7; i++)
+            {
+                var (sx, sy, behind) = cam.WorldToScreen(HandleWorldPosition(i));
+                if (behind) continue;
+                float d = MathF.Sqrt((sx - mx) * (sx - mx) + (sy - my) * (sy - my));
+                if (d < bestDist) { bestDist = d; best = i; }
+            }
+
+            // Ring handles 7-9
+            for (int r = 0; r < 3; r++)
+            {
+                float d = RingScreenDist(r, mx, my, cam);
+                if (d < bestDist) { bestDist = d; best = 7 + r; }
+            }
+
+            return best;
+        }
+
+        private float RingScreenDist(int axis, int mx, int my, OrbitCamera cam)
+        {
+            const int N    = 32;
+            float     rad  = RingRadius;
+            Matrix3   invR = Matrix3.Transpose(Matrix3.CreateFromQuaternion(Rotation));
+
+            float minDist = float.MaxValue;
+            float psx = 0, psy = 0;
+            bool  pok  = false;
+
+            for (int j = 0; j <= N; j++)
+            {
+                float t = j * MathF.Tau / N;
+                float ct = MathF.Cos(t), st = MathF.Sin(t);
+                Vector3 local = axis switch
+                {
+                    0 => new Vector3(0f, ct, st),
+                    1 => new Vector3(ct, 0f, st),
+                    _ => new Vector3(ct, st, 0f),
+                } * rad;
+
+                var (sx, sy, behind) = cam.WorldToScreen(Center + invR * local);
+                if (!behind && pok)
+                {
+                    float ddx = sx - psx, ddy = sy - psy;
+                    float lenSq = ddx * ddx + ddy * ddy;
+                    float t2 = lenSq < 1e-6f ? 0f :
+                        Math.Clamp(((mx - psx) * ddx + (my - psy) * ddy) / lenSq, 0f, 1f);
+                    float qx = psx + t2 * ddx - mx, qy = psy + t2 * ddy - my;
+                    float d  = MathF.Sqrt(qx * qx + qy * qy);
+                    if (d < minDist) minDist = d;
+                }
+                psx = sx; psy = sy; pok = !behind;
+            }
+            return minDist;
+        }
 
         // ── Handle drag ───────────────────────────────────────────────────────
 
@@ -167,7 +171,12 @@ namespace CloudScope.Selection
             _editStartHalfHeight = HalfHeight;
             _editStartRotation   = Rotation;
 
-            if (handle >= 3)
+            if (IsRingHandle(handle))
+            {
+                var (cx, cy, _) = cam.WorldToScreen(Center);
+                _ringStartAngle  = MathF.Atan2(my - cy, mx - cx);
+            }
+            else if (handle >= 3 && handle <= 6)
             {
                 var (cx, cy, _) = cam.WorldToScreen(Center);
                 var (px, py, _) = cam.WorldToScreen(HandleWorldPosition(handle));
@@ -183,6 +192,12 @@ namespace CloudScope.Selection
         {
             if (_activeHandle < 0) return;
 
+            if (IsRingHandle(_activeHandle))
+            {
+                UpdateRingDrag(mx, my, cam);
+                return;
+            }
+
             switch (_activeHandle)
             {
                 case 0:
@@ -192,8 +207,8 @@ namespace CloudScope.Selection
                     Center = _editStartCenter + (c - s);
                     break;
                 }
-                case 1:
-                case 2:
+                case 1:  // Top cap — drag along +axis
+                case 2:  // Bottom cap — drag along -axis
                 {
                     Vector3 s    = cam.ScreenToWorldAtDepth(_editStartX, _editStartY, _editViewZ);
                     Vector3 c    = cam.ScreenToWorldAtDepth(mx, my, _editViewZ);
@@ -202,7 +217,7 @@ namespace CloudScope.Selection
                     HalfHeight   = MathF.Max(_editStartHalfHeight + sign * proj, 0.01f);
                     break;
                 }
-                default:
+                default: // Radial handles 3-6
                 {
                     float proj = (mx - _editStartX) * _radialScreenDir.X
                                + (my - _editStartY) * _radialScreenDir.Y;
@@ -210,6 +225,26 @@ namespace CloudScope.Selection
                     break;
                 }
             }
+        }
+
+        private void UpdateRingDrag(int mx, int my, OrbitCamera cam)
+        {
+            var (cx, cy, _) = cam.WorldToScreen(Center);
+            float cur   = MathF.Atan2(my - cy, mx - cx);
+            float delta = cur - _ringStartAngle;
+            while (delta >  MathF.PI) delta -= MathF.Tau;
+            while (delta < -MathF.PI) delta += MathF.Tau;
+
+            int     axis      = RingAxis(_activeHandle);
+            Matrix3 rotMat    = Matrix3.CreateFromQuaternion(_editStartRotation);
+            Vector3 localAxis = axis switch { 0 => Vector3.UnitX, 1 => Vector3.UnitY, _ => Vector3.UnitZ };
+            Vector3 worldAxis = rotMat * localAxis;
+
+            if (Vector3.Dot(worldAxis, cam.CameraForward) > 0f) delta = -delta;
+            if (axis == 2) delta = -delta;
+
+            Rotation = Quaternion.FromAxisAngle(worldAxis.Normalized(), delta) * _editStartRotation;
+            Rotation.Normalize();
         }
 
         // ── Keyboard editing ──────────────────────────────────────────────────
@@ -236,9 +271,13 @@ namespace CloudScope.Selection
                 case EditAction.Scale:
                 {
                     float f = 1f + dx * MouseDragSensitivity;
-                    if      (_kbAxis == 1)            HalfHeight = MathF.Max(_editStartHalfHeight * f, 0.01f);
-                    else if (_kbAxis == 0 || _kbAxis == 2) Radius = MathF.Max(_editStartRadius * f, 0.01f);
-                    else { Radius = MathF.Max(_editStartRadius * f, 0.01f); HalfHeight = MathF.Max(_editStartHalfHeight * f, 0.01f); }
+                    if      (_kbAxis == 1)                 HalfHeight = MathF.Max(_editStartHalfHeight * f, 0.01f);
+                    else if (_kbAxis == 0 || _kbAxis == 2) Radius     = MathF.Max(_editStartRadius * f, 0.01f);
+                    else
+                    {
+                        Radius     = MathF.Max(_editStartRadius     * f, 0.01f);
+                        HalfHeight = MathF.Max(_editStartHalfHeight * f, 0.01f);
+                    }
                     break;
                 }
                 case EditAction.Rotate:
@@ -265,12 +304,10 @@ namespace CloudScope.Selection
             base.Cancel();
             Radius     = 0f;
             HalfHeight = 0f;
-            Rotation   = Quaternion.FromAxisAngle(Vector3.UnitX, MathF.PI / 2f);
-            _extruding = false;
+            Rotation   = DefaultRotation;
         }
 
-        // ── Resolution ────────────────────────────────────────────────────────
-        // Fast path: no per-point allocation, only dot products on precomputed axis vectors.
+        // ── Resolution — fast dot-product path, no per-point quaternion ───────
 
         public override HashSet<int> ResolveSelection(PointData[] points, OrbitCamera camera, int vpW, int vpH)
         {
@@ -279,7 +316,7 @@ namespace CloudScope.Selection
             float   r2 = Radius * Radius;
             float   hh = HalfHeight;
             float   cx = Center.X, cy = Center.Y, cz = Center.Z;
-            Vector3 ax = Axis; // precompute once
+            Vector3 ax = Axis;
 
             var list = new List<int>(capacity: 256);
             for (int i = 0; i < points.Length; i++)
@@ -288,11 +325,9 @@ namespace CloudScope.Selection
                 float dy = points[i].Y - cy;
                 float dz = points[i].Z - cz;
 
-                // Height along axis
-                float h = dx * ax.X + dy * ax.Y + dz * ax.Z;
+                float h       = dx * ax.X + dy * ax.Y + dz * ax.Z;
                 if (MathF.Abs(h) > hh) continue;
 
-                // Radial distance squared = |d|² - h²
                 float radial2 = dx * dx + dy * dy + dz * dz - h * h;
                 if (radial2 <= r2) list.Add(i);
             }
