@@ -602,8 +602,7 @@ void main()
                 // ── Enter: confirm selection and apply label ──────────────────
                 if (e.Key == Keys.Enter && ActiveTool.IsEditing)
                 {
-                    {
-                        ActiveTool.Confirm();
+                    ActiveTool.Confirm();
                         if (_pointsCPU != null)
                         {
                             var selected = ActiveTool.ResolveSelection(
@@ -618,7 +617,6 @@ void main()
                                 Console.WriteLine("No points in selection volume");
                             }
                         }
-                    }
                 }
 
                 // ── G/S/R: Set pending edit action (Blender-style) ───────────
@@ -871,6 +869,11 @@ void main()
         private int _crosshairVao = -1;
         private int _crosshairVbo = -1;
 
+        // Pre-allocated scratch buffers for screen-space renderers — avoids per-frame heap allocations.
+        private readonly float[] _crossData   = new float[24]; // 4 verts × 6 floats (pos+col)
+        private readonly float[] _shadowData  = new float[24];
+        private readonly float[] _indData     = new float[24];
+
         private void RenderCenterCrosshair(float alpha = 1.0f)
         {
             if (_crosshairVao == -1)
@@ -896,13 +899,11 @@ void main()
             float sY = 15f / Size.Y;
             float g = 0.5f; // Gray color
 
-            float[] crossData = new float[]
-            {
-                -sX, 0f, 0f,   g, g, g,
-                 sX, 0f, 0f,   g, g, g,
-                 0f, -sY, 0f,  g, g, g,
-                 0f,  sY, 0f,  g, g, g
-            };
+            _crossData[0]=-sX; _crossData[1]=0f;  _crossData[2]=0f;  _crossData[3]=g; _crossData[4]=g; _crossData[5]=g;
+            _crossData[6]= sX; _crossData[7]=0f;  _crossData[8]=0f;  _crossData[9]=g; _crossData[10]=g; _crossData[11]=g;
+            _crossData[12]=0f; _crossData[13]=-sY; _crossData[14]=0f; _crossData[15]=g; _crossData[16]=g; _crossData[17]=g;
+            _crossData[18]=0f; _crossData[19]= sY; _crossData[20]=0f; _crossData[21]=g; _crossData[22]=g; _crossData[23]=g;
+            float[] crossData = _crossData;
 
             GL.BindVertexArray(_crosshairVao);
             GL.BindBuffer(BufferTarget.ArrayBuffer, _crosshairVbo);
@@ -919,14 +920,11 @@ void main()
             // Shadow pass (subtle dark offset)
             Matrix4 shadow = Matrix4.CreateTranslation(1f/Size.X, -1f/Size.Y, 0);
             GL.UniformMatrix4(_uViewLine, false, ref shadow);
-            float[] shadowData = new float[]
-            {
-                -sX, 0f, 0f,   0f, 0f, 0f,
-                 sX, 0f, 0f,   0f, 0f, 0f,
-                 0f, -sY, 0f,  0f, 0f, 0f,
-                 0f,  sY, 0f,  0f, 0f, 0f
-            };
-            GL.BufferData(BufferTarget.ArrayBuffer, shadowData.Length * sizeof(float), shadowData, BufferUsageHint.DynamicDraw);
+            _shadowData[0]=-sX; _shadowData[1]=0f;  _shadowData[2]=0f;  _shadowData[3]=0f; _shadowData[4]=0f; _shadowData[5]=0f;
+            _shadowData[6]= sX; _shadowData[7]=0f;  _shadowData[8]=0f;  _shadowData[9]=0f; _shadowData[10]=0f; _shadowData[11]=0f;
+            _shadowData[12]=0f; _shadowData[13]=-sY; _shadowData[14]=0f; _shadowData[15]=0f; _shadowData[16]=0f; _shadowData[17]=0f;
+            _shadowData[18]=0f; _shadowData[19]= sY; _shadowData[20]=0f; _shadowData[21]=0f; _shadowData[22]=0f; _shadowData[23]=0f;
+            GL.BufferData(BufferTarget.ArrayBuffer, _shadowData.Length * sizeof(float), _shadowData, BufferUsageHint.DynamicDraw);
             GL.DrawArrays(PrimitiveType.Lines, 0, 4);
 
             // Main crosshair
@@ -950,8 +948,6 @@ void main()
             if (ActiveTool.ToolType == SelectionToolType.Sphere)
             { r = 1f; g = 0.6f; b = 0.15f; } // orange for sphere tool
 
-            float[] dotData = { dotX, dotY, 0f, r, g, b };
-
             GL.UseProgram(_lineShader);
             GL.Uniform1(_uAlphaLine, 0.9f);
             Matrix4 ident = Matrix4.Identity;
@@ -963,16 +959,14 @@ void main()
             // Draw a small crosshair-like indicator
             float sz = 8f / Size.X;
             float szy = 8f / Size.Y;
-            float[] indData = {
-                dotX - sz, dotY, 0f, r, g, b,
-                dotX + sz, dotY, 0f, r, g, b,
-                dotX, dotY - szy, 0f, r, g, b,
-                dotX, dotY + szy, 0f, r, g, b,
-            };
+            _indData[0]=dotX-sz; _indData[1]=dotY;     _indData[2]=0f; _indData[3]=r; _indData[4]=g; _indData[5]=b;
+            _indData[6]=dotX+sz; _indData[7]=dotY;     _indData[8]=0f; _indData[9]=r; _indData[10]=g; _indData[11]=b;
+            _indData[12]=dotX;   _indData[13]=dotY-szy; _indData[14]=0f; _indData[15]=r; _indData[16]=g; _indData[17]=b;
+            _indData[18]=dotX;   _indData[19]=dotY+szy; _indData[20]=0f; _indData[21]=r; _indData[22]=g; _indData[23]=b;
 
             GL.BindVertexArray(_crosshairVao);
             GL.BindBuffer(BufferTarget.ArrayBuffer, _crosshairVbo);
-            GL.BufferData(BufferTarget.ArrayBuffer, indData.Length * sizeof(float), indData, BufferUsageHint.DynamicDraw);
+            GL.BufferData(BufferTarget.ArrayBuffer, _indData.Length * sizeof(float), _indData, BufferUsageHint.DynamicDraw);
             GL.LineWidth(2.5f);
             GL.DrawArrays(PrimitiveType.Lines, 0, 4);
 

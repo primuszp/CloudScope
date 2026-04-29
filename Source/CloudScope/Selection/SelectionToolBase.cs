@@ -12,7 +12,9 @@ namespace CloudScope.Selection
     /// </summary>
     public abstract class SelectionToolBase : ISelectionTool
     {
-        public const int HoverNone = -1;
+        public const int   HoverNone           = -1;
+        protected const float ScrollScaleFactor   = 0.08f;
+        protected const float MouseDragSensitivity = 0.005f;
 
         // ── Phase ─────────────────────────────────────────────────────────────
         public ToolPhase Phase { get; protected set; } = ToolPhase.Idle;
