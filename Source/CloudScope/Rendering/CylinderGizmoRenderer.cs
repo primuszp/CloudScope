@@ -82,7 +82,8 @@ namespace CloudScope.Rendering
             for (int j = 0; j <= N; j++)
             {
                 float t = j * MathF.Tau / N;
-                Vector3 pt = cyl.Center + new Vector3(MathF.Cos(t) * cyl.Radius, 0f, MathF.Sin(t) * cyl.Radius);
+                // Z-up: horizontal circle is in XY plane
+                Vector3 pt = cyl.Center + new Vector3(MathF.Cos(t) * cyl.Radius, MathF.Sin(t) * cyl.Radius, 0f);
                 var (sx, sy, beh) = cam.WorldToScreen(pt);
                 var (nx, ny) = ScreenToNdc(sx, sy, vpW, vpH);
                 if (pok && !beh)
