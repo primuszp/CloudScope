@@ -98,7 +98,7 @@ namespace CloudScope.Selection
             {
                 // Project mouse delta onto pole's outward screen direction
                 float proj   = (mx - _editStartX) * _poleScreenDir.X + (my - _editStartY) * _poleScreenDir.Y;
-                float factor = 1f + proj * 0.005f;
+                float factor = 1f + proj * MouseDragSensitivity;
                 Radius = MathF.Max(_editStartRadius * factor, 0.01f);
             }
         }
@@ -112,7 +112,7 @@ namespace CloudScope.Selection
         {
             if (action == EditAction.Scale)
             {
-                float factor = 1f + (mx - _editStartX) * 0.005f;
+                float factor = 1f + (mx - _editStartX) * MouseDragSensitivity;
                 Radius = MathF.Max(_editStartRadius * factor, 0.01f);
             }
         }
@@ -120,7 +120,7 @@ namespace CloudScope.Selection
         public override void AdjustScale(float delta)
         {
             if (!IsEditing) return;
-            Radius = MathF.Max(Radius * (1f + delta * 0.08f), 0.01f);
+            Radius = MathF.Max(Radius * (1f + delta * ScrollScaleFactor), 0.01f);
         }
 
         public override void Cancel()

@@ -18,7 +18,6 @@ namespace CloudScope.Rendering
     {
         private int _fillVao = -1, _fillVbo = -1;
         private int _circVao = -1, _circVbo = -1;
-        private int _axisVao = -1, _axisVbo = -1;
 
         private int _fillVertCount;
         private const int Seg = 64;
@@ -41,7 +40,7 @@ namespace CloudScope.Rendering
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
             RenderFill(mvp);
-            RenderAxes(mvp);
+            RenderAxisLines(mvp);
             RenderCircles(mvp);
             RenderHandles(sphere, cam);
 
@@ -61,26 +60,6 @@ namespace CloudScope.Rendering
             SetColor(0.30f, 0.60f, 0.95f, 0.07f);
             GL.DrawArrays(PrimitiveType.Triangles, 0, _fillVertCount);
             GL.DepthMask(true);
-        }
-
-        // ── Layer 2: Axis diameter lines ──────────────────────────────────────
-
-        private void RenderAxes(Matrix4 mvp)
-        {
-            GL.UseProgram(_shader);
-            GL.UniformMatrix4(_uMVP, false, ref mvp);
-            GL.BindVertexArray(_axisVao);
-            GL.Disable(EnableCap.DepthTest);
-            GL.DepthMask(false);
-            GL.LineWidth(1.5f);
-            for (int ax = 0; ax < 3; ax++)
-            {
-                var c = AxisColor[ax];
-                SetColor(c.X, c.Y, c.Z, 0.65f);
-                GL.DrawArrays(PrimitiveType.Lines, ax * 2, 2);
-            }
-            GL.DepthMask(true);
-            GL.Enable(EnableCap.DepthTest);
         }
 
         // ── Layer 3: Great-circle rings (depth + ghost) ───────────────────────
@@ -128,7 +107,7 @@ namespace CloudScope.Rendering
                 var (sx, sy, behind) = cam.WorldToScreen(sphere.HandleWorldPosition(i));
                 if (behind) continue;
 
-                float nx = sx/vpW*2f-1f, ny = 1f-sy/vpH*2f;
+                var (nx, ny) = ScreenToNdc(sx, sy, vpW, vpH);
                 float hx = 12f/vpW, hy = 12f/vpH;
 
                 Vector4 col = i == sphere.HoveredHandle
@@ -198,21 +177,12 @@ namespace CloudScope.Rendering
                 circ[ci++]=MathF.Cos(a2); circ[ci++]=MathF.Sin(a2); circ[ci++]=0f;
             }
             MakeStaticVao(ref _circVao, ref _circVbo, circ);
-
-            // 3 axis diameter lines
-            float[] axes = {
-                -1f, 0f, 0f,   1f, 0f, 0f,
-                 0f,-1f, 0f,   0f, 1f, 0f,
-                 0f, 0f,-1f,   0f, 0f, 1f,
-            };
-            MakeStaticVao(ref _axisVao, ref _axisVbo, axes);
         }
 
         public override void Dispose()
         {
             if (_fillVao != -1) { GL.DeleteVertexArray(_fillVao); GL.DeleteBuffer(_fillVbo); _fillVao = -1; }
             if (_circVao != -1) { GL.DeleteVertexArray(_circVao); GL.DeleteBuffer(_circVbo); _circVao = -1; }
-            if (_axisVao != -1) { GL.DeleteVertexArray(_axisVao); GL.DeleteBuffer(_axisVbo); _axisVao = -1; }
             base.Dispose();
         }
     }

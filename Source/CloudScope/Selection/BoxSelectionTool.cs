@@ -327,7 +327,7 @@ namespace CloudScope.Selection
             {
                 case EditAction.Scale:
                 {
-                    float f = MathF.Max(1f + dx * 0.005f, 0.05f);
+                    float f = MathF.Max(1f + dx * MouseDragSensitivity, 0.05f);
                     if (_kbAxis < 0)
                     {
                         HalfExtents = _editStartExtents * f;
@@ -358,7 +358,7 @@ namespace CloudScope.Selection
         public override void AdjustScale(float delta)
         {
             if (!IsEditing) return;
-            float fac = MathF.Max(1f + delta * 0.08f, 0.05f);
+            float fac = MathF.Max(1f + delta * ScrollScaleFactor, 0.05f);
             if (_kbAxis < 0) { HalfExtents *= fac; return; }
             float v = MathF.Max(HalfExtents[_kbAxis] * fac, 0.001f);
             HalfExtents = _kbAxis switch
