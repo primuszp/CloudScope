@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using OpenTK.Graphics.OpenGL4;
@@ -104,9 +105,19 @@ namespace CloudScope
         private float _previewTimer = 999f;       // time since last launch
         private const float PreviewInterval = 0.08f;  // ~12 fps
         private readonly SelectionPreviewWorker _previewWorker = new();
+        private bool _previewWasActive;
 
         // ── Point rendering ───────────────────────────────────────────────────
         private float _pointSize = 1.5f;
+
+        // ── Diagnostics ──────────────────────────────────────────────────────
+        private readonly bool _frameLogEnabled =
+            Environment.GetEnvironmentVariable("CLOUDSCOPE_FRAME_LOG") == "1";
+        private readonly Stopwatch _frameStopwatch = new();
+        private double _frameLogAccum;
+        private int _frameLogCount;
+        private int _lastDrawCount;
+        private double _mainDrawMs, _highlightMs, _previewMs, _gizmoMs, _swapMs;
 
         // ── Vertex shader ─────────────────────────────────────────────────────
         // No distance attenuation: gl_PointSize = pointSize (constant screen pixels).
@@ -321,6 +332,7 @@ void main()
             bool anyPreviewActive = _mode == InteractionMode.Label && ActiveTool.HasVolume;
             if (anyPreviewActive && _pointsCPU != null)
             {
+                _previewWasActive = true;
                 _previewTimer += dt;
                 if (_previewTimer >= PreviewInterval)
                 {
@@ -328,10 +340,11 @@ void main()
                     _previewWorker.Request(ActiveTool.CreateQuery(), _pointsCPU);
                 }
             }
-            else if (!anyPreviewActive)
+            else if (_previewWasActive)
             {
                 _previewWorker.Clear();
                 _previewTimer   = 999f;
+                _previewWasActive = false;
             }
 
             // Suppress inertia while a transition is playing (avoids fighting)
@@ -676,6 +689,8 @@ void main()
         protected override void OnRenderFrame(FrameEventArgs args)
         {
             base.OnRenderFrame(args);
+            if (_frameLogEnabled) _frameStopwatch.Restart();
+
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
             GL.UseProgram(_shader);
@@ -691,14 +706,17 @@ void main()
                 float subsampleRatio = (float)(_cloudRadius / Math.Max(_cam.Hvs, _cloudRadius * 0.001));
                 float subsampleFactor = Math.Clamp(subsampleRatio * subsampleRatio, 0.005f, 1f);
                 int drawCount = Math.Max((int)(_pointCount * subsampleFactor), Math.Min(100_000, _pointCount));
+                _lastDrawCount = drawCount;
                 GL.Uniform1(_uPointSize, _pointSize);
                 GL.BindVertexArray(_vao);
                 GL.DrawArrays(PrimitiveType.Points, 0, drawCount);
             }
+            if (_frameLogEnabled) MarkFrameStage(ref _mainDrawMs);
 
             // 2. Labeled points highlight (second pass with label colors)
             if (_pointsCPU != null && _labelManager.Count > 0)
                 _highlightRenderer.Render(_pointsCPU, _labelManager, ref view, ref proj, _pointSize);
+            if (_frameLogEnabled) MarkFrameStage(ref _highlightMs);
 
             // 2b. Box selection preview — points currently inside the box, shown in yellow.
             // GPU upload happens here (not in OnUpdateFrame) to keep GL calls on the render thread.
@@ -707,6 +725,7 @@ void main()
                 _highlightRenderer.UpdatePreview(_pointsCPU, previewIndices);
             }
             _highlightRenderer.RenderPreview(ref view, ref proj, _pointSize);
+            if (_frameLogEnabled) MarkFrameStage(ref _previewMs);
 
             // 3. Active selection tool gizmo
             if (_mode == InteractionMode.Label)
@@ -721,6 +740,7 @@ void main()
                     _renderers[_activeToolIndex].Render(tool, view, proj, _cam);
                 }
             }
+            if (_frameLogEnabled) MarkFrameStage(ref _gizmoMs);
 
             // 4. Pivot indicator — only during orbit; hidden when any selection volume is active
             bool anyToolActive = _mode == InteractionMode.Label && ActiveTool.HasVolume;
@@ -737,11 +757,42 @@ void main()
                 RenderModeIndicator(ref view, ref proj);
 
             SwapBuffers();
+            if (_frameLogEnabled)
+            {
+                MarkFrameStage(ref _swapMs);
+                LogFrameStats(args.Time);
+            }
         }
 
         private int _pivotVao = -1;
         private int _pivotVbo = -1;
         private int _pivotVertexCount = 0;
+
+        private void MarkFrameStage(ref double stageMs)
+        {
+            double now = _frameStopwatch.Elapsed.TotalMilliseconds;
+            stageMs += now;
+            _frameStopwatch.Restart();
+        }
+
+        private void LogFrameStats(double dt)
+        {
+            _frameLogAccum += dt;
+            _frameLogCount++;
+            if (_frameLogAccum < 1.0)
+                return;
+
+            double inv = 1.0 / Math.Max(_frameLogCount, 1);
+            Console.WriteLine(
+                $"Frame avg {(_frameLogAccum * 1000.0 * inv):F2} ms | " +
+                $"draw {_lastDrawCount:N0} | main {_mainDrawMs * inv:F2} | " +
+                $"hl {_highlightMs * inv:F2} | prev {_previewMs * inv:F2} | " +
+                $"gizmo {_gizmoMs * inv:F2} | swap {_swapMs * inv:F2}");
+
+            _frameLogAccum = 0;
+            _frameLogCount = 0;
+            _mainDrawMs = _highlightMs = _previewMs = _gizmoMs = _swapMs = 0;
+        }
 
         private void RenderPivotIndicator(ref Matrix4 view, ref Matrix4 proj)
         {
