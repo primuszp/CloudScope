@@ -1,8 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Threading;
-using System.Threading.Tasks;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
@@ -45,16 +42,10 @@ namespace CloudScope
     /// </summary>
     public sealed class PointCloudViewer : GameWindow
     {
-        // ── GPU resources ─────────────────────────────────────────────────────
-        private int _vao, _vbo;
-        private int _shader, _lineShader, _sphereShader;
-        private int _pointCount;
-
-        // ── Uniform locations (cached) ────────────────────────────────────────
-        private int _uView, _uProj, _uPointSize;
-        private int _uViewLine, _uProjLine;
-        private int _uViewSphere, _uProjSphere, _uPointSizeSphere;
-        private int _uAlphaLine, _uAlphaSphere;
+        // ── Rendering ─────────────────────────────────────────────────────────
+        private readonly PointCloudRenderer _pointRenderer = new();
+        private readonly OverlayRenderer _overlayRenderer = new();
+        private readonly FrameTimingDiagnostics _frameTiming = new();
 
         // -- Camera ────────────────────────────────────────────────────────────
         private readonly OrbitCamera _cam = new();
@@ -110,92 +101,6 @@ namespace CloudScope
         // ── Point rendering ───────────────────────────────────────────────────
         private float _pointSize = 1.5f;
 
-        // ── Diagnostics ──────────────────────────────────────────────────────
-        private readonly bool _frameLogEnabled =
-            Environment.GetEnvironmentVariable("CLOUDSCOPE_FRAME_LOG") == "1";
-        private readonly Stopwatch _frameStopwatch = new();
-        private double _frameLogAccum;
-        private int _frameLogCount;
-        private int _lastDrawCount;
-        private double _mainDrawMs, _highlightMs, _previewMs, _gizmoMs, _swapMs;
-
-        // ── Vertex shader ─────────────────────────────────────────────────────
-        // No distance attenuation: gl_PointSize = pointSize (constant screen pixels).
-        // This keeps points crisp and small regardless of zoom.
-        private const string VertSrc = @"
-#version 330 core
-layout(location = 0) in vec3 aPos;
-layout(location = 1) in vec3 aCol;
-
-out vec3 vColor;
-
-uniform mat4 view;
-uniform mat4 projection;
-uniform float pointSize;
-
-void main()
-{
-    gl_Position  = projection * view * vec4(aPos, 1.0);
-    gl_PointSize = pointSize;
-    vColor = aCol;
-}
-";
-
-        // â”€â”€ Fragment shader for points â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        // Hard-clipped circle â€” no alpha blending, no soft edge.
-        private const string FragSrc = @"
-#version 330 core
-in  vec3 vColor;
-out vec4 FragColor;
-
-void main()
-{
-    vec2  d = gl_PointCoord - vec2(0.5);
-    if (dot(d, d) > 0.25) discard;
-    FragColor = vec4(vColor, 1.0);
-}
-";
-
-        // ── Fragment shader for lines (no gl_PointCoord discard) ──────────────
-        private const string LineFragSrc = @"
-#version 330 core
-in  vec3 vColor;
-out vec4 FragColor;
-uniform float uAlpha;
-
-void main()
-{
-    FragColor = vec4(vColor, uAlpha);
-}
-";
-
-        // ── Fragment shader for Sphere Impostor (Yellow Pivot) ────────────────
-        private const string SphereFragSrc = @"
-#version 330 core
-out vec4 FragColor;
-uniform float uAlpha;
-
-void main()
-{
-    vec2 p = gl_PointCoord * 2.0 - vec2(1.0);
-    float r2 = dot(p, p);
-    if (r2 > 1.0) discard;
-
-    // soft edge glow ring
-    float edge = smoothstep(0.85, 1.0, sqrt(r2));
-
-    float z = sqrt(1.0 - r2);
-    vec3 normal = vec3(p.x, -p.y, z);
-    vec3 lightDir = normalize(vec3(1.0, 1.5, 1.0));
-    float diff = max(dot(normal, lightDir), 0.25);
-
-    vec3 core  = vec3(1.0, 0.92, 0.2) * diff;
-    vec3 glow  = vec3(1.0, 0.7, 0.0);
-    vec3 color = mix(core, glow, edge);
-    FragColor  = vec4(color, uAlpha);
-}
-";
-
         public PointCloudViewer(int width, int height)
             : base(GameWindowSettings.Default, new NativeWindowSettings
             {
@@ -220,22 +125,8 @@ void main()
             GL.Enable(EnableCap.DepthTest);
             GL.Enable(EnableCap.ProgramPointSize);
 
-            _shader  = BuildShader(VertSrc, FragSrc);
-            _uView   = GL.GetUniformLocation(_shader, "view");
-            _uProj   = GL.GetUniformLocation(_shader, "projection");
-            _uPointSize = GL.GetUniformLocation(_shader, "pointSize");
-
-            _lineShader = BuildShader(VertSrc, LineFragSrc);
-            _uViewLine  = GL.GetUniformLocation(_lineShader, "view");
-            _uProjLine  = GL.GetUniformLocation(_lineShader, "projection");
-
-            _sphereShader = BuildShader(VertSrc, SphereFragSrc);
-            _uViewSphere  = GL.GetUniformLocation(_sphereShader, "view");
-            _uProjSphere  = GL.GetUniformLocation(_sphereShader, "projection");
-            _uPointSizeSphere = GL.GetUniformLocation(_sphereShader, "pointSize");
-
-            _uAlphaLine   = GL.GetUniformLocation(_lineShader,   "uAlpha");
-            _uAlphaSphere = GL.GetUniformLocation(_sphereShader, "uAlpha");
+            _pointRenderer.Initialize();
+            _overlayRenderer.Initialize();
 
             GL.Enable(EnableCap.Blend);
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
@@ -246,27 +137,11 @@ void main()
         /// <summary>Upload point cloud to GPU. Must be called before Run().</summary>
         public void LoadPointCloud(PointData[] pts, float cloudRadius = 50f)
         {
-            _pointCount  = pts.Length;
             _cloudRadius = cloudRadius;
             _pointsCPU   = pts;  // keep CPU reference for selection resolution
             _cam.FitToCloud(cloudRadius);
             _labelManager.LabelsChanged += _highlightRenderer.MarkDirty;
-
-            _vao = GL.GenVertexArray();
-            GL.BindVertexArray(_vao);
-
-            _vbo = GL.GenBuffer();
-            GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
-
-            GL.BufferData(BufferTarget.ArrayBuffer,
-                pts.Length * 24, pts, BufferUsageHint.StaticDraw);
-
-            GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 24, 0);
-            GL.EnableVertexAttribArray(0);
-            GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, 24, 12);
-            GL.EnableVertexAttribArray(1);
-
-            GL.BindVertexArray(0);
+            _pointRenderer.Upload(pts);
         }
 
         /// <summary>Set the source LAS path for label file I/O.</summary>
@@ -689,34 +564,20 @@ void main()
         protected override void OnRenderFrame(FrameEventArgs args)
         {
             base.OnRenderFrame(args);
-            if (_frameLogEnabled) _frameStopwatch.Restart();
+            _frameTiming.BeginFrame();
 
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
-            GL.UseProgram(_shader);
             var view = _cam.GetViewMatrix();
             var proj = _cam.GetProjectionMatrix();
-            GL.UniformMatrix4(_uView, false, ref view);
-            GL.UniformMatrix4(_uProj, false, ref proj);
 
-            // 1. Draw point cloud — ProgressiveSubsample: draw fewer points when zoomed far out.
-            // Points were shuffled at load time so the first K form a uniform spatial sample.
-            if (_pointCount > 0)
-            {
-                float subsampleRatio = (float)(_cloudRadius / Math.Max(_cam.Hvs, _cloudRadius * 0.001));
-                float subsampleFactor = Math.Clamp(subsampleRatio * subsampleRatio, 0.005f, 1f);
-                int drawCount = Math.Max((int)(_pointCount * subsampleFactor), Math.Min(100_000, _pointCount));
-                _lastDrawCount = drawCount;
-                GL.Uniform1(_uPointSize, _pointSize);
-                GL.BindVertexArray(_vao);
-                GL.DrawArrays(PrimitiveType.Points, 0, drawCount);
-            }
-            if (_frameLogEnabled) MarkFrameStage(ref _mainDrawMs);
+            int drawCount = _pointRenderer.Render(ref view, ref proj, _pointSize, _cam.Hvs, _cloudRadius);
+            _frameTiming.MarkMainDraw(drawCount);
 
             // 2. Labeled points highlight (second pass with label colors)
             if (_pointsCPU != null && _labelManager.Count > 0)
                 _highlightRenderer.Render(_pointsCPU, _labelManager, ref view, ref proj, _pointSize);
-            if (_frameLogEnabled) MarkFrameStage(ref _highlightMs);
+            _frameTiming.MarkHighlight();
 
             // 2b. Box selection preview — points currently inside the box, shown in yellow.
             // GPU upload happens here (not in OnUpdateFrame) to keep GL calls on the render thread.
@@ -725,7 +586,7 @@ void main()
                 _highlightRenderer.UpdatePreview(_pointsCPU, previewIndices);
             }
             _highlightRenderer.RenderPreview(ref view, ref proj, _pointSize);
-            if (_frameLogEnabled) MarkFrameStage(ref _previewMs);
+            _frameTiming.MarkPreview();
 
             // 3. Active selection tool gizmo
             if (_mode == InteractionMode.Label)
@@ -740,280 +601,24 @@ void main()
                     _renderers[_activeToolIndex].Render(tool, view, proj, _cam);
                 }
             }
-            if (_frameLogEnabled) MarkFrameStage(ref _gizmoMs);
+            _frameTiming.MarkGizmo();
 
             // 4. Pivot indicator — only during orbit; hidden when any selection volume is active
             bool anyToolActive = _mode == InteractionMode.Label && ActiveTool.HasVolume;
             if (!anyToolActive && (_pivotFade > 0.01f || _pivotFlash > 0.01f))
-                RenderPivotIndicator(ref view, ref proj);
+                _overlayRenderer.RenderPivotIndicator(ref view, ref proj, _cam, _displayPivot, _pivotFade, _pivotFlash);
 
             // 5. Center crosshair — fades out as pivot fades in, full when pivot is hidden
             float crossAlpha = 1f - _pivotFade;
             if (crossAlpha > 0.01f)
-                RenderCenterCrosshair(crossAlpha);
+                _overlayRenderer.RenderCenterCrosshair(Size.X, Size.Y, crossAlpha);
 
             // 6. Mode indicator (label mode banner)
             if (_mode == InteractionMode.Label)
-                RenderModeIndicator(ref view, ref proj);
+                _overlayRenderer.RenderModeIndicator(Size.X, Size.Y, ActiveTool.ToolType);
 
             SwapBuffers();
-            if (_frameLogEnabled)
-            {
-                MarkFrameStage(ref _swapMs);
-                LogFrameStats(args.Time);
-            }
-        }
-
-        private int _pivotVao = -1;
-        private int _pivotVbo = -1;
-        private int _pivotVertexCount = 0;
-
-        private void MarkFrameStage(ref double stageMs)
-        {
-            double now = _frameStopwatch.Elapsed.TotalMilliseconds;
-            stageMs += now;
-            _frameStopwatch.Restart();
-        }
-
-        private void LogFrameStats(double dt)
-        {
-            _frameLogAccum += dt;
-            _frameLogCount++;
-            if (_frameLogAccum < 1.0)
-                return;
-
-            double inv = 1.0 / Math.Max(_frameLogCount, 1);
-            Console.WriteLine(
-                $"Frame avg {(_frameLogAccum * 1000.0 * inv):F2} ms | " +
-                $"draw {_lastDrawCount:N0} | main {_mainDrawMs * inv:F2} | " +
-                $"hl {_highlightMs * inv:F2} | prev {_previewMs * inv:F2} | " +
-                $"gizmo {_gizmoMs * inv:F2} | swap {_swapMs * inv:F2}");
-
-            _frameLogAccum = 0;
-            _frameLogCount = 0;
-            _mainDrawMs = _highlightMs = _previewMs = _gizmoMs = _swapMs = 0;
-        }
-
-        private void RenderPivotIndicator(ref Matrix4 view, ref Matrix4 proj)
-        {
-            if (_pivotVao == -1)
-            {
-                const int segments = 96;
-                // 3 short axes (±0.55) + 3 circles @ 96 segments = 6 + 576 = 582 verts
-                _pivotVertexCount = 6 + 3 * segments * 2;
-                float[] pivotData = new float[_pivotVertexCount * 6];
-                int idx = 0;
-
-                void AddV(float x, float y, float z, float r, float g, float b)
-                {
-                    pivotData[idx++] = x; pivotData[idx++] = y; pivotData[idx++] = z;
-                    pivotData[idx++] = r; pivotData[idx++] = g; pivotData[idx++] = b;
-                }
-
-                // Short axis stubs — 55 % of circle radius, slightly brightened
-                const float ax = 0.55f;
-                AddV(-ax, 0f, 0f, 1f, 0.3f, 0.3f); AddV(ax, 0f, 0f, 1f, 0.3f, 0.3f);
-                AddV(0f, -ax, 0f, 0.3f, 1f, 0.3f); AddV(0f, ax, 0f, 0.3f, 1f, 0.3f);
-                AddV(0f, 0f, -ax, 0.3f, 0.5f, 1f); AddV(0f, 0f, ax, 0.3f, 0.5f, 1f);
-
-                // Orbit circles — softer, slightly desaturated colours
-                float step = MathF.PI * 2f / segments;
-                (float r, float g, float b)[] cols = {
-                    (1f, 0.35f, 0.35f), // YZ — warm red
-                    (0.35f, 1f, 0.35f), // XZ — green
-                    (0.35f, 0.6f,  1f), // XY — cool blue
-                };
-                for (int c = 0; c < 3; c++)
-                {
-                    var (cr, cg, cb) = cols[c];
-                    for (int i = 0; i < segments; i++)
-                    {
-                        float a1 = i * step, a2 = (i + 1) * step;
-                        float c1 = MathF.Cos(a1), s1 = MathF.Sin(a1);
-                        float c2 = MathF.Cos(a2), s2 = MathF.Sin(a2);
-                        if (c == 0) { AddV(0, c1, s1, cr, cg, cb); AddV(0, c2, s2, cr, cg, cb); }
-                        else if (c == 1) { AddV(c1, 0, s1, cr, cg, cb); AddV(c2, 0, s2, cr, cg, cb); }
-                        else             { AddV(c1, s1, 0, cr, cg, cb); AddV(c2, s2, 0, cr, cg, cb); }
-                    }
-                }
-
-                _pivotVao = GL.GenVertexArray();
-                _pivotVbo = GL.GenBuffer();
-                GL.BindVertexArray(_pivotVao);
-                GL.BindBuffer(BufferTarget.ArrayBuffer, _pivotVbo);
-                GL.BufferData(BufferTarget.ArrayBuffer, pivotData.Length * sizeof(float), pivotData, BufferUsageHint.StaticDraw);
-                GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 24, 0);
-                GL.EnableVertexAttribArray(0);
-                GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, 24, 12);
-                GL.EnableVertexAttribArray(1);
-            }
-
-            // Effective alpha: fade + flash boost, sphere gets extra size during flash
-            float eff        = Math.Clamp(_pivotFade + _pivotFlash, 0f, 1f);
-            float spherePx   = 11f + 11f * _pivotFade + _pivotFlash * 14f;
-
-            Vector3 p     = _displayPivot;
-            float   scale = _cam.PivotIndicatorScaleAt(p);
-            Matrix4 model = Matrix4.CreateScale(scale) * Matrix4.CreateTranslation(p);
-            Matrix4 mv    = model * view;
-
-            // ── Lines ─────────────────────────────────────────────────────────
-            GL.UseProgram(_lineShader);
-            GL.UniformMatrix4(_uViewLine, false, ref mv);
-            GL.UniformMatrix4(_uProjLine, false, ref proj);
-            GL.BindVertexArray(_pivotVao);
-
-            // Pass 1 — depth-tested: rings are properly embedded in 3D space
-            GL.Enable(EnableCap.DepthTest);
-            GL.DepthMask(false);
-            GL.Uniform1(_uAlphaLine, eff);
-            GL.LineWidth(1f + eff);
-            GL.DrawArrays(PrimitiveType.Lines, 0, _pivotVertexCount);
-
-            // Pass 2 — X-ray ghost: occluded portions remain faintly visible
-            GL.Disable(EnableCap.DepthTest);
-            GL.Uniform1(_uAlphaLine, eff * 0.20f);
-            GL.LineWidth(1.0f);
-            GL.DrawArrays(PrimitiveType.Lines, 0, _pivotVertexCount);
-
-            GL.DepthMask(true);
-
-            // ── Sphere impostor — always on top ───────────────────────────────
-            if (_sphereVao == -1)
-            {
-                _sphereVao = GL.GenVertexArray();
-                _sphereVbo = GL.GenBuffer();
-                GL.BindVertexArray(_sphereVao);
-                GL.BindBuffer(BufferTarget.ArrayBuffer, _sphereVbo);
-                GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 12, 0);
-                GL.EnableVertexAttribArray(0);
-            }
-
-            float[] sphereData = { p.X, p.Y, p.Z };
-            GL.BindVertexArray(_sphereVao);
-            GL.BindBuffer(BufferTarget.ArrayBuffer, _sphereVbo);
-            GL.BufferData(BufferTarget.ArrayBuffer, 3 * sizeof(float), sphereData, BufferUsageHint.DynamicDraw);
-
-            GL.UseProgram(_sphereShader);
-            GL.UniformMatrix4(_uViewSphere,       false, ref view);
-            GL.UniformMatrix4(_uProjSphere,       false, ref proj);
-            GL.Uniform1(_uPointSizeSphere, spherePx);
-            GL.Uniform1(_uAlphaSphere,     eff);
-
-            GL.DrawArrays(PrimitiveType.Points, 0, 1);
-            GL.Enable(EnableCap.DepthTest);
-        }
-
-        private int _sphereVao = -1;
-        private int _sphereVbo = -1;
-
-        private int _crosshairVao = -1;
-        private int _crosshairVbo = -1;
-
-        // Pre-allocated scratch buffers for screen-space renderers — avoids per-frame heap allocations.
-        private readonly float[] _crossData   = new float[24]; // 4 verts × 6 floats (pos+col)
-        private readonly float[] _shadowData  = new float[24];
-        private readonly float[] _indData     = new float[24];
-
-        private void RenderCenterCrosshair(float alpha = 1.0f)
-        {
-            if (_crosshairVao == -1)
-            {
-                _crosshairVao = GL.GenVertexArray();
-                _crosshairVbo = GL.GenBuffer();
-                
-                // 2D lines in NDC (-1 to 1)
-                float size = 15f / Size.X; // 15 pixels half-size
-                float aspect = (float)Size.X / Size.Y;
-                float sizeY = size * aspect;
-                
-                // We'll update the VBO every frame anyway since window can resize.
-                GL.BindVertexArray(_crosshairVao);
-                GL.BindBuffer(BufferTarget.ArrayBuffer, _crosshairVbo);
-                GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 24, 0);
-                GL.EnableVertexAttribArray(0);
-                GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, 24, 12);
-                GL.EnableVertexAttribArray(1);
-            }
-
-            float sX = 15f / Size.X; // 15 pixels
-            float sY = 15f / Size.Y;
-            float g = 0.5f; // Gray color
-
-            _crossData[0]=-sX; _crossData[1]=0f;  _crossData[2]=0f;  _crossData[3]=g; _crossData[4]=g; _crossData[5]=g;
-            _crossData[6]= sX; _crossData[7]=0f;  _crossData[8]=0f;  _crossData[9]=g; _crossData[10]=g; _crossData[11]=g;
-            _crossData[12]=0f; _crossData[13]=-sY; _crossData[14]=0f; _crossData[15]=g; _crossData[16]=g; _crossData[17]=g;
-            _crossData[18]=0f; _crossData[19]= sY; _crossData[20]=0f; _crossData[21]=g; _crossData[22]=g; _crossData[23]=g;
-            float[] crossData = _crossData;
-
-            GL.BindVertexArray(_crosshairVao);
-            GL.BindBuffer(BufferTarget.ArrayBuffer, _crosshairVbo);
-            GL.BufferData(BufferTarget.ArrayBuffer, crossData.Length * sizeof(float), crossData, BufferUsageHint.DynamicDraw);
-
-            GL.UseProgram(_lineShader);
-            GL.Uniform1(_uAlphaLine, alpha * 0.55f); // shadow pass uses reduced alpha
-            Matrix4 ident = Matrix4.Identity;
-            GL.UniformMatrix4(_uViewLine, false, ref ident);
-            GL.UniformMatrix4(_uProjLine, false, ref ident);
-
-            GL.Disable(EnableCap.DepthTest);
-
-            // Shadow pass (subtle dark offset)
-            Matrix4 shadow = Matrix4.CreateTranslation(1f/Size.X, -1f/Size.Y, 0);
-            GL.UniformMatrix4(_uViewLine, false, ref shadow);
-            _shadowData[0]=-sX; _shadowData[1]=0f;  _shadowData[2]=0f;  _shadowData[3]=0f; _shadowData[4]=0f; _shadowData[5]=0f;
-            _shadowData[6]= sX; _shadowData[7]=0f;  _shadowData[8]=0f;  _shadowData[9]=0f; _shadowData[10]=0f; _shadowData[11]=0f;
-            _shadowData[12]=0f; _shadowData[13]=-sY; _shadowData[14]=0f; _shadowData[15]=0f; _shadowData[16]=0f; _shadowData[17]=0f;
-            _shadowData[18]=0f; _shadowData[19]= sY; _shadowData[20]=0f; _shadowData[21]=0f; _shadowData[22]=0f; _shadowData[23]=0f;
-            GL.BufferData(BufferTarget.ArrayBuffer, _shadowData.Length * sizeof(float), _shadowData, BufferUsageHint.DynamicDraw);
-            GL.DrawArrays(PrimitiveType.Lines, 0, 4);
-
-            // Main crosshair
-            GL.Uniform1(_uAlphaLine, alpha);
-            GL.UniformMatrix4(_uViewLine, false, ref ident);
-            GL.BufferData(BufferTarget.ArrayBuffer, crossData.Length * sizeof(float), crossData, BufferUsageHint.DynamicDraw);
-            GL.DrawArrays(PrimitiveType.Lines, 0, 4);
-
-            GL.Enable(EnableCap.DepthTest);
-        }
-
-        /// <summary>Renders a small colored dot in the top-left corner as label mode indicator.</summary>
-        private void RenderModeIndicator(ref Matrix4 view, ref Matrix4 proj)
-        {
-            // Small colored dot at top-left to indicate label mode
-            // Use the line shader with a single point
-            float dotX = -1f + 30f / Size.X;
-            float dotY =  1f - 30f / Size.Y;
-            float r = 0f, g = 0.8f, b = 1f; // cyan for label mode
-
-            if (ActiveTool.ToolType == SelectionToolType.Sphere)
-            { r = 1f;    g = 0.6f;  b = 0.15f; } // orange for sphere tool
-            else if (ActiveTool.ToolType == SelectionToolType.Cylinder)
-            { r = 0.60f; g = 0.25f; b = 1f;    } // purple for cylinder tool
-
-            GL.UseProgram(_lineShader);
-            GL.Uniform1(_uAlphaLine, 0.9f);
-            Matrix4 ident = Matrix4.Identity;
-            GL.UniformMatrix4(_uViewLine, false, ref ident);
-            GL.UniformMatrix4(_uProjLine, false, ref ident);
-
-            GL.Disable(EnableCap.DepthTest);
-
-            // Draw a small crosshair-like indicator
-            float sz = 8f / Size.X;
-            float szy = 8f / Size.Y;
-            _indData[0]=dotX-sz; _indData[1]=dotY;     _indData[2]=0f; _indData[3]=r; _indData[4]=g; _indData[5]=b;
-            _indData[6]=dotX+sz; _indData[7]=dotY;     _indData[8]=0f; _indData[9]=r; _indData[10]=g; _indData[11]=b;
-            _indData[12]=dotX;   _indData[13]=dotY-szy; _indData[14]=0f; _indData[15]=r; _indData[16]=g; _indData[17]=b;
-            _indData[18]=dotX;   _indData[19]=dotY+szy; _indData[20]=0f; _indData[21]=r; _indData[22]=g; _indData[23]=b;
-
-            GL.BindVertexArray(_crosshairVao);
-            GL.BindBuffer(BufferTarget.ArrayBuffer, _crosshairVbo);
-            GL.BufferData(BufferTarget.ArrayBuffer, _indData.Length * sizeof(float), _indData, BufferUsageHint.DynamicDraw);
-            GL.LineWidth(2.5f);
-            GL.DrawArrays(PrimitiveType.Lines, 0, 4);
-
-            GL.Enable(EnableCap.DepthTest);
+            _frameTiming.MarkSwapAndLog(args.Time);
         }
 
         protected override void OnResize(ResizeEventArgs e)
@@ -1027,20 +632,8 @@ void main()
 
         protected override void OnUnload()
         {
-            if (_pivotVao != -1) GL.DeleteVertexArray(_pivotVao);
-            if (_pivotVbo != -1) GL.DeleteBuffer(_pivotVbo);
-            
-            if (_sphereVao != -1) GL.DeleteVertexArray(_sphereVao);
-            if (_sphereVbo != -1) GL.DeleteBuffer(_sphereVbo);
-
-            if (_crosshairVao != -1) GL.DeleteVertexArray(_crosshairVao);
-            if (_crosshairVbo != -1) GL.DeleteBuffer(_crosshairVbo);
-            
-            GL.DeleteBuffer(_vbo);
-            GL.DeleteVertexArray(_vao);
-            GL.DeleteProgram(_shader);
-            GL.DeleteProgram(_lineShader);
-            GL.DeleteProgram(_sphereShader);
+            _pointRenderer.Dispose();
+            _overlayRenderer.Dispose();
 
             // Labeling renderers
             _boxGizmoRenderer.Dispose();
@@ -1052,43 +645,7 @@ void main()
             base.OnUnload();
         }
 
-        // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        // Shader build
-        // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-        private static int BuildShader(string vertSrc, string fragSrc)
-        {
-            int v = GL.CreateShader(ShaderType.VertexShader);
-            GL.ShaderSource(v, vertSrc);
-            GL.CompileShader(v);
-            CheckShader(v, "vertex");
-
-            int f = GL.CreateShader(ShaderType.FragmentShader);
-            GL.ShaderSource(f, fragSrc);
-            GL.CompileShader(f);
-            CheckShader(f, "fragment");
-
-            int prog = GL.CreateProgram();
-            GL.AttachShader(prog, v);
-            GL.AttachShader(prog, f);
-            GL.LinkProgram(prog);
-
-            GL.GetProgram(prog, GetProgramParameterName.LinkStatus, out int ok);
-            if (ok == 0)
-                throw new InvalidOperationException("Shader link:\n" + GL.GetProgramInfoLog(prog));
-
-            GL.DeleteShader(v);
-            GL.DeleteShader(f);
-            return prog;
-        }
-
-        private static void CheckShader(int s, string name)
-        {
-            GL.GetShader(s, ShaderParameter.CompileStatus, out int ok);
-            if (ok == 0)
-                throw new InvalidOperationException(
-                    $"{name} shader:\n" + GL.GetShaderInfoLog(s));
-        }
     }
 }
+
 
