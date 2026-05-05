@@ -1,4 +1,5 @@
 using OpenTK.Windowing.GraphicsLibraryFramework;
+using CloudScope.Rendering;
 
 namespace CloudScope
 {

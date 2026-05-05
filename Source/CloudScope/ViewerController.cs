@@ -36,7 +36,6 @@ namespace CloudScope
     /// </summary>
     public sealed class ViewerController : IDisposable
     {
-        // ── Rendering ─────────────────────────────────────────────────────────
         private readonly IRenderBackend _renderBackend;
         private readonly IPointCloudRenderer _pointRenderer;
         private readonly IOverlayRenderer _overlayRenderer;
@@ -45,7 +44,6 @@ namespace CloudScope
         private readonly FrameTimingDiagnostics _frameTiming = new();
         private readonly SelectionController _selection;
 
-        // -- Camera ────────────────────────────────────────────────────────────
         private readonly OrbitCamera _cam = new();
         private float _cloudRadius = 50f;
 
@@ -166,7 +164,6 @@ namespace CloudScope
 
             _selection.KeyDown(key, ctrl);
 
-            // ── Camera shortcuts (always available) ───────────────────────────
             if (key == ViewerKey.Space)
             {
                 _cam.PickDepthWindow(mouseX, mouseY, 11);
@@ -179,7 +176,6 @@ namespace CloudScope
             }
         }
 
-        // ── Rendering ─────────────────────────────────────────────────────────
 
         public void RenderFrame(double frameTime)
         {
@@ -247,7 +243,6 @@ namespace CloudScope
             _cam.SetViewportSize(width, height);
         }
 
-        // ── Cleanup ───────────────────────────────────────────────────────────
 
         public void Dispose()
         {

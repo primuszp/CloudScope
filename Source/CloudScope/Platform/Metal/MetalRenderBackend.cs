@@ -1,6 +1,7 @@
 using System;
+using CloudScope.Rendering;
 
-namespace CloudScope.Rendering
+namespace CloudScope.Platform.Metal
 {
     public sealed class MetalRenderBackend : IRenderBackend
     {

@@ -1,6 +1,7 @@
 using OpenTK.Graphics.OpenGL4;
+using CloudScope.Rendering;
 
-namespace CloudScope.Rendering
+namespace CloudScope.Platform.OpenGL
 {
     public sealed class OpenGlDepthPicker : IDepthPicker
     {
