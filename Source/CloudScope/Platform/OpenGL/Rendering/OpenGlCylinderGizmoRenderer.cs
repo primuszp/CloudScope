@@ -6,7 +6,7 @@ using CloudScope.Selection;
 namespace CloudScope.Rendering
 {
     /// <summary>
-    /// Professional cylinder gizmo renderer — visual style matches BoxGizmoRenderer.
+    /// Professional cylinder gizmo renderer — visual style matches OpenGlBoxGizmoRenderer.
     ///
     /// Drawing phase : live circle preview on screen
     /// Editing phase :
@@ -17,7 +17,7 @@ namespace CloudScope.Rendering
     ///   5. Rotation rings                (R/G/B, screen-space)
     ///   6. Handle diamonds               (center=green, others=white, hover=yellow)
     /// </summary>
-    public sealed class CylinderGizmoRenderer : GizmoRendererBase
+    public sealed class OpenGlCylinderGizmoRenderer : OpenGlGizmoRendererBase
     {
         private int _fillVao = -1, _fillVbo = -1;
         private int _circVao = -1, _circVbo = -1;

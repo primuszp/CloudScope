@@ -15,7 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\CloudScope.Library\CloudScope.Library.csproj" />
+    <ProjectReference Include="..\CloudScope.Core\CloudScope.Core.csproj" />
   </ItemGroup>
 
 </Project>

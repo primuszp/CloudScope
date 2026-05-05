@@ -5,7 +5,7 @@ using CloudScope.Selection;
 
 namespace CloudScope.Rendering
 {
-    public sealed class OverlayRenderer : IDisposable
+    public sealed class OpenGlOverlayRenderer : IOverlayRenderer
     {
         private int _lineShader = -1, _sphereShader = -1;
         private int _uViewLine, _uProjLine;

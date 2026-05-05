@@ -11,7 +11,7 @@ namespace CloudScope.Rendering
     /// with distinct label colors and a slightly larger point size.
     /// Rebuilds its GPU buffer whenever <see cref="LabelManager.LabelsChanged"/> fires.
     /// </summary>
-    public sealed class HighlightRenderer : IDisposable
+    public sealed class OpenGlHighlightRenderer : IHighlightRenderer
     {
         private int _vao = -1, _vbo = -1;
         private int _pvao = -1, _pvbo = -1;  // preview buffer (points inside active box)

@@ -10,7 +10,7 @@ namespace CloudScope.Rendering
     /// shader, dynamic VAO, shared axis-line geometry, and screen-space draw helpers.
     /// Concrete renderers call EnsureBaseResources() on first use.
     /// </summary>
-    public abstract class GizmoRendererBase : IDisposable
+    public abstract class OpenGlGizmoRendererBase : ISelectionGizmoRenderer
     {
         protected int _shader = -1, _uMVP, _uColor;
         protected int _dynVao = -1, _dynVbo = -1;
