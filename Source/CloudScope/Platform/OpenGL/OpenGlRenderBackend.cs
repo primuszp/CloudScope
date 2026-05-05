@@ -1,6 +1,8 @@
 using OpenTK.Graphics.OpenGL4;
+using CloudScope.Platform.OpenGL.Rendering;
+using CloudScope.Rendering;
 
-namespace CloudScope.Rendering
+namespace CloudScope.Platform.OpenGL
 {
     public sealed class OpenGlRenderBackend : IRenderBackend
     {

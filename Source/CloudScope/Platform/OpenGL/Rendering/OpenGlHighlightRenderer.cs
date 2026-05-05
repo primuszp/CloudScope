@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using CloudScope.Labeling;
+using CloudScope.Rendering;
 
-namespace CloudScope.Rendering
+namespace CloudScope.Platform.OpenGL.Rendering
 {
     /// <summary>
     /// Renders labeled points as a second pass over the point cloud

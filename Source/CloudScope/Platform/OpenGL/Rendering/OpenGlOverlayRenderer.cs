@@ -2,8 +2,9 @@ using System;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using CloudScope.Selection;
+using CloudScope.Rendering;
 
-namespace CloudScope.Rendering
+namespace CloudScope.Platform.OpenGL.Rendering
 {
     public sealed class OpenGlOverlayRenderer : IOverlayRenderer
     {

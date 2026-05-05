@@ -1,5 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
+using CloudScope.Platform.Metal;
+using CloudScope.Platform.OpenGL;
 
 namespace CloudScope.Rendering
 {
