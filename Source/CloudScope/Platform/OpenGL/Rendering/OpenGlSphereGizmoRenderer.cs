@@ -6,7 +6,7 @@ using CloudScope.Selection;
 namespace CloudScope.Rendering
 {
     /// <summary>
-    /// Professional sphere gizmo renderer — visual style matches BoxGizmoRenderer.
+    /// Professional sphere gizmo renderer — visual style matches OpenGlBoxGizmoRenderer.
     ///
     /// Layers:
     ///   1. Semi-transparent sphere fill   (neutral blue, 7% alpha)
@@ -14,7 +14,7 @@ namespace CloudScope.Rendering
     ///   3. Three great-circle rings       (axis-colored, depth-tested + ghost)
     ///   4. Handle diamonds                (center=green, poles=white, hover=yellow)
     /// </summary>
-    public sealed class SphereGizmoRenderer : GizmoRendererBase
+    public sealed class OpenGlSphereGizmoRenderer : OpenGlGizmoRendererBase
     {
         private int _fillVao = -1, _fillVbo = -1;
         private int _circVao = -1, _circVbo = -1;

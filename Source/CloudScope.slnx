@@ -1,6 +1,6 @@
 ﻿<Solution>
   <Project Path="CloudScope/CloudScope.csproj" />
-  <Project Path="CloudScope.Library/CloudScope.Library.csproj" />
+  <Project Path="CloudScope.Core/CloudScope.Core.csproj" />
 </Solution>
 
 

@@ -18,7 +18,7 @@ namespace CloudScope.Rendering
     ///   6. Rotation rings               (R/G/B)
     ///   7. Extrude arrow                (orange, flat box only)
     /// </summary>
-    public sealed class BoxGizmoRenderer : GizmoRendererBase
+    public sealed class OpenGlBoxGizmoRenderer : OpenGlGizmoRendererBase, IBoxSelectionGizmoRenderer
     {
         // ── Static GL resources ───────────────────────────────────────────────
         private int _edgeVao = -1, _edgeVbo = -1;

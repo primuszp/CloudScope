@@ -4,7 +4,7 @@ using OpenTK.Mathematics;
 
 namespace CloudScope.Rendering
 {
-    public sealed class PointCloudRenderer : IDisposable
+    public sealed class OpenGlPointCloudRenderer : IPointCloudRenderer
     {
         private int _vao = -1, _vbo = -1;
         private int _shader = -1;

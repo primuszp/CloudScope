@@ -1,5 +1,4 @@
 using System;
-using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 
 namespace CloudScope
@@ -59,6 +58,7 @@ namespace CloudScope
 
         // ── Cached depth read buffer (avoids per-event allocation) ────────────
         private float[] _depthWindow = new float[1024]; // 32x32 max
+        private IDepthPicker? _depthPicker;
 
         // ── Configurable parameters ───────────────────────────────────────────
         public float RotationSpeed  { get; set; } = 0.5f;
@@ -80,6 +80,8 @@ namespace CloudScope
         public float PivotIndicatorScaleAt(Vector3 worldPos) => Math.Max(EffectiveHalfViewSize(WorldToView(worldPos, _vtw).Z) * 0.3f, 0.001f);
 
         public OrbitCamera() { RebuildRot(); CalcViewVolume(); }
+
+        public void SetDepthPicker(IDepthPicker depthPicker) => _depthPicker = depthPicker;
 
         // ─────────────────────────────────────────────────────────────────────
         // Setup
@@ -151,9 +153,7 @@ namespace CloudScope
         /// </summary>
         public void PickDepth(int mouseX, int mouseY)
         {
-            float sd = 1f;
-            GL.ReadPixels(mouseX, _vpH - mouseY, 1, 1,
-                          PixelFormat.DepthComponent, PixelType.Float, ref sd);
+            float sd = _depthPicker?.ReadDepth(mouseX, _vpH - mouseY) ?? 1f;
             _pickedDepth = sd;
 
             float viewZ;
@@ -583,8 +583,7 @@ namespace CloudScope
                 int needed = readW * readH;
                 if (_depthWindow.Length < needed)
                     _depthWindow = new float[needed];
-                GL.ReadPixels(startX, startY, readW, readH,
-                              PixelFormat.DepthComponent, PixelType.Float, _depthWindow);
+                _depthPicker?.ReadDepthWindow(startX, startY, readW, readH, _depthWindow);
                 for (int i = 0; i < needed; i++)
                     if (_depthWindow[i] < 0.9999f && _depthWindow[i] < sd) sd = _depthWindow[i];
             }
