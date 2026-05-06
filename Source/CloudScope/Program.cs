@@ -5,7 +5,7 @@ using CloudScope.Loading;
 
 string lasFile = args.Length > 0
     ? args[0]
-    : @"C:\Users\primu\OneDrive\BorderEye\data\jeli_parkolo.las";
+    : @"/Users/primuszpeter/Library/CloudStorage/OneDrive-Személyes/BorderEye/data/jeli_parkolo.las";
 
 //string lasFile = args.Length > 0
 //    ? args[0]
