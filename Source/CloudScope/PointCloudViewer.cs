@@ -7,7 +7,7 @@ namespace CloudScope
     /// New platform work should target host-specific classes such as
     /// <see cref="OpenTkViewerHost"/> or a future MTKView-backed host.
     /// </summary>
-    public sealed class PointCloudViewer : OpenTkViewerHost
+    public sealed class PointCloudViewer : OpenTkViewerHost, IViewerHost
     {
         public PointCloudViewer(int width, int height)
             : base(width, height)
