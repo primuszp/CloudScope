@@ -90,7 +90,7 @@ Console.WriteLine("  Ctrl+O         - Load labels");
 Console.WriteLine();
 
 // ── Launch viewer ────────────────────────────────────────────────────────────
-using var viewer = new PointCloudViewer(1600, 900);
+using var viewer = ViewerHostFactory.Create(1600, 900);
 viewer.LoadPointCloud(cloud.Points, cloud.Radius);
 viewer.SetLasFilePath(lasFile);
 viewer.Run();
