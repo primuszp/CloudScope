@@ -1,17 +1,15 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFrameworks Condition="!$([MSBuild]::IsOSPlatform('OSX'))">net10.0</TargetFrameworks>
-    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('OSX'))">net10.0;net10.0-macos</TargetFrameworks>
-    <SupportedOSPlatformVersion Condition="'$(TargetFramework)' == 'net10.0-macos'">14.0</SupportedOSPlatformVersion>
+    <TargetFramework>net9.0</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SharpMetal" Version="1.1.0" Condition="'$(TargetFramework)' == 'net10.0-macos'" />
+    <PackageReference Include="SharpMetal" Version="1.1.0" />
     <PackageReference Include="OpenTK" Version="4.9.4" />
     <PackageReference Include="OpenTK.Core" Version="4.9.4" />
     <PackageReference Include="OpenTK.Mathematics" Version="4.9.4" />
@@ -23,4 +21,3 @@
   </ItemGroup>
 
 </Project>
-
