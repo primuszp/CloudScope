@@ -62,7 +62,7 @@ namespace MetalTriangleTest
             var mtkView = new MTKEventView(rect, device)
             {
                 ColorPixelFormat        = MTLPixelFormat.BGRA8Unorm,
-                DepthStencilPixelFormat = MTLPixelFormat.Invalid,   // no depth
+                DepthStencilPixelFormat = MTLPixelFormat.Depth32Float,  // same as CloudScope
                 ClearColor              = new MTLClearColor { red = 0.1, green = 0.1, blue = 0.2, alpha = 1.0 },
                 FramebufferOnly         = false,
                 Paused                  = false,
