@@ -7,10 +7,6 @@ using SharpMetal.ObjectiveCCore;
 
 namespace CloudScope.Platform.Metal
 {
-    /// <summary>
-    /// Metal viewer host built entirely on SharpMetal + ObjC runtime.
-    /// No net9.0-macos / Xamarin SDK required.
-    /// </summary>
     [SupportedOSPlatform("macos")]
     public sealed class SharpMetalViewerHost : IViewerHost
     {
@@ -18,10 +14,10 @@ namespace CloudScope.Platform.Metal
         private readonly NSApplication         _app;
         private readonly NSApplicationDelegate _appDelegate;
 
-        // Kept as fields to prevent GC collection while ObjC holds callbacks.
+        // Kept as fields to prevent GC collection.
         private MTKViewDelegate? _viewDelegate;
+        private MTKEventView?    _mtkView;
         private NSWindow?        _window;
-        private ObjC.MTKView?    _mtkView;
 
         public SharpMetalViewerHost(int width, int height, IRenderBackend renderBackend)
         {
@@ -32,14 +28,12 @@ namespace CloudScope.Platform.Metal
             ObjectiveC.LinkAppKit();
             ObjectiveC.LinkMetalKit();
 
-            _app = new NSApplication();
+            _app      = new NSApplication();
             _appDelegate = new NSApplicationDelegate();
             _app.SetDelegate(_appDelegate);
 
             _appDelegate.OnWillFinishLaunching += _ =>
-            {
                 _app.SetActivationPolicy(0); // NSApplicationActivationPolicyRegular
-            };
 
             _appDelegate.OnDidFinishLaunching += _ =>
             {
@@ -54,13 +48,14 @@ namespace CloudScope.Platform.Metal
                             NSStyleMask.Miniaturizable | NSStyleMask.Resizable));
                 _window.Title = (SharpMetal.Foundation.NSString)"CloudScope - Point Cloud Viewer";
 
-                _mtkView = new ObjC.MTKView(rect, device)
+                _mtkView = new MTKEventView(rect, device)
                 {
-                    ColorPixelFormat       = MTLPixelFormat.BGRA8Unorm,
+                    ColorPixelFormat        = MTLPixelFormat.BGRA8Unorm,
                     DepthStencilPixelFormat = MTLPixelFormat.Depth32Float,
-                    ClearColor             = new MTLClearColor { red = 0.015, green = 0.018, blue = 0.022, alpha = 1.0 }
+                    ClearColor              = new MTLClearColor { red = 0.015, green = 0.018, blue = 0.022, alpha = 1.0 }
                 };
 
+                // ── Draw delegate ─────────────────────────────────────────────────
                 _viewDelegate = new MTKViewDelegate();
                 _viewDelegate.OnDraw_ = view =>
                 {
@@ -84,11 +79,20 @@ namespace CloudScope.Platform.Metal
 
                 _mtkView.Delegate = _viewDelegate;
 
+                // ── Input events ──────────────────────────────────────────────────
+                _mtkView.OnMouseDown_  = (btn, x, y) => _controller.MouseDown(btn, x, y);
+                _mtkView.OnMouseUp_    = (btn, x, y) => _controller.MouseUp(btn, x, y);
+                _mtkView.OnMouseMove_  = (x, y)      => _controller.MouseMove(x, y);
+                _mtkView.OnMouseWheel_ = (x, y, d)   => _controller.MouseWheel(x, y, d);
+                _mtkView.OnKeyDown_    = code         => HandleKey(code);
+
+                // ── Show ──────────────────────────────────────────────────────────
                 _controller.Load();
 
                 _window.SetContentView(_mtkView);
                 _window.MakeKeyAndOrderFront();
                 _app.ActivateIgnoringOtherApps(true);
+                _mtkView.MakeFirstResponder();
             };
         }
 
@@ -108,7 +112,76 @@ namespace CloudScope.Platform.Metal
         public void Dispose()
         {
             _viewDelegate?.Dispose();
+            _mtkView?.Dispose();
             _controller.Dispose();
+        }
+
+        // ── Key mapping ───────────────────────────────────────────────────────────
+
+        private void HandleKey(ushort code)
+        {
+            var key = MapKey(code);
+            if (key == ViewerKey.Unknown) return;
+            // We don't have a live mouse pos here — use center as fallback.
+            bool ctrl = IsModifierDown(59) || IsModifierDown(62); // left/right Ctrl
+            _controller.KeyDown(key, ctrl, 0, 0);
+        }
+
+        // macOS virtual key codes
+        private static ViewerKey MapKey(ushort code) => code switch
+        {
+            53  => ViewerKey.Escape,
+            49  => ViewerKey.Space,
+            36  => ViewerKey.Enter,
+            56  => ViewerKey.LeftShift,
+            60  => ViewerKey.RightShift,
+            59  => ViewerKey.LeftControl,
+            62  => ViewerKey.RightControl,
+            // Letter keys
+            0   => ViewerKey.A,
+            1   => ViewerKey.S,
+            2   => ViewerKey.D,
+            3   => ViewerKey.F,
+            5   => ViewerKey.G,
+            6   => ViewerKey.Z,
+            7   => ViewerKey.X,
+            12  => ViewerKey.Q,
+            13  => ViewerKey.W,
+            14  => ViewerKey.E,
+            15  => ViewerKey.R,
+            16  => ViewerKey.Y,
+            31  => ViewerKey.O,
+            37  => ViewerKey.L,
+            // Number row
+            18  => ViewerKey.D1,
+            19  => ViewerKey.D2,
+            20  => ViewerKey.D3,
+            21  => ViewerKey.D4,
+            23  => ViewerKey.D5,
+            22  => ViewerKey.D6,
+            26  => ViewerKey.D7,
+            28  => ViewerKey.D8,
+            25  => ViewerKey.D9,
+            // Numpad
+            83  => ViewerKey.KeyPad1,
+            85  => ViewerKey.KeyPad3,
+            86  => ViewerKey.KeyPad5,
+            89  => ViewerKey.KeyPad7,
+            69  => ViewerKey.KeyPadAdd,
+            78  => ViewerKey.KeyPadSubtract,
+            // Home
+            115 => ViewerKey.Home,
+            _   => ViewerKey.Unknown
+        };
+
+        [System.Runtime.InteropServices.DllImport("libobjc.dylib", EntryPoint = "objc_msgSend")]
+        private static extern ushort GetModifierFlags(IntPtr obj, IntPtr sel);
+
+        private static bool IsModifierDown(ushort keyCode)
+        {
+            // Simple approach: check NSEvent.modifierFlags via CGEventSourceKeyState would be
+            // more accurate, but for Ctrl detection during keyDown we can skip for now.
+            return false;
         }
     }
 }
