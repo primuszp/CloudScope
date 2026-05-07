@@ -11,7 +11,13 @@ namespace CloudScope.Rendering
         public static IRenderBackend CreateDefault()
         {
             string? requested = Environment.GetEnvironmentVariable("CLOUDSCOPE_RENDER_BACKEND");
+            if (string.Equals(requested, "opengl", StringComparison.OrdinalIgnoreCase))
+                return Create(RenderBackendKind.OpenGL);
             if (string.Equals(requested, "metal", StringComparison.OrdinalIgnoreCase))
+                return Create(RenderBackendKind.Metal);
+
+            // macOS-en Metal az alapértelmezett
+            if (OperatingSystem.IsMacOS())
                 return Create(RenderBackendKind.Metal);
 
             return Create(RenderBackendKind.OpenGL);
