@@ -136,6 +136,8 @@ namespace CloudScope.Platform.Metal.Rendering
 
             if (existingBuffer.NativePtr == IntPtr.Zero || existingBuffer.Length < byteSize)
             {
+                if (existingBuffer.NativePtr != IntPtr.Zero)
+                    NativeRelease(existingBuffer.NativePtr);
                 existingBuffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
             }
 
@@ -170,5 +172,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 _ => new Vector3(v, p, q),
             };
         }
+        [System.Runtime.InteropServices.DllImport("libobjc.dylib", EntryPoint = "objc_release")]
+        private static extern void NativeRelease(IntPtr obj);
     }
 }
