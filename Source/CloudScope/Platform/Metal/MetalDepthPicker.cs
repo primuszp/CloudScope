@@ -35,8 +35,13 @@ namespace CloudScope.Platform.Metal
 
             int texW = checked((int)texture.Width);
             int texH = checked((int)texture.Height);
+            
+            // OrbitCamera passes glY (bottom-up), but Metal textures are top-down.
+            // We flip it back to get the correct texture row.
+            int correctedY = texH - 1 - y;
+
             int startX = Math.Clamp(x, 0, texW);
-            int startY = Math.Clamp(y, 0, texH);
+            int startY = Math.Clamp(correctedY, 0, texH);
             int readW = Math.Min(width, texW - startX);
             int readH = Math.Min(height, texH - startY);
             if (readW > 0 && readH > 0 && destination.Length < readW * readH)
