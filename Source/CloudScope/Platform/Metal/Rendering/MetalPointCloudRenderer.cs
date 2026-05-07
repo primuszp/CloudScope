@@ -12,6 +12,10 @@ namespace CloudScope.Platform.Metal.Rendering
     {
         private const int PointStride = 24; // 6 floats
         private const int PointsPerChunk = 1_000_000;
+        private static readonly int MaxDrawPointsPerFrame =
+            int.TryParse(Environment.GetEnvironmentVariable("CLOUDSCOPE_METAL_MAX_DRAW_POINTS"), out int maxDrawPoints) && maxDrawPoints > 0
+                ? maxDrawPoints
+                : 1_000_000;
 
         // Triple-buffered uniforms — CPU never blocks waiting for GPU to finish.
         private const int UniformBufferCount = 3;
@@ -88,6 +92,7 @@ namespace CloudScope.Platform.Metal.Rendering
             float subsampleRatio  = (float)(cloudRadius / Math.Max(halfViewSize, cloudRadius * 0.001));
             float subsampleFactor = Math.Clamp(subsampleRatio * subsampleRatio, 0.005f, 1f);
             int drawCount = Math.Max((int)(_pointCount * subsampleFactor), Math.Min(100_000, _pointCount));
+            drawCount = Math.Min(drawCount, Math.Min(MaxDrawPointsPerFrame, _pointCount));
 
             _uniformBufferIndex = (_uniformBufferIndex + 1) % UniformBufferCount;
             var uniformBuffer = _uniformBuffers[_uniformBufferIndex];
@@ -100,7 +105,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 return 0;
             }
 
-            if (log) Console.WriteLine($"[PCR {_renderCallCount}] draw={drawCount} chunks={_pointChunks.Length} hvs={halfViewSize:F1} sf={subsampleFactor:F3}");
+            if (log) Console.WriteLine($"[PCR {_renderCallCount}] draw={drawCount} max={MaxDrawPointsPerFrame} chunks={_pointChunks.Length} hvs={halfViewSize:F1} sf={subsampleFactor:F3}");
 
             encoder.SetRenderPipelineState(_pipeline);
             encoder.SetDepthStencilState(_depthState);
