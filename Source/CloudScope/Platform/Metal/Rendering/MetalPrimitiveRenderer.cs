@@ -59,6 +59,8 @@ namespace CloudScope.Platform.Metal.Rendering
             ulong byteSize = (ulong)(vertices.Length * sizeof(float));
             if (buffer.NativePtr == IntPtr.Zero || buffer.Length < byteSize)
             {
+                if (buffer.NativePtr != IntPtr.Zero)
+                    NativeRelease(buffer.NativePtr);
                 buffer = MetalFrameContext.Device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
             }
 
@@ -113,5 +115,8 @@ namespace CloudScope.Platform.Metal.Rendering
             desc.IsDepthWriteEnabled = false;
             return device.NewDepthStencilState(desc);
         }
+
+        [System.Runtime.InteropServices.DllImport("libobjc.dylib", EntryPoint = "objc_release")]
+        private static extern void NativeRelease(IntPtr obj);
     }
 }
