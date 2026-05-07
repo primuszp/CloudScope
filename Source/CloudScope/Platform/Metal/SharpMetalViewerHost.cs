@@ -109,6 +109,7 @@ namespace CloudScope.Platform.Metal
 
                         cmdBuf.PresentDrawable(drawable);
                         cmdBuf.Commit();
+                        cmdBuf.WaitUntilScheduled();
                         MetalFrameContext.End();
                         frameCount++;
                         pool.Drain();
