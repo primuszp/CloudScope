@@ -56,6 +56,23 @@ namespace CloudScope.Platform.Metal
         /// <summary>Called by each renderer after it opens its render encoder.</summary>
         public static void MarkFirstEncoderDone() => _firstEncoderDone = true;
 
+        public static void PrepareRenderPassForEncoder(MTLRenderPassDescriptor descriptor)
+        {
+            if (!_firstEncoderDone || descriptor.NativePtr == IntPtr.Zero)
+                return;
+
+            var color = descriptor.ColorAttachments.Object(0);
+            if (color.NativePtr != IntPtr.Zero)
+            {
+                color.LoadAction = MTLLoadAction.Load;
+                descriptor.ColorAttachments.SetObject(color, 0);
+            }
+
+            var depth = descriptor.DepthAttachment;
+            if (depth.NativePtr != IntPtr.Zero)
+                depth.LoadAction = MTLLoadAction.Load;
+        }
+
         public static void End()
         {
             _currentView          = null;
