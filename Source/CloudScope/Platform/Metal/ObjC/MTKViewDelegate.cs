@@ -1,46 +1,94 @@
+using System;
+using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.Marshalling;
 using System.Runtime.Versioning;
+using System.Text;
 using SharpMetal.ObjectiveCCore;
 
 namespace CloudScope.Platform.Metal.ObjC
 {
     [SupportedOSPlatform("macos")]
-    internal class MTKViewDelegate : IDisposable
+    internal sealed class MTKViewDelegate : IDisposable
     {
+        // ── Static callbacks — stored as static fields so the GC never collects them ──
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate void DrawDelegate(IntPtr id, IntPtr cmd, IntPtr view);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        private delegate void SizeChangeDelegate(IntPtr id, IntPtr cmd, IntPtr view, NSRect rect);
+        private delegate void SizeChangeDelegate(IntPtr id, IntPtr cmd, IntPtr view, NSSize size);
 
-        // Keep delegates alive to prevent GC collection
-        private readonly DrawDelegate _draw;
-        private readonly SizeChangeDelegate _sizeChange;
+        private static readonly DrawDelegate      s_draw       = OnDraw;
+        private static readonly SizeChangeDelegate s_sizeChange = OnSizeChange;
+        private static readonly Lazy<IntPtr>      s_class      = new(RegisterClass);
 
-        public Action<MTKView>? OnDraw;
-        public Action<MTKView, NSRect>? OnSizeChange;
+        // Maps ObjC instance pointer → C# wrapper so static callbacks can find the right instance.
+        private static readonly ConcurrentDictionary<IntPtr, MTKViewDelegate> s_instances = new();
 
+        // ── Per-instance ─────────────────────────────────────────────────────────
+        public Action<MTKView>?           OnDraw_;
+        public Action<MTKView, NSSize>?   OnSizeChange_;
         public IntPtr NativePtr;
         public static implicit operator IntPtr(MTKViewDelegate d) => d.NativePtr;
 
-        public unsafe MTKViewDelegate()
+        private bool _disposed;
+
+        public MTKViewDelegate()
         {
-            _draw = (_, _, view) => OnDraw?.Invoke(new MTKView(view));
-            _sizeChange = (_, _, view, rect) => OnSizeChange?.Invoke(new MTKView(view), rect);
-
-            var name = Utf8StringMarshaller.ConvertToUnmanaged("CloudScopeMTKViewDelegate");
-            var t1 = Utf8StringMarshaller.ConvertToUnmanaged("v@:@");
-            var t2 = Utf8StringMarshaller.ConvertToUnmanaged("v@:@{CGRect={CGPoint=dd}{CGPoint=dd}}");
-
-            var cls = ObjectiveC.objc_allocateClassPair(new ObjectiveCClass("NSObject"), (char*)name, 0);
-            ObjectiveC.class_addMethod(cls, "drawInMTKView:", Marshal.GetFunctionPointerForDelegate(_draw), (char*)t1);
-            ObjectiveC.class_addMethod(cls, "mtkView:drawableSizeWillChange:", Marshal.GetFunctionPointerForDelegate(_sizeChange), (char*)t2);
-            ObjectiveC.objc_registerClassPair(cls);
-
-            NativePtr = new ObjectiveCClass(cls).AllocInit();
+            NativePtr = new ObjectiveCClass(s_class.Value).AllocInit();
+            if (NativePtr == IntPtr.Zero)
+                throw new InvalidOperationException("Failed to allocate MTKViewDelegate ObjC instance.");
+            s_instances[NativePtr] = this;
         }
 
-        public void Dispose() => NativePtr = IntPtr.Zero;
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            s_instances.TryRemove(NativePtr, out _);
+            NativePtr = IntPtr.Zero;
+        }
+
+        // ── Static ObjC callbacks ─────────────────────────────────────────────────
+
+        private static void OnDraw(IntPtr id, IntPtr cmd, IntPtr view)
+        {
+            if (s_instances.TryGetValue(id, out var inst) && !inst._disposed)
+                inst.OnDraw_?.Invoke(new MTKView(view));
+        }
+
+        private static void OnSizeChange(IntPtr id, IntPtr cmd, IntPtr view, NSSize size)
+        {
+            if (s_instances.TryGetValue(id, out var inst) && !inst._disposed)
+                inst.OnSizeChange_?.Invoke(new MTKView(view), size);
+        }
+
+        // ── ObjC class registration (runs once, lazily) ───────────────────────────
+
+        private static unsafe IntPtr RegisterClass()
+        {
+            var name       = NullTermUtf8("CloudScopeMTKViewDelegate");
+            var drawTypes  = NullTermUtf8("v@:@");
+            var sizeTypes  = NullTermUtf8("v@:@{CGSize=dd}");
+
+            fixed (byte* namePtr      = name)
+            fixed (byte* drawTypesPtr = drawTypes)
+            fixed (byte* sizeTypesPtr = sizeTypes)
+            {
+                var cls = ObjectiveC.objc_allocateClassPair(
+                    new ObjectiveCClass("NSObject"), (char*)namePtr, 0);
+                if (cls == IntPtr.Zero)
+                    throw new InvalidOperationException("objc_allocateClassPair failed for MTKViewDelegate.");
+
+                ObjectiveC.class_addMethod(cls, "drawInMTKView:",
+                    Marshal.GetFunctionPointerForDelegate(s_draw), (char*)drawTypesPtr);
+                ObjectiveC.class_addMethod(cls, "mtkView:drawableSizeWillChange:",
+                    Marshal.GetFunctionPointerForDelegate(s_sizeChange), (char*)sizeTypesPtr);
+
+                ObjectiveC.objc_registerClassPair(cls);
+                return cls;
+            }
+        }
+
+        private static byte[] NullTermUtf8(string s) => Encoding.UTF8.GetBytes(s + '\0');
     }
 }
