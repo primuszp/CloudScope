@@ -2,6 +2,7 @@ using System;
 using System.Runtime.Versioning;
 using CloudScope.Platform.Metal.ObjC;
 using SharpMetal.Metal;
+using SharpMetal.QuartzCore;
 
 namespace CloudScope.Platform.Metal
 {
@@ -11,13 +12,18 @@ namespace CloudScope.Platform.Metal
         // ── Persistent ───────────────────────────────────────────────────────────
         public static MTLDevice       Device       { get; private set; }
         public static MTLCommandQueue CommandQueue { get; private set; }
+        public static MTLTexture      DepthTexture { get; private set; }
 
         // ── Per-frame (ThreadStatic so the render thread has its own slot) ───────
         [ThreadStatic] private static MTKView?          _currentView;
+        [ThreadStatic] private static MTLRenderPassDescriptor _currentRenderPassDescriptor;
+        [ThreadStatic] private static CAMetalDrawable   _currentDrawable;
         [ThreadStatic] private static MTLCommandBuffer  _currentCommandBuffer;
         [ThreadStatic] private static bool              _firstEncoderDone;
 
         public static MTKView?         CurrentView          => _currentView;
+        public static MTLRenderPassDescriptor CurrentRenderPassDescriptor => _currentRenderPassDescriptor;
+        public static CAMetalDrawable CurrentDrawable => _currentDrawable;
         public static MTLCommandBuffer CurrentCommandBuffer => _currentCommandBuffer;
 
         /// <summary>
@@ -32,11 +38,19 @@ namespace CloudScope.Platform.Metal
             CommandQueue = commandQueue;
         }
 
-        public static void Begin(MTKView view, MTLCommandBuffer commandBuffer)
+        public static void SetDepthTexture(MTLTexture texture) => DepthTexture = texture;
+
+        public static void Begin(
+            MTKView view,
+            MTLRenderPassDescriptor renderPassDescriptor,
+            CAMetalDrawable drawable,
+            MTLCommandBuffer commandBuffer)
         {
-            _currentView          = view;
-            _currentCommandBuffer = commandBuffer;
-            _firstEncoderDone     = false;
+            _currentView                 = view;
+            _currentRenderPassDescriptor = renderPassDescriptor;
+            _currentDrawable             = drawable;
+            _currentCommandBuffer        = commandBuffer;
+            _firstEncoderDone            = false;
         }
 
         /// <summary>Called by each renderer after it opens its render encoder.</summary>
@@ -45,6 +59,8 @@ namespace CloudScope.Platform.Metal
         public static void End()
         {
             _currentView          = null;
+            _currentRenderPassDescriptor = default;
+            _currentDrawable = default;
             _currentCommandBuffer = default;
             _firstEncoderDone     = false;
         }

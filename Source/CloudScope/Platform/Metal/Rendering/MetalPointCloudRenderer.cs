@@ -68,8 +68,8 @@ namespace CloudScope.Platform.Metal.Rendering
                 return 0;
 
             var cmdBuffer  = MetalFrameContext.CurrentCommandBuffer;
-            var descriptor = MetalFrameContext.CurrentView?.CurrentRenderPassDescriptor;
-            if (cmdBuffer.NativePtr == IntPtr.Zero || descriptor == null || descriptor.Value.NativePtr == IntPtr.Zero)
+            var descriptor = MetalFrameContext.CurrentRenderPassDescriptor;
+            if (cmdBuffer.NativePtr == IntPtr.Zero || descriptor.NativePtr == IntPtr.Zero)
                 return 0;
 
             float subsampleRatio  = (float)(cloudRadius / Math.Max(halfViewSize, cloudRadius * 0.001));
@@ -81,7 +81,7 @@ namespace CloudScope.Platform.Metal.Rendering
 
             MetalBufferWriter.Write(uniformBuffer, new MetalPointUniforms(view, projection, pointSize));
 
-            var rpd = descriptor.Value;
+            var rpd = descriptor;
             if (MetalFrameContext.FirstEncoderDone)
             {
                 var ca2 = rpd.ColorAttachments.Object(0);

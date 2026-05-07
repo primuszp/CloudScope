@@ -62,14 +62,20 @@ namespace CloudScope.Platform.Metal
                 _viewDelegate = new MTKViewDelegate();
                 _viewDelegate.OnDraw_ = view =>
                 {
+                    var descriptor = view.CurrentRenderPassDescriptor;
+                    var drawable = view.CurrentDrawable;
+                    if (descriptor.NativePtr == IntPtr.Zero || drawable.NativePtr == IntPtr.Zero)
+                        return;
+
                     var cmdBuffer = MetalFrameContext.CommandQueue.CommandBuffer();
-                    MetalFrameContext.Begin(view, cmdBuffer);
+                    if (cmdBuffer.NativePtr == IntPtr.Zero)
+                        return;
+
+                    MetalFrameContext.Begin(view, descriptor, drawable, cmdBuffer);
                     try
                     {
                         _controller.RenderFrame(0);
-                        var drawable = view.CurrentDrawable;
-                        if (drawable.NativePtr != IntPtr.Zero)
-                            cmdBuffer.PresentDrawable(drawable);
+                        cmdBuffer.PresentDrawable(drawable);
                         cmdBuffer.Commit();
                     }
                     finally

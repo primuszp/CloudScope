@@ -8,6 +8,10 @@ namespace CloudScope.Platform.Metal
     [SupportedOSPlatform("macos")]
     public sealed class MetalRenderBackend : IRenderBackend
     {
+        private MTLTexture _depthTexture;
+        private ulong _depthWidth;
+        private ulong _depthHeight;
+
         public RenderBackendKind Kind => RenderBackendKind.Metal;
 
         public IPointCloudRenderer  CreatePointCloudRenderer()  => new MetalPointCloudRenderer();
@@ -15,16 +19,13 @@ namespace CloudScope.Platform.Metal
         public IOverlayRenderer     CreateOverlayRenderer()     => new MetalOverlayRenderer();
         public SelectionGizmoRenderers CreateSelectionGizmoRenderers()
             => MetalRendererFactory.CreateSelectionGizmoRenderers();
-        public IDepthPicker CreateDepthPicker() => new NullDepthPicker();
+        public IDepthPicker CreateDepthPicker() => new MetalDepthPicker();
 
         public void InitializeFrameState() { }
 
         public void BeginFrame()
         {
-            var view = MetalFrameContext.CurrentView;
-            if (view == null) return;
-
-            var descriptor = view.CurrentRenderPassDescriptor;
+            var descriptor = MetalFrameContext.CurrentRenderPassDescriptor;
             if (descriptor.NativePtr == IntPtr.Zero) return;
 
             var ca = descriptor.ColorAttachments.Object(0);
@@ -35,12 +36,37 @@ namespace CloudScope.Platform.Metal
             var da = descriptor.DepthAttachment;
             if (da.NativePtr != IntPtr.Zero)
             {
+                var sizeSource = da.Texture;
+                ulong width = sizeSource.NativePtr != IntPtr.Zero ? sizeSource.Width : 0;
+                ulong height = sizeSource.NativePtr != IntPtr.Zero ? sizeSource.Height : 0;
+                if (width > 0 && height > 0)
+                    EnsureDepthTexture(width, height);
+                if (_depthTexture.NativePtr != IntPtr.Zero)
+                    da.Texture = _depthTexture;
+
                 da.LoadAction  = MTLLoadAction.Clear;
-                da.StoreAction = MTLStoreAction.DontCare;
+                da.StoreAction = MTLStoreAction.Store;
                 da.ClearDepth  = 1.0;
             }
         }
 
         public void Resize(int width, int height) { }
+
+        private void EnsureDepthTexture(ulong width, ulong height)
+        {
+            if (_depthTexture.NativePtr != IntPtr.Zero &&
+                _depthWidth == width &&
+                _depthHeight == height)
+                return;
+
+            var desc = MTLTextureDescriptor.Texture2DDescriptor(
+                MTLPixelFormat.Depth32Float, width, height, mipmapped: false);
+            desc.StorageMode = MTLStorageMode.Managed;
+            desc.Usage = MTLTextureUsage.RenderTarget;
+            _depthTexture = MetalFrameContext.Device.NewTexture(desc);
+            _depthWidth = width;
+            _depthHeight = height;
+            MetalFrameContext.SetDepthTexture(_depthTexture);
+        }
     }
 }
