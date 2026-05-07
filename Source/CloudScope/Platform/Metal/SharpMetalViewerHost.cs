@@ -124,10 +124,10 @@ namespace CloudScope.Platform.Metal
 
                 _mtkView.Delegate = _viewDelegate;
 
-                _mtkView.OnMouseDown_  = (btn, x, y) => { }; // DIAG: disabled
-                _mtkView.OnMouseUp_    = (btn, x, y) => { }; // DIAG: disabled
-                _mtkView.OnMouseMove_  = (x, y)      => { }; // DIAG: disabled
-                _mtkView.OnMouseWheel_ = (x, y, d)   => { }; // DIAG: disabled
+                _mtkView.OnMouseDown_  = (btn, x, y) => _controller.MouseDown(btn, x, y);
+                _mtkView.OnMouseUp_    = (btn, x, y) => _controller.MouseUp(btn, x, y);
+                _mtkView.OnMouseMove_  = (x, y)      => _controller.MouseMove(x, y);
+                _mtkView.OnMouseWheel_ = (x, y, d)   => _controller.MouseWheel(x, y, d);
                 _mtkView.OnKeyDown_    = code         => HandleKey(code);
 
                 _controller.Load();
@@ -181,7 +181,11 @@ fragment float4 tf(V in [[stage_in]]) { return float4(1,0,0,1); }
         public void SetLasFilePath(string path)
             => _controller.SetLasFilePath(path);
 
-        public void Run() => _app.Run();
+        public void Run()
+        {
+            _app.Run();
+            GC.KeepAlive(this); // Prevent GC from collecting this while _app.Run() blocks
+        }
 
         public void Dispose()
         {
