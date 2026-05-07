@@ -93,7 +93,7 @@ namespace CloudScope.Platform.Metal.ObjC
         // ── Properties (forwarded to MTKView) ─────────────────────────────────────
         public MTLPixelFormat ColorPixelFormat
         {
-            set => ObjectiveC.objc_msgSend(NativePtr, new Selector("setColorPixelFormat:"), value);
+            set => ObjectiveC.objc_msgSend(NativePtr, new Selector("setColorPixelFormat:atIndex:"), value, 0);
         }
         public MTLPixelFormat DepthStencilPixelFormat
         {
@@ -106,6 +106,18 @@ namespace CloudScope.Platform.Metal.ObjC
         public MTKViewDelegate? Delegate
         {
             set => ObjectiveC.objc_msgSend(NativePtr, "setDelegate:", value?.NativePtr ?? IntPtr.Zero);
+        }
+        public bool FramebufferOnly
+        {
+            set => ObjectiveC.objc_msgSend(NativePtr, "setFramebufferOnly:", value);
+        }
+        public bool Paused
+        {
+            set => ObjectiveC.objc_msgSend(NativePtr, "setPaused:", value);
+        }
+        public bool EnableSetNeedsDisplay
+        {
+            set => ObjectiveC.objc_msgSend(NativePtr, "setEnableSetNeedsDisplay:", value);
         }
         public CAMetalDrawable CurrentDrawable
             => new(ObjectiveC.IntPtr_objc_msgSend(NativePtr, "currentDrawable"));
