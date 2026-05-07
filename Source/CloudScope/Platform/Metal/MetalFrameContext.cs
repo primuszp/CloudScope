@@ -19,18 +19,18 @@ namespace CloudScope.Platform.Metal
         [ThreadStatic] private static MTLRenderPassDescriptor _currentRenderPassDescriptor;
         [ThreadStatic] private static CAMetalDrawable   _currentDrawable;
         [ThreadStatic] private static MTLCommandBuffer  _currentCommandBuffer;
-        [ThreadStatic] private static bool              _firstEncoderDone;
+        [ThreadStatic] private static MTLRenderCommandEncoder _currentRenderCommandEncoder;
 
         public static MTKView?         CurrentView          => _currentView;
         public static MTLRenderPassDescriptor CurrentRenderPassDescriptor => _currentRenderPassDescriptor;
         public static CAMetalDrawable CurrentDrawable => _currentDrawable;
         public static MTLCommandBuffer CurrentCommandBuffer => _currentCommandBuffer;
-
-        /// <summary>
-        /// True after the first render-command-encoder of this frame has been
-        /// created.  Subsequent encoders must use LoadAction.Load.
-        /// </summary>
-        public static bool FirstEncoderDone => _firstEncoderDone;
+        
+        public static MTLRenderCommandEncoder CurrentRenderCommandEncoder
+        {
+            get => _currentRenderCommandEncoder;
+            set => _currentRenderCommandEncoder = value;
+        }
 
         public static void Initialize(MTLDevice device, MTLCommandQueue commandQueue)
         {
@@ -50,36 +50,20 @@ namespace CloudScope.Platform.Metal
             _currentRenderPassDescriptor = renderPassDescriptor;
             _currentDrawable             = drawable;
             _currentCommandBuffer        = commandBuffer;
-            _firstEncoderDone            = false;
-        }
-
-        /// <summary>Called by each renderer after it opens its render encoder.</summary>
-        public static void MarkFirstEncoderDone() => _firstEncoderDone = true;
-
-        public static void PrepareRenderPassForEncoder(MTLRenderPassDescriptor descriptor)
-        {
-            if (!_firstEncoderDone || descriptor.NativePtr == IntPtr.Zero)
-                return;
-
-            var color = descriptor.ColorAttachments.Object(0);
-            if (color.NativePtr != IntPtr.Zero)
-            {
-                color.LoadAction = MTLLoadAction.Load;
-                descriptor.ColorAttachments.SetObject(color, 0);
-            }
-
-            var depth = descriptor.DepthAttachment;
-            if (depth.NativePtr != IntPtr.Zero)
-                depth.LoadAction = MTLLoadAction.Load;
+            _currentRenderCommandEncoder = default;
         }
 
         public static void End()
         {
+            if (_currentRenderCommandEncoder.NativePtr != IntPtr.Zero)
+            {
+                _currentRenderCommandEncoder.EndEncoding();
+            }
             _currentView          = null;
             _currentRenderPassDescriptor = default;
             _currentDrawable = default;
             _currentCommandBuffer = default;
-            _firstEncoderDone     = false;
+            _currentRenderCommandEncoder = default;
         }
     }
 }

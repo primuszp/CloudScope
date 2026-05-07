@@ -81,17 +81,14 @@ namespace CloudScope.Platform.Metal.Rendering
 
             MetalBufferWriter.Write(uniformBuffer, new MetalPointUniforms(view, projection, pointSize));
 
-            var rpd = descriptor;
-            MetalFrameContext.PrepareRenderPassForEncoder(rpd);
+            var encoder = MetalFrameContext.CurrentRenderCommandEncoder;
+            if (encoder.NativePtr == IntPtr.Zero) return 0;
 
-            var encoder = cmdBuffer.RenderCommandEncoder(rpd);
-            MetalFrameContext.MarkFirstEncoderDone();
             encoder.SetRenderPipelineState(_pipeline);
             encoder.SetDepthStencilState(_depthState);
             encoder.SetVertexBuffer(_pointBuffer, 0, 0);
             encoder.SetVertexBuffer(uniformBuffer, 0, 1);
             encoder.DrawPrimitives(MTLPrimitiveType.Point, 0, (ulong)drawCount);
-            encoder.EndEncoding();
 
             return drawCount;
         }

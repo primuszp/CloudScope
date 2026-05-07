@@ -57,7 +57,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 count++;
             }
             _previewCount = count;
-            _previewBuffer = BuildBuffer(data, count);
+            BuildBuffer(ref _previewBuffer, data, count);
         }
 
         public void RenderPreview(ref Matrix4 view, ref Matrix4 proj, float pointSize)
@@ -107,7 +107,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 count++;
             }
             _highlightCount  = count;
-            _highlightBuffer = BuildBuffer(data, count);
+            BuildBuffer(ref _highlightBuffer, data, count);
         }
 
         private void RenderBuffer(MTLBuffer buffer, int count,
@@ -116,36 +116,32 @@ namespace CloudScope.Platform.Metal.Rendering
             if (count == 0 || buffer.NativePtr == IntPtr.Zero || _pipeline.NativePtr == IntPtr.Zero)
                 return;
 
-            var cmdBuffer  = MetalFrameContext.CurrentCommandBuffer;
-            var descriptor = MetalFrameContext.CurrentRenderPassDescriptor;
-            if (cmdBuffer.NativePtr == IntPtr.Zero || descriptor.NativePtr == IntPtr.Zero)
-                return;
-
             MetalBufferWriter.Write(_uniformsBuffer, new MetalPointUniforms(view, proj, pointSize));
 
-            var rpd = descriptor;
-            MetalFrameContext.PrepareRenderPassForEncoder(rpd);
+            var encoder = MetalFrameContext.CurrentRenderCommandEncoder;
+            if (encoder.NativePtr == IntPtr.Zero) return;
 
-            var encoder = cmdBuffer.RenderCommandEncoder(rpd);
-            MetalFrameContext.MarkFirstEncoderDone();
             encoder.SetRenderPipelineState(_pipeline);
             encoder.SetDepthStencilState(_depthState);
             encoder.SetVertexBuffer(buffer, 0, 0);
             encoder.SetVertexBuffer(_uniformsBuffer, 0, 1);
             encoder.DrawPrimitives(MTLPrimitiveType.Point, 0, (ulong)count);
-            encoder.EndEncoding();
         }
 
-        private unsafe MTLBuffer BuildBuffer(PointData[] data, int count)
+        private unsafe void BuildBuffer(ref MTLBuffer existingBuffer, PointData[] data, int count)
         {
-            if (count == 0) return default;
+            if (count == 0) return;
             ulong byteSize = (ulong)(count * 24);
             var device = MetalFrameContext.Device;
-            var buf = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
+
+            if (existingBuffer.NativePtr == IntPtr.Zero || existingBuffer.Length < byteSize)
+            {
+                existingBuffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
+            }
+
             fixed (PointData* src = data)
-                Buffer.MemoryCopy(src, buf.Contents.ToPointer(), byteSize, byteSize);
-            buf.DidModifyRange(new NSRange { location = 0, length = byteSize });
-            return buf;
+                Buffer.MemoryCopy(src, existingBuffer.Contents.ToPointer(), byteSize, byteSize);
+            existingBuffer.DidModifyRange(new NSRange { location = 0, length = byteSize });
         }
 
         private PointData[] RentScratch(int count)
