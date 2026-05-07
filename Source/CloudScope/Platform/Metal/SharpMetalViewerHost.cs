@@ -21,6 +21,10 @@ namespace CloudScope.Platform.Metal
         private int _drawableWidth;
         private int _drawableHeight;
 
+        // Static root prevents GC from collecting this instance while Run() blocks
+        // (the JIT may decide 'this' is unreachable after _app.Run() starts)
+        private static SharpMetalViewerHost? _current;
+
         public SharpMetalViewerHost(int width, int height, IRenderBackend renderBackend)
         {
             _controller = new ViewerController(width, height, renderBackend);
@@ -187,8 +191,16 @@ fragment float4 tf(V in [[stage_in]]) { return float4(1,0,0,1); }
 
         public void Run()
         {
+            _current = this; // static root — GC cannot collect this instance
+
+            // DIAGNOSTIC: force GC immediately — if rendering breaks on frame 0, GC is the cause
+            GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+            GC.WaitForPendingFinalizers();
+            Console.WriteLine("[GC] Forced collection before Run — rendering should still work if GC-safe");
+
             _app.Run();
-            GC.KeepAlive(this); // Prevent GC from collecting this while _app.Run() blocks
+            _current = null;
+            GC.KeepAlive(this);
         }
 
         public void Dispose()
