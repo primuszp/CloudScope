@@ -71,10 +71,12 @@ namespace CloudScope.Platform.Metal
                 _viewDelegate = new MTKViewDelegate();
                 _viewDelegate.OnDraw_ = view =>
                 {
+                    var pool = new NSAutoreleasePool();
                     var descriptor = view.CurrentRenderPassDescriptor;
                     var drawable   = view.CurrentDrawable;
                     if (descriptor.NativePtr == IntPtr.Zero || drawable.NativePtr == IntPtr.Zero)
                     {
+                        pool.Drain();
                         if (frameCount < 5) Console.WriteLine($"[F{frameCount}] NULL");
                         frameCount++; return;
                     }
@@ -109,6 +111,7 @@ namespace CloudScope.Platform.Metal
                         cmdBuf.Commit();
                         MetalFrameContext.End();
                         frameCount++;
+                        pool.Drain();
                     }
                 };
 
