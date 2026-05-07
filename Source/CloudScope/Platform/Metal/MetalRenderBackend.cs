@@ -61,7 +61,7 @@ namespace CloudScope.Platform.Metal
 
             var desc = MTLTextureDescriptor.Texture2DDescriptor(
                 MTLPixelFormat.Depth32Float, width, height, mipmapped: false);
-            desc.StorageMode = MTLStorageMode.Managed;
+            desc.StorageMode = MTLStorageMode.Private;
             desc.Usage = MTLTextureUsage.RenderTarget;
             _depthTexture = MetalFrameContext.Device.NewTexture(desc);
             _depthWidth = width;

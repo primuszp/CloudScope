@@ -49,36 +49,60 @@ namespace CloudScope.Platform.Metal
                 return 0;
             }
 
-            SynchronizeDepthTexture(texture);
-
-            fixed (float* dst = destination)
-            {
-                texture.GetBytes(
-                    (IntPtr)dst,
-                    (ulong)(readW * sizeof(float)),
-                    new MTLRegion
-                    {
-                        origin = new MTLOrigin { x = (ulong)startX, y = (ulong)startY, z = 0 },
-                        size = new MTLSize { width = (ulong)readW, height = (ulong)readH, depth = 1 }
-                    },
-                    0);
-            }
+            CopyDepthToDestination(texture, startX, startY, readW, readH, destination);
 
             return count;
         }
 
-        private static void SynchronizeDepthTexture(MTLTexture texture)
+        private static unsafe void CopyDepthToDestination(
+            MTLTexture texture,
+            int startX,
+            int startY,
+            int readW,
+            int readH,
+            Span<float> destination)
         {
             var queue = MetalFrameContext.CommandQueue;
             if (queue.NativePtr == IntPtr.Zero)
                 return;
 
+            ulong bytesPerRow = Align256((ulong)(readW * sizeof(float)));
+            ulong byteSize = bytesPerRow * (ulong)readH;
+            var readback = MetalFrameContext.Device.NewBuffer(
+                byteSize,
+                MTLResourceOptions.ResourceStorageModeShared);
+            if (readback.NativePtr == IntPtr.Zero)
+                return;
+
             var commandBuffer = queue.CommandBuffer();
             var blit = commandBuffer.BlitCommandEncoder();
-            blit.SynchronizeTexture(texture, 0, 0);
+            blit.CopyFromTexture(
+                texture,
+                0,
+                0,
+                new MTLOrigin { x = (ulong)startX, y = (ulong)startY, z = 0 },
+                new MTLSize { width = (ulong)readW, height = (ulong)readH, depth = 1 },
+                readback,
+                0,
+                bytesPerRow,
+                bytesPerRow * (ulong)readH);
             blit.EndEncoding();
             commandBuffer.Commit();
             commandBuffer.WaitUntilCompleted();
+
+            byte* srcBase = (byte*)readback.Contents.ToPointer();
+            fixed (float* dstBase = destination)
+            {
+                for (int row = 0; row < readH; row++)
+                {
+                    float* src = (float*)(srcBase + (ulong)row * bytesPerRow);
+                    float* dst = dstBase + row * readW;
+                    for (int col = 0; col < readW; col++)
+                        dst[col] = src[col];
+                }
+            }
         }
+
+        private static ulong Align256(ulong value) => (value + 255UL) & ~255UL;
     }
 }
