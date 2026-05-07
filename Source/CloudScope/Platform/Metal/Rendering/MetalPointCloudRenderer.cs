@@ -11,6 +11,7 @@ namespace CloudScope.Platform.Metal.Rendering
     internal sealed class MetalPointCloudRenderer : IPointCloudRenderer
     {
         private const int PointStride = 24; // 6 floats
+        private const int PointsPerChunk = 1_000_000;
 
         // Triple-buffered uniforms — CPU never blocks waiting for GPU to finish.
         private const int UniformBufferCount = 3;
@@ -19,7 +20,8 @@ namespace CloudScope.Platform.Metal.Rendering
 
         private MTLRenderPipelineState _pipeline;
         private MTLDepthStencilState _depthState;
-        private MTLBuffer _pointBuffer;
+        private MTLBuffer[] _pointChunks = Array.Empty<MTLBuffer>();
+        private int[] _chunkCounts = Array.Empty<int>();
         private int _pointCount;
 
         // Points uploaded before Initialize() — deferred to first Initialize() call.
@@ -50,9 +52,7 @@ namespace CloudScope.Platform.Metal.Rendering
         public void Upload(PointData[] points)
         {
             _pointCount = points.Length;
-            if (_pointBuffer.NativePtr != IntPtr.Zero)
-                NativeRelease(_pointBuffer.NativePtr);
-            _pointBuffer = default;
+            ReleasePointChunks();
 
             // Device not ready yet (called before Initialize / app.Run) — defer.
             if (MetalFrameContext.Device.NativePtr == IntPtr.Zero)
@@ -71,9 +71,9 @@ namespace CloudScope.Platform.Metal.Rendering
             _renderCallCount++;
             bool log = _renderCallCount <= 3 || _renderCallCount % 60 == 0;
 
-            if (_pointCount <= 0 || _pointBuffer.NativePtr == IntPtr.Zero || _pipeline.NativePtr == IntPtr.Zero)
+            if (_pointCount <= 0 || _pointChunks.Length == 0 || _pipeline.NativePtr == IntPtr.Zero)
             {
-                if (log) Console.WriteLine($"[PCR {_renderCallCount}] BAIL: count={_pointCount} buf={_pointBuffer.NativePtr != IntPtr.Zero} pipe={_pipeline.NativePtr != IntPtr.Zero}");
+                if (log) Console.WriteLine($"[PCR {_renderCallCount}] BAIL: count={_pointCount} chunks={_pointChunks.Length} pipe={_pipeline.NativePtr != IntPtr.Zero}");
                 return 0;
             }
 
@@ -100,17 +100,35 @@ namespace CloudScope.Platform.Metal.Rendering
                 return 0;
             }
 
-            if (log) Console.WriteLine($"[PCR {_renderCallCount}] draw={drawCount} hvs={halfViewSize:F1} sf={subsampleFactor:F3}");
+            if (log) Console.WriteLine($"[PCR {_renderCallCount}] draw={drawCount} chunks={_pointChunks.Length} hvs={halfViewSize:F1} sf={subsampleFactor:F3}");
 
             encoder.SetRenderPipelineState(_pipeline);
             encoder.SetDepthStencilState(_depthState);
-            encoder.SetVertexBuffer(_pointBuffer, 0, 0);
             encoder.SetVertexBuffer(uniformBuffer, 0, 1);
-            encoder.DrawPrimitives(MTLPrimitiveType.Point, 0, (ulong)drawCount);
+            int remaining = drawCount;
+            for (int i = 0; i < _pointChunks.Length && remaining > 0; i++)
+            {
+                int chunkDrawCount = Math.Min(_chunkCounts[i], remaining);
+                if (chunkDrawCount <= 0)
+                    break;
+
+                encoder.SetVertexBuffer(_pointChunks[i], 0, 0);
+                encoder.DrawPrimitives(MTLPrimitiveType.Point, 0, (ulong)chunkDrawCount);
+                remaining -= chunkDrawCount;
+            }
             return drawCount;
         }
 
-        public void Dispose() { }
+        public void Dispose()
+        {
+            ReleasePointChunks();
+            for (int i = 0; i < _uniformBuffers.Length; i++)
+            {
+                if (_uniformBuffers[i].NativePtr != IntPtr.Zero)
+                    NativeRelease(_uniformBuffers[i].NativePtr);
+                _uniformBuffers[i] = default;
+            }
+        }
 
         // ── Private ───────────────────────────────────────────────────────────────
 
@@ -119,14 +137,37 @@ namespace CloudScope.Platform.Metal.Rendering
             if (points.Length == 0) return;
 
             var device = MetalFrameContext.Device;
-            ulong byteSize = (ulong)(points.Length * PointStride);
+            int chunkCount = (points.Length + PointsPerChunk - 1) / PointsPerChunk;
+            _pointChunks = new MTLBuffer[chunkCount];
+            _chunkCounts = new int[chunkCount];
 
-            // Keep a single managed vertex buffer. The previous staging+private copy
-            // doubled point-cloud VRAM pressure and could trigger black frames under load.
-            _pointBuffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
-            fixed (PointData* src = points)
-                Buffer.MemoryCopy(src, _pointBuffer.Contents.ToPointer(), byteSize, byteSize);
-            _pointBuffer.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
+            fixed (PointData* srcBase = points)
+            {
+                for (int chunk = 0; chunk < chunkCount; chunk++)
+                {
+                    int pointOffset = chunk * PointsPerChunk;
+                    int count = Math.Min(PointsPerChunk, points.Length - pointOffset);
+                    ulong byteSize = (ulong)(count * PointStride);
+
+                    var buffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
+                    Buffer.MemoryCopy(srcBase + pointOffset, buffer.Contents.ToPointer(), byteSize, byteSize);
+                    buffer.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
+
+                    _pointChunks[chunk] = buffer;
+                    _chunkCounts[chunk] = count;
+                }
+            }
+        }
+
+        private void ReleasePointChunks()
+        {
+            foreach (var chunk in _pointChunks)
+            {
+                if (chunk.NativePtr != IntPtr.Zero)
+                    NativeRelease(chunk.NativePtr);
+            }
+            _pointChunks = Array.Empty<MTLBuffer>();
+            _chunkCounts = Array.Empty<int>();
         }
 
         [System.Runtime.InteropServices.DllImport("libobjc.dylib", EntryPoint = "objc_release")]
