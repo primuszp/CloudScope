@@ -21,7 +21,7 @@ namespace CloudScope.Platform.Metal.ObjC
 
         public MTLPixelFormat ColorPixelFormat
         {
-            set => ObjectiveC.objc_msgSend(NativePtr, new Selector("setColorPixelFormat:atIndex:"), value, 0);
+            set => ObjectiveC.objc_msgSend(NativePtr, new Selector("setColorPixelFormat:"), value);
         }
 
         public MTLPixelFormat DepthStencilPixelFormat
