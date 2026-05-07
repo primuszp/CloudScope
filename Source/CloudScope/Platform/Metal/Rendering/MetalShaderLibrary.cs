@@ -1,7 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using System.Threading;
 using SharpMetal.Metal;
 using OpenTK.Mathematics;
 
@@ -118,22 +117,12 @@ fragment float4 color_fragment(ColorVertexOut in [[stage_in]], constant ColorUni
             MTLDevice device, string source, string vertFn, string fragFn,
             MTLPixelFormat colorFormat, MTLPixelFormat depthFormat, bool blend)
         {
-            MTLLibrary library = default;
-            string? compileError = null;
-            using var done = new ManualResetEventSlim(false);
-
-            device.NewLibrary(source, new MTLCompileOptions(IntPtr.Zero), (lib, err) =>
-            {
-                if (err.NativePtr != IntPtr.Zero)
-                    compileError = err.LocalizedDescription.ToString();
-                else
-                    library = lib;
-                done.Set();
-            });
-            done.Wait();
-
-            if (compileError != null)
-                throw new InvalidOperationException("Metal shader compile failed: " + compileError);
+            // Use the synchronous overload to avoid a potential deadlock when called
+            // from the main thread (OnDidFinishLaunching → Load → Initialize).
+            var libError = new SharpMetal.Foundation.NSError(IntPtr.Zero);
+            var library  = device.NewLibrary(source, new MTLCompileOptions(IntPtr.Zero), ref libError);
+            if (libError.NativePtr != IntPtr.Zero)
+                throw new InvalidOperationException("Metal shader compile failed: " + libError.LocalizedDescription.ToString());
 
             var vert = library.NewFunction(vertFn);
             var frag = library.NewFunction(fragFn);

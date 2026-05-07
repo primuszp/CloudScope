@@ -14,12 +14,14 @@ namespace CloudScope.Platform.Metal
     [SupportedOSPlatform("macos")]
     public sealed class SharpMetalViewerHost : IViewerHost
     {
-        private const int DefaultWidth = 1600;
-        private const int DefaultHeight = 900;
-
-        private readonly ViewerController _controller;
-        private readonly NSApplication _app;
+        private readonly ViewerController      _controller;
+        private readonly NSApplication         _app;
         private readonly NSApplicationDelegate _appDelegate;
+
+        // Kept as fields to prevent GC collection while ObjC holds callbacks.
+        private MTKViewDelegate? _viewDelegate;
+        private NSWindow?        _window;
+        private ObjC.MTKView?    _mtkView;
 
         public SharpMetalViewerHost(int width, int height, IRenderBackend renderBackend)
         {
@@ -41,25 +43,26 @@ namespace CloudScope.Platform.Metal
 
             _appDelegate.OnDidFinishLaunching += _ =>
             {
-                var device = MTLDevice.CreateSystemDefaultDevice();
+                var device       = MTLDevice.CreateSystemDefaultDevice();
                 var commandQueue = device.NewCommandQueue();
                 MetalFrameContext.Initialize(device, commandQueue);
 
                 var rect = new NSRect(100, 100, width, height);
-                var window = new NSWindow(rect,
+
+                _window = new NSWindow(rect,
                     (ulong)(NSStyleMask.Titled | NSStyleMask.Closable |
                             NSStyleMask.Miniaturizable | NSStyleMask.Resizable));
-                window.Title = (SharpMetal.Foundation.NSString)"CloudScope - Point Cloud Viewer";
+                _window.Title = (SharpMetal.Foundation.NSString)"CloudScope - Point Cloud Viewer";
 
-                var mtkView = new ObjC.MTKView(rect, device)
+                _mtkView = new ObjC.MTKView(rect, device)
                 {
-                    ColorPixelFormat = MTLPixelFormat.BGRA8Unorm,
+                    ColorPixelFormat       = MTLPixelFormat.BGRA8Unorm,
                     DepthStencilPixelFormat = MTLPixelFormat.Depth32Float,
-                    ClearColor = new MTLClearColor { red = 0.015, green = 0.018, blue = 0.022, alpha = 1.0 }
+                    ClearColor             = new MTLClearColor { red = 0.015, green = 0.018, blue = 0.022, alpha = 1.0 }
                 };
 
-                var viewDelegate = new MTKViewDelegate();
-                viewDelegate.OnDraw = view =>
+                _viewDelegate = new MTKViewDelegate();
+                _viewDelegate.OnDraw_ = view =>
                 {
                     var cmdBuffer = MetalFrameContext.CommandQueue.CommandBuffer();
                     MetalFrameContext.Begin(view, cmdBuffer);
@@ -76,15 +79,15 @@ namespace CloudScope.Platform.Metal
                         MetalFrameContext.End();
                     }
                 };
-                viewDelegate.OnSizeChange = (view, rect) =>
-                    _controller.Resize((int)rect.Size.X, (int)rect.Size.Y);
+                _viewDelegate.OnSizeChange_ = (_, size) =>
+                    _controller.Resize((int)size.Width, (int)size.Height);
 
-                mtkView.Delegate = viewDelegate;
+                _mtkView.Delegate = _viewDelegate;
 
                 _controller.Load();
 
-                window.SetContentView(mtkView);
-                window.MakeKeyAndOrderFront();
+                _window.SetContentView(_mtkView);
+                _window.MakeKeyAndOrderFront();
                 _app.ActivateIgnoringOtherApps(true);
             };
         }
@@ -102,6 +105,10 @@ namespace CloudScope.Platform.Metal
 
         public void Run() => _app.Run();
 
-        public void Dispose() => _controller.Dispose();
+        public void Dispose()
+        {
+            _viewDelegate?.Dispose();
+            _controller.Dispose();
+        }
     }
 }
