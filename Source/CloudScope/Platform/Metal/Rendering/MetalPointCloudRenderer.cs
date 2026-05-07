@@ -86,6 +86,13 @@ namespace CloudScope.Platform.Metal.Rendering
                 return 0;
             }
 
+            // Mátrix ellenőrzés: ha NaN van benne, a GPU nem fog rajzolni semmit
+            if (float.IsNaN(view.M11) || float.IsNaN(projection.M11))
+            {
+                if (log) Console.WriteLine($"[PCR {_renderCallCount}] MATRIX NaN! View.M11={view.M11}, Proj.M11={projection.M11}");
+                return 0;
+            }
+
             var cmdBuffer  = MetalFrameContext.CurrentCommandBuffer;
             var descriptor = MetalFrameContext.CurrentRenderPassDescriptor;
             if (cmdBuffer.NativePtr == IntPtr.Zero || descriptor.NativePtr == IntPtr.Zero)
