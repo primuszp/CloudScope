@@ -79,28 +79,37 @@ namespace CloudScope.Platform.Metal
                         frameCount++; return;
                     }
 
-                    // STEP 1: MetalFrameContext.Begin/End — does storing descriptor break it?
+                    SyncDrawableSizeFromRenderPass(descriptor);
+
                     var cmdBuf = commandQueue.CommandBuffer();
                     MetalFrameContext.Begin(view, descriptor, drawable, cmdBuf);
-
-                    // Read descriptor BACK from MetalFrameContext (same as BeginFrame does)
-                    var storedDesc = MetalFrameContext.CurrentRenderPassDescriptor;
-                    var encoder    = cmdBuf.RenderCommandEncoder(storedDesc);
-
-                    if (diagPipeline.NativePtr != IntPtr.Zero)
+                    try
                     {
-                        encoder.SetRenderPipelineState(diagPipeline);
-                        encoder.DrawPrimitives(MTLPrimitiveType.Triangle, 0, 3);
+                        float dt = (float)stopwatch.Elapsed.TotalSeconds;
+                        stopwatch.Restart();
+                        _controller.UpdateFrame(dt, dummyKeyboard);
+                        _controller.RenderFrame(0);  // calls BeginFrame() which creates encoder
                     }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[F{frameCount}] EXCEPTION: {ex.Message}\n{ex.StackTrace}");
+                    }
+                    finally
+                    {
+                        var enc = MetalFrameContext.CurrentRenderCommandEncoder;
+                        if (enc.NativePtr == IntPtr.Zero)
+                            Console.WriteLine($"[F{frameCount}] encoder NULL in finally!");
+                        else
+                            enc.EndEncoding();
 
-                    encoder.EndEncoding();
-                    cmdBuf.PresentDrawable(drawable);
-                    cmdBuf.Commit();
-                    MetalFrameContext.End();
+                        cmdBuf.PresentDrawable(drawable);
+                        cmdBuf.Commit();
+                        MetalFrameContext.End();
 
-                    if (frameCount < 5 || frameCount % 120 == 0)
-                        Console.WriteLine($"[F{frameCount}] OK t={stopwatch.Elapsed.TotalSeconds:F1}s");
-                    frameCount++;
+                        if (frameCount < 5 || frameCount % 120 == 0)
+                            Console.WriteLine($"[F{frameCount}] committed t={stopwatch.Elapsed.TotalSeconds:F1}s");
+                        frameCount++;
+                    }
                 };
 
                 _viewDelegate.OnSizeChange_ = (_, size) =>
