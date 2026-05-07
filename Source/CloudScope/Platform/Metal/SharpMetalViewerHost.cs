@@ -100,30 +100,25 @@ namespace CloudScope.Platform.Metal
                         float dt = (float)stopwatch.Elapsed.TotalSeconds;
                         stopwatch.Restart();
                         _controller.UpdateFrame(dt, dummyKeyboard);
-
                         _controller.RenderFrame(0);
-
-                        var encoder = MetalFrameContext.CurrentRenderCommandEncoder;
-                        if (encoder.NativePtr == IntPtr.Zero)
-                        {
-                            Console.WriteLine($"[Metal] Frame {frameCount}: encoder is NULL after RenderFrame!");
-                        }
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"[Metal] Frame {frameCount} render exception: {ex}");
+                        Console.WriteLine($"[Metal] Frame {frameCount} exception: {ex.Message}");
                     }
                     finally
                     {
-                        var encoder = MetalFrameContext.CurrentRenderCommandEncoder;
-                        if (encoder.NativePtr != IntPtr.Zero)
-                        {
-                            encoder.EndEncoding();
-                        }
+                        var enc = MetalFrameContext.CurrentRenderCommandEncoder;
+                        if (enc.NativePtr != IntPtr.Zero)
+                            enc.EndEncoding();
+
+                        // CRITICAL: PresentDrawable must be called BEFORE Commit
                         cmdBuffer.PresentDrawable(drawable);
                         cmdBuffer.Commit();
                         MetalFrameContext.End();
                         frameCount++;
+                        if (frameCount < 5 || frameCount % 120 == 0)
+                            Console.WriteLine($"[F{frameCount}] committed t={stopwatch.Elapsed.TotalSeconds:F1}s");
                     }
                 };
                 _viewDelegate.OnSizeChange_ = (_, size) =>
