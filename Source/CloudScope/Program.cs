@@ -9,7 +9,7 @@ string lasFile = args.Length > 0
 
 //string lasFile = args.Length > 0
 //    ? args[0]
-//    : @"D:\Personal\OneDrive\Ut1_colorized.las";
+//    : @"D:\Personal\OneDrive\BorderEye\data\jeli_parkolo.las";
 
 if (!System.IO.File.Exists(lasFile))
 {
