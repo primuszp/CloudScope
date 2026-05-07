@@ -156,6 +156,9 @@ namespace CloudScope.Platform.Metal
                 _window.MakeKeyAndOrderFront();
                 _app.ActivateIgnoringOtherApps(true);
                 _mtkView.MakeFirstResponder();
+
+                // Engedélyezzük az egérmozgás eseményeket kattintás nélkül is
+                ObjectiveC.objc_msgSend(_window.NativePtr, "setAcceptsMouseMovedEvents:", true);
             };
         }
 
@@ -234,6 +237,7 @@ fragment float4 tf(V in [[stage_in]]) { return float4(1,0,0,1); }
         private void HandleKey(ushort code)
         {
             var key = MapKey(code);
+            Console.WriteLine($"[Key] code={code} mapped={key}");
             if (key == ViewerKey.Unknown) return;
             bool ctrl = IsModifierDown(59) || IsModifierDown(62);
             _controller.KeyDown(key, ctrl, 0, 0);
