@@ -55,7 +55,7 @@ namespace CloudScope.Platform.Metal
                     ColorPixelFormat        = MTLPixelFormat.BGRA8Unorm,
                     DepthStencilPixelFormat = MTLPixelFormat.Depth32Float,
                     ClearColor              = new MTLClearColor { red = 0.015, green = 0.018, blue = 0.022, alpha = 1.0 },
-                    FramebufferOnly         = true,
+                    FramebufferOnly         = false, // must be false to allow depth reads
                     Paused                  = false,
                     EnableSetNeedsDisplay   = false
                 };
@@ -63,20 +63,36 @@ namespace CloudScope.Platform.Metal
                 // ── Draw delegate ─────────────────────────────────────────────────
                 var stopwatch = System.Diagnostics.Stopwatch.StartNew();
                 var dummyKeyboard = new DummyKeyboard();
+                int frameCount = 0;
 
                 _viewDelegate = new MTKViewDelegate();
                 _viewDelegate.OnDraw_ = view =>
                 {
                     var descriptor = view.CurrentRenderPassDescriptor;
                     var drawable = view.CurrentDrawable;
-                    if (descriptor.NativePtr == IntPtr.Zero || drawable.NativePtr == IntPtr.Zero)
+
+                    if (descriptor.NativePtr == IntPtr.Zero)
+                    {
+                        if (frameCount < 10) Console.WriteLine($"[Metal] Frame {frameCount}: descriptor is NULL");
+                        frameCount++;
                         return;
+                    }
+                    if (drawable.NativePtr == IntPtr.Zero)
+                    {
+                        if (frameCount < 10) Console.WriteLine($"[Metal] Frame {frameCount}: drawable is NULL");
+                        frameCount++;
+                        return;
+                    }
 
                     SyncDrawableSizeFromRenderPass(descriptor);
 
                     var cmdBuffer = MetalFrameContext.CommandQueue.CommandBuffer();
                     if (cmdBuffer.NativePtr == IntPtr.Zero)
+                    {
+                        Console.WriteLine($"[Metal] Frame {frameCount}: commandBuffer is NULL");
+                        frameCount++;
                         return;
+                    }
 
                     MetalFrameContext.Begin(view, descriptor, drawable, cmdBuffer);
                     try
@@ -86,10 +102,16 @@ namespace CloudScope.Platform.Metal
                         _controller.UpdateFrame(dt, dummyKeyboard);
 
                         _controller.RenderFrame(0);
+
+                        var encoder = MetalFrameContext.CurrentRenderCommandEncoder;
+                        if (encoder.NativePtr == IntPtr.Zero)
+                        {
+                            Console.WriteLine($"[Metal] Frame {frameCount}: encoder is NULL after RenderFrame!");
+                        }
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"Render exception: {ex}");
+                        Console.WriteLine($"[Metal] Frame {frameCount} render exception: {ex}");
                     }
                     finally
                     {
@@ -98,10 +120,10 @@ namespace CloudScope.Platform.Metal
                         {
                             encoder.EndEncoding();
                         }
-
                         cmdBuffer.PresentDrawable(drawable);
                         cmdBuffer.Commit();
                         MetalFrameContext.End();
+                        frameCount++;
                     }
                 };
                 _viewDelegate.OnSizeChange_ = (_, size) =>

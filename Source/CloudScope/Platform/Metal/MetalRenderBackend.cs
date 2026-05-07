@@ -25,28 +25,21 @@ namespace CloudScope.Platform.Metal
             var descriptor = MetalFrameContext.CurrentRenderPassDescriptor;
             if (descriptor.NativePtr == IntPtr.Zero) return;
 
-            var ca = descriptor.ColorAttachments.Object(0);
-            if (ca.NativePtr != IntPtr.Zero)
-            {
-                ca.LoadAction  = MTLLoadAction.Clear;
-                ca.StoreAction = MTLStoreAction.Store;
-            }
+            // The MTKView already has clear color, load/store actions set up properly
+            // based on the view's ClearColor and DepthStencilPixelFormat properties.
+            // We just need to stash the depth texture and create the single encoder.
 
             var da = descriptor.DepthAttachment;
-            if (da.NativePtr != IntPtr.Zero)
+            if (da.NativePtr != IntPtr.Zero && da.Texture.NativePtr != IntPtr.Zero)
             {
-                if (da.Texture.NativePtr != IntPtr.Zero)
-                    MetalFrameContext.SetDepthTexture(da.Texture);
-
-                da.LoadAction  = MTLLoadAction.Clear;
-                da.StoreAction = MTLStoreAction.Store;
-                da.ClearDepth  = 1.0;
+                MetalFrameContext.SetDepthTexture(da.Texture);
             }
 
             var cmdBuffer = MetalFrameContext.CurrentCommandBuffer;
             if (cmdBuffer.NativePtr != IntPtr.Zero)
             {
-                MetalFrameContext.CurrentRenderCommandEncoder = cmdBuffer.RenderCommandEncoder(descriptor);
+                var encoder = cmdBuffer.RenderCommandEncoder(descriptor);
+                MetalFrameContext.CurrentRenderCommandEncoder = encoder;
             }
         }
 
