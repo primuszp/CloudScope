@@ -120,6 +120,7 @@ namespace CloudScope.Platform.Metal
         
         private class DummyKeyboard : IViewerKeyboard
         {
+            public bool IsKeyDown(ViewerKey key) => false;
             public bool IsKeyPressed(ViewerKey key) => false;
         }
     }
