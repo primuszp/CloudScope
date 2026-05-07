@@ -33,7 +33,7 @@ namespace CloudScope.Platform.Metal
             _app.SetDelegate(_appDelegate);
 
             _appDelegate.OnWillFinishLaunching += _ =>
-                _app.SetActivationPolicy(0); // NSApplicationActivationPolicyRegular
+                _app.SetActivationPolicy(NSApplicationActivationPolicy.Regular);
 
             _appDelegate.OnDidFinishLaunching += _ =>
             {
@@ -52,7 +52,10 @@ namespace CloudScope.Platform.Metal
                 {
                     ColorPixelFormat        = MTLPixelFormat.BGRA8Unorm,
                     DepthStencilPixelFormat = MTLPixelFormat.Depth32Float,
-                    ClearColor              = new MTLClearColor { red = 0.015, green = 0.018, blue = 0.022, alpha = 1.0 }
+                    ClearColor              = new MTLClearColor { red = 0.015, green = 0.018, blue = 0.022, alpha = 1.0 },
+                    FramebufferOnly         = true,
+                    Paused                  = false,
+                    EnableSetNeedsDisplay   = false
                 };
 
                 // ── Draw delegate ─────────────────────────────────────────────────
