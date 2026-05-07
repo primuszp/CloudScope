@@ -75,13 +75,17 @@ namespace CloudScope.Platform.Metal
                     var drawable   = view.CurrentDrawable;
                     if (descriptor.NativePtr == IntPtr.Zero || drawable.NativePtr == IntPtr.Zero)
                     {
-                        if (frameCount < 5) Console.WriteLine($"[F{frameCount}] NULL desc/drawable");
+                        if (frameCount < 5) Console.WriteLine($"[F{frameCount}] NULL");
                         frameCount++; return;
                     }
 
-                    // DIRECT path - identical to MetalTriangleTest, no MetalFrameContext
-                    var cmdBuf  = commandQueue.CommandBuffer();
-                    var encoder = cmdBuf.RenderCommandEncoder(descriptor);
+                    // STEP 1: MetalFrameContext.Begin/End — does storing descriptor break it?
+                    var cmdBuf = commandQueue.CommandBuffer();
+                    MetalFrameContext.Begin(view, descriptor, drawable, cmdBuf);
+
+                    // Read descriptor BACK from MetalFrameContext (same as BeginFrame does)
+                    var storedDesc = MetalFrameContext.CurrentRenderPassDescriptor;
+                    var encoder    = cmdBuf.RenderCommandEncoder(storedDesc);
 
                     if (diagPipeline.NativePtr != IntPtr.Zero)
                     {
@@ -92,6 +96,7 @@ namespace CloudScope.Platform.Metal
                     encoder.EndEncoding();
                     cmdBuf.PresentDrawable(drawable);
                     cmdBuf.Commit();
+                    MetalFrameContext.End();
 
                     if (frameCount < 5 || frameCount % 120 == 0)
                         Console.WriteLine($"[F{frameCount}] OK t={stopwatch.Elapsed.TotalSeconds:F1}s");
