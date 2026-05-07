@@ -78,6 +78,7 @@ namespace CloudScope.Platform.Metal.ObjC
                 throw new InvalidOperationException("Failed to create MTKEventView.");
             _drawableHeight = (int)frame.Size.Y;
             s_instances[NativePtr] = this;
+            Console.WriteLine($"[MTKEventView] Created: {NativePtr}");
         }
 
         public MTLPixelFormat ColorPixelFormat { set => ObjectiveC.objc_msgSend(NativePtr, new Selector("setColorPixelFormat:"), value); }
@@ -97,6 +98,7 @@ namespace CloudScope.Platform.Metal.ObjC
             {
                 _pixelScale = Double_msgSend(win, sel_backingScaleFactor);
                 ObjectiveC.objc_msgSend(win, "makeFirstResponder:", NativePtr);
+                Console.WriteLine($"[MTKEventView] MakeFirstResponder on window {win}, pixelScale={_pixelScale}");
             }
         }
 
@@ -124,20 +126,20 @@ namespace CloudScope.Platform.Metal.ObjC
             return (x, Math.Clamp(y, 0, _drawableHeight));
         }
 
-        private static void OnMouseDown(IntPtr self, IntPtr cmd, IntPtr evt) { if (s_instances.TryGetValue(self, out var inst)) { var (x, y) = inst.GetPixelCoords(evt); inst.OnMouseDown_?.Invoke(ViewerMouseButton.Left, x, y); } }
-        private static void OnMouseUp(IntPtr self, IntPtr cmd, IntPtr evt) { if (s_instances.TryGetValue(self, out var inst)) { var (x, y) = inst.GetPixelCoords(evt); inst.OnMouseUp_?.Invoke(ViewerMouseButton.Left, x, y); } }
+        private static void OnMouseDown(IntPtr self, IntPtr cmd, IntPtr evt) { Console.WriteLine("[Input] MouseDown"); if (s_instances.TryGetValue(self, out var inst)) { var (x, y) = inst.GetPixelCoords(evt); inst.OnMouseDown_?.Invoke(ViewerMouseButton.Left, x, y); } }
+        private static void OnMouseUp(IntPtr self, IntPtr cmd, IntPtr evt) { Console.WriteLine("[Input] MouseUp"); if (s_instances.TryGetValue(self, out var inst)) { var (x, y) = inst.GetPixelCoords(evt); inst.OnMouseUp_?.Invoke(ViewerMouseButton.Left, x, y); } }
         private static void OnMouseDragged(IntPtr self, IntPtr cmd, IntPtr evt) { if (s_instances.TryGetValue(self, out var inst)) { var (x, y) = inst.GetPixelCoords(evt); inst.OnMouseMove_?.Invoke(x, y); } }
-        private static void OnRightMouseDown(IntPtr self, IntPtr cmd, IntPtr evt) { if (s_instances.TryGetValue(self, out var inst)) { var (x, y) = inst.GetPixelCoords(evt); inst.OnMouseDown_?.Invoke(ViewerMouseButton.Right, x, y); } }
-        private static void OnRightMouseUp(IntPtr self, IntPtr cmd, IntPtr evt) { if (s_instances.TryGetValue(self, out var inst)) { var (x, y) = inst.GetPixelCoords(evt); inst.OnMouseUp_?.Invoke(ViewerMouseButton.Right, x, y); } }
+        private static void OnRightMouseDown(IntPtr self, IntPtr cmd, IntPtr evt) { Console.WriteLine("[Input] RMouseDown"); if (s_instances.TryGetValue(self, out var inst)) { var (x, y) = inst.GetPixelCoords(evt); inst.OnMouseDown_?.Invoke(ViewerMouseButton.Right, x, y); } }
+        private static void OnRightMouseUp(IntPtr self, IntPtr cmd, IntPtr evt) { Console.WriteLine("[Input] RMouseUp"); if (s_instances.TryGetValue(self, out var inst)) { var (x, y) = inst.GetPixelCoords(evt); inst.OnMouseUp_?.Invoke(ViewerMouseButton.Right, x, y); } }
         private static void OnRightMouseDragged(IntPtr self, IntPtr cmd, IntPtr evt) { if (s_instances.TryGetValue(self, out var inst)) { var (x, y) = inst.GetPixelCoords(evt); inst.OnMouseMove_?.Invoke(x, y); } }
         private static void OnOtherMouseDown(IntPtr self, IntPtr cmd, IntPtr evt) { if (s_instances.TryGetValue(self, out var inst)) { var (x, y) = inst.GetPixelCoords(evt); inst.OnMouseDown_?.Invoke(ViewerMouseButton.Middle, x, y); } }
         private static void OnOtherMouseUp(IntPtr self, IntPtr cmd, IntPtr evt) { if (s_instances.TryGetValue(self, out var inst)) { var (x, y) = inst.GetPixelCoords(evt); inst.OnMouseUp_?.Invoke(ViewerMouseButton.Middle, x, y); } }
         private static void OnOtherMouseDragged(IntPtr self, IntPtr cmd, IntPtr evt) { if (s_instances.TryGetValue(self, out var inst)) { var (x, y) = inst.GetPixelCoords(evt); inst.OnMouseMove_?.Invoke(x, y); } }
         private static void OnMouseMoved(IntPtr self, IntPtr cmd, IntPtr evt) { if (s_instances.TryGetValue(self, out var inst)) { var (x, y) = inst.GetPixelCoords(evt); inst.OnMouseMove_?.Invoke(x, y); } }
-        private static void OnScroll(IntPtr self, IntPtr cmd, IntPtr evt) { if (s_instances.TryGetValue(self, out var inst)) { var (x, y) = inst.GetPixelCoords(evt); double delta = Double_msgSend(evt, sel_scrollingDeltaY); if (delta == 0.0) delta = Double_msgSend(evt, sel_deltaY); inst.OnMouseWheel_?.Invoke(x, y, (float)delta); } }
-        private static void OnKeyDown(IntPtr self, IntPtr cmd, IntPtr evt) { if (s_instances.TryGetValue(self, out var inst)) { ushort code = UShort_msgSend(evt, sel_keyCode); inst.OnKeyDown_?.Invoke(code); } }
-        private static void OnKeyUp(IntPtr self, IntPtr cmd, IntPtr evt) { if (s_instances.TryGetValue(self, out var inst)) { ushort code = UShort_msgSend(evt, sel_keyCode); inst.OnKeyUp_?.Invoke(code); } }
-        private static bool AcceptsFirstResponder(IntPtr self, IntPtr cmd) => true;
+        private static void OnScroll(IntPtr self, IntPtr cmd, IntPtr evt) { Console.WriteLine("[Input] Scroll"); if (s_instances.TryGetValue(self, out var inst)) { var (x, y) = inst.GetPixelCoords(evt); double delta = Double_msgSend(evt, sel_scrollingDeltaY); if (delta == 0.0) delta = Double_msgSend(evt, sel_deltaY); inst.OnMouseWheel_?.Invoke(x, y, (float)delta); } }
+        private static void OnKeyDown(IntPtr self, IntPtr cmd, IntPtr evt) { ushort code = UShort_msgSend(evt, sel_keyCode); Console.WriteLine($"[Input] KeyDown: {code}"); if (s_instances.TryGetValue(self, out var inst)) { inst.OnKeyDown_?.Invoke(code); } }
+        private static void OnKeyUp(IntPtr self, IntPtr cmd, IntPtr evt) { ushort code = UShort_msgSend(evt, sel_keyCode); if (s_instances.TryGetValue(self, out var inst)) { inst.OnKeyUp_?.Invoke(code); } }
+        private static bool AcceptsFirstResponder(IntPtr self, IntPtr cmd) { Console.WriteLine("[Input] AcceptsFirstResponder: YES"); return true; }
 
         private static unsafe IntPtr RegisterClass()
         {
@@ -147,6 +149,9 @@ namespace CloudScope.Platform.Metal.ObjC
             fixed (byte* n = name) fixed (byte* v_a = va) fixed (byte* b_a = ba)
             {
                 var cls = ObjectiveC.objc_allocateClassPair(new ObjectiveCClass("MTKView"), (char*)n, 0);
+                if (cls == IntPtr.Zero) Console.WriteLine("[MTKEventView] Class registration FAILED or already exists");
+                else Console.WriteLine("[MTKEventView] Class registration OK");
+
                 void Add(string sel, Delegate d, byte* t) => ObjectiveC.class_addMethod(cls, sel, Marshal.GetFunctionPointerForDelegate(d), (char*)t);
                 Add("mouseDown:", s_mouseDown, v_a); Add("mouseUp:", s_mouseUp, v_a); Add("mouseDragged:", s_mouseDragged, v_a);
                 Add("rightMouseDown:", s_rMouseDown, v_a); Add("rightMouseUp:", s_rMouseUp, v_a); Add("rightMouseDragged:", s_rMouseDragged, v_a);
