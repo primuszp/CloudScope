@@ -80,7 +80,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 return;
 
             ulong stride = 256;
-            ulong offset = (ulong)(_uniformOffset * stride);
+            ulong offset = (ulong)_uniformOffset * stride;
             if (offset + stride > _uniformsBuffer.Length)
             {
                 _uniformOffset = 0;
