@@ -20,6 +20,9 @@ namespace CloudScope.Platform.Metal
         private NSWindow?        _window;
         private int _drawableWidth;
         private int _drawableHeight;
+        private int _lastMouseX;
+        private int _lastMouseY;
+        private readonly RealKeyboard _keyboard = new();
 
         private IntPtr _frameSemaphore; // dispatch_semaphore_t
         private const int MaxFramesInFlight = 3;
@@ -79,7 +82,6 @@ namespace CloudScope.Platform.Metal
 
                 int frameCount = 0;
                 var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-                var dummyKeyboard = new DummyKeyboard();
 
                 _viewDelegate = new MTKViewDelegate();
                 _viewDelegate.OnDraw_ = view =>
@@ -108,7 +110,7 @@ namespace CloudScope.Platform.Metal
                     {
                         float dt = (float)stopwatch.Elapsed.TotalSeconds;
                         stopwatch.Restart();
-                        _controller.UpdateFrame(dt, dummyKeyboard);
+                        _controller.UpdateFrame(dt, _keyboard);
                         _controller.RenderFrame(0);
                     }
                     catch (Exception ex)
@@ -144,11 +146,12 @@ namespace CloudScope.Platform.Metal
 
                 _mtkView.Delegate = _viewDelegate;
 
-                _mtkView.OnMouseDown_  = (btn, x, y) => _controller.MouseDown(btn, x, y);
-                _mtkView.OnMouseUp_    = (btn, x, y) => _controller.MouseUp(btn, x, y);
-                _mtkView.OnMouseMove_  = (x, y)      => _controller.MouseMove(x, y);
-                _mtkView.OnMouseWheel_ = (x, y, d)   => _controller.MouseWheel(x, y, d);
+                _mtkView.OnMouseDown_  = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _controller.MouseDown(btn, x, y); };
+                _mtkView.OnMouseUp_    = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _controller.MouseUp(btn, x, y); };
+                _mtkView.OnMouseMove_  = (x, y)      => { _lastMouseX = x; _lastMouseY = y; _controller.MouseMove(x, y); };
+                _mtkView.OnMouseWheel_ = (x, y, d)   => { _lastMouseX = x; _lastMouseY = y; _controller.MouseWheel(x, y, d); };
                 _mtkView.OnKeyDown_    = code         => HandleKey(code);
+                _mtkView.OnKeyUp_      = code         => _keyboard.KeyUp(MapKey(code));
 
                 _controller.Load();
 
@@ -237,10 +240,12 @@ fragment float4 tf(V in [[stage_in]]) { return float4(1,0,0,1); }
         private void HandleKey(ushort code)
         {
             var key = MapKey(code);
-            Console.WriteLine($"[Key] code={code} mapped={key}");
             if (key == ViewerKey.Unknown) return;
-            bool ctrl = IsModifierDown(59) || IsModifierDown(62);
-            _controller.KeyDown(key, ctrl, 0, 0);
+            
+            _keyboard.KeyDown(key);
+            bool ctrl = _keyboard.IsKeyDown(ViewerKey.LeftControl) || _keyboard.IsKeyDown(ViewerKey.RightControl);
+            
+            _controller.KeyDown(key, ctrl, _lastMouseX, _lastMouseY);
         }
 
         private static ViewerKey MapKey(ushort code) => code switch
@@ -283,10 +288,15 @@ fragment float4 tf(V in [[stage_in]]) { return float4(1,0,0,1); }
 
         private static bool IsModifierDown(ushort keyCode) => false;
 
-        private class DummyKeyboard : IViewerKeyboard
+        private class RealKeyboard : IViewerKeyboard
         {
-            public bool IsKeyDown(ViewerKey key) => false;
-            public bool IsKeyPressed(ViewerKey key) => false;
+            private readonly System.Collections.Generic.HashSet<ViewerKey> _down = new();
+
+            public void KeyDown(ViewerKey key) => _down.Add(key);
+            public void KeyUp(ViewerKey key)   => _down.Remove(key);
+
+            public bool IsKeyDown(ViewerKey key) => _down.Contains(key);
+            public bool IsKeyPressed(ViewerKey key) => _down.Contains(key);
         }
     }
 }
