@@ -72,6 +72,11 @@ namespace CloudScope.Platform.Metal.Rendering
         private MTLBuffer _edgeBuffer;
         private MTLBuffer _faceBuffer;
         private MTLBuffer _placementBuffer;
+        private MTLBuffer _dynamicBuffer;
+        private readonly float[] _lineBuf = new float[6];
+        private readonly float[] _arrowBuf = new float[9];
+        private readonly float[] _diamondBuf = new float[18];
+        private readonly float[] _ringBuf = new float[64 * 6];
 
         public override void Render(ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera camera)
         {
@@ -82,6 +87,10 @@ namespace CloudScope.Platform.Metal.Rendering
             RenderAxis(mvp);
             Renderer.Draw(_edgeBuffer, 24, MTLPrimitiveType.Line, mvp, new Vector4(0f, 0.8f, 1f, 0.8f),  depthTest: true);
             Renderer.Draw(_edgeBuffer, 24, MTLPrimitiveType.Line, mvp, new Vector4(0f, 0.8f, 1f, 0.18f), depthTest: false);
+            RenderFaceArrows(box, camera);
+            RenderCornerHandles(box, camera);
+            RenderRings(box, camera);
+            if (box.IsFlat) RenderExtrudeArrow(box, camera);
         }
 
         public void RenderPlacementRect(int x0, int y0, int x1, int y1, int viewportWidth, int viewportHeight)
@@ -91,6 +100,14 @@ namespace CloudScope.Platform.Metal.Rendering
             float nx1 = Math.Max(x0, x1) / (float)viewportWidth  * 2f - 1f;
             float ny0 = 1f - Math.Max(y0, y1) / (float)viewportHeight * 2f;
             float ny1 = 1f - Math.Min(y0, y1) / (float)viewportHeight * 2f;
+            _placementBuffer = Renderer.CreateStaticBuffer(new[]
+            {
+                nx0,ny0,0f, nx1,ny0,0f, nx1,ny1,0f,
+                nx0,ny0,0f, nx1,ny1,0f, nx0,ny1,0f,
+            });
+            Renderer.Draw(_placementBuffer, 6, MTLPrimitiveType.Triangle,
+                Matrix4.Identity, new Vector4(0f, 0.78f, 1f, 0.12f), depthTest: false);
+
             _placementBuffer = Renderer.CreateStaticBuffer(new[]
             {
                 nx0,ny0,0f, nx1,ny0,0f, nx1,ny0,0f, nx1,ny1,0f,
@@ -111,6 +128,156 @@ namespace CloudScope.Platform.Metal.Rendering
             if (_edgeBuffer.NativePtr == IntPtr.Zero) _edgeBuffer = Renderer.CreateStaticBuffer(Edges);
             if (_faceBuffer.NativePtr == IntPtr.Zero) _faceBuffer = Renderer.CreateStaticBuffer(Faces);
         }
+
+        private void RenderFaceArrows(BoxSelectionTool box, OrbitCamera camera)
+        {
+            Matrix3 invRot = Matrix3.Transpose(Matrix3.CreateFromQuaternion(box.Rotation));
+            float arrowLength = MathF.Max(box.ArrowWorldLength, 0.01f);
+
+            for (int i = 0; i < 6; i++)
+            {
+                Vector3 face = box.HandleWorldPosition(i);
+                Vector3 dir = invRot * BoxSelectionTool.HandleLocalPos[i];
+                Vector3 tip = face + dir * arrowLength;
+
+                var (fx, fy, fb) = camera.WorldToScreen(face);
+                var (tx, ty, tb) = camera.WorldToScreen(tip);
+                if (fb || tb) continue;
+
+                var (fnx, fny) = ScreenToNdc(fx, fy, camera.ViewportWidth, camera.ViewportHeight);
+                var (tnx, tny) = ScreenToNdc(tx, ty, camera.ViewportWidth, camera.ViewportHeight);
+                int axis = i / 2;
+                Vector4 color = i == box.HoveredHandle
+                    ? new Vector4(1f, 1f, 0.15f, 1f)
+                    : i == BoxSelectionTool.ExtrudeHandle && box.IsFlat
+                        ? new Vector4(1f, 0.55f, 0f, 0.95f)
+                        : AxisColor[axis] with { W = 0.9f };
+
+                DrawLine(fnx, fny, tnx, tny, color);
+                DrawDiamond(fnx, fny, 4f / camera.ViewportWidth, 4f / camera.ViewportHeight, color);
+                DrawArrowHead(tnx, tny, fnx, fny, 0.013f, color);
+            }
+        }
+
+        private void RenderCornerHandles(BoxSelectionTool box, OrbitCamera camera)
+        {
+            for (int i = 6; i <= 14; i++)
+            {
+                var (sx, sy, behind) = camera.WorldToScreen(box.HandleWorldPosition(i));
+                if (behind) continue;
+
+                var (nx, ny) = ScreenToNdc(sx, sy, camera.ViewportWidth, camera.ViewportHeight);
+                Vector4 color = i == box.HoveredHandle
+                    ? new Vector4(1f, 1f, 0.15f, 1f)
+                    : BoxSelectionTool.IsCenterHandle(i)
+                        ? new Vector4(0.3f, 1f, 0.45f, 0.85f)
+                        : new Vector4(0.9f, 0.9f, 0.9f, 0.8f);
+                DrawDiamond(nx, ny, 12f / camera.ViewportWidth, 12f / camera.ViewportHeight, color);
+            }
+        }
+
+        private void RenderRings(BoxSelectionTool box, OrbitCamera camera)
+        {
+            const int segmentCount = 64;
+            float radius = box.RingRadius;
+            Matrix3 invRot = Matrix3.Transpose(Matrix3.CreateFromQuaternion(box.Rotation));
+
+            for (int axis = 0; axis < 3; axis++)
+            {
+                int write = 0;
+                float prevX = 0f, prevY = 0f;
+                bool prevOk = false;
+                for (int j = 0; j <= segmentCount; j++)
+                {
+                    float t = j * MathF.Tau / segmentCount;
+                    float c = MathF.Cos(t);
+                    float s = MathF.Sin(t);
+                    Vector3 local = axis switch
+                    {
+                        0 => new Vector3(0f, c, s),
+                        1 => new Vector3(c, 0f, s),
+                        _ => new Vector3(c, s, 0f),
+                    } * radius;
+
+                    var (sx, sy, behind) = camera.WorldToScreen(box.Center + invRot * local);
+                    var (nx, ny) = ScreenToNdc(sx, sy, camera.ViewportWidth, camera.ViewportHeight);
+                    if (prevOk && !behind)
+                    {
+                        _ringBuf[write++] = prevX; _ringBuf[write++] = prevY; _ringBuf[write++] = 0f;
+                        _ringBuf[write++] = nx;    _ringBuf[write++] = ny;    _ringBuf[write++] = 0f;
+                    }
+                    prevX = nx;
+                    prevY = ny;
+                    prevOk = !behind;
+                }
+                if (write == 0) continue;
+                Vector4 color = box.HoveredHandle == 15 + axis
+                    ? new Vector4(1f, 1f, 0.15f, 1f)
+                    : AxisColor[axis] with { W = 0.8f };
+                DrawDynamic(_ringBuf, write / 3, MTLPrimitiveType.Line, color);
+            }
+        }
+
+        private void RenderExtrudeArrow(BoxSelectionTool box, OrbitCamera camera)
+        {
+            Matrix3 invRot = Matrix3.Transpose(Matrix3.CreateFromQuaternion(box.Rotation));
+            Vector3 worldZ = invRot * Vector3.UnitZ;
+            Vector3 face = box.HandleWorldPosition(BoxSelectionTool.ExtrudeHandle);
+            Vector3 tip = face + worldZ * MathF.Max(box.HalfExtents.X, box.HalfExtents.Y) * 0.55f;
+            var (fx, fy, fb) = camera.WorldToScreen(face);
+            var (tx, ty, tb) = camera.WorldToScreen(tip);
+            if (fb || tb) return;
+
+            var (fnx, fny) = ScreenToNdc(fx, fy, camera.ViewportWidth, camera.ViewportHeight);
+            var (tnx, tny) = ScreenToNdc(tx, ty, camera.ViewportWidth, camera.ViewportHeight);
+            Vector4 orange = new(1f, 0.6f, 0f, 0.95f);
+            DrawLine(fnx, fny, tnx, tny, orange);
+            DrawArrowHead(tnx, tny, fnx, fny, 0.02f, orange with { W = 1f });
+        }
+
+        private void DrawLine(float x0, float y0, float x1, float y1, Vector4 color)
+        {
+            _lineBuf[0] = x0; _lineBuf[1] = y0; _lineBuf[2] = 0f;
+            _lineBuf[3] = x1; _lineBuf[4] = y1; _lineBuf[5] = 0f;
+            DrawDynamic(_lineBuf, 2, MTLPrimitiveType.Line, color);
+        }
+
+        private void DrawArrowHead(float tipX, float tipY, float fromX, float fromY, float size, Vector4 color)
+        {
+            float dx = tipX - fromX;
+            float dy = tipY - fromY;
+            float len = MathF.Sqrt(dx * dx + dy * dy);
+            if (len < 1e-4f) return;
+            float nx = dx / len;
+            float ny = dy / len;
+            float px = -ny;
+            float py = nx;
+
+            _arrowBuf[0] = tipX; _arrowBuf[1] = tipY; _arrowBuf[2] = 0f;
+            _arrowBuf[3] = tipX - nx * size * 2f + px * size; _arrowBuf[4] = tipY - ny * size * 2f + py * size; _arrowBuf[5] = 0f;
+            _arrowBuf[6] = tipX - nx * size * 2f - px * size; _arrowBuf[7] = tipY - ny * size * 2f - py * size; _arrowBuf[8] = 0f;
+            DrawDynamic(_arrowBuf, 3, MTLPrimitiveType.Triangle, color);
+        }
+
+        private void DrawDiamond(float x, float y, float sx, float sy, Vector4 color)
+        {
+            _diamondBuf[0] = x; _diamondBuf[1] = y + sy; _diamondBuf[2] = 0f;
+            _diamondBuf[3] = x + sx; _diamondBuf[4] = y; _diamondBuf[5] = 0f;
+            _diamondBuf[6] = x; _diamondBuf[7] = y - sy; _diamondBuf[8] = 0f;
+            _diamondBuf[9] = x; _diamondBuf[10] = y + sy; _diamondBuf[11] = 0f;
+            _diamondBuf[12] = x; _diamondBuf[13] = y - sy; _diamondBuf[14] = 0f;
+            _diamondBuf[15] = x - sx; _diamondBuf[16] = y; _diamondBuf[17] = 0f;
+            DrawDynamic(_diamondBuf, 6, MTLPrimitiveType.Triangle, color);
+        }
+
+        private void DrawDynamic(float[] vertices, int vertexCount, MTLPrimitiveType primitive, Vector4 color)
+        {
+            _dynamicBuffer = Renderer.CreateStaticBuffer(vertices);
+            Renderer.Draw(_dynamicBuffer, vertexCount, primitive, Matrix4.Identity, color, depthTest: false);
+        }
+
+        private static (float x, float y) ScreenToNdc(float sx, float sy, float width, float height)
+            => (sx / width * 2f - 1f, 1f - sy / height * 2f);
     }
 
     [SupportedOSPlatform("macos")]

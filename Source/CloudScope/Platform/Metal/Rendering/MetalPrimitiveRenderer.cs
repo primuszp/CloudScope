@@ -62,13 +62,13 @@ namespace CloudScope.Platform.Metal.Rendering
                 return;
 
             var cmdBuffer  = MetalFrameContext.CurrentCommandBuffer;
-            var descriptor = MetalFrameContext.CurrentView?.CurrentRenderPassDescriptor;
-            if (cmdBuffer.NativePtr == IntPtr.Zero || descriptor == null || descriptor.Value.NativePtr == IntPtr.Zero)
+            var descriptor = MetalFrameContext.CurrentRenderPassDescriptor;
+            if (cmdBuffer.NativePtr == IntPtr.Zero || descriptor.NativePtr == IntPtr.Zero)
                 return;
 
             MetalBufferWriter.Write(_uniformsBuffer, new MetalColorUniforms(mvp, color));
 
-            var rpd = descriptor.Value;
+            var rpd = descriptor;
             if (MetalFrameContext.FirstEncoderDone)
             {
                 var ca2 = rpd.ColorAttachments.Object(0);
