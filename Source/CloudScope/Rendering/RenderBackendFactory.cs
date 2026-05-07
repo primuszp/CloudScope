@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using CloudScope.Platform.Metal;
 using CloudScope.Platform.OpenGL;
 
@@ -16,12 +17,23 @@ namespace CloudScope.Rendering
             return Create(RenderBackendKind.OpenGL);
         }
 
-        public static IRenderBackend Create(RenderBackendKind kind) => kind switch
+        public static IRenderBackend Create(RenderBackendKind kind)
         {
-            RenderBackendKind.OpenGL => new OpenGlRenderBackend(),
-            RenderBackendKind.Metal => new MetalRenderBackend(),
-            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
-        };
+            if (kind == RenderBackendKind.Metal)
+            {
+                if (!OperatingSystem.IsMacOS())
+                    throw new PlatformNotSupportedException("Metal backend requires macOS.");
+                return CreateMetal();
+            }
+            return kind switch
+            {
+                RenderBackendKind.OpenGL => new OpenGlRenderBackend(),
+                _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
+            };
+        }
+
+        [SupportedOSPlatform("macos")]
+        private static IRenderBackend CreateMetal() => new MetalRenderBackend();
 
         public static bool IsApplePlatform =>
             RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ||

@@ -38,8 +38,9 @@ out vec4 FragColor;
 
 void main()
 {
-    vec2  d = gl_PointCoord - vec2(0.5);
-    if (dot(d, d) > 0.25) discard;
+    // Square points - no discard, preserves early-z and avoids
+    // per-fragment branch divergence. Visually indistinguishable
+    // at typical point cloud densities.
     FragColor = vec4(vColor, 1.0);
 }
 ";

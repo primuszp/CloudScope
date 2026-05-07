@@ -1,73 +1,46 @@
-using System;
+using System.Runtime.Versioning;
+using CloudScope.Platform.Metal.Rendering;
 using CloudScope.Rendering;
+using SharpMetal.Metal;
 
 namespace CloudScope.Platform.Metal
 {
+    [SupportedOSPlatform("macos")]
     public sealed class MetalRenderBackend : IRenderBackend
     {
-#if MACOS
-        private readonly Metal.IMTLCommandQueue? commandQueue;
-#endif
-
-        public MetalRenderBackend()
-        {
-#if MACOS
-            var device = Metal.MTLDevice.SystemDefault;
-            commandQueue = device?.CreateCommandQueue();
-#endif
-        }
-
         public RenderBackendKind Kind => RenderBackendKind.Metal;
 
-        public IPointCloudRenderer CreatePointCloudRenderer() => MetalRendererFactory.CreatePointCloudRenderer();
-
-        public IHighlightRenderer CreateHighlightRenderer() => MetalRendererFactory.CreateHighlightRenderer();
-
-        public IOverlayRenderer CreateOverlayRenderer() => MetalRendererFactory.CreateOverlayRenderer();
-
+        public IPointCloudRenderer  CreatePointCloudRenderer()  => new MetalPointCloudRenderer();
+        public IHighlightRenderer   CreateHighlightRenderer()   => new MetalHighlightRenderer();
+        public IOverlayRenderer     CreateOverlayRenderer()     => new MetalOverlayRenderer();
         public SelectionGizmoRenderers CreateSelectionGizmoRenderers()
             => MetalRendererFactory.CreateSelectionGizmoRenderers();
+        public IDepthPicker CreateDepthPicker() => new NullDepthPicker();
 
-        public IDepthPicker CreateDepthPicker() => MetalRendererFactory.CreateDepthPicker();
-
-        public void InitializeFrameState()
-        {
-#if !MACOS
-            throw NotImplemented();
-#endif
-        }
+        public void InitializeFrameState() { }
 
         public void BeginFrame()
         {
-#if MACOS
             var view = MetalFrameContext.CurrentView;
-            var descriptor = view?.CurrentRenderPassDescriptor;
+            if (view == null) return;
 
-            if (descriptor == null)
-                return;
+            var descriptor = view.CurrentRenderPassDescriptor;
+            if (descriptor.NativePtr == IntPtr.Zero) return;
 
-            descriptor.ColorAttachments[0].LoadAction = Metal.MTLLoadAction.Clear;
-            descriptor.ColorAttachments[0].StoreAction = Metal.MTLStoreAction.Store;
-            if (descriptor.DepthAttachment != null)
+            var ca = descriptor.ColorAttachments.Object(0);
+            ca.LoadAction  = MTLLoadAction.Clear;
+            ca.StoreAction = MTLStoreAction.Store;
+            descriptor.ColorAttachments.SetObject(ca, 0);
+
+            var da = descriptor.DepthAttachment;
+            if (da.NativePtr != IntPtr.Zero)
             {
-                descriptor.DepthAttachment.LoadAction = Metal.MTLLoadAction.Clear;
-                descriptor.DepthAttachment.StoreAction = Metal.MTLStoreAction.DontCare;
-                descriptor.DepthAttachment.ClearDepth = 1.0;
+                da.LoadAction  = MTLLoadAction.Clear;
+                da.StoreAction = MTLStoreAction.DontCare;
+                da.ClearDepth  = 1.0;
             }
-#else
-            throw NotImplemented();
-#endif
         }
 
-        public void Resize(int width, int height)
-        {
-        }
-
-#if MACOS
-        internal Metal.IMTLCommandBuffer? CreateCommandBuffer() => commandQueue?.CommandBuffer();
-#endif
-
-        private static NotSupportedException NotImplemented() =>
-            new("Metal backend requires a macOS target. Use CLOUDSCOPE_RENDER_BACKEND=opengl on this build.");
+        public void Resize(int width, int height) { }
     }
 }

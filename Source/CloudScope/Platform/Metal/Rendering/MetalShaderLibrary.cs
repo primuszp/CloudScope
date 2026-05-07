@@ -1,8 +1,8 @@
-#if MACOS
 using System;
 using System.Runtime.InteropServices;
-using Foundation;
-using Metal;
+using System.Runtime.Versioning;
+using System.Threading;
+using SharpMetal.Metal;
 using OpenTK.Mathematics;
 
 namespace CloudScope.Platform.Metal
@@ -35,60 +35,42 @@ namespace CloudScope.Platform.Metal
         }
     }
 
-    internal static class MetalBufferWriter
+    [SupportedOSPlatform("macos")]
+    internal static unsafe class MetalBufferWriter
     {
-        public static unsafe void Write<T>(IMTLBuffer buffer, T value)
-            where T : unmanaged
+        public static void Write<T>(MTLBuffer buffer, T value) where T : unmanaged
         {
-            *(T*)buffer.Contents = value;
-            buffer.DidModifyRange(new NSRange(0, System.Runtime.CompilerServices.Unsafe.SizeOf<T>()));
+            *(T*)buffer.Contents.ToPointer() = value;
+            // StorageModeShared: no DidModifyRange needed
         }
     }
 
+    [SupportedOSPlatform("macos")]
     internal static class MetalShaderLibrary
     {
         private const string PointShaderSource =
 @"#include <metal_stdlib>
 using namespace metal;
 
-struct PointVertex
-{
-    float3 position;
-    float3 color;
-};
-
-struct PointUniforms
-{
-    float4x4 view;
-    float4x4 projection;
-    float4 point;
-};
-
-struct VertexOut
-{
-    float4 position [[position]];
-    float point_size [[point_size]];
-    float3 color;
-};
+struct PointVertex { float3 position; float3 color; };
+struct PointUniforms { float4x4 view; float4x4 projection; float4 point; };
+struct VertexOut { float4 position [[position]]; float point_size [[point_size]]; float3 color; };
 
 vertex VertexOut point_vertex(
     uint vertexId [[vertex_id]],
     const device PointVertex* points [[buffer(0)]],
     constant PointUniforms& uniforms [[buffer(1)]])
 {
-    PointVertex point = points[vertexId];
+    PointVertex p = points[vertexId];
     VertexOut out;
-    out.position = uniforms.projection * uniforms.view * float4(point.position, 1.0);
+    out.position = uniforms.projection * uniforms.view * float4(p.position, 1.0);
     out.point_size = uniforms.point.x;
-    out.color = point.color;
+    out.color = p.color;
     return out;
 }
 
-fragment float4 point_fragment(VertexOut in [[stage_in]], float2 coord [[point_coord]])
+fragment float4 point_fragment(VertexOut in [[stage_in]])
 {
-    float2 d = coord - float2(0.5, 0.5);
-    if (dot(d, d) > 0.25)
-        discard_fragment();
     return float4(in.color, 1.0);
 }";
 
@@ -96,16 +78,8 @@ fragment float4 point_fragment(VertexOut in [[stage_in]], float2 coord [[point_c
 @"#include <metal_stdlib>
 using namespace metal;
 
-struct ColorUniforms
-{
-    float4x4 mvp;
-    float4 color;
-};
-
-struct ColorVertexOut
-{
-    float4 position [[position]];
-};
+struct ColorUniforms { float4x4 mvp; float4 color; };
+struct ColorVertexOut { float4 position [[position]]; };
 
 vertex ColorVertexOut color_vertex(
     uint vertexId [[vertex_id]],
@@ -122,72 +96,71 @@ fragment float4 color_fragment(ColorVertexOut in [[stage_in]], constant ColorUni
     return uniforms.color;
 }";
 
-        public static IMTLRenderPipelineState CreatePointPipeline(
-            IMTLDevice device,
-            MTLPixelFormat colorPixelFormat,
-            MTLPixelFormat depthPixelFormat)
+        public static MTLRenderPipelineState CreatePointPipeline(
+            MTLDevice device, MTLPixelFormat colorFormat, MTLPixelFormat depthFormat)
+            => CreatePipeline(device, PointShaderSource, "point_vertex", "point_fragment",
+                colorFormat, depthFormat, blend: false);
+
+        public static MTLRenderPipelineState CreateColorPipeline(
+            MTLDevice device, MTLPixelFormat colorFormat, MTLPixelFormat depthFormat)
+            => CreatePipeline(device, ColorShaderSource, "color_vertex", "color_fragment",
+                colorFormat, depthFormat, blend: true);
+
+        public static MTLDepthStencilState CreateDepthState(MTLDevice device, bool depthWrite)
         {
-            using var source = new NSString(PointShaderSource);
-            using var library = device.CreateLibrary(source, null, out NSError? compileError);
-            if (library == null)
-                throw new InvalidOperationException("Metal shader compile failed: " + compileError?.LocalizedDescription);
-
-            using var vertex = library.CreateFunction("point_vertex");
-            using var fragment = library.CreateFunction("point_fragment");
-            using var descriptor = new MTLRenderPipelineDescriptor
-            {
-                VertexFunction = vertex,
-                FragmentFunction = fragment,
-                DepthAttachmentPixelFormat = depthPixelFormat
-            };
-            descriptor.ColorAttachments[0].PixelFormat = colorPixelFormat;
-
-            var pipeline = device.CreateRenderPipelineState(descriptor, out NSError? pipelineError);
-            if (pipeline == null)
-                throw new InvalidOperationException("Metal point pipeline creation failed: " + pipelineError?.LocalizedDescription);
-            return pipeline;
+            var desc = new MTLDepthStencilDescriptor();
+            desc.DepthCompareFunction = MTLCompareFunction.LessEqual;
+            desc.IsDepthWriteEnabled = depthWrite;
+            return device.NewDepthStencilState(desc);
         }
 
-        public static IMTLDepthStencilState? CreateDepthState(IMTLDevice device, bool depthWriteEnabled)
+        private static MTLRenderPipelineState CreatePipeline(
+            MTLDevice device, string source, string vertFn, string fragFn,
+            MTLPixelFormat colorFormat, MTLPixelFormat depthFormat, bool blend)
         {
-            using var descriptor = new MTLDepthStencilDescriptor
+            MTLLibrary library = default;
+            string? compileError = null;
+            using var done = new ManualResetEventSlim(false);
+
+            device.NewLibrary(source, new MTLCompileOptions(IntPtr.Zero), (lib, err) =>
             {
-                DepthCompareFunction = MTLCompareFunction.LessEqual,
-                DepthWriteEnabled = depthWriteEnabled
-            };
-            return device.CreateDepthStencilState(descriptor);
-        }
+                if (err.NativePtr != IntPtr.Zero)
+                    compileError = err.LocalizedDescription.ToString();
+                else
+                    library = lib;
+                done.Set();
+            });
+            done.Wait();
 
-        public static IMTLRenderPipelineState CreateColorPipeline(
-            IMTLDevice device,
-            MTLPixelFormat colorPixelFormat,
-            MTLPixelFormat depthPixelFormat)
-        {
-            using var source = new NSString(ColorShaderSource);
-            using var library = device.CreateLibrary(source, null, out NSError? compileError);
-            if (library == null)
-                throw new InvalidOperationException("Metal color shader compile failed: " + compileError?.LocalizedDescription);
+            if (compileError != null)
+                throw new InvalidOperationException("Metal shader compile failed: " + compileError);
 
-            using var vertex = library.CreateFunction("color_vertex");
-            using var fragment = library.CreateFunction("color_fragment");
-            using var descriptor = new MTLRenderPipelineDescriptor
+            var vert = library.NewFunction(vertFn);
+            var frag = library.NewFunction(fragFn);
+
+            var desc = new MTLRenderPipelineDescriptor();
+            desc.VertexFunction = vert;
+            desc.FragmentFunction = frag;
+            desc.DepthAttachmentPixelFormat = depthFormat;
+
+            var ca = desc.ColorAttachments.Object(0);
+            ca.PixelFormat = colorFormat;
+            if (blend)
             {
-                VertexFunction = vertex,
-                FragmentFunction = fragment,
-                DepthAttachmentPixelFormat = depthPixelFormat
-            };
-            descriptor.ColorAttachments[0].PixelFormat = colorPixelFormat;
-            descriptor.ColorAttachments[0].BlendingEnabled = true;
-            descriptor.ColorAttachments[0].SourceRgbBlendFactor = MTLBlendFactor.SourceAlpha;
-            descriptor.ColorAttachments[0].DestinationRgbBlendFactor = MTLBlendFactor.OneMinusSourceAlpha;
-            descriptor.ColorAttachments[0].SourceAlphaBlendFactor = MTLBlendFactor.One;
-            descriptor.ColorAttachments[0].DestinationAlphaBlendFactor = MTLBlendFactor.OneMinusSourceAlpha;
+                ca.IsBlendingEnabled = true;
+                ca.SourceRGBBlendFactor = MTLBlendFactor.SourceAlpha;
+                ca.DestinationRGBBlendFactor = MTLBlendFactor.OneMinusSourceAlpha;
+                ca.SourceAlphaBlendFactor = MTLBlendFactor.One;
+                ca.DestinationAlphaBlendFactor = MTLBlendFactor.OneMinusSourceAlpha;
+            }
+            desc.ColorAttachments.SetObject(ca, 0);
 
-            var pipeline = device.CreateRenderPipelineState(descriptor, out NSError? pipelineError);
-            if (pipeline == null)
-                throw new InvalidOperationException("Metal color pipeline creation failed: " + pipelineError?.LocalizedDescription);
+            var error = new SharpMetal.Foundation.NSError(IntPtr.Zero);
+            var pipeline = device.NewRenderPipelineState(desc, ref error);
+            if (error.NativePtr != IntPtr.Zero)
+                throw new InvalidOperationException("Pipeline creation failed: " + error.LocalizedDescription.ToString());
+
             return pipeline;
         }
     }
 }
-#endif

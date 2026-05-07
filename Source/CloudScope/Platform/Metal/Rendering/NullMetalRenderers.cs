@@ -5,7 +5,7 @@ using CloudScope.Rendering;
 using CloudScope.Selection;
 using OpenTK.Mathematics;
 
-namespace CloudScope.Platform.Metal
+namespace CloudScope.Platform.Metal.Rendering
 {
     internal sealed class NullPointCloudRenderer : IPointCloudRenderer
     {

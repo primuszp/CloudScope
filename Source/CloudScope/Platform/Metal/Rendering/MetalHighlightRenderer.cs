@@ -1,45 +1,47 @@
-#if MACOS
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
+using System.Runtime.Versioning;
 using CloudScope.Labeling;
 using CloudScope.Rendering;
-using Foundation;
-using Metal;
 using OpenTK.Mathematics;
+using SharpMetal.Foundation;
+using SharpMetal.Metal;
 
-namespace CloudScope.Platform.Metal
+namespace CloudScope.Platform.Metal.Rendering
 {
+    [SupportedOSPlatform("macos")]
     internal sealed class MetalHighlightRenderer : IHighlightRenderer
     {
         private static readonly Dictionary<string, Vector3> Palette = new(StringComparer.OrdinalIgnoreCase)
         {
-            ["Ground"] = new Vector3(0.55f, 0.27f, 0.07f),
-            ["Building"] = new Vector3(1.0f, 0.27f, 0.27f),
+            ["Ground"]     = new Vector3(0.55f, 0.27f, 0.07f),
+            ["Building"]   = new Vector3(1.0f,  0.27f, 0.27f),
             ["Vegetation"] = new Vector3(0.13f, 0.80f, 0.13f),
-            ["Vehicle"] = new Vector3(1.0f, 0.84f, 0.0f),
-            ["Road"] = new Vector3(0.60f, 0.60f, 0.60f),
-            ["Water"] = new Vector3(0.12f, 0.56f, 1.0f),
-            ["Wire"] = new Vector3(0.93f, 0.51f, 0.93f),
+            ["Vehicle"]    = new Vector3(1.0f,  0.84f, 0.0f),
+            ["Road"]       = new Vector3(0.60f, 0.60f, 0.60f),
+            ["Water"]      = new Vector3(0.12f, 0.56f, 1.0f),
+            ["Wire"]       = new Vector3(0.93f, 0.51f, 0.93f),
         };
 
-        private IMTLRenderPipelineState? pipeline;
-        private IMTLDepthStencilState? depthState;
-        private IMTLBuffer? highlightBuffer;
-        private IMTLBuffer? previewBuffer;
-        private IMTLBuffer? uniformsBuffer;
-        private bool dirty = true;
-        private int highlightCount;
-        private int previewCount;
-        private PointData[] vertexScratch = Array.Empty<PointData>();
+        private MTLRenderPipelineState _pipeline;
+        private MTLDepthStencilState _depthState;
+        private MTLBuffer _uniformsBuffer;
+        private MTLBuffer _highlightBuffer;
+        private MTLBuffer _previewBuffer;
+        private bool _dirty = true;
+        private int _highlightCount;
+        private int _previewCount;
+        private PointData[] _scratch = Array.Empty<PointData>();
 
-        public void MarkDirty() => dirty = true;
+        public void MarkDirty() => _dirty = true;
 
         public void UpdatePreview(PointData[]? points, IReadOnlyList<int>? indices)
         {
             EnsureResources();
             if (points == null || indices == null || indices.Count == 0)
             {
-                previewCount = 0;
+                _previewCount = 0;
                 return;
             }
 
@@ -47,131 +49,117 @@ namespace CloudScope.Platform.Metal
             int count = 0;
             foreach (int i in indices)
             {
-                if ((uint)i >= (uint)points.Length)
-                    continue;
+                if ((uint)i >= (uint)points.Length) continue;
                 data[count] = points[i];
                 data[count].R = 1.0f;
                 data[count].G = 0.85f;
                 data[count].B = 0.1f;
                 count++;
             }
-
-            previewCount = count;
-            previewBuffer = CreateBuffer(data, count);
+            _previewCount = count;
+            _previewBuffer = BuildBuffer(data, count);
         }
 
         public void RenderPreview(ref Matrix4 view, ref Matrix4 proj, float pointSize)
-        {
-            RenderBuffer(previewBuffer, previewCount, ref view, ref proj, pointSize + 2f);
-        }
+            => RenderBuffer(_previewBuffer, _previewCount, ref view, ref proj, pointSize + 2f);
 
         public void Render(PointData[] points, LabelManager labels, ref Matrix4 view, ref Matrix4 proj, float pointSize)
         {
             EnsureResources();
-            if (dirty)
+            if (_dirty)
             {
-                RebuildBuffer(points, labels);
-                dirty = false;
+                RebuildHighlightBuffer(points, labels);
+                _dirty = false;
             }
-
-            RenderBuffer(highlightBuffer, highlightCount, ref view, ref proj, pointSize + 2f);
+            RenderBuffer(_highlightBuffer, _highlightCount, ref view, ref proj, pointSize + 2f);
         }
 
-        public void Dispose()
-        {
-            highlightBuffer?.Dispose();
-            previewBuffer?.Dispose();
-            uniformsBuffer?.Dispose();
-            pipeline?.Dispose();
-            depthState?.Dispose();
-        }
+        public void Dispose() { }
+
+        // ── Private ───────────────────────────────────────────────────────────────
 
         private void EnsureResources()
         {
-            if (pipeline != null)
+            if (_pipeline.NativePtr != IntPtr.Zero)
                 return;
 
-            var device = MetalFrameContext.CurrentView?.Device ?? MTLDevice.SystemDefault
-                ?? throw new PlatformNotSupportedException("No Metal device is available.");
-            pipeline = MetalShaderLibrary.CreatePointPipeline(
-                device,
-                MetalFrameContext.CurrentView?.ColorPixelFormat ?? MTLPixelFormat.BGRA8Unorm,
-                MetalFrameContext.CurrentView?.DepthStencilPixelFormat ?? MTLPixelFormat.Depth32Float);
-            depthState = MetalShaderLibrary.CreateDepthState(device, depthWriteEnabled: false);
-            uniformsBuffer = device.CreateBuffer((UIntPtr)System.Runtime.CompilerServices.Unsafe.SizeOf<MetalPointUniforms>(), MTLResourceOptions.CpuCacheModeDefault);
+            var device = MetalFrameContext.Device;
+            _pipeline    = MetalShaderLibrary.CreatePointPipeline(device, MTLPixelFormat.BGRA8Unorm, MTLPixelFormat.Depth32Float);
+            _depthState  = MetalShaderLibrary.CreateDepthState(device, depthWrite: false);
+            _uniformsBuffer = device.NewBuffer(
+                (ulong)Unsafe.SizeOf<MetalPointUniforms>(),
+                MTLResourceOptions.ResourceStorageModeShared);
         }
 
-        private void RebuildBuffer(PointData[] points, LabelManager labels)
+        private void RebuildHighlightBuffer(PointData[] points, LabelManager labels)
         {
             var allLabels = labels.AllLabels;
-            var data = RentScratch(allLabels.Count);
+            var data  = RentScratch(allLabels.Count);
             int count = 0;
-
             foreach (var (ptIdx, labelName) in allLabels)
             {
-                if ((uint)ptIdx >= (uint)points.Length)
-                    continue;
+                if ((uint)ptIdx >= (uint)points.Length) continue;
                 data[count] = points[ptIdx];
-                var color = GetLabelColor(labelName);
-                data[count].R = color.X;
-                data[count].G = color.Y;
-                data[count].B = color.Z;
+                var c = GetLabelColor(labelName);
+                data[count].R = c.X;
+                data[count].G = c.Y;
+                data[count].B = c.Z;
                 count++;
             }
-
-            highlightCount = count;
-            highlightBuffer = CreateBuffer(data, count);
+            _highlightCount  = count;
+            _highlightBuffer = BuildBuffer(data, count);
         }
 
-        private void RenderBuffer(IMTLBuffer? buffer, int count, ref Matrix4 view, ref Matrix4 proj, float pointSize)
+        private void RenderBuffer(MTLBuffer buffer, int count,
+            ref Matrix4 view, ref Matrix4 proj, float pointSize)
         {
-            if (count == 0 || buffer == null || pipeline == null || uniformsBuffer == null)
+            if (count == 0 || buffer.NativePtr == IntPtr.Zero || _pipeline.NativePtr == IntPtr.Zero)
                 return;
 
-            var commandBuffer = MetalFrameContext.CurrentCommandBuffer;
+            var cmdBuffer  = MetalFrameContext.CurrentCommandBuffer;
             var descriptor = MetalFrameContext.CurrentView?.CurrentRenderPassDescriptor;
-            if (commandBuffer == null || descriptor == null)
+            if (cmdBuffer.NativePtr == IntPtr.Zero || descriptor == null || descriptor.Value.NativePtr == IntPtr.Zero)
                 return;
 
-            descriptor.ColorAttachments[0].LoadAction = MTLLoadAction.Load;
-            MetalBufferWriter.Write(uniformsBuffer, new MetalPointUniforms(view, proj, pointSize));
+            MetalBufferWriter.Write(_uniformsBuffer, new MetalPointUniforms(view, proj, pointSize));
 
-            using var encoder = commandBuffer.CreateRenderCommandEncoder(descriptor);
-            encoder.SetRenderPipelineState(pipeline);
-            if (depthState != null)
-                encoder.SetDepthStencilState(depthState);
-            encoder.SetVertexBuffer(buffer, UIntPtr.Zero, 0);
-            encoder.SetVertexBuffer(uniformsBuffer, UIntPtr.Zero, 1);
-            encoder.DrawPrimitives(MTLPrimitiveType.Point, 0, (UIntPtr)count);
+            var rpd = descriptor.Value;
+            var ca = rpd.ColorAttachments.Object(0);
+            ca.LoadAction = MTLLoadAction.Load;
+            rpd.ColorAttachments.SetObject(ca, 0);
+
+            var encoder = cmdBuffer.RenderCommandEncoder(rpd);
+            encoder.SetRenderPipelineState(_pipeline);
+            encoder.SetDepthStencilState(_depthState);
+            encoder.SetVertexBuffer(buffer, 0, 0);
+            encoder.SetVertexBuffer(_uniformsBuffer, 0, 1);
+            encoder.DrawPrimitives(MTLPrimitiveType.Point, 0, (ulong)count);
             encoder.EndEncoding();
         }
 
-        private unsafe IMTLBuffer? CreateBuffer(PointData[] data, int count)
+        private unsafe MTLBuffer BuildBuffer(PointData[] data, int count)
         {
-            if (count == 0)
-                return null;
-
-            var device = MetalFrameContext.CurrentView?.Device ?? MTLDevice.SystemDefault
-                ?? throw new PlatformNotSupportedException("No Metal device is available.");
-            fixed (PointData* ptr = data)
-            {
-                return device.CreateBuffer((IntPtr)ptr, (UIntPtr)(count * 24), MTLResourceOptions.StorageModeManaged);
-            }
+            if (count == 0) return default;
+            ulong byteSize = (ulong)(count * 24);
+            var device = MetalFrameContext.Device;
+            var buf = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
+            fixed (PointData* src = data)
+                Buffer.MemoryCopy(src, buf.Contents.ToPointer(), byteSize, byteSize);
+            buf.DidModifyRange(new NSRange { location = 0, length = byteSize });
+            return buf;
         }
 
         private PointData[] RentScratch(int count)
         {
-            if (vertexScratch.Length < count)
-                vertexScratch = new PointData[count];
-            return vertexScratch;
+            if (_scratch.Length < count)
+                _scratch = new PointData[count];
+            return _scratch;
         }
 
         private static Vector3 GetLabelColor(string label)
         {
-            if (Palette.TryGetValue(label, out var color))
-                return color;
-
-            int h = label.GetHashCode();
+            if (Palette.TryGetValue(label, out var c)) return c;
+            int h   = label.GetHashCode();
             float hue = ((h & 0x7FFFFFFF) % 360) / 360f;
             float s = 0.75f, v = 0.9f;
             int hi = (int)(hue * 6f) % 6;
@@ -189,4 +177,3 @@ namespace CloudScope.Platform.Metal
         }
     }
 }
-#endif
