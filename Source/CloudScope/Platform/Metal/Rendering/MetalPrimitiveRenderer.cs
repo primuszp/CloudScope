@@ -15,6 +15,7 @@ namespace CloudScope.Platform.Metal.Rendering
         private MTLDepthStencilState _depthOn;
         private MTLDepthStencilState _depthOff;
         private MTLBuffer _uniformsBuffer;
+        private int _uniformOffset;
         private bool _initialized;
 
         public void EnsureResources()
@@ -30,13 +31,13 @@ namespace CloudScope.Platform.Metal.Rendering
             _depthOn  = MetalShaderLibrary.CreateDepthState(device, depthWrite: false);
             _depthOff = CreateDepthAlwaysState(device);
 
-            ulong uniformSize = (ulong)Unsafe.SizeOf<MetalColorUniforms>();
-            _uniformsBuffer = device.NewBuffer(uniformSize, MTLResourceOptions.ResourceStorageModeShared);
+            ulong uniformSize = 256; // Must be 256-byte aligned for offset
+            _uniformsBuffer = device.NewBuffer(uniformSize * 256, MTLResourceOptions.ResourceStorageModeShared); // enough for 256 draw calls per frame
 
             _initialized = true;
         }
 
-        public MTLBuffer CreateStaticBuffer(float[] vertices)
+        public unsafe MTLBuffer CreateStaticBuffer(float[] vertices)
         {
             EnsureResources();
             if (vertices.Length == 0)
@@ -44,13 +45,26 @@ namespace CloudScope.Platform.Metal.Rendering
 
             ulong byteSize = (ulong)(vertices.Length * sizeof(float));
             var buf = MetalFrameContext.Device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
-            unsafe
-            {
-                fixed (float* src = vertices)
-                    Buffer.MemoryCopy(src, buf.Contents.ToPointer(), byteSize, byteSize);
-            }
+            fixed (float* src = vertices)
+                Buffer.MemoryCopy(src, buf.Contents.ToPointer(), byteSize, byteSize);
             buf.DidModifyRange(new NSRange { location = 0, length = buf.Length });
             return buf;
+        }
+
+        public unsafe void UpdateBuffer(ref MTLBuffer buffer, float[] vertices)
+        {
+            EnsureResources();
+            if (vertices.Length == 0) return;
+
+            ulong byteSize = (ulong)(vertices.Length * sizeof(float));
+            if (buffer.NativePtr == IntPtr.Zero || buffer.Length < byteSize)
+            {
+                buffer = MetalFrameContext.Device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
+            }
+
+            fixed (float* src = vertices)
+                Buffer.MemoryCopy(src, buffer.Contents.ToPointer(), byteSize, byteSize);
+            buffer.DidModifyRange(new NSRange { location = 0, length = byteSize });
         }
 
         public void Draw(
@@ -61,29 +75,35 @@ namespace CloudScope.Platform.Metal.Rendering
             if (vertexBuffer.NativePtr == IntPtr.Zero || vertexCount <= 0 || !_initialized)
                 return;
 
-            var cmdBuffer  = MetalFrameContext.CurrentCommandBuffer;
-            var descriptor = MetalFrameContext.CurrentRenderPassDescriptor;
-            if (cmdBuffer.NativePtr == IntPtr.Zero || descriptor.NativePtr == IntPtr.Zero)
+            var encoder = MetalFrameContext.CurrentRenderCommandEncoder;
+            if (encoder.NativePtr == IntPtr.Zero)
                 return;
 
-            MetalBufferWriter.Write(_uniformsBuffer, new MetalColorUniforms(mvp, color));
+            ulong stride = 256;
+            ulong offset = (ulong)(_uniformOffset * stride);
+            if (offset + stride > _uniformsBuffer.Length)
+            {
+                _uniformOffset = 0;
+                offset = 0;
+            }
 
-            var rpd = descriptor;
-            MetalFrameContext.PrepareRenderPassForEncoder(rpd);
+            unsafe
+            {
+                byte* ptr = (byte*)_uniformsBuffer.Contents.ToPointer();
+                var uniforms = new MetalColorUniforms(mvp, color);
+                Buffer.MemoryCopy(&uniforms, ptr + offset, Unsafe.SizeOf<MetalColorUniforms>(), Unsafe.SizeOf<MetalColorUniforms>());
+            }
+            _uniformOffset++;
 
-            var encoder = cmdBuffer.RenderCommandEncoder(rpd);
-            MetalFrameContext.MarkFirstEncoderDone();
             encoder.SetRenderPipelineState(_pipeline);
             encoder.SetDepthStencilState(depthTest ? _depthOn : _depthOff);
             encoder.SetVertexBuffer(vertexBuffer, 0, 0);
-            encoder.SetVertexBuffer(_uniformsBuffer, 0, 1);
+            encoder.SetVertexBuffer(_uniformsBuffer, offset, 1);
             encoder.DrawPrimitives(primitiveType, 0, (ulong)vertexCount);
-            encoder.EndEncoding();
         }
 
         public void Dispose()
         {
-            // SharpMetal types are structs backed by ObjC ARC — nothing to release explicitly.
         }
 
         private static MTLDepthStencilState CreateDepthAlwaysState(MTLDevice device)

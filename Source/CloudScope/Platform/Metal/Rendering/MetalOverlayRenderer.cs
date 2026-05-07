@@ -38,7 +38,7 @@ namespace CloudScope.Platform.Metal.Rendering
         {
             float sx = 15f / width;
             float sy = 15f / height;
-            _crosshairBuffer = _renderer.CreateStaticBuffer(new[]
+            _renderer.UpdateBuffer(ref _crosshairBuffer, new[]
             {
                 -sx, 0f, 0f,  sx, 0f, 0f,
                  0f, -sy, 0f, 0f, sy, 0f,
@@ -53,7 +53,7 @@ namespace CloudScope.Platform.Metal.Rendering
             float y  =  1f - 30f / height;
             float sx = 8f / width;
             float sy = 8f / height;
-            _modeBuffer = _renderer.CreateStaticBuffer(new[]
+            _renderer.UpdateBuffer(ref _modeBuffer, new[]
             {
                 x - sx, y, 0f,  x + sx, y, 0f,
                 x, y - sy, 0f,  x, y + sy, 0f,

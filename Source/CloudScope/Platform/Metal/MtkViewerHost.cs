@@ -78,6 +78,8 @@ namespace CloudScope.Platform.Metal
         {
             private readonly ViewerController controller;
             private readonly MetalRenderBackend backend;
+            private readonly System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            private readonly DummyKeyboard dummyKeyboard = new DummyKeyboard();
 
             public MtkViewDelegate(ViewerController controller, MetalRenderBackend backend)
             {
@@ -90,23 +92,35 @@ namespace CloudScope.Platform.Metal
 
             public override void Draw(MTKView view)
             {
-                using var commandBuffer = backend.CreateCommandBuffer();
-                if (commandBuffer == null)
+                var descriptor = new SharpMetal.Metal.MTLRenderPassDescriptor(view.CurrentRenderPassDescriptor.Handle);
+                var drawable = new SharpMetal.QuartzCore.CAMetalDrawable(view.CurrentDrawable.Handle);
+                var viewWrapper = new CloudScope.Platform.Metal.ObjC.MTKView(view.Handle);
+
+                var cmdBuffer = MetalFrameContext.CommandQueue.CommandBuffer();
+                if (cmdBuffer.NativePtr == IntPtr.Zero)
                     return;
 
-                MetalFrameContext.Begin(view, commandBuffer);
+                MetalFrameContext.Begin(viewWrapper, descriptor, drawable, cmdBuffer);
                 try
                 {
+                    float dt = (float)stopwatch.Elapsed.TotalSeconds;
+                    stopwatch.Restart();
+                    controller.UpdateFrame(dt, dummyKeyboard);
+
                     controller.RenderFrame(0);
-                    if (view.CurrentDrawable != null)
-                        commandBuffer.PresentDrawable(view.CurrentDrawable);
-                    commandBuffer.Commit();
+                    cmdBuffer.PresentDrawable(drawable);
+                    cmdBuffer.Commit();
                 }
                 finally
                 {
                     MetalFrameContext.End();
                 }
             }
+        }
+        
+        private class DummyKeyboard : IViewerKeyboard
+        {
+            public bool IsKeyPressed(ViewerKey key) => false;
         }
     }
 }

@@ -61,6 +61,9 @@ namespace CloudScope.Platform.Metal
                 };
 
                 // ── Draw delegate ─────────────────────────────────────────────────
+                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+                var dummyKeyboard = new DummyKeyboard();
+
                 _viewDelegate = new MTKViewDelegate();
                 _viewDelegate.OnDraw_ = view =>
                 {
@@ -78,9 +81,18 @@ namespace CloudScope.Platform.Metal
                     MetalFrameContext.Begin(view, descriptor, drawable, cmdBuffer);
                     try
                     {
+                        float dt = (float)stopwatch.Elapsed.TotalSeconds;
+                        stopwatch.Restart();
+                        _controller.UpdateFrame(dt, dummyKeyboard);
+
                         _controller.RenderFrame(0);
                         cmdBuffer.PresentDrawable(drawable);
                         cmdBuffer.Commit();
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Render exception: {ex}");
+                        cmdBuffer.Commit(); // ensure we commit even on fail to avoid hanging
                     }
                     finally
                     {
@@ -225,6 +237,11 @@ namespace CloudScope.Platform.Metal
             // Simple approach: check NSEvent.modifierFlags via CGEventSourceKeyState would be
             // more accurate, but for Ctrl detection during keyDown we can skip for now.
             return false;
+        }
+
+        private class DummyKeyboard : IViewerKeyboard
+        {
+            public bool IsKeyPressed(ViewerKey key) => false;
         }
     }
 }
