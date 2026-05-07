@@ -55,10 +55,6 @@ namespace CloudScope.Platform.Metal
 
         public static void End()
         {
-            if (_currentRenderCommandEncoder.NativePtr != IntPtr.Zero)
-            {
-                _currentRenderCommandEncoder.EndEncoding();
-            }
             _currentView          = null;
             _currentRenderPassDescriptor = default;
             _currentDrawable = default;
