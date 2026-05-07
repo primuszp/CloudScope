@@ -102,12 +102,12 @@ namespace CloudScope.Platform.Metal
                         else
                             enc.EndEncoding();
 
+                        if (frameCount < 5 || frameCount % 60 == 0)
+                            Console.WriteLine($"[F{frameCount}] pre-commit enc={(enc.NativePtr != IntPtr.Zero ? "OK" : "NULL")} t={stopwatch.Elapsed.TotalSeconds:F1}s");
+
                         cmdBuf.PresentDrawable(drawable);
                         cmdBuf.Commit();
                         MetalFrameContext.End();
-
-                        if (frameCount < 5 || frameCount % 120 == 0)
-                            Console.WriteLine($"[F{frameCount}] committed t={stopwatch.Elapsed.TotalSeconds:F1}s");
                         frameCount++;
                     }
                 };
