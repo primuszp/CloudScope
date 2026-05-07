@@ -78,28 +78,17 @@ namespace CloudScope.Platform.Metal.Rendering
         public int Render(ref Matrix4 view, ref Matrix4 projection, float pointSize, double halfViewSize, float cloudRadius)
         {
             _renderCallCount++;
-            bool log = _renderCallCount <= 3 || _renderCallCount % 60 == 0;
 
             if (_pointCount <= 0 || _pointChunks.Length == 0 || _pipeline.NativePtr == IntPtr.Zero)
-            {
-                if (log) Console.WriteLine($"[PCR {_renderCallCount}] BAIL: count={_pointCount} chunks={_pointChunks.Length} pipe={_pipeline.NativePtr != IntPtr.Zero}");
                 return 0;
-            }
 
-            // Mátrix ellenőrzés: ha NaN van benne, a GPU nem fog rajzolni semmit
             if (float.IsNaN(view.M11) || float.IsNaN(projection.M11))
-            {
-                if (log) Console.WriteLine($"[PCR {_renderCallCount}] MATRIX NaN! View.M11={view.M11}, Proj.M11={projection.M11}");
                 return 0;
-            }
 
             var cmdBuffer  = MetalFrameContext.CurrentCommandBuffer;
             var descriptor = MetalFrameContext.CurrentRenderPassDescriptor;
             if (cmdBuffer.NativePtr == IntPtr.Zero || descriptor.NativePtr == IntPtr.Zero)
-            {
-                if (log) Console.WriteLine($"[PCR {_renderCallCount}] BAIL: cmd={cmdBuffer.NativePtr != IntPtr.Zero} desc={descriptor.NativePtr != IntPtr.Zero}");
                 return 0;
-            }
 
             float subsampleRatio  = (float)(cloudRadius / Math.Max(halfViewSize, cloudRadius * 0.001));
             float subsampleFactor = Math.Clamp(subsampleRatio * subsampleRatio, 0.005f, 1f);
@@ -111,13 +100,7 @@ namespace CloudScope.Platform.Metal.Rendering
             MetalBufferWriter.Write(uniformBuffer, new MetalPointUniforms(view, projection, pointSize));
 
             var encoder = MetalFrameContext.CurrentRenderCommandEncoder;
-            if (encoder.NativePtr == IntPtr.Zero)
-            {
-                if (log) Console.WriteLine($"[PCR {_renderCallCount}] encoder NULL");
-                return 0;
-            }
-
-            if (log) Console.WriteLine($"[PCR {_renderCallCount}] draw={drawCount} drawMax={MaxDrawPointsPerFrame} resident={_pointCount} chunks={_pointChunks.Length} hvs={halfViewSize:F1} sf={subsampleFactor:F3}");
+            if (encoder.NativePtr == IntPtr.Zero) return 0;
 
             encoder.SetRenderPipelineState(_pipeline);
             encoder.SetDepthStencilState(_depthState);
