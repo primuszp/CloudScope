@@ -22,6 +22,9 @@ namespace CloudScope.Platform.Metal.Rendering
         private MTLBuffer _pointBuffer;
         private int _pointCount;
 
+        // Points uploaded before Initialize() — deferred to first Initialize() call.
+        private PointData[]? _pendingPoints;
+
         public int PointCount => _pointCount;
 
         public void Initialize()
@@ -35,42 +38,28 @@ namespace CloudScope.Platform.Metal.Rendering
             ulong uniformSize = (ulong)Unsafe.SizeOf<MetalPointUniforms>();
             for (int i = 0; i < UniformBufferCount; i++)
                 _uniformBuffers[i] = device.NewBuffer(uniformSize, MTLResourceOptions.ResourceStorageModeShared);
+
+            // Flush any points that arrived before the Metal device was ready.
+            if (_pendingPoints != null)
+            {
+                UploadToGpu(_pendingPoints);
+                _pendingPoints = null;
+            }
         }
 
-        public unsafe void Upload(PointData[] points)
+        public void Upload(PointData[] points)
         {
             _pointCount = points.Length;
             _pointBuffer = default;
 
-            if (_pointCount == 0)
-                return;
-
-            var device = MetalFrameContext.Device;
-            ulong byteSize = (ulong)(points.Length * PointStride);
-
-            // Create a staging buffer, copy points into it, then blit to GPU-private VRAM.
-            var staging = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
-            fixed (PointData* src = points)
-                Buffer.MemoryCopy(src, staging.Contents.ToPointer(), byteSize, byteSize);
-            staging.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
-
-            var privateBuffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModePrivate);
-
-            if (privateBuffer.NativePtr == IntPtr.Zero)
+            // Device not ready yet (called before Initialize / app.Run) — defer.
+            if (MetalFrameContext.Device.NativePtr == IntPtr.Zero)
             {
-                _pointBuffer = staging;
+                _pendingPoints = points;
                 return;
             }
 
-            var queue = MetalFrameContext.CommandQueue;
-            var blitCmd = queue.CommandBuffer();
-            var blit = blitCmd.BlitCommandEncoder();
-            blit.CopyFromBuffer(staging, 0, privateBuffer, 0, byteSize);
-            blit.EndEncoding();
-            blitCmd.Commit();
-            blitCmd.WaitUntilCompleted();
-
-            _pointBuffer = privateBuffer;
+            UploadToGpu(points);
         }
 
         public int Render(ref Matrix4 view, ref Matrix4 projection, float pointSize, double halfViewSize, float cloudRadius)
@@ -109,5 +98,37 @@ namespace CloudScope.Platform.Metal.Rendering
         }
 
         public void Dispose() { }
+
+        // ── Private ───────────────────────────────────────────────────────────────
+
+        private unsafe void UploadToGpu(PointData[] points)
+        {
+            if (points.Length == 0) return;
+
+            var device = MetalFrameContext.Device;
+            ulong byteSize = (ulong)(points.Length * PointStride);
+
+            // Stage into shared memory, then blit to GPU-private VRAM.
+            var staging = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
+            fixed (PointData* src = points)
+                Buffer.MemoryCopy(src, staging.Contents.ToPointer(), byteSize, byteSize);
+            staging.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
+
+            var privateBuffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModePrivate);
+            if (privateBuffer.NativePtr == IntPtr.Zero)
+            {
+                _pointBuffer = staging;
+                return;
+            }
+
+            var blitCmd = MetalFrameContext.CommandQueue.CommandBuffer();
+            var blit    = blitCmd.BlitCommandEncoder();
+            blit.CopyFromBuffer(staging, 0, privateBuffer, 0, byteSize);
+            blit.EndEncoding();
+            blitCmd.Commit();
+            blitCmd.WaitUntilCompleted();
+
+            _pointBuffer = privateBuffer;
+        }
     }
 }
