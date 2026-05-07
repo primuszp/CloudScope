@@ -51,7 +51,7 @@ namespace CloudScope.Platform.Metal
 @"#include <metal_stdlib>
 using namespace metal;
 
-struct PointVertex { float3 position; float3 color; };
+struct PointVertex { packed_float3 position; packed_float3 color; };
 struct PointUniforms { float4x4 view; float4x4 projection; float4 point; };
 struct VertexOut { float4 position [[position]]; float point_size [[point_size]]; float3 color; };
 
