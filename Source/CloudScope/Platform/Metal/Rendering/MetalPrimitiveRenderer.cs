@@ -106,6 +106,7 @@ namespace CloudScope.Platform.Metal.Rendering
 
         public void Dispose()
         {
+            Release(ref _uniformsBuffer);
         }
 
         private static MTLDepthStencilState CreateDepthAlwaysState(MTLDevice device)
@@ -118,5 +119,14 @@ namespace CloudScope.Platform.Metal.Rendering
 
         [System.Runtime.InteropServices.DllImport("libobjc.dylib", EntryPoint = "objc_release")]
         private static extern void NativeRelease(IntPtr obj);
+
+        public static void Release(ref MTLBuffer buffer)
+        {
+            if (buffer.NativePtr == IntPtr.Zero)
+                return;
+
+            NativeRelease(buffer.NativePtr);
+            buffer = default;
+        }
     }
 }

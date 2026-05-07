@@ -68,7 +68,13 @@ namespace CloudScope.Platform.Metal.Rendering
                 Matrix4.Identity, color, depthTest: false);
         }
 
-        public void Dispose() => _renderer.Dispose();
+        public void Dispose()
+        {
+            MetalPrimitiveRenderer.Release(ref _crosshairBuffer);
+            MetalPrimitiveRenderer.Release(ref _modeBuffer);
+            MetalPrimitiveRenderer.Release(ref _pivotBuffer);
+            _renderer.Dispose();
+        }
 
         private static float[] BuildPivotGeometry() => new[]
         {
