@@ -48,6 +48,9 @@ namespace CloudScope
         private float _cloudRadius = 50f;
 
         private readonly CameraInputController _cameraInput = new();
+        private readonly bool _metalFrameLog =
+            Environment.GetEnvironmentVariable("CLOUDSCOPE_METAL_FRAME_LOG") == "1";
+        private int _metalFrameLogCounter;
 
         private readonly ISelectionGizmoRenderer[]   _renderers;
 
@@ -188,6 +191,8 @@ namespace CloudScope
 
             int drawCount = _pointRenderer.Render(ref view, ref proj, _cameraInput.PointSize, _cam.Hvs, _cloudRadius);
             _frameTiming.MarkMainDraw(drawCount);
+            if (_metalFrameLog && (++_metalFrameLogCounter % 60) == 0)
+                Console.WriteLine($"Metal frame: viewport {_width}x{_height}, draw {drawCount:N0}, hvs {_cam.Hvs:F3}, radius {_cloudRadius:F3}");
 
             // 2. Labeled points highlight (second pass with label colors)
             if (_selection.Points != null && _selection.Labels.Count > 0)

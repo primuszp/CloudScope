@@ -18,6 +18,8 @@ namespace CloudScope.Platform.Metal
         private MTKViewDelegate? _viewDelegate;
         private MTKEventView?    _mtkView;
         private NSWindow?        _window;
+        private int _drawableWidth;
+        private int _drawableHeight;
 
         public SharpMetalViewerHost(int width, int height, IRenderBackend renderBackend)
         {
@@ -67,6 +69,8 @@ namespace CloudScope.Platform.Metal
                     if (descriptor.NativePtr == IntPtr.Zero || drawable.NativePtr == IntPtr.Zero)
                         return;
 
+                    SyncDrawableSizeFromRenderPass(descriptor);
+
                     var cmdBuffer = MetalFrameContext.CommandQueue.CommandBuffer();
                     if (cmdBuffer.NativePtr == IntPtr.Zero)
                         return;
@@ -86,8 +90,13 @@ namespace CloudScope.Platform.Metal
                 _viewDelegate.OnSizeChange_ = (_, size) =>
                 {
                     int w = (int)size.Width, h = (int)size.Height;
+                    if (w <= 0 || h <= 0)
+                        return;
+
                     _mtkView?.UpdateDrawableSize(w, h);
                     _controller.Resize(w, h);
+                    _drawableWidth = w;
+                    _drawableHeight = h;
                 };
 
                 _mtkView.Delegate = _viewDelegate;
@@ -127,6 +136,27 @@ namespace CloudScope.Platform.Metal
             _viewDelegate?.Dispose();
             _mtkView?.Dispose();
             _controller.Dispose();
+        }
+
+        private void SyncDrawableSizeFromRenderPass(MTLRenderPassDescriptor descriptor)
+        {
+            var color = descriptor.ColorAttachments.Object(0);
+            var texture = color.Texture;
+            if (texture.NativePtr == IntPtr.Zero)
+                return;
+
+            int width = checked((int)texture.Width);
+            int height = checked((int)texture.Height);
+            if (width <= 0 || height <= 0)
+                return;
+
+            if (width == _drawableWidth && height == _drawableHeight)
+                return;
+
+            _mtkView?.UpdateDrawableSize(width, height);
+            _controller.Resize(width, height);
+            _drawableWidth = width;
+            _drawableHeight = height;
         }
 
         // ── Key mapping ───────────────────────────────────────────────────────────
