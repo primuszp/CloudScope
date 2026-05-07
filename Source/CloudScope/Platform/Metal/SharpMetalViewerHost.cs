@@ -75,7 +75,11 @@ namespace CloudScope.Platform.Metal
                     }
                 };
                 _viewDelegate.OnSizeChange_ = (_, size) =>
-                    _controller.Resize((int)size.Width, (int)size.Height);
+                {
+                    int w = (int)size.Width, h = (int)size.Height;
+                    _mtkView?.UpdateDrawableSize(w, h);
+                    _controller.Resize(w, h);
+                };
 
                 _mtkView.Delegate = _viewDelegate;
 

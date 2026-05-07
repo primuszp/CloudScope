@@ -5,42 +5,48 @@ using SharpMetal.Metal;
 
 namespace CloudScope.Platform.Metal
 {
-    /// <summary>
-    /// Thread-local Metal frame state: device, command queue,
-    /// current MTKView and command buffer for each draw call.
-    /// </summary>
     [SupportedOSPlatform("macos")]
     internal static class MetalFrameContext
     {
-        // ── Persistent (set once at startup) ────────────────────────────────────
-        public static MTLDevice Device { get; private set; }
+        // ── Persistent ───────────────────────────────────────────────────────────
+        public static MTLDevice       Device       { get; private set; }
         public static MTLCommandQueue CommandQueue { get; private set; }
 
-        // ── Per-frame ────────────────────────────────────────────────────────────
-        [ThreadStatic] private static MTKView? _currentView;
-        [ThreadStatic] private static MTLCommandBuffer _currentCommandBuffer;
+        // ── Per-frame (ThreadStatic so the render thread has its own slot) ───────
+        [ThreadStatic] private static MTKView?          _currentView;
+        [ThreadStatic] private static MTLCommandBuffer  _currentCommandBuffer;
+        [ThreadStatic] private static bool              _firstEncoderDone;
 
-        public static MTKView? CurrentView => _currentView;
+        public static MTKView?         CurrentView          => _currentView;
         public static MTLCommandBuffer CurrentCommandBuffer => _currentCommandBuffer;
 
-        // ── Startup ──────────────────────────────────────────────────────────────
+        /// <summary>
+        /// True after the first render-command-encoder of this frame has been
+        /// created.  Subsequent encoders must use LoadAction.Load.
+        /// </summary>
+        public static bool FirstEncoderDone => _firstEncoderDone;
+
         public static void Initialize(MTLDevice device, MTLCommandQueue commandQueue)
         {
-            Device = device;
+            Device       = device;
             CommandQueue = commandQueue;
         }
 
-        // ── Frame lifecycle ──────────────────────────────────────────────────────
         public static void Begin(MTKView view, MTLCommandBuffer commandBuffer)
         {
-            _currentView = view;
+            _currentView          = view;
             _currentCommandBuffer = commandBuffer;
+            _firstEncoderDone     = false;
         }
+
+        /// <summary>Called by each renderer after it opens its render encoder.</summary>
+        public static void MarkFirstEncoderDone() => _firstEncoderDone = true;
 
         public static void End()
         {
-            _currentView = null;
+            _currentView          = null;
             _currentCommandBuffer = default;
+            _firstEncoderDone     = false;
         }
     }
 }

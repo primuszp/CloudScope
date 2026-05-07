@@ -69,11 +69,15 @@ namespace CloudScope.Platform.Metal.Rendering
             MetalBufferWriter.Write(_uniformsBuffer, new MetalColorUniforms(mvp, color));
 
             var rpd = descriptor.Value;
-            var ca = rpd.ColorAttachments.Object(0);
-            ca.LoadAction = MTLLoadAction.Load;
-            rpd.ColorAttachments.SetObject(ca, 0);
+            if (MetalFrameContext.FirstEncoderDone)
+            {
+                var ca2 = rpd.ColorAttachments.Object(0);
+                ca2.LoadAction = MTLLoadAction.Load;
+                rpd.ColorAttachments.SetObject(ca2, 0);
+            }
 
             var encoder = cmdBuffer.RenderCommandEncoder(rpd);
+            MetalFrameContext.MarkFirstEncoderDone();
             encoder.SetRenderPipelineState(_pipeline);
             encoder.SetDepthStencilState(depthTest ? _depthOn : _depthOff);
             encoder.SetVertexBuffer(vertexBuffer, 0, 0);
