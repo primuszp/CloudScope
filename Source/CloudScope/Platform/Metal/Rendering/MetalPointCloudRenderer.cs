@@ -82,12 +82,7 @@ namespace CloudScope.Platform.Metal.Rendering
             MetalBufferWriter.Write(uniformBuffer, new MetalPointUniforms(view, projection, pointSize));
 
             var rpd = descriptor;
-            if (MetalFrameContext.FirstEncoderDone)
-            {
-                var ca2 = rpd.ColorAttachments.Object(0);
-                ca2.LoadAction = MTLLoadAction.Load;
-                rpd.ColorAttachments.SetObject(ca2, 0);
-            }
+            MetalFrameContext.PrepareRenderPassForEncoder(rpd);
 
             var encoder = cmdBuffer.RenderCommandEncoder(rpd);
             MetalFrameContext.MarkFirstEncoderDone();
