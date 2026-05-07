@@ -21,6 +21,9 @@ namespace CloudScope.Platform.Metal
         private int _drawableWidth;
         private int _drawableHeight;
 
+        private IntPtr _frameSemaphore; // dispatch_semaphore_t
+        private const int MaxFramesInFlight = 3;
+
         // Static root prevents GC from collecting this instance while Run() blocks
         // (the JIT may decide 'this' is unreachable after _app.Run() starts)
         private static SharpMetalViewerHost? _current;
@@ -37,6 +40,7 @@ namespace CloudScope.Platform.Metal
             _app      = new NSApplication();
             _appDelegate = new NSApplicationDelegate();
             _app.SetDelegate(_appDelegate);
+            _frameSemaphore = dispatch_semaphore_create(MaxFramesInFlight);
 
             _appDelegate.OnWillFinishLaunching += _ =>
                 _app.SetActivationPolicy(NSApplicationActivationPolicy.Regular);
@@ -114,16 +118,14 @@ namespace CloudScope.Platform.Metal
                     finally
                     {
                         var enc = MetalFrameContext.CurrentRenderCommandEncoder;
-                        if (enc.NativePtr == IntPtr.Zero)
-                            Console.WriteLine($"[F{frameCount}] encoder NULL in finally!");
-                        else
-                            enc.EndEncoding();
+                        if (enc.NativePtr != IntPtr.Zero) enc.EndEncoding();
 
-                        if (frameCount < 5 || frameCount % 60 == 0)
-                            Console.WriteLine($"[F{frameCount}] pre-commit enc={(enc.NativePtr != IntPtr.Zero ? "OK" : "NULL")} t={stopwatch.Elapsed.TotalSeconds:F1}s");
+                        if (log) Console.WriteLine($"[F{frameCount}] pre-commit t={stopwatch.Elapsed.TotalSeconds:F1}s");
 
                         cmdBuf.PresentDrawable(drawable);
                         cmdBuf.Commit();
+                        cmdBuf.WaitUntilCompleted(); // Hard sync: wait for GPU to finish every frame
+
                         MetalFrameContext.End();
                         frameCount++;
                         pool.Drain();
@@ -260,6 +262,17 @@ fragment float4 tf(V in [[stage_in]]) { return float4(1,0,0,1); }
 
         [System.Runtime.InteropServices.DllImport("libobjc.dylib", EntryPoint = "objc_msgSend")]
         private static extern ushort GetModifierFlags(IntPtr obj, IntPtr sel);
+
+        [System.Runtime.InteropServices.DllImport("libSystem.dylib")]
+        private static extern IntPtr dispatch_semaphore_create(long value);
+
+        [System.Runtime.InteropServices.DllImport("libSystem.dylib")]
+        private static extern long dispatch_semaphore_wait(IntPtr dsema, ulong timeout);
+
+        [System.Runtime.InteropServices.DllImport("libSystem.dylib")]
+        private static extern long dispatch_semaphore_signal(IntPtr dsema);
+
+        private const ulong DISPATCH_TIME_FOREVER = 0xFFFFFFFFFFFFFFFF;
 
         [System.Runtime.InteropServices.DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
         private static extern IntPtr CGColorCreateGenericRGB(double r, double g, double b, double a);
