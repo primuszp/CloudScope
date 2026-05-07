@@ -124,7 +124,6 @@ namespace CloudScope.Platform.Metal
 
                         cmdBuf.PresentDrawable(drawable);
                         cmdBuf.Commit();
-                        cmdBuf.WaitUntilScheduled();
                         MetalFrameContext.End();
                         frameCount++;
                         pool.Drain();
@@ -202,13 +201,7 @@ fragment float4 tf(V in [[stage_in]]) { return float4(1,0,0,1); }
 
         public void Run()
         {
-            _current = this; // static root — GC cannot collect this instance
-
-            // DIAGNOSTIC: force GC immediately — if rendering breaks on frame 0, GC is the cause
-            GC.Collect(2, GCCollectionMode.Forced, blocking: true);
-            GC.WaitForPendingFinalizers();
-            Console.WriteLine("[GC] Forced collection before Run — rendering should still work if GC-safe");
-
+            _current = this; // static root
             _app.Run();
             _current = null;
             GC.KeepAlive(this);
