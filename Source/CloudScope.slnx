@@ -1,6 +1,7 @@
-﻿<Solution>
+<Solution>
   <Project Path="CloudScope/CloudScope.csproj" />
   <Project Path="CloudScope.Core/CloudScope.Core.csproj" />
+  <Project Path="MetalTriangleTest/MetalTriangleTest.csproj" />
 </Solution>
 
 
