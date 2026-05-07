@@ -16,6 +16,10 @@ namespace CloudScope.Platform.Metal.Rendering
             int.TryParse(Environment.GetEnvironmentVariable("CLOUDSCOPE_METAL_MAX_DRAW_POINTS"), out int maxDrawPoints) && maxDrawPoints > 0
                 ? maxDrawPoints
                 : 1_000_000;
+        private static readonly int MaxResidentPoints =
+            int.TryParse(Environment.GetEnvironmentVariable("CLOUDSCOPE_METAL_MAX_RESIDENT_POINTS"), out int maxResidentPoints) && maxResidentPoints > 0
+                ? maxResidentPoints
+                : 1_000_000;
 
         // Triple-buffered uniforms — CPU never blocks waiting for GPU to finish.
         private const int UniformBufferCount = 3;
@@ -48,14 +52,15 @@ namespace CloudScope.Platform.Metal.Rendering
             // Flush any points that arrived before the Metal device was ready.
             if (_pendingPoints != null)
             {
-                UploadToGpu(_pendingPoints);
+                _pointCount = Math.Min(_pendingPoints.Length, MaxResidentPoints);
+                UploadToGpu(_pendingPoints, _pointCount);
                 _pendingPoints = null;
             }
         }
 
         public void Upload(PointData[] points)
         {
-            _pointCount = points.Length;
+            _pointCount = Math.Min(points.Length, MaxResidentPoints);
             ReleasePointChunks();
 
             // Device not ready yet (called before Initialize / app.Run) — defer.
@@ -65,7 +70,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 return;
             }
 
-            UploadToGpu(points);
+            UploadToGpu(points, _pointCount);
         }
 
         private int _renderCallCount;
@@ -105,7 +110,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 return 0;
             }
 
-            if (log) Console.WriteLine($"[PCR {_renderCallCount}] draw={drawCount} max={MaxDrawPointsPerFrame} chunks={_pointChunks.Length} hvs={halfViewSize:F1} sf={subsampleFactor:F3}");
+            if (log) Console.WriteLine($"[PCR {_renderCallCount}] draw={drawCount} drawMax={MaxDrawPointsPerFrame} resident={_pointCount} chunks={_pointChunks.Length} hvs={halfViewSize:F1} sf={subsampleFactor:F3}");
 
             encoder.SetRenderPipelineState(_pipeline);
             encoder.SetDepthStencilState(_depthState);
@@ -137,12 +142,12 @@ namespace CloudScope.Platform.Metal.Rendering
 
         // ── Private ───────────────────────────────────────────────────────────────
 
-        private unsafe void UploadToGpu(PointData[] points)
+        private unsafe void UploadToGpu(PointData[] points, int residentCount)
         {
-            if (points.Length == 0) return;
+            if (residentCount <= 0) return;
 
             var device = MetalFrameContext.Device;
-            int chunkCount = (points.Length + PointsPerChunk - 1) / PointsPerChunk;
+            int chunkCount = (residentCount + PointsPerChunk - 1) / PointsPerChunk;
             _pointChunks = new MTLBuffer[chunkCount];
             _chunkCounts = new int[chunkCount];
 
@@ -151,7 +156,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 for (int chunk = 0; chunk < chunkCount; chunk++)
                 {
                     int pointOffset = chunk * PointsPerChunk;
-                    int count = Math.Min(PointsPerChunk, points.Length - pointOffset);
+                    int count = Math.Min(PointsPerChunk, residentCount - pointOffset);
                     ulong byteSize = (ulong)(count * PointStride);
 
                     var buffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
