@@ -58,11 +58,16 @@ namespace CloudScope.Platform.Metal
                 {
                     ColorPixelFormat        = MTLPixelFormat.BGRA8Unorm,
                     DepthStencilPixelFormat = MTLPixelFormat.Depth32Float,
-                    ClearColor              = new MTLClearColor { red = 0.015, green = 0.018, blue = 0.022, alpha = 1.0 },
+                    ClearColor              = new MTLClearColor { red = 0.0, green = 0.0, blue = 0.0, alpha = 1.0 },
                     FramebufferOnly         = false,
                     Paused                  = false,
                     EnableSetNeedsDisplay   = false
                 };
+
+                // Fix szürke háttér: kényszerítsük a layer-t feketére
+                _mtkView.FramebufferOnly = false; // keep as is
+                // (Layer property missing in MTKView wrapper, skipping for now to fix build)
+
 
                 // ── DIAGNOSTIC: direct triangle (same as MetalTriangleTest) ──────
                 var diagPipeline = CreateMinimalTrianglePipeline(device);
@@ -78,10 +83,16 @@ namespace CloudScope.Platform.Metal
                     var pool = new NSAutoreleasePool();
                     var descriptor = view.CurrentRenderPassDescriptor;
                     var drawable   = view.CurrentDrawable;
+
+                    bool log = frameCount < 5 || frameCount % 60 == 0;
+                    if (log)
+                    {
+                        Console.WriteLine($"[F{frameCount}] Tick | Drawable: {(drawable.NativePtr != IntPtr.Zero ? "OK" : "NULL")} | Desc: {(descriptor.NativePtr != IntPtr.Zero ? "OK" : "NULL")}");
+                    }
+
                     if (descriptor.NativePtr == IntPtr.Zero || drawable.NativePtr == IntPtr.Zero)
                     {
                         pool.Drain();
-                        if (frameCount < 5) Console.WriteLine($"[F{frameCount}] NULL");
                         frameCount++; return;
                     }
 
@@ -94,11 +105,11 @@ namespace CloudScope.Platform.Metal
                         float dt = (float)stopwatch.Elapsed.TotalSeconds;
                         stopwatch.Restart();
                         _controller.UpdateFrame(dt, dummyKeyboard);
-                        _controller.RenderFrame(0);  // calls BeginFrame() which creates encoder
+                        _controller.RenderFrame(0);
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"[F{frameCount}] EXCEPTION: {ex.Message}\n{ex.StackTrace}");
+                        Console.WriteLine($"[F{frameCount}] EXCEPTION: {ex.Message}");
                     }
                     finally
                     {
@@ -256,6 +267,9 @@ fragment float4 tf(V in [[stage_in]]) { return float4(1,0,0,1); }
 
         [System.Runtime.InteropServices.DllImport("libobjc.dylib", EntryPoint = "objc_msgSend")]
         private static extern ushort GetModifierFlags(IntPtr obj, IntPtr sel);
+
+        [System.Runtime.InteropServices.DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
+        private static extern IntPtr CGColorCreateGenericRGB(double r, double g, double b, double a);
 
         private static bool IsModifierDown(ushort keyCode) => false;
 
