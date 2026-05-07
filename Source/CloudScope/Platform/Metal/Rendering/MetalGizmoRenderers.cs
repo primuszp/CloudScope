@@ -43,7 +43,11 @@ namespace CloudScope.Platform.Metal.Rendering
                 Renderer.Draw(_axisBuffer, 2, MTLPrimitiveType.Line, mvp, AxisColor[axis], depthTest: false);
         }
 
-        public virtual void Dispose() => Renderer.Dispose();
+        public virtual void Dispose()
+        {
+            MetalPrimitiveRenderer.Release(ref _axisBuffer);
+            Renderer.Dispose();
+        }
     }
 
     [SupportedOSPlatform("macos")]
@@ -71,7 +75,8 @@ namespace CloudScope.Platform.Metal.Rendering
 
         private MTLBuffer _edgeBuffer;
         private MTLBuffer _faceBuffer;
-        private MTLBuffer _placementBuffer;
+        private MTLBuffer _placementFillBuffer;
+        private MTLBuffer _placementLineBuffer;
         private MTLBuffer _dynamicBuffer;
         private readonly float[] _lineBuf = new float[6];
         private readonly float[] _arrowBuf = new float[9];
@@ -100,25 +105,30 @@ namespace CloudScope.Platform.Metal.Rendering
             float nx1 = Math.Max(x0, x1) / (float)viewportWidth  * 2f - 1f;
             float ny0 = 1f - Math.Max(y0, y1) / (float)viewportHeight * 2f;
             float ny1 = 1f - Math.Min(y0, y1) / (float)viewportHeight * 2f;
-            _placementBuffer = Renderer.CreateStaticBuffer(new[]
+            Renderer.UpdateBuffer(ref _placementFillBuffer, new[]
             {
                 nx0,ny0,0f, nx1,ny0,0f, nx1,ny1,0f,
                 nx0,ny0,0f, nx1,ny1,0f, nx0,ny1,0f,
             });
-            Renderer.Draw(_placementBuffer, 6, MTLPrimitiveType.Triangle,
+            Renderer.Draw(_placementFillBuffer, 6, MTLPrimitiveType.Triangle,
                 Matrix4.Identity, new Vector4(0f, 0.78f, 1f, 0.12f), depthTest: false);
 
-            _placementBuffer = Renderer.CreateStaticBuffer(new[]
+            Renderer.UpdateBuffer(ref _placementLineBuffer, new[]
             {
                 nx0,ny0,0f, nx1,ny0,0f, nx1,ny0,0f, nx1,ny1,0f,
                 nx1,ny1,0f, nx0,ny1,0f, nx0,ny1,0f, nx0,ny0,0f,
             });
-            Renderer.Draw(_placementBuffer, 8, MTLPrimitiveType.Line,
+            Renderer.Draw(_placementLineBuffer, 8, MTLPrimitiveType.Line,
                 Matrix4.Identity, new Vector4(0f, 0.82f, 1f, 0.9f), depthTest: false);
         }
 
         public override void Dispose()
         {
+            MetalPrimitiveRenderer.Release(ref _edgeBuffer);
+            MetalPrimitiveRenderer.Release(ref _faceBuffer);
+            MetalPrimitiveRenderer.Release(ref _placementFillBuffer);
+            MetalPrimitiveRenderer.Release(ref _placementLineBuffer);
+            MetalPrimitiveRenderer.Release(ref _dynamicBuffer);
             base.Dispose();
         }
 
@@ -272,7 +282,7 @@ namespace CloudScope.Platform.Metal.Rendering
 
         private void DrawDynamic(float[] vertices, int vertexCount, MTLPrimitiveType primitive, Vector4 color)
         {
-            _dynamicBuffer = Renderer.CreateStaticBuffer(vertices);
+            Renderer.UpdateBuffer(ref _dynamicBuffer, vertices);
             Renderer.Draw(_dynamicBuffer, vertexCount, primitive, Matrix4.Identity, color, depthTest: false);
         }
 
@@ -334,6 +344,12 @@ namespace CloudScope.Platform.Metal.Rendering
             else if (axis == 1) { data[i++] = c; data[i++] = 0f; data[i++] = s; }
             else { data[i++] = c; data[i++] = s; data[i++] = 0f; }
         }
+
+        public override void Dispose()
+        {
+            MetalPrimitiveRenderer.Release(ref _circleBuffer);
+            base.Dispose();
+        }
     }
 
     [SupportedOSPlatform("macos")]
@@ -387,5 +403,11 @@ namespace CloudScope.Platform.Metal.Rendering
 
         private static void AddPt(float[] data, ref int i, float x, float y, float z)
         { data[i++] = x; data[i++] = y; data[i++] = z; }
+
+        public override void Dispose()
+        {
+            MetalPrimitiveRenderer.Release(ref _wireBuffer);
+            base.Dispose();
+        }
     }
 }

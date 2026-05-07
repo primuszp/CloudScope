@@ -50,6 +50,8 @@ namespace CloudScope.Platform.Metal.Rendering
         public void Upload(PointData[] points)
         {
             _pointCount = points.Length;
+            if (_pointBuffer.NativePtr != IntPtr.Zero)
+                NativeRelease(_pointBuffer.NativePtr);
             _pointBuffer = default;
 
             // Device not ready yet (called before Initialize / app.Run) — defer.
@@ -119,27 +121,15 @@ namespace CloudScope.Platform.Metal.Rendering
             var device = MetalFrameContext.Device;
             ulong byteSize = (ulong)(points.Length * PointStride);
 
-            // Stage into shared memory, then blit to GPU-private VRAM.
-            var staging = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
+            // Keep a single managed vertex buffer. The previous staging+private copy
+            // doubled point-cloud VRAM pressure and could trigger black frames under load.
+            _pointBuffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
             fixed (PointData* src = points)
-                Buffer.MemoryCopy(src, staging.Contents.ToPointer(), byteSize, byteSize);
-            staging.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
-
-            var privateBuffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModePrivate);
-            if (privateBuffer.NativePtr == IntPtr.Zero)
-            {
-                _pointBuffer = staging;
-                return;
-            }
-
-            var blitCmd = MetalFrameContext.CommandQueue.CommandBuffer();
-            var blit    = blitCmd.BlitCommandEncoder();
-            blit.CopyFromBuffer(staging, 0, privateBuffer, 0, byteSize);
-            blit.EndEncoding();
-            blitCmd.Commit();
-            blitCmd.WaitUntilCompleted();
-
-            _pointBuffer = privateBuffer;
+                Buffer.MemoryCopy(src, _pointBuffer.Contents.ToPointer(), byteSize, byteSize);
+            _pointBuffer.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
         }
+
+        [System.Runtime.InteropServices.DllImport("libobjc.dylib", EntryPoint = "objc_release")]
+        private static extern void NativeRelease(IntPtr obj);
     }
 }
