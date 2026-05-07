@@ -1,93 +1,113 @@
-#if MACOS
 using System;
 using System.Runtime.CompilerServices;
+using System.Runtime.Versioning;
 using CloudScope.Rendering;
-using Foundation;
-using Metal;
 using OpenTK.Mathematics;
+using SharpMetal.Metal;
 
-namespace CloudScope.Platform.Metal
+namespace CloudScope.Platform.Metal.Rendering
 {
+    [SupportedOSPlatform("macos")]
     internal sealed class MetalPointCloudRenderer : IPointCloudRenderer
     {
-        private const int PointStride = 24;
-        private IMTLRenderPipelineState? pipeline;
-        private IMTLDepthStencilState? depthState;
-        private IMTLBuffer? pointBuffer;
-        private IMTLBuffer? uniformsBuffer;
-        private int pointCount;
+        private const int PointStride = 24; // 6 floats
 
-        public int PointCount => pointCount;
+        // Triple-buffered uniforms — CPU never blocks waiting for GPU to finish.
+        private const int UniformBufferCount = 3;
+        private readonly MTLBuffer[] _uniformBuffers = new MTLBuffer[UniformBufferCount];
+        private int _uniformBufferIndex;
+
+        private MTLRenderPipelineState _pipeline;
+        private MTLDepthStencilState _depthState;
+        private MTLBuffer _pointBuffer;
+        private int _pointCount;
+
+        public int PointCount => _pointCount;
 
         public void Initialize()
         {
-            var device = MetalFrameContext.CurrentView?.Device ?? MTLDevice.SystemDefault
-                ?? throw new PlatformNotSupportedException("No Metal device is available.");
+            var device = MetalFrameContext.Device;
 
-            pipeline = MetalShaderLibrary.CreatePointPipeline(
-                device,
-                MetalFrameContext.CurrentView?.ColorPixelFormat ?? MTLPixelFormat.BGRA8Unorm,
-                MetalFrameContext.CurrentView?.DepthStencilPixelFormat ?? MTLPixelFormat.Depth32Float);
-            depthState = MetalShaderLibrary.CreateDepthState(device, depthWriteEnabled: true);
-            uniformsBuffer = device.CreateBuffer((UIntPtr)Unsafe.SizeOf<MetalPointUniforms>(), MTLResourceOptions.CpuCacheModeDefault);
+            _pipeline = MetalShaderLibrary.CreatePointPipeline(
+                device, MTLPixelFormat.BGRA8Unorm, MTLPixelFormat.Depth32Float);
+            _depthState = MetalShaderLibrary.CreateDepthState(device, depthWrite: true);
+
+            ulong uniformSize = (ulong)Unsafe.SizeOf<MetalPointUniforms>();
+            for (int i = 0; i < UniformBufferCount; i++)
+                _uniformBuffers[i] = device.NewBuffer(uniformSize, MTLResourceOptions.ResourceStorageModeShared);
         }
 
         public unsafe void Upload(PointData[] points)
         {
-            pointCount = points.Length;
-            if (pointCount == 0)
+            _pointCount = points.Length;
+            _pointBuffer = default;
+
+            if (_pointCount == 0)
+                return;
+
+            var device = MetalFrameContext.Device;
+            ulong byteSize = (ulong)(points.Length * PointStride);
+
+            // Create a staging buffer, copy points into it, then blit to GPU-private VRAM.
+            var staging = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
+            fixed (PointData* src = points)
+                Buffer.MemoryCopy(src, staging.Contents.ToPointer(), byteSize, byteSize);
+            staging.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
+
+            var privateBuffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModePrivate);
+
+            if (privateBuffer.NativePtr == IntPtr.Zero)
             {
-                pointBuffer = null;
+                _pointBuffer = staging;
                 return;
             }
 
-            var device = MetalFrameContext.CurrentView?.Device ?? MTLDevice.SystemDefault
-                ?? throw new PlatformNotSupportedException("No Metal device is available.");
+            var queue = MetalFrameContext.CommandQueue;
+            var blitCmd = queue.CommandBuffer();
+            var blit = blitCmd.BlitCommandEncoder();
+            blit.CopyFromBuffer(staging, 0, privateBuffer, 0, byteSize);
+            blit.EndEncoding();
+            blitCmd.Commit();
+            blitCmd.WaitUntilCompleted();
 
-            fixed (PointData* data = points)
-            {
-                pointBuffer = device.CreateBuffer(
-                    (IntPtr)data,
-                    (UIntPtr)(points.Length * PointStride),
-                    MTLResourceOptions.StorageModeManaged);
-            }
+            _pointBuffer = privateBuffer;
         }
 
         public int Render(ref Matrix4 view, ref Matrix4 projection, float pointSize, double halfViewSize, float cloudRadius)
         {
-            if (pointCount <= 0 || pointBuffer == null || pipeline == null || uniformsBuffer == null)
+            if (_pointCount <= 0 || _pointBuffer.NativePtr == IntPtr.Zero || _pipeline.NativePtr == IntPtr.Zero)
                 return 0;
 
-            var commandBuffer = MetalFrameContext.CurrentCommandBuffer;
+            var cmdBuffer  = MetalFrameContext.CurrentCommandBuffer;
             var descriptor = MetalFrameContext.CurrentView?.CurrentRenderPassDescriptor;
-            if (commandBuffer == null || descriptor == null)
+            if (cmdBuffer.NativePtr == IntPtr.Zero || descriptor == null || descriptor.Value.NativePtr == IntPtr.Zero)
                 return 0;
 
-            float subsampleRatio = (float)(cloudRadius / Math.Max(halfViewSize, cloudRadius * 0.001));
+            float subsampleRatio  = (float)(cloudRadius / Math.Max(halfViewSize, cloudRadius * 0.001));
             float subsampleFactor = Math.Clamp(subsampleRatio * subsampleRatio, 0.005f, 1f);
-            int drawCount = Math.Max((int)(pointCount * subsampleFactor), Math.Min(100_000, pointCount));
+            int drawCount = Math.Max((int)(_pointCount * subsampleFactor), Math.Min(100_000, _pointCount));
 
-            MetalBufferWriter.Write(uniformsBuffer, new MetalPointUniforms(view, projection, pointSize));
+            _uniformBufferIndex = (_uniformBufferIndex + 1) % UniformBufferCount;
+            var uniformBuffer = _uniformBuffers[_uniformBufferIndex];
 
-            using var encoder = commandBuffer.CreateRenderCommandEncoder(descriptor);
-            encoder.SetRenderPipelineState(pipeline);
-            if (depthState != null)
-                encoder.SetDepthStencilState(depthState);
-            encoder.SetVertexBuffer(pointBuffer, UIntPtr.Zero, 0);
-            encoder.SetVertexBuffer(uniformsBuffer, UIntPtr.Zero, 1);
-            encoder.DrawPrimitives(MTLPrimitiveType.Point, 0, (UIntPtr)drawCount);
+            MetalBufferWriter.Write(uniformBuffer, new MetalPointUniforms(view, projection, pointSize));
+
+            var rpd = descriptor.Value;
+            var ca = rpd.ColorAttachments.Object(0);
+            ca.LoadAction = MTLLoadAction.Load;
+            rpd.ColorAttachments.SetObject(ca, 0);
+
+            var encoder = cmdBuffer.RenderCommandEncoder(rpd);
+            encoder.SetRenderPipelineState(_pipeline);
+            encoder.SetDepthStencilState(_depthState);
+            encoder.SetVertexBuffer(_pointBuffer, 0, 0);
+            encoder.SetVertexBuffer(uniformBuffer, 0, 1);
+            encoder.DrawPrimitives(MTLPrimitiveType.Point, 0, (ulong)drawCount);
             encoder.EndEncoding();
 
             return drawCount;
         }
 
-        public void Dispose()
-        {
-            pointBuffer?.Dispose();
-            uniformsBuffer?.Dispose();
-            pipeline?.Dispose();
-            depthState?.Dispose();
-        }
+        public void Dispose() { }
     }
 }
-#endif

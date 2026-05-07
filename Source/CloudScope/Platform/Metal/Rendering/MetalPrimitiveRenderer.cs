@@ -1,88 +1,98 @@
-#if MACOS
 using System;
-using Metal;
+using System.Runtime.CompilerServices;
+using System.Runtime.Versioning;
+using CloudScope.Platform.Metal.ObjC;
 using OpenTK.Mathematics;
+using SharpMetal.Foundation;
+using SharpMetal.Metal;
 
-namespace CloudScope.Platform.Metal
+namespace CloudScope.Platform.Metal.Rendering
 {
+    [SupportedOSPlatform("macos")]
     internal sealed class MetalPrimitiveRenderer : IDisposable
     {
-        private IMTLRenderPipelineState? pipeline;
-        private IMTLDepthStencilState? depthOn;
-        private IMTLDepthStencilState? depthOff;
-        private IMTLBuffer? uniformsBuffer;
+        private MTLRenderPipelineState _pipeline;
+        private MTLDepthStencilState _depthOn;
+        private MTLDepthStencilState _depthOff;
+        private MTLBuffer _uniformsBuffer;
+        private bool _initialized;
 
         public void EnsureResources()
         {
-            if (pipeline != null)
+            if (_initialized)
                 return;
 
-            var view = MetalFrameContext.CurrentView;
-            var device = view?.Device ?? MTLDevice.SystemDefault
-                ?? throw new PlatformNotSupportedException("No Metal device is available.");
-            pipeline = MetalShaderLibrary.CreateColorPipeline(
-                device,
-                view?.ColorPixelFormat ?? MTLPixelFormat.BGRA8Unorm,
-                view?.DepthStencilPixelFormat ?? MTLPixelFormat.Depth32Float);
-            depthOn = MetalShaderLibrary.CreateDepthState(device, depthWriteEnabled: false);
-            depthOff = CreateDepthOffState(device);
-            uniformsBuffer = device.CreateBuffer((UIntPtr)System.Runtime.CompilerServices.Unsafe.SizeOf<MetalColorUniforms>(), MTLResourceOptions.CpuCacheModeDefault);
+            var device = MetalFrameContext.Device;
+            var colorFmt = MTLPixelFormat.BGRA8Unorm;
+            var depthFmt = MTLPixelFormat.Depth32Float;
+
+            _pipeline = MetalShaderLibrary.CreateColorPipeline(device, colorFmt, depthFmt);
+            _depthOn  = MetalShaderLibrary.CreateDepthState(device, depthWrite: false);
+            _depthOff = CreateDepthAlwaysState(device);
+
+            ulong uniformSize = (ulong)Unsafe.SizeOf<MetalColorUniforms>();
+            _uniformsBuffer = device.NewBuffer(uniformSize, MTLResourceOptions.ResourceStorageModeShared);
+
+            _initialized = true;
         }
 
-        public unsafe IMTLBuffer? CreateStaticBuffer(float[] vertices)
+        public MTLBuffer CreateStaticBuffer(float[] vertices)
         {
             EnsureResources();
             if (vertices.Length == 0)
-                return null;
+                return default;
 
-            var device = MetalFrameContext.CurrentView?.Device ?? MTLDevice.SystemDefault
-                ?? throw new PlatformNotSupportedException("No Metal device is available.");
-            fixed (float* ptr = vertices)
+            ulong byteSize = (ulong)(vertices.Length * sizeof(float));
+            var buf = MetalFrameContext.Device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
+            unsafe
             {
-                return device.CreateBuffer((IntPtr)ptr, (UIntPtr)(vertices.Length * sizeof(float)), MTLResourceOptions.StorageModeManaged);
+                fixed (float* src = vertices)
+                    Buffer.MemoryCopy(src, buf.Contents.ToPointer(), byteSize, byteSize);
             }
+            buf.DidModifyRange(new NSRange { location = 0, length = buf.Length });
+            return buf;
         }
 
-        public void Draw(IMTLBuffer? vertexBuffer, int vertexCount, MTLPrimitiveType primitiveType, Matrix4 mvp, Vector4 color, bool depthTest)
+        public void Draw(
+            MTLBuffer vertexBuffer, int vertexCount,
+            MTLPrimitiveType primitiveType,
+            Matrix4 mvp, Vector4 color, bool depthTest)
         {
-            if (vertexBuffer == null || vertexCount <= 0)
+            if (vertexBuffer.NativePtr == IntPtr.Zero || vertexCount <= 0 || !_initialized)
                 return;
 
-            EnsureResources();
-            var commandBuffer = MetalFrameContext.CurrentCommandBuffer;
+            var cmdBuffer  = MetalFrameContext.CurrentCommandBuffer;
             var descriptor = MetalFrameContext.CurrentView?.CurrentRenderPassDescriptor;
-            if (commandBuffer == null || descriptor == null || pipeline == null || uniformsBuffer == null)
+            if (cmdBuffer.NativePtr == IntPtr.Zero || descriptor == null || descriptor.Value.NativePtr == IntPtr.Zero)
                 return;
 
-            descriptor.ColorAttachments[0].LoadAction = MTLLoadAction.Load;
-            MetalBufferWriter.Write(uniformsBuffer, new MetalColorUniforms(mvp, color));
+            MetalBufferWriter.Write(_uniformsBuffer, new MetalColorUniforms(mvp, color));
 
-            using var encoder = commandBuffer.CreateRenderCommandEncoder(descriptor);
-            encoder.SetRenderPipelineState(pipeline);
-            encoder.SetDepthStencilState(depthTest ? depthOn : depthOff);
-            encoder.SetVertexBuffer(vertexBuffer, UIntPtr.Zero, 0);
-            encoder.SetVertexBuffer(uniformsBuffer, UIntPtr.Zero, 1);
-            encoder.DrawPrimitives(primitiveType, 0, (UIntPtr)vertexCount);
+            var rpd = descriptor.Value;
+            var ca = rpd.ColorAttachments.Object(0);
+            ca.LoadAction = MTLLoadAction.Load;
+            rpd.ColorAttachments.SetObject(ca, 0);
+
+            var encoder = cmdBuffer.RenderCommandEncoder(rpd);
+            encoder.SetRenderPipelineState(_pipeline);
+            encoder.SetDepthStencilState(depthTest ? _depthOn : _depthOff);
+            encoder.SetVertexBuffer(vertexBuffer, 0, 0);
+            encoder.SetVertexBuffer(_uniformsBuffer, 0, 1);
+            encoder.DrawPrimitives(primitiveType, 0, (ulong)vertexCount);
             encoder.EndEncoding();
         }
 
         public void Dispose()
         {
-            pipeline?.Dispose();
-            depthOn?.Dispose();
-            depthOff?.Dispose();
-            uniformsBuffer?.Dispose();
+            // SharpMetal types are structs backed by ObjC ARC — nothing to release explicitly.
         }
 
-        private static IMTLDepthStencilState? CreateDepthOffState(IMTLDevice device)
+        private static MTLDepthStencilState CreateDepthAlwaysState(MTLDevice device)
         {
-            using var descriptor = new MTLDepthStencilDescriptor
-            {
-                DepthCompareFunction = MTLCompareFunction.Always,
-                DepthWriteEnabled = false
-            };
-            return device.CreateDepthStencilState(descriptor);
+            var desc = new MTLDepthStencilDescriptor();
+            desc.DepthCompareFunction = MTLCompareFunction.Always;
+            desc.IsDepthWriteEnabled = false;
+            return device.NewDepthStencilState(desc);
         }
     }
 }
-#endif
