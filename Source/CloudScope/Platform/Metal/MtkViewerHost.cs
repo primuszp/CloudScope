@@ -108,11 +108,22 @@ namespace CloudScope.Platform.Metal
                     controller.UpdateFrame(dt, dummyKeyboard);
 
                     controller.RenderFrame(0);
-                    cmdBuffer.PresentDrawable(drawable);
-                    cmdBuffer.Commit();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Render exception: {ex}");
                 }
                 finally
                 {
+                    var encoder = MetalFrameContext.CurrentRenderCommandEncoder;
+                    if (encoder.NativePtr != IntPtr.Zero)
+                    {
+                        encoder.EndEncoding();
+                    }
+
+                    if (view.CurrentDrawable != null)
+                        commandBuffer.PresentDrawable(view.CurrentDrawable);
+                    commandBuffer.Commit();
                     MetalFrameContext.End();
                 }
             }
