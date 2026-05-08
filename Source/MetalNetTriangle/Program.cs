@@ -153,8 +153,6 @@ static unsafe class Program
         int frameCount = 0;
         s_onDraw = view =>
         {
-            using var pool = new NSAutoreleasePool();
-
             nint descPtr = Msg0(view, sel_registerName("currentRenderPassDescriptor"));
             nint drawPtr = Msg0(view, sel_registerName("currentDrawable"));
             if (descPtr == 0 || drawPtr == 0) return;
@@ -163,10 +161,12 @@ static unsafe class Program
             var desc     = MTLRenderPassDescriptor.New(descPtr, NativeObjectOwnership.Borrowed);
             var drawable = CAMetalDrawable.New(drawPtr,         NativeObjectOwnership.Borrowed);
 
-            using var cmdBuf = s_queue!.MakeCommandBuffer();
+            // Keep these wrappers alive past Commit; releasing them immediately can
+            // overrun Metal's native command-buffer lifetime and crash with exit 139.
+            var cmdBuf = s_queue!.MakeCommandBuffer();
             if (cmdBuf.IsNull) return;
 
-            using var encoder = cmdBuf.MakeRenderCommandEncoder(desc);
+            var encoder = cmdBuf.MakeRenderCommandEncoder(desc);
             if (encoder.IsNull) { cmdBuf.Commit(); return; }
 
             float t = (float)sw.Elapsed.TotalSeconds;
