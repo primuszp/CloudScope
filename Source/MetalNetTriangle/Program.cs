@@ -132,6 +132,7 @@ static unsafe class Program
         nint win = MsgInitWindow(winAlloc,
             sel_registerName("initWithContentRect:styleMask:backing:defer:"),
             frame, 1 | 2 | 4 | 8, 2, 0);
+        MsgVoidByte(win, sel_registerName("setAcceptsMouseMovedEvents:"), 0);
 
         using var title = (NSString)"Metal.NET - spinning triangle";
         MsgVoid1(win, sel_registerName("setTitle:"), title.NativePtr);
