@@ -230,6 +230,7 @@ namespace MetalTriangleTest
                 }
                 RequestFrame();
             });
+            mtkView.OnMouseDown_ += (_, _, _) => RequestFrame();
 
             mtkView.OnMouseUp_ = (button, x, y) => inputQueue.Enqueue(() =>
             {
@@ -239,6 +240,7 @@ namespace MetalTriangleTest
                     rightDown = false;
                 RequestFrame();
             });
+            mtkView.OnMouseUp_ += (_, _, _) => RequestFrame();
 
             mtkView.OnMouseMove_ = (x, y) => inputQueue.Enqueue(() =>
             {
@@ -253,6 +255,7 @@ namespace MetalTriangleTest
                 lastMouseX = x;
                 lastMouseY = y;
             });
+            mtkView.OnMouseMove_ += (_, _) => RequestFrame();
 
             mtkView.OnMouseWheel_ = (x, y, delta) => inputQueue.Enqueue(() =>
             {
@@ -262,6 +265,7 @@ namespace MetalTriangleTest
                 Console.WriteLine($"[Input] wheel zoom {before:F2} -> {zoom:F2}");
                 RequestFrame();
             });
+            mtkView.OnMouseWheel_ += (_, _, _) => RequestFrame();
 
             window.MakeKeyAndOrderFront();
             app.ActivateIgnoringOtherApps(true);
