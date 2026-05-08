@@ -24,7 +24,7 @@ namespace CloudScope.Platform.Metal
         public IOverlayRenderer     CreateOverlayRenderer()     => new MetalOverlayRenderer();
         public SelectionGizmoRenderers CreateSelectionGizmoRenderers()
             => MetalRendererFactory.CreateSelectionGizmoRenderers();
-        public IDepthPicker CreateDepthPicker() => new MetalDepthPicker();
+        public IDepthPicker CreateDepthPicker() => new NullDepthPicker();
 
         public void InitializeFrameState()
         {
