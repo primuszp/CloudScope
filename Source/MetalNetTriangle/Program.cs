@@ -26,23 +26,16 @@ static unsafe class Program
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] static extern void  MsgVoidByte(nint r, nint s, byte a1);
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] static extern void  MsgVoidLong(nint r, nint s, long a1);
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] static extern void  MsgVoidULong(nint r, nint s, ulong a1);
-    [DllImport(LibObjC, EntryPoint = "objc_msgSend")] static extern void  MsgVoidClearColor(nint r, nint s, ClearColor c);
-    [DllImport(LibObjC, EntryPoint = "objc_msgSend")] static extern nint  MsgCreateStr(nint r, nint s, string utf8);
+    [DllImport(LibObjC, EntryPoint = "objc_msgSend")] static extern void  MsgVoidClearColor(nint r, nint s, MTLClearColor c);
 
     // ── Value types passed to ObjC ────────────────────────────────────────────────
     [StructLayout(LayoutKind.Sequential)]
     struct NSRect { public double X, Y, W, H; public NSRect(double x, double y, double w, double h) { X=x; Y=y; W=w; H=h; } }
 
-    [StructLayout(LayoutKind.Sequential)]
-    struct NSSize { public double Width, Height; }
-
-    [StructLayout(LayoutKind.Sequential)]
-    struct ClearColor { public double R, G, B, A; }
-
     // ── Static delegates (GC must not collect them) ────────────────────────────────
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void NotifCb(nint id, nint cmd, nint notif);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void DrawCb(nint id, nint cmd, nint view);
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void SizeCb(nint id, nint cmd, nint view, NSSize size);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void SizeCb(nint id, nint cmd, nint view, CGSize size);
 
     static NotifCb? s_didFinish;
     static DrawCb?  s_draw;
@@ -57,7 +50,7 @@ static unsafe class Program
 
     static void Main()
     {
-        Console.OutputEncoding = System.Text.Encoding.UTF8;
+        Console.OutputEncoding = Encoding.UTF8;
         Console.Out.Flush();
         // unbuffered output so logs appear immediately even when piped
         var writer = new System.IO.StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true };
@@ -140,11 +133,8 @@ static unsafe class Program
             sel_registerName("initWithContentRect:styleMask:backing:defer:"),
             frame, 1 | 2 | 4 | 8, 2, 0);
 
-        nint title = MsgCreateStr(
-            Msg0(objc_getClass("NSString"), sel_registerName("alloc")),
-            sel_registerName("initWithUTF8String:"),
-            "Metal.NET — Forgó Háromszög");
-        MsgVoid1(win, sel_registerName("setTitle:"), title);
+        using var title = (NSString)"Metal.NET - spinning triangle";
+        MsgVoid1(win, sel_registerName("setTitle:"), title.NativePtr);
 
         // ── MTKView ───────────────────────────────────────────────────────────────
         nint mtkAlloc = Msg0(objc_getClass("MTKView"), sel_registerName("alloc"));
@@ -153,15 +143,18 @@ static unsafe class Program
             frame, s_device.NativePtr);
 
         MsgVoidULong(mtk, sel_registerName("setColorPixelFormat:"), (ulong)MTLPixelFormat.BGRA8Unorm);
-        MsgVoidClearColor(mtk, sel_registerName("setClearColor:"), new ClearColor { R=0.07, G=0.07, B=0.15, A=1.0 });
+        MsgVoidClearColor(mtk, sel_registerName("setClearColor:"), new MTLClearColor(0.07, 0.07, 0.15, 1.0));
         MsgVoidByte(mtk, sel_registerName("setPaused:"),                   0); // continuous rendering
         MsgVoidByte(mtk, sel_registerName("setEnableSetNeedsDisplay:"),    0);
         MsgVoidByte(mtk, sel_registerName("setFramebufferOnly:"),          0);
+        MsgVoidLong(mtk, sel_registerName("setPreferredFramesPerSecond:"), 60);
 
         // ── Draw callback ─────────────────────────────────────────────────────────
         int frameCount = 0;
         s_onDraw = view =>
         {
+            using var pool = new NSAutoreleasePool();
+
             nint descPtr = Msg0(view, sel_registerName("currentRenderPassDescriptor"));
             nint drawPtr = Msg0(view, sel_registerName("currentDrawable"));
             if (descPtr == 0 || drawPtr == 0) return;
@@ -170,11 +163,10 @@ static unsafe class Program
             var desc     = MTLRenderPassDescriptor.New(descPtr, NativeObjectOwnership.Borrowed);
             var drawable = CAMetalDrawable.New(drawPtr,         NativeObjectOwnership.Borrowed);
 
-            // Don't use "using" — the GPU holds these alive after Commit/Present
-            var cmdBuf  = s_queue!.MakeCommandBuffer();
+            using var cmdBuf = s_queue!.MakeCommandBuffer();
             if (cmdBuf.IsNull) return;
 
-            var encoder = cmdBuf.MakeRenderCommandEncoder(desc);
+            using var encoder = cmdBuf.MakeRenderCommandEncoder(desc);
             if (encoder.IsNull) { cmdBuf.Commit(); return; }
 
             float t = (float)sw.Elapsed.TotalSeconds;
@@ -187,7 +179,7 @@ static unsafe class Program
             cmdBuf.Commit();
 
             frameCount++;
-            if (frameCount <= 10 || frameCount % 60 == 0)
+            if (frameCount <= 3)
                 Console.WriteLine($"[F{frameCount}] t={t:F2}s");
         };
 
