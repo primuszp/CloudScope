@@ -86,7 +86,10 @@ namespace CloudScope.Platform.Metal
                         MetalFrameContext.Begin(view, descriptor, drawable, cmdBuf);
 
                         while (_inputQueue.TryDequeue(out var inputAction))
-                            inputAction();
+                        {
+                            try { inputAction(); }
+                            catch (Exception ex) { Console.WriteLine($"[Input Error] {ex.GetType().Name}: {ex.Message}"); }
+                        }
 
                         float dt = (float)stopwatch.Elapsed.TotalSeconds;
                         stopwatch.Restart();
