@@ -59,6 +59,8 @@ namespace CloudScope
 
         public void SetLasFilePath(string path) => _selection.SetLasFilePath(path);
 
+        public bool NeedsContinuousFrames => _cameraInput.NeedsContinuousFrames;
+
         public bool UpdateFrame(float dt, IViewerKeyboard keyboard)
         {
             bool shouldClose = _cameraInput.UpdateFrame(dt, keyboard, _cam, _cloudRadius, _selection.Mode == InteractionMode.Label && _selection.ActiveTool.HasVolume, _width, _height);

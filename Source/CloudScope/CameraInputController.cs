@@ -18,6 +18,11 @@ namespace CloudScope
         public float PivotFade => _pivotFade;
         public float PivotFlash => _pivotFlash;
         public Vector3 DisplayPivot => _displayPivot;
+        public bool NeedsContinuousFrames =>
+            _leftDown || _rightDown || _middleDown ||
+            _orbitVelX != 0f || _orbitVelY != 0f ||
+            _panVelX != 0f || _panVelY != 0f ||
+            _pivotFade > 0.01f || _pivotFlash > 0.01f;
 
         public bool UpdateFrame(
             float dt,
