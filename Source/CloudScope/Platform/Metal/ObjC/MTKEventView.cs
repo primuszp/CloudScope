@@ -89,6 +89,7 @@ namespace CloudScope.Platform.Metal.ObjC
         public bool Paused { set => ObjectiveC.objc_msgSend(NativePtr, "setPaused:", value); }
         public bool EnableSetNeedsDisplay { set => ObjectiveC.objc_msgSend(NativePtr, "setEnableSetNeedsDisplay:", value); }
         public void SetNeedsDisplay() => ObjectiveC.objc_msgSend(NativePtr, "setNeedsDisplay:", true);
+        public void DisplayIfNeeded() => ObjectiveC.objc_msgSend(NativePtr, "displayIfNeeded");
         public CAMetalDrawable CurrentDrawable => new(ObjectiveC.IntPtr_objc_msgSend(NativePtr, "currentDrawable"));
         public MTLRenderPassDescriptor CurrentRenderPassDescriptor => new(ObjectiveC.IntPtr_objc_msgSend(NativePtr, "currentRenderPassDescriptor"));
 

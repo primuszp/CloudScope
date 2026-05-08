@@ -147,10 +147,10 @@ namespace CloudScope.Platform.Metal
                 };
 
                 _mtkView.Delegate = _viewDelegate;
-                _mtkView.OnMouseDown_  = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _controller.MouseDown(btn, x, y); RequestFrame(); };
-                _mtkView.OnMouseUp_    = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _controller.MouseUp(btn, x, y); RequestFrame(); };
-                _mtkView.OnMouseMove_  = (x, y)      => { _lastMouseX = x; _lastMouseY = y; _controller.MouseMove(x, y); RequestFrame(); };
-                _mtkView.OnMouseWheel_ = (x, y, d)   => { _lastMouseX = x; _lastMouseY = y; _controller.MouseWheel(x, y, d); RequestFrame(); };
+                _mtkView.OnMouseDown_  = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _controller.MouseDown(btn, x, y); RequestFrame(immediate: true); };
+                _mtkView.OnMouseUp_    = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _controller.MouseUp(btn, x, y); RequestFrame(immediate: true); };
+                _mtkView.OnMouseMove_  = (x, y)      => { _lastMouseX = x; _lastMouseY = y; _controller.MouseMove(x, y); RequestFrame(immediate: true); };
+                _mtkView.OnMouseWheel_ = (x, y, d)   => { _lastMouseX = x; _lastMouseY = y; _controller.MouseWheel(x, y, d); RequestFrame(immediate: true); };
                 _mtkView.OnKeyDown_    = code         => HandleKeyDown(code);
                 _mtkView.OnKeyUp_      = code         => { _keyboard.KeyUp(MapKey(code)); RequestFrame(); };
 
@@ -176,7 +176,12 @@ namespace CloudScope.Platform.Metal
             _drawableHeight = h;
         }
 
-        private void RequestFrame() => _mtkView?.SetNeedsDisplay();
+        private void RequestFrame(bool immediate = false)
+        {
+            _mtkView?.SetNeedsDisplay();
+            if (immediate)
+                _mtkView?.DisplayIfNeeded();
+        }
 
         private void PresentClearFrame(MTKView view, MTLRenderPassDescriptor descriptor, CAMetalDrawable drawable)
         {
