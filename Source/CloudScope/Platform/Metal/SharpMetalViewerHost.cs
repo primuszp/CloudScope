@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using CloudScope.Platform.Metal.ObjC;
@@ -28,7 +27,6 @@ namespace CloudScope.Platform.Metal
         private int _lastMouseX;
         private int _lastMouseY;
         private readonly RealKeyboard _keyboard = new();
-        private readonly ConcurrentQueue<Action> _inputQueue = new();
 
         public SharpMetalViewerHost(int width, int height, IRenderBackend renderBackend)
         {
@@ -55,7 +53,9 @@ namespace CloudScope.Platform.Metal
                     ColorPixelFormat        = MTLPixelFormat.BGRA8Unorm,
                     DepthStencilPixelFormat = MTLPixelFormat.Depth32Float,
                     ClearColor              = new MTLClearColor { red = 0.15, green = 0.15, blue = 0.15, alpha = 1.0 },
-                    FramebufferOnly         = false
+                    FramebufferOnly         = false,
+                    Paused                  = true,
+                    EnableSetNeedsDisplay   = true
                 };
 
                 ulong style = (ulong)(NSStyleMask.Titled | NSStyleMask.Closable | NSStyleMask.Resizable | NSStyleMask.Miniaturizable);
@@ -81,12 +81,6 @@ namespace CloudScope.Platform.Metal
 
                     try
                     {
-                        while (_inputQueue.TryDequeue(out var inputAction))
-                        {
-                            try { inputAction(); }
-                            catch (Exception ex) { Console.WriteLine($"[Input Error] {ex.GetType().Name}: {ex.Message}"); }
-                        }
-
                         float dt = (float)stopwatch.Elapsed.TotalSeconds;
                         stopwatch.Restart();
                         _controller.UpdateFrame(dt, _keyboard);
@@ -107,11 +101,12 @@ namespace CloudScope.Platform.Metal
                         {
                             cmdBuf.PresentDrawable(drawable);
                             cmdBuf.Commit();
-                            cmdBuf.WaitUntilCompleted();
                         }
                         
                         MetalFrameContext.End();
                         frameCount++;
+                        if (_controller.NeedsContinuousFrames || _keyboard.HasAnyKeyDown)
+                            RequestFrame();
                     }
                 };
 
@@ -123,17 +118,19 @@ namespace CloudScope.Platform.Metal
                     _controller.Resize(w, h);
                     _drawableWidth = w;
                     _drawableHeight = h;
+                    RequestFrame();
                 };
 
                 _mtkView.Delegate = _viewDelegate;
-                _mtkView.OnMouseDown_  = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _inputQueue.Enqueue(() => _controller.MouseDown(btn, x, y)); };
-                _mtkView.OnMouseUp_    = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _inputQueue.Enqueue(() => _controller.MouseUp(btn, x, y)); };
-                _mtkView.OnMouseMove_  = (x, y)      => { _lastMouseX = x; _lastMouseY = y; _inputQueue.Enqueue(() => _controller.MouseMove(x, y)); };
-                _mtkView.OnMouseWheel_ = (x, y, d)   => { _lastMouseX = x; _lastMouseY = y; _inputQueue.Enqueue(() => _controller.MouseWheel(x, y, d)); };
-                _mtkView.OnKeyDown_    = code         => EnqueueKey(code);
-                _mtkView.OnKeyUp_      = code         => { var k = MapKey(code); _inputQueue.Enqueue(() => _keyboard.KeyUp(k)); };
+                _mtkView.OnMouseDown_  = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _controller.MouseDown(btn, x, y); RequestFrame(); };
+                _mtkView.OnMouseUp_    = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _controller.MouseUp(btn, x, y); RequestFrame(); };
+                _mtkView.OnMouseMove_  = (x, y)      => { _lastMouseX = x; _lastMouseY = y; _controller.MouseMove(x, y); RequestFrame(); };
+                _mtkView.OnMouseWheel_ = (x, y, d)   => { _lastMouseX = x; _lastMouseY = y; _controller.MouseWheel(x, y, d); RequestFrame(); };
+                _mtkView.OnKeyDown_    = code         => HandleKeyDown(code);
+                _mtkView.OnKeyUp_      = code         => { _keyboard.KeyUp(MapKey(code)); RequestFrame(); };
 
                 _controller.Load();
+                RequestFrame();
             };
         }
 
@@ -155,17 +152,17 @@ namespace CloudScope.Platform.Metal
             _drawableHeight = h;
         }
 
-        private void EnqueueKey(ushort code)
+        private void RequestFrame() => _mtkView?.SetNeedsDisplay();
+
+        private void HandleKeyDown(ushort code)
         {
             var key = MapKey(code);
             if (key == ViewerKey.Unknown) return;
             int mx = _lastMouseX, my = _lastMouseY;
-            _inputQueue.Enqueue(() =>
-            {
-                _keyboard.KeyDown(key);
-                bool ctrl = _keyboard.IsKeyDown(ViewerKey.LeftControl) || _keyboard.IsKeyDown(ViewerKey.RightControl);
-                _controller.KeyDown(key, ctrl, mx, my);
-            });
+            _keyboard.KeyDown(key);
+            bool ctrl = _keyboard.IsKeyDown(ViewerKey.LeftControl) || _keyboard.IsKeyDown(ViewerKey.RightControl);
+            _controller.KeyDown(key, ctrl, mx, my);
+            RequestFrame();
         }
 
         private static ViewerKey MapKey(ushort code) => code switch
@@ -191,6 +188,7 @@ namespace CloudScope.Platform.Metal
             public void KeyUp(ViewerKey key)   => _down.Remove(key);
             public bool IsKeyDown(ViewerKey key) => _down.Contains(key);
             public bool IsKeyPressed(ViewerKey key) => _down.Contains(key);
+            public bool HasAnyKeyDown => _down.Count > 0;
         }
     }
 }
