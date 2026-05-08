@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -95,7 +94,6 @@ namespace MetalTriangleTest
             int frameCount = 0;
             var sw = Stopwatch.StartNew();
             var frameTimer = Stopwatch.StartNew();
-            var inputQueue = new ConcurrentQueue<Action>();
             float panX = 0f, panY = 0f;
             float zoom = 1f;
             float circleX = 0f, circleY = 0f;
@@ -109,9 +107,6 @@ namespace MetalTriangleTest
             var viewDelegate = new MTKViewDelegate();
             viewDelegate.OnDraw_ = view =>
             {
-                while (inputQueue.TryDequeue(out var action))
-                    action();
-
                 float dt = (float)frameTimer.Elapsed.TotalSeconds;
                 frameTimer.Restart();
                 if (circleAlpha > 0f)
@@ -204,17 +199,14 @@ namespace MetalTriangleTest
                 int w = (int)size.Width;
                 int h = (int)size.Height;
                 if (w <= 0 || h <= 0) return;
-                inputQueue.Enqueue(() =>
-                {
-                    viewWidth = w;
-                    viewHeight = h;
-                    mtkView.UpdateDrawableSize(w, h);
-                    Console.WriteLine($"[Input] resize {w}x{h}");
-                    RequestFrame();
-                });
+                viewWidth = w;
+                viewHeight = h;
+                mtkView.UpdateDrawableSize(w, h);
+                Console.WriteLine($"[Input] resize {w}x{h}");
+                RequestFrame();
             };
 
-            mtkView.OnMouseDown_ = (button, x, y) => inputQueue.Enqueue(() =>
+            mtkView.OnMouseDown_ = (button, x, y) =>
             {
                 lastMouseX = x;
                 lastMouseY = y;
@@ -228,20 +220,18 @@ namespace MetalTriangleTest
                     Console.WriteLine($"[Input] left click circle ({circleX:F2}, {circleY:F2})");
                 }
                 RequestFrame();
-            });
-            mtkView.OnMouseDown_ += (_, _, _) => RequestFrame();
+            };
 
-            mtkView.OnMouseUp_ = (button, x, y) => inputQueue.Enqueue(() =>
+            mtkView.OnMouseUp_ = (button, x, y) =>
             {
                 lastMouseX = x;
                 lastMouseY = y;
                 if (button == CloudScope.ViewerMouseButton.Right)
                     rightDown = false;
                 RequestFrame();
-            });
-            mtkView.OnMouseUp_ += (_, _, _) => RequestFrame();
+            };
 
-            mtkView.OnMouseMove_ = (x, y) => inputQueue.Enqueue(() =>
+            mtkView.OnMouseMove_ = (x, y) =>
             {
                 if (rightDown)
                 {
@@ -253,18 +243,16 @@ namespace MetalTriangleTest
                 }
                 lastMouseX = x;
                 lastMouseY = y;
-            });
-            mtkView.OnMouseMove_ += (_, _) => RequestFrame();
+            };
 
-            mtkView.OnMouseWheel_ = (x, y, delta) => inputQueue.Enqueue(() =>
+            mtkView.OnMouseWheel_ = (x, y, delta) =>
             {
                 float before = zoom;
                 float factor = delta > 0f ? 1.12f : 1f / 1.12f;
                 zoom = Math.Clamp(zoom * factor, 0.15f, 8f);
                 Console.WriteLine($"[Input] wheel zoom {before:F2} -> {zoom:F2}");
                 RequestFrame();
-            });
-            mtkView.OnMouseWheel_ += (_, _, _) => RequestFrame();
+            };
 
             window.MakeKeyAndOrderFront();
             app.ActivateIgnoringOtherApps(true);
