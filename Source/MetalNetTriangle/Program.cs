@@ -149,6 +149,7 @@ static unsafe class Program
         MsgVoidByte(mtk, sel_registerName("setEnableSetNeedsDisplay:"),    0);
         MsgVoidByte(mtk, sel_registerName("setFramebufferOnly:"),          0);
         MsgVoidLong(mtk, sel_registerName("setPreferredFramesPerSecond:"), 60);
+        ConfigureMetalLayer(mtk);
 
         // ── Draw callback ─────────────────────────────────────────────────────────
         int frameCount = 0;
@@ -195,6 +196,18 @@ static unsafe class Program
     }
 
     // ── Metal pipeline ────────────────────────────────────────────────────────────
+    static void ConfigureMetalLayer(nint mtk)
+    {
+        nint layerPtr = Msg0(mtk, sel_registerName("layer"));
+        if (layerPtr == 0) return;
+
+        var layer = CAMetalLayer.New(layerPtr, NativeObjectOwnership.Borrowed);
+        layer.MaximumDrawableCount = 3;
+        layer.AllowsNextDrawableTimeout = false;
+        layer.PresentsWithTransaction = false;
+        layer.DisplaySyncEnabled = true;
+    }
+
     const string ShaderSrcSimple = """
         #include <metal_stdlib>
         using namespace metal;
