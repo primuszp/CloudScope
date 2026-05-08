@@ -28,6 +28,7 @@ namespace CloudScope.Platform.Metal
         private int _lastMouseX;
         private int _lastMouseY;
         private readonly RealKeyboard _keyboard = new();
+        private readonly ConcurrentQueue<Action> _inputQueue = new();
 
         public SharpMetalViewerHost(int width, int height, IRenderBackend renderBackend)
         {
@@ -83,7 +84,10 @@ namespace CloudScope.Platform.Metal
                     try
                     {
                         MetalFrameContext.Begin(view, descriptor, drawable, cmdBuf);
-                        
+
+                        while (_inputQueue.TryDequeue(out var inputAction))
+                            inputAction();
+
                         float dt = (float)stopwatch.Elapsed.TotalSeconds;
                         stopwatch.Restart();
                         _controller.UpdateFrame(dt, _keyboard);
@@ -116,12 +120,12 @@ namespace CloudScope.Platform.Metal
                 };
 
                 _mtkView.Delegate = _viewDelegate;
-                _mtkView.OnMouseDown_  = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _controller.MouseDown(btn, x, y); };
-                _mtkView.OnMouseUp_    = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _controller.MouseUp(btn, x, y); };
-                _mtkView.OnMouseMove_  = (x, y)      => { _lastMouseX = x; _lastMouseY = y; _controller.MouseMove(x, y); };
-                _mtkView.OnMouseWheel_ = (x, y, d)   => { _lastMouseX = x; _lastMouseY = y; _controller.MouseWheel(x, y, d); };
-                _mtkView.OnKeyDown_    = code         => HandleKey(code);
-                _mtkView.OnKeyUp_      = code         => _keyboard.KeyUp(MapKey(code));
+                _mtkView.OnMouseDown_  = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _inputQueue.Enqueue(() => _controller.MouseDown(btn, x, y)); };
+                _mtkView.OnMouseUp_    = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _inputQueue.Enqueue(() => _controller.MouseUp(btn, x, y)); };
+                _mtkView.OnMouseMove_  = (x, y)      => { _lastMouseX = x; _lastMouseY = y; _inputQueue.Enqueue(() => _controller.MouseMove(x, y)); };
+                _mtkView.OnMouseWheel_ = (x, y, d)   => { _lastMouseX = x; _lastMouseY = y; _inputQueue.Enqueue(() => _controller.MouseWheel(x, y, d)); };
+                _mtkView.OnKeyDown_    = code         => EnqueueKey(code);
+                _mtkView.OnKeyUp_      = code         => { var k = MapKey(code); _inputQueue.Enqueue(() => _keyboard.KeyUp(k)); };
 
                 _controller.Load();
             };
@@ -145,13 +149,17 @@ namespace CloudScope.Platform.Metal
             _drawableHeight = h;
         }
 
-        private void HandleKey(ushort code)
+        private void EnqueueKey(ushort code)
         {
             var key = MapKey(code);
             if (key == ViewerKey.Unknown) return;
-            _keyboard.KeyDown(key);
-            bool ctrl = _keyboard.IsKeyDown(ViewerKey.LeftControl) || _keyboard.IsKeyDown(ViewerKey.RightControl);
-            _controller.KeyDown(key, ctrl, _lastMouseX, _lastMouseY);
+            int mx = _lastMouseX, my = _lastMouseY;
+            _inputQueue.Enqueue(() =>
+            {
+                _keyboard.KeyDown(key);
+                bool ctrl = _keyboard.IsKeyDown(ViewerKey.LeftControl) || _keyboard.IsKeyDown(ViewerKey.RightControl);
+                _controller.KeyDown(key, ctrl, mx, my);
+            });
         }
 
         private static ViewerKey MapKey(ushort code) => code switch
