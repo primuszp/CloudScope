@@ -85,8 +85,8 @@ namespace MetalTriangleTest
                 DepthStencilPixelFormat = MTLPixelFormat.Depth32Float,  // same as CloudScope
                 ClearColor              = new MTLClearColor { red = 0.1, green = 0.1, blue = 0.2, alpha = 1.0 },
                 FramebufferOnly         = false,
-                Paused                  = false,
-                EnableSetNeedsDisplay   = false
+                Paused                  = true,
+                EnableSetNeedsDisplay   = true
             };
             window.SetContentView(mtkView.NativePtr);
             Console.WriteLine("[Init] MTKView created");
@@ -103,6 +103,8 @@ namespace MetalTriangleTest
             int viewWidth = 800, viewHeight = 600;
             int lastMouseX = 0, lastMouseY = 0;
             bool rightDown = false;
+            bool isAnimating = false;
+            void RequestFrame() => mtkView.SetNeedsDisplay();
 
             var viewDelegate = new MTKViewDelegate();
             viewDelegate.OnDraw_ = view =>
@@ -114,6 +116,7 @@ namespace MetalTriangleTest
                 frameTimer.Restart();
                 if (circleAlpha > 0f)
                     circleAlpha = Math.Max(0f, circleAlpha - dt * 1.25f);
+                isAnimating = circleAlpha > 0.001f;
 
                 var descriptor = view.CurrentRenderPassDescriptor;
                 var drawable   = view.CurrentDrawable;
@@ -190,6 +193,8 @@ namespace MetalTriangleTest
                 if (frameCount < 10 || frameCount % 120 == 0)
                     Console.WriteLine($"[F{frameCount}] rendered OK  t={sw.Elapsed.TotalSeconds:F1}s");
                 frameCount++;
+                if (isAnimating)
+                    RequestFrame();
             };
 
             mtkView.Delegate = viewDelegate;
@@ -206,6 +211,7 @@ namespace MetalTriangleTest
                     viewHeight = h;
                     mtkView.UpdateDrawableSize(w, h);
                     Console.WriteLine($"[Input] resize {w}x{h}");
+                    RequestFrame();
                 });
             };
 
@@ -222,6 +228,7 @@ namespace MetalTriangleTest
                     circleAlpha = 1f;
                     Console.WriteLine($"[Input] left click circle ({circleX:F2}, {circleY:F2})");
                 }
+                RequestFrame();
             });
 
             mtkView.OnMouseUp_ = (button, x, y) => inputQueue.Enqueue(() =>
@@ -230,6 +237,7 @@ namespace MetalTriangleTest
                 lastMouseY = y;
                 if (button == CloudScope.ViewerMouseButton.Right)
                     rightDown = false;
+                RequestFrame();
             });
 
             mtkView.OnMouseMove_ = (x, y) => inputQueue.Enqueue(() =>
@@ -240,6 +248,7 @@ namespace MetalTriangleTest
                     int dy = y - lastMouseY;
                     panX += 2f * dx / Math.Max(viewWidth, 1);
                     panY -= 2f * dy / Math.Max(viewHeight, 1);
+                    RequestFrame();
                 }
                 lastMouseX = x;
                 lastMouseY = y;
@@ -251,11 +260,13 @@ namespace MetalTriangleTest
                 float factor = delta > 0f ? 1.12f : 1f / 1.12f;
                 zoom = Math.Clamp(zoom * factor, 0.15f, 8f);
                 Console.WriteLine($"[Input] wheel zoom {before:F2} -> {zoom:F2}");
+                RequestFrame();
             });
 
             window.MakeKeyAndOrderFront();
             app.ActivateIgnoringOtherApps(true);
             mtkView.MakeFirstResponder();
+            mtkView.SetNeedsDisplay();
             Console.WriteLine("[Init] Window shown — render loop active");
         }
 
