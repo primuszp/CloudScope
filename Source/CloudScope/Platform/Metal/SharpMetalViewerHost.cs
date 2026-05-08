@@ -26,6 +26,8 @@ namespace CloudScope.Platform.Metal
         private int _drawableHeight;
         private int _lastMouseX;
         private int _lastMouseY;
+        private bool _controllerLoaded;
+        private bool _controllerLoadStarted;
         private readonly RealKeyboard _keyboard = new();
 
         public SharpMetalViewerHost(int width, int height, IRenderBackend renderBackend)
@@ -52,7 +54,7 @@ namespace CloudScope.Platform.Metal
                 {
                     ColorPixelFormat        = MTLPixelFormat.BGRA8Unorm,
                     DepthStencilPixelFormat = MTLPixelFormat.Depth32Float,
-                    ClearColor              = new MTLClearColor { red = 0.15, green = 0.15, blue = 0.15, alpha = 1.0 },
+                    ClearColor              = new MTLClearColor { red = 0.0, green = 0.0, blue = 0.0, alpha = 1.0 },
                     FramebufferOnly         = false,
                     Paused                  = true,
                     EnableSetNeedsDisplay   = true
@@ -78,6 +80,29 @@ namespace CloudScope.Platform.Metal
                     if (descriptor.NativePtr == IntPtr.Zero || drawable.NativePtr == IntPtr.Zero) return;
 
                     SyncDrawableSizeFromRenderPass(descriptor);
+
+                    if (!_controllerLoaded)
+                    {
+                        PresentClearFrame(view, descriptor, drawable);
+
+                        if (!_controllerLoadStarted)
+                        {
+                            _controllerLoadStarted = true;
+                            try
+                            {
+                                _controller.Load();
+                                _controllerLoaded = true;
+                                stopwatch.Restart();
+                                RequestFrame();
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"[Load Error] {ex}");
+                            }
+                        }
+
+                        return;
+                    }
 
                     try
                     {
@@ -129,7 +154,6 @@ namespace CloudScope.Platform.Metal
                 _mtkView.OnKeyDown_    = code         => HandleKeyDown(code);
                 _mtkView.OnKeyUp_      = code         => { _keyboard.KeyUp(MapKey(code)); RequestFrame(); };
 
-                _controller.Load();
                 RequestFrame();
             };
         }
@@ -153,6 +177,19 @@ namespace CloudScope.Platform.Metal
         }
 
         private void RequestFrame() => _mtkView?.SetNeedsDisplay();
+
+        private void PresentClearFrame(MTKView view, MTLRenderPassDescriptor descriptor, CAMetalDrawable drawable)
+        {
+            var cmdBuf = _commandQueue?.CommandBuffer() ?? default;
+            if (cmdBuf.NativePtr == IntPtr.Zero) return;
+
+            var enc = cmdBuf.RenderCommandEncoder(descriptor);
+            if (enc.NativePtr != IntPtr.Zero)
+                enc.EndEncoding();
+
+            cmdBuf.PresentDrawable(drawable);
+            cmdBuf.Commit();
+        }
 
         private void HandleKeyDown(ushort code)
         {
