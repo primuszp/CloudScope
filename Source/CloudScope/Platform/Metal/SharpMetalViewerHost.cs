@@ -78,25 +78,29 @@ namespace CloudScope.Platform.Metal
 
                     SyncDrawableSizeFromRenderPass(descriptor);
 
-                    var cmdBuf  = _commandQueue.Value.CommandBuffer();
-                    var encoder = cmdBuf.RenderCommandEncoder(descriptor);
+                    var cmdBuf = _commandQueue.Value.CommandBuffer();
                     
                     try
                     {
                         MetalFrameContext.Begin(view, descriptor, drawable, cmdBuf);
-                        MetalFrameContext.CurrentRenderCommandEncoder = encoder;
                         
                         float dt = (float)stopwatch.Elapsed.TotalSeconds;
                         stopwatch.Restart();
                         _controller.UpdateFrame(dt, _keyboard);
                         _controller.RenderFrame(0);
                     }
+                    catch (Exception ex) { Console.WriteLine($"[Render Error] {ex}"); }
                     finally
                     {
-                        encoder.EndEncoding();
+                        var enc = MetalFrameContext.CurrentRenderCommandEncoder;
+                        if (enc.NativePtr != IntPtr.Zero)
+                            enc.EndEncoding();
+
                         cmdBuf.PresentDrawable(drawable);
                         cmdBuf.Commit();
                         cmdBuf.WaitUntilCompleted();
+                        
+                        MetalFrameContext.End();
                         frameCount++;
                     }
                 };
