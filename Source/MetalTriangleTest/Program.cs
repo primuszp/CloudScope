@@ -129,6 +129,22 @@ namespace MetalTriangleTest
                     frameCount++; return;
                 }
 
+                var colorTexture = descriptor.ColorAttachments.Object(0).Texture;
+                if (colorTexture.NativePtr != IntPtr.Zero)
+                {
+                    int actualWidth = (int)colorTexture.Width;
+                    int actualHeight = (int)colorTexture.Height;
+                    if (actualWidth > 0 && actualHeight > 0 &&
+                        (actualWidth != viewWidth || actualHeight != viewHeight))
+                    {
+                        viewWidth = actualWidth;
+                        viewHeight = actualHeight;
+                        mtkView.UpdateDrawableSize(actualWidth, actualHeight);
+                        if (frameCount < 10)
+                            Console.WriteLine($"[F{frameCount}] drawable size {actualWidth}x{actualHeight}");
+                    }
+                }
+
                 var cmdBuf = queue.CommandBuffer();
                 if (cmdBuf.NativePtr == IntPtr.Zero)
                 {
@@ -169,7 +185,7 @@ namespace MetalTriangleTest
                 encoder.EndEncoding();
                 cmdBuf.PresentDrawable(drawable);
                 cmdBuf.Commit();
-                cmdBuf.WaitUntilCompleted();
+                cmdBuf.WaitUntilScheduled();
 
                 if (frameCount < 10 || frameCount % 120 == 0)
                     Console.WriteLine($"[F{frameCount}] rendered OK  t={sw.Elapsed.TotalSeconds:F1}s");
