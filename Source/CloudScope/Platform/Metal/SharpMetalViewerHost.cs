@@ -79,12 +79,8 @@ namespace CloudScope.Platform.Metal
 
                     SyncDrawableSizeFromRenderPass(descriptor);
 
-                    var cmdBuf = _commandQueue.Value.CommandBuffer();
-                    
                     try
                     {
-                        MetalFrameContext.Begin(view, descriptor, drawable, cmdBuf);
-
                         while (_inputQueue.TryDequeue(out var inputAction))
                         {
                             try { inputAction(); }
@@ -94,6 +90,9 @@ namespace CloudScope.Platform.Metal
                         float dt = (float)stopwatch.Elapsed.TotalSeconds;
                         stopwatch.Restart();
                         _controller.UpdateFrame(dt, _keyboard);
+
+                        var cmdBuf = _commandQueue.Value.CommandBuffer();
+                        MetalFrameContext.Begin(view, descriptor, drawable, cmdBuf);
                         _controller.RenderFrame(0);
                     }
                     catch (Exception ex) { Console.WriteLine($"[Render Error] {ex}"); }
@@ -103,9 +102,13 @@ namespace CloudScope.Platform.Metal
                         if (enc.NativePtr != IntPtr.Zero)
                             enc.EndEncoding();
 
-                        cmdBuf.PresentDrawable(drawable);
-                        cmdBuf.Commit();
-                        cmdBuf.WaitUntilCompleted();
+                        var cmdBuf = MetalFrameContext.CurrentCommandBuffer;
+                        if (cmdBuf.NativePtr != IntPtr.Zero)
+                        {
+                            cmdBuf.PresentDrawable(drawable);
+                            cmdBuf.Commit();
+                            cmdBuf.WaitUntilCompleted();
+                        }
                         
                         MetalFrameContext.End();
                         frameCount++;
