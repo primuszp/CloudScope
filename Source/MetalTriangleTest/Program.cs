@@ -188,7 +188,6 @@ namespace MetalTriangleTest
                 encoder.EndEncoding();
                 cmdBuf.PresentDrawable(drawable);
                 cmdBuf.Commit();
-                cmdBuf.WaitUntilScheduled();
 
                 if (frameCount < 10 || frameCount % 120 == 0)
                     Console.WriteLine($"[F{frameCount}] rendered OK  t={sw.Elapsed.TotalSeconds:F1}s");
