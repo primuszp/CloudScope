@@ -199,7 +199,8 @@ namespace CloudScope.Platform.OpenGL.Rendering
                     grip,
                     i == box.HoveredHandle,
                     box.IsFlat,
-                    AxisColor[grip.Axis]);
+                    AxisColor[grip.Axis],
+                    i == box.ActiveHandle);
 
                 DrawLine(fnx, fny, tnx, tny);
                 SetColor(style.Color);
@@ -236,7 +237,10 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 var (nx, ny) = ScreenToNdc(sx, sy, vpW, vpH);
                 float hx = 12f/vpW, hy = 12f/vpH;
 
-                GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(grip, i == box.HoveredHandle);
+                GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(
+                    grip,
+                    i == box.HoveredHandle,
+                    i == box.ActiveHandle);
                 DrawDiamond(nx, ny, hx, hy, style.Color);
             }
 
@@ -264,7 +268,10 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 bool    hov = box.HoveredHandle >= 0
                     && box.GetGrip(box.HoveredHandle).Kind == GripKind.RotationRing
                     && box.GetGrip(box.HoveredHandle).Axis == axis;
-                GripVisualDescriptor style = GripVisualStyleResolver.ResolveRing(hov, AxisColor[axis]);
+                bool active = box.ActiveHandle >= 0
+                    && box.GetGrip(box.ActiveHandle).Kind == GripKind.RotationRing
+                    && box.GetGrip(box.ActiveHandle).Axis == axis;
+                GripVisualDescriptor style = GripVisualStyleResolver.ResolveRing(hov, AxisColor[axis], active);
                 GL.LineWidth(style.LineWidth);
 
                 int vc = 0;
@@ -318,7 +325,10 @@ namespace CloudScope.Platform.OpenGL.Rendering
             var (tnx, tny)  = ScreenToNdc(tx, ty, vpW, vpH);
             GripDescriptor grip = box.GetGrip(BoxSelectionTool.ExtrudeHandle);
             bool hovered = box.HoveredHandle == grip.Index;
-            GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(grip, hovered);
+            GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(
+                grip,
+                hovered,
+                box.ActiveHandle == grip.Index);
 
             Matrix4 id = Matrix4.Identity;
             GL.UseProgram(_shader);

@@ -172,7 +172,10 @@ namespace CloudScope.Platform.OpenGL.Rendering
             bool    hov    = cyl.HoveredHandle >= 0
                 && cyl.GetGrip(cyl.HoveredHandle).IsPrimary;
             GripDescriptor grip = cyl.GetGrip(1);
-            GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(grip, hov);
+            GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(
+                grip,
+                hov,
+                cyl.ActiveHandle == grip.Index);
 
             Matrix4 id = Matrix4.Identity;
             GL.UseProgram(_shader);
@@ -211,7 +214,10 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 bool    hov = cyl.HoveredHandle >= 0
                     && cyl.GetGrip(cyl.HoveredHandle).Kind == GripKind.RotationRing
                     && cyl.GetGrip(cyl.HoveredHandle).Axis == axis;
-                GripVisualDescriptor style = GripVisualStyleResolver.ResolveRing(hov, AxisColor[axis]);
+                bool active = cyl.ActiveHandle >= 0
+                    && cyl.GetGrip(cyl.ActiveHandle).Kind == GripKind.RotationRing
+                    && cyl.GetGrip(cyl.ActiveHandle).Axis == axis;
+                GripVisualDescriptor style = GripVisualStyleResolver.ResolveRing(hov, AxisColor[axis], active);
                 GL.LineWidth(style.LineWidth);
 
                 int   vc  = 0;
@@ -272,7 +278,10 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 var (nx, ny) = ScreenToNdc(sx, sy, vpW, vpH);
                 float hx = 12f / vpW, hy = 12f / vpH;
 
-                GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(grip, i == cyl.HoveredHandle);
+                GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(
+                    grip,
+                    i == cyl.HoveredHandle,
+                    i == cyl.ActiveHandle);
                 DrawDiamond(nx, ny, hx, hy, style.Color);
             }
 
