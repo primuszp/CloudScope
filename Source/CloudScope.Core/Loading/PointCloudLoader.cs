@@ -54,14 +54,33 @@ namespace CloudScope.Loading
             return new LoadedPointCloud(points, loaded, radius, hasColor, colorScale, cx, cy, cz);
         }
 
-        public static void ShuffleForProgressiveSubsample(PointData[] points, long count, int seed = 42)
+        public static int PrepareProgressiveSubsample(PointData[] points, long count, int seed = 42)
         {
+            if (count <= 1)
+                return (int)Math.Max(count, 0);
+
+            int safeCount = (int)Math.Min(count, points.LongLength);
+            int samplePrefix = ComputeProgressiveSamplePrefix(safeCount);
             var rng = new Random(seed);
-            for (long i = count - 1; i > 0; i--)
+
+            // Partial Fisher-Yates: the first K slots become a uniform sample
+            // from the full cloud, which is the only prefix the renderer needs
+            // for fast overview frames.
+            for (int i = 0; i < samplePrefix; i++)
             {
-                long j = (long)(rng.NextDouble() * (i + 1));
+                int j = rng.Next(i, safeCount);
                 (points[i], points[j]) = (points[j], points[i]);
             }
+
+            return samplePrefix;
+        }
+
+        private static int ComputeProgressiveSamplePrefix(int count)
+        {
+            const int MinimumPrefix = 1_000_000;
+            const int MaximumPrefix = 5_000_000;
+            int ratioPrefix = count / 10;
+            return Math.Min(count, Math.Clamp(ratioPrefix, MinimumPrefix, MaximumPrefix));
         }
 
         private static float DetectColorScale(LasPoint[] sample, int count)

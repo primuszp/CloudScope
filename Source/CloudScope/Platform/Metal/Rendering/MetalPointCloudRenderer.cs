@@ -90,10 +90,11 @@ namespace CloudScope.Platform.Metal.Rendering
             if (cmdBuffer.NativePtr == IntPtr.Zero || descriptor.NativePtr == IntPtr.Zero)
                 return 0;
 
-            float subsampleRatio  = (float)(cloudRadius / Math.Max(halfViewSize, cloudRadius * 0.001));
-            float subsampleFactor = Math.Clamp(subsampleRatio * subsampleRatio, 0.005f, 1f);
-            int drawCount = Math.Max((int)(_pointCount * subsampleFactor), Math.Min(100_000, _pointCount));
-            drawCount = Math.Min(drawCount, Math.Min(MaxDrawPointsPerFrame, _pointCount));
+            int drawCount = PointDrawBudget.Compute(
+                _pointCount,
+                halfViewSize,
+                cloudRadius,
+                Math.Min(MaxDrawPointsPerFrame, _pointCount));
 
             _uniformBufferIndex = (_uniformBufferIndex + 1) % UniformBufferCount;
             var uniformBuffer = _uniformBuffers[_uniformBufferIndex];
