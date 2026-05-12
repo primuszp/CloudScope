@@ -22,6 +22,7 @@ namespace CloudScope.Selection
 
         // ── Handle interaction ────────────────────────────────────────────────
         int  HoveredHandle    { get; set; }
+        int  ActiveHandle     { get; }
         bool IsHandleDragging { get; }
         int  HitTestHandles(int mx, int my, OrbitCamera cam, float threshold = 12f);
         GripDescriptor GetGrip(int handle);

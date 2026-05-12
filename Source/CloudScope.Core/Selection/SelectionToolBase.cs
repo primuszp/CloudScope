@@ -27,6 +27,7 @@ namespace CloudScope.Selection
 
         // ── Handle state ──────────────────────────────────────────────────────
         public int  HoveredHandle    { get; set; } = HoverNone;
+        public int  ActiveHandle     => _activeHandle;
         public bool IsHandleDragging => _activeHandle >= 0;
         protected int _activeHandle  = HoverNone;
 

@@ -112,7 +112,10 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 var (nx, ny) = ScreenToNdc(sx, sy, vpW, vpH);
                 float hx = 12f/vpW, hy = 12f/vpH;
 
-                GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(grip, i == sphere.HoveredHandle);
+                GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(
+                    grip,
+                    i == sphere.HoveredHandle,
+                    i == sphere.ActiveHandle);
                 DrawDiamond(nx, ny, hx, hy, style.Color);
             }
 

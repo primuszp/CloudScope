@@ -157,11 +157,14 @@ namespace CloudScope.Platform.Metal.Rendering
                 var (fnx, fny) = ScreenToNdc(fx, fy, camera.ViewportWidth, camera.ViewportHeight);
                 var (tnx, tny) = ScreenToNdc(tx, ty, camera.ViewportWidth, camera.ViewportHeight);
                 int axis = i / 2;
-                Vector4 color = i == box.HoveredHandle
-                    ? new Vector4(1f, 1f, 0.15f, 1f)
-                    : i == BoxSelectionTool.ExtrudeHandle && box.IsFlat
-                        ? new Vector4(1f, 0.55f, 0f, 0.95f)
-                        : AxisColor[axis] with { W = 0.9f };
+                GripDescriptor grip = box.GetGrip(i);
+                GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
+                    grip,
+                    i == box.HoveredHandle,
+                    box.IsFlat,
+                    AxisColor[axis],
+                    i == box.ActiveHandle);
+                Vector4 color = style.Color;
 
                 DrawLine(fnx, fny, tnx, tny, color);
                 DrawDiamond(fnx, fny, 4f / camera.ViewportWidth, 4f / camera.ViewportHeight, color);
@@ -177,11 +180,12 @@ namespace CloudScope.Platform.Metal.Rendering
                 if (behind) continue;
 
                 var (nx, ny) = ScreenToNdc(sx, sy, camera.ViewportWidth, camera.ViewportHeight);
-                Vector4 color = i == box.HoveredHandle
-                    ? new Vector4(1f, 1f, 0.15f, 1f)
-                    : BoxSelectionTool.IsCenterHandle(i)
-                        ? new Vector4(0.3f, 1f, 0.45f, 0.85f)
-                        : new Vector4(0.9f, 0.9f, 0.9f, 0.8f);
+                GripDescriptor grip = box.GetGrip(i);
+                GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(
+                    grip,
+                    i == box.HoveredHandle,
+                    i == box.ActiveHandle);
+                Vector4 color = style.Color;
                 DrawDiamond(nx, ny, 12f / camera.ViewportWidth, 12f / camera.ViewportHeight, color);
             }
         }
@@ -221,9 +225,10 @@ namespace CloudScope.Platform.Metal.Rendering
                     prevOk = !behind;
                 }
                 if (write == 0) continue;
-                Vector4 color = box.HoveredHandle == 15 + axis
-                    ? new Vector4(1f, 1f, 0.15f, 1f)
-                    : AxisColor[axis] with { W = 0.8f };
+                bool hovered = box.HoveredHandle == 15 + axis;
+                bool active = box.ActiveHandle == 15 + axis;
+                GripVisualDescriptor style = GripVisualStyleResolver.ResolveRing(hovered, AxisColor[axis], active);
+                Vector4 color = style.Color;
                 DrawDynamic(_ringBuf, write / 3, MTLPrimitiveType.Line, color);
             }
         }
@@ -240,9 +245,13 @@ namespace CloudScope.Platform.Metal.Rendering
 
             var (fnx, fny) = ScreenToNdc(fx, fy, camera.ViewportWidth, camera.ViewportHeight);
             var (tnx, tny) = ScreenToNdc(tx, ty, camera.ViewportWidth, camera.ViewportHeight);
-            Vector4 orange = new(1f, 0.6f, 0f, 0.95f);
-            DrawLine(fnx, fny, tnx, tny, orange);
-            DrawArrowHead(tnx, tny, fnx, fny, 0.02f, orange with { W = 1f });
+            GripDescriptor grip = box.GetGrip(BoxSelectionTool.ExtrudeHandle);
+            GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(
+                grip,
+                box.HoveredHandle == grip.Index,
+                box.ActiveHandle == grip.Index);
+            DrawLine(fnx, fny, tnx, tny, style.Color);
+            DrawArrowHead(tnx, tny, fnx, fny, 0.02f, style.Color with { W = 1f });
         }
 
         private void DrawLine(float x0, float y0, float x1, float y1, Vector4 color)
