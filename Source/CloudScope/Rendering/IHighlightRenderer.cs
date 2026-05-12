@@ -9,7 +9,7 @@ namespace CloudScope.Rendering
     {
         void MarkDirty();
         void UpdatePreview(PointData[]? points, IReadOnlyList<int>? indices);
-        void RenderPreview(ref Matrix4 view, ref Matrix4 proj, float pointSize);
-        void Render(PointData[] points, LabelManager labels, ref Matrix4 view, ref Matrix4 proj, float pointSize);
+        void RenderPreview(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj, float pointSize);
+        void Render(IRenderFrameData frameData, PointData[] points, LabelManager labels, ref Matrix4 view, ref Matrix4 proj, float pointSize);
     }
 }

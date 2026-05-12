@@ -115,16 +115,6 @@ namespace CloudScope.Platform.Metal
                 }
                 finally
                 {
-                    var encoder = MetalFrameContext.CurrentRenderCommandEncoder;
-                    if (encoder.NativePtr != IntPtr.Zero)
-                    {
-                        encoder.EndEncoding();
-                    }
-
-                    if (view.CurrentDrawable != null)
-                        commandBuffer.PresentDrawable(view.CurrentDrawable);
-                    commandBuffer.Commit();
-                    MetalFrameContext.End();
                 }
             }
         }

@@ -92,6 +92,7 @@ void main()
         }
 
         public void RenderPivotIndicator(
+            IRenderFrameData frameData,
             ref Matrix4 view,
             ref Matrix4 proj,
             OrbitCamera camera,
@@ -128,7 +129,7 @@ void main()
             RenderPivotSphere(ref view, ref proj, pivot, spherePx, eff);
         }
 
-        public void RenderCenterCrosshair(int width, int height, float alpha)
+        public void RenderCenterCrosshair(IRenderFrameData frameData, int width, int height, float alpha)
         {
             EnsureCrosshairResources();
 
@@ -166,7 +167,7 @@ void main()
             GL.Enable(EnableCap.DepthTest);
         }
 
-        public void RenderModeIndicator(int width, int height, SelectionToolType toolType)
+        public void RenderModeIndicator(IRenderFrameData frameData, int width, int height, SelectionToolType toolType)
         {
             EnsureCrosshairResources();
 

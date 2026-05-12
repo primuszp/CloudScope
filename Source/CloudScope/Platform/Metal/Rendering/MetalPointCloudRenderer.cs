@@ -75,7 +75,7 @@ namespace CloudScope.Platform.Metal.Rendering
 
         private int _renderCallCount;
 
-        public int Render(ref Matrix4 view, ref Matrix4 projection, float pointSize, double halfViewSize, float cloudRadius)
+        public int Render(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 projection, float pointSize, double halfViewSize, float cloudRadius)
         {
             _renderCallCount++;
 
@@ -85,9 +85,9 @@ namespace CloudScope.Platform.Metal.Rendering
             if (float.IsNaN(view.M11) || float.IsNaN(projection.M11))
                 return 0;
 
-            var cmdBuffer  = MetalFrameContext.CurrentCommandBuffer;
-            var descriptor = MetalFrameContext.CurrentRenderPassDescriptor;
-            if (cmdBuffer.NativePtr == IntPtr.Zero || descriptor.NativePtr == IntPtr.Zero)
+            if (frameData is not MetalFrameState frame
+                || frame.CommandBuffer.NativePtr == IntPtr.Zero
+                || frame.RenderPassDescriptor.NativePtr == IntPtr.Zero)
                 return 0;
 
             int drawCount = PointDrawBudget.Compute(
@@ -100,7 +100,7 @@ namespace CloudScope.Platform.Metal.Rendering
             var uniformBuffer = _uniformBuffers[_uniformBufferIndex];
             MetalBufferWriter.Write(uniformBuffer, new MetalPointUniforms(view, projection, pointSize));
 
-            var encoder = MetalFrameContext.CurrentRenderCommandEncoder;
+            var encoder = frame.RenderCommandEncoder;
             if (encoder.NativePtr == IntPtr.Zero) return 0;
 
             encoder.SetRenderPipelineState(_pipeline);

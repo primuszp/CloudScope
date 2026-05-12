@@ -60,10 +60,10 @@ namespace CloudScope.Platform.Metal.Rendering
             BuildBuffer(ref _previewBuffer, data, count);
         }
 
-        public void RenderPreview(ref Matrix4 view, ref Matrix4 proj, float pointSize)
-            => RenderBuffer(_previewBuffer, _previewCount, ref view, ref proj, pointSize + 2f);
+        public void RenderPreview(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj, float pointSize)
+            => RenderBuffer(frameData, _previewBuffer, _previewCount, ref view, ref proj, pointSize + 2f);
 
-        public void Render(PointData[] points, LabelManager labels, ref Matrix4 view, ref Matrix4 proj, float pointSize)
+        public void Render(IRenderFrameData frameData, PointData[] points, LabelManager labels, ref Matrix4 view, ref Matrix4 proj, float pointSize)
         {
             EnsureResources();
             if (_dirty)
@@ -71,7 +71,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 RebuildHighlightBuffer(points, labels);
                 _dirty = false;
             }
-            RenderBuffer(_highlightBuffer, _highlightCount, ref view, ref proj, pointSize + 2f);
+            RenderBuffer(frameData, _highlightBuffer, _highlightCount, ref view, ref proj, pointSize + 2f);
         }
 
         public void Dispose() { }
@@ -110,7 +110,7 @@ namespace CloudScope.Platform.Metal.Rendering
             BuildBuffer(ref _highlightBuffer, data, count);
         }
 
-        private void RenderBuffer(MTLBuffer buffer, int count,
+        private void RenderBuffer(IRenderFrameData frameData, MTLBuffer buffer, int count,
             ref Matrix4 view, ref Matrix4 proj, float pointSize)
         {
             if (count == 0 || buffer.NativePtr == IntPtr.Zero || _pipeline.NativePtr == IntPtr.Zero)
@@ -118,7 +118,9 @@ namespace CloudScope.Platform.Metal.Rendering
 
             MetalBufferWriter.Write(_uniformsBuffer, new MetalPointUniforms(view, proj, pointSize));
 
-            var encoder = MetalFrameContext.CurrentRenderCommandEncoder;
+            var encoder = frameData is MetalFrameState frame
+                ? frame.RenderCommandEncoder
+                : default;
             if (encoder.NativePtr == IntPtr.Zero) return;
 
             encoder.SetRenderPipelineState(_pipeline);

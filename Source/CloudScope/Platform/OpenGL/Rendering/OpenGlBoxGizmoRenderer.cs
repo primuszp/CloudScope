@@ -63,7 +63,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
         // ── Public entry points ───────────────────────────────────────────────
 
-        public override void Render(ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera cam)
+        public override void Render(IRenderFrameData frameData, ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera cam)
         {
             var box = (BoxSelectionTool)tool;
             EnsureResources();
@@ -84,7 +84,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
             GL.Disable(EnableCap.Blend);
         }
 
-        public void RenderPlacementRect(int x0, int y0, int x1, int y1, int vpW, int vpH)
+        public void RenderPlacementRect(IRenderFrameData frameData, int x0, int y0, int x1, int y1, int vpW, int vpH)
         {
             EnsureResources();
             float nx0 = Math.Min(x0, x1) / (float)vpW * 2f - 1f;

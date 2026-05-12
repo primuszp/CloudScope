@@ -1,15 +1,7 @@
 namespace CloudScope.Rendering
 {
-    public interface IRenderBackend
+    public interface IRenderBackend : IRendererFactory, IRenderFrameLifecycle
     {
         RenderBackendKind Kind { get; }
-        IPointCloudRenderer CreatePointCloudRenderer();
-        IHighlightRenderer CreateHighlightRenderer();
-        IOverlayRenderer CreateOverlayRenderer();
-        SelectionGizmoRenderers CreateSelectionGizmoRenderers();
-        IDepthPicker CreateDepthPicker();
-        void InitializeFrameState();
-        void BeginFrame();
-        void Resize(int width, int height);
     }
 }

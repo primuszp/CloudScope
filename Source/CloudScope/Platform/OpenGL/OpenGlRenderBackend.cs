@@ -28,14 +28,25 @@ namespace CloudScope.Platform.OpenGL
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
         }
 
-        public void BeginFrame()
+        public IRenderFrameSession BeginFrame()
         {
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+            return OpenGlFrameSession.Instance;
         }
 
         public void Resize(int width, int height)
         {
             GL.Viewport(0, 0, width, height);
+        }
+
+        private sealed class OpenGlFrameSession : IRenderFrameSession
+        {
+            public static readonly OpenGlFrameSession Instance = new();
+            public IRenderFrameData FrameData => EmptyRenderFrameData.Instance;
+
+            public void Dispose()
+            {
+            }
         }
     }
 }

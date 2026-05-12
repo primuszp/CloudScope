@@ -7,7 +7,7 @@ namespace CloudScope
 {
     public sealed class ViewerController : IDisposable
     {
-        private readonly IRenderBackend _renderBackend;
+        private readonly IRenderFrameLifecycle _frameLifecycle;
         private readonly IPointCloudRenderer _pointRenderer;
         private readonly IOverlayRenderer _overlayRenderer;
         private readonly IHighlightRenderer _highlightRenderer;
@@ -29,7 +29,7 @@ namespace CloudScope
         {
             _width = width;
             _height = height;
-            _renderBackend = renderBackend;
+            _frameLifecycle = renderBackend;
             _pointRenderer = renderBackend.CreatePointCloudRenderer();
             _overlayRenderer = renderBackend.CreateOverlayRenderer();
             _highlightRenderer = renderBackend.CreateHighlightRenderer();
@@ -40,7 +40,7 @@ namespace CloudScope
 
         public void Load()
         {
-            _renderBackend.InitializeFrameState();
+            _frameLifecycle.InitializeFrameState();
             _pointRenderer.Initialize();
             _overlayRenderer.Initialize();
             _cam.SetViewportSize(_width, _height);
@@ -108,48 +108,48 @@ namespace CloudScope
         public void RenderFrame(double frameTime)
         {
             _frameTiming.BeginFrame();
-            
-            _renderBackend.BeginFrame();
+            using var frame = _frameLifecycle.BeginFrame();
+            var frameData = frame.FrameData;
 
             var view = _cam.GetViewMatrix();
             var proj = _cam.GetProjectionMatrix();
 
-            int drawCount = _pointRenderer.Render(ref view, ref proj, _cameraInput.PointSize, _cam.Hvs, _cloudRadius);
+            int drawCount = _pointRenderer.Render(frameData, ref view, ref proj, _cameraInput.PointSize, _cam.Hvs, _cloudRadius);
             _frameTiming.MarkMainDraw(drawCount);
 
             if (_metalFrameLog && (++_metalFrameLogCounter % 60) == 0)
                 Console.WriteLine($"[Cam] Pivot: {_cam.Pivot.X:F1}, {_cam.Pivot.Y:F1}, {_cam.Pivot.Z:F1} | Hvs: {_cam.Hvs:F2} | Draw: {drawCount}");
 
             if (_selection.Points != null && _selection.Labels.Count > 0)
-                _highlightRenderer.Render(_selection.Points, _selection.Labels, ref view, ref proj, _cameraInput.PointSize);
+                _highlightRenderer.Render(frameData, _selection.Points, _selection.Labels, ref view, ref proj, _cameraInput.PointSize);
             _frameTiming.MarkHighlight();
 
             if (_selection.TryTakePreview(out var previewIndices))
                 _highlightRenderer.UpdatePreview(_selection.Points, previewIndices);
-            _highlightRenderer.RenderPreview(ref view, ref proj, _cameraInput.PointSize);
+            _highlightRenderer.RenderPreview(frameData, ref view, ref proj, _cameraInput.PointSize);
             _frameTiming.MarkPreview();
 
             if (_selection.Mode == InteractionMode.Label)
             {
                 var tool = _selection.ActiveTool;
-                if (!_selectionGizmoRenderers.TryRenderPlacement(tool, _width, _height)
+                if (!_selectionGizmoRenderers.TryRenderPlacement(frameData, tool, _width, _height)
                     && (tool.HasVolume || tool.Phase == ToolPhase.Drawing))
                 {
-                    _selectionGizmoRenderers.Render(tool, view, proj, _cam);
+                    _selectionGizmoRenderers.Render(frameData, tool, view, proj, _cam);
                 }
             }
             _frameTiming.MarkGizmo();
 
             bool anyToolActive = _selection.Mode == InteractionMode.Label && _selection.ActiveTool.HasVolume;
             if (!anyToolActive && (_cameraInput.PivotFade > 0.01f || _cameraInput.PivotFlash > 0.01f))
-                _overlayRenderer.RenderPivotIndicator(ref view, ref proj, _cam, _cameraInput.DisplayPivot, _cameraInput.PivotFade, _cameraInput.PivotFlash);
+                _overlayRenderer.RenderPivotIndicator(frameData, ref view, ref proj, _cam, _cameraInput.DisplayPivot, _cameraInput.PivotFade, _cameraInput.PivotFlash);
 
             float crossAlpha = 1f - _cameraInput.PivotFade;
             if (crossAlpha > 0.01f)
-                _overlayRenderer.RenderCenterCrosshair(_width, _height, crossAlpha);
+                _overlayRenderer.RenderCenterCrosshair(frameData, _width, _height, crossAlpha);
 
             if (_selection.Mode == InteractionMode.Label)
-                _overlayRenderer.RenderModeIndicator(_width, _height, _selection.ActiveTool.ToolType);
+                _overlayRenderer.RenderModeIndicator(frameData, _width, _height, _selection.ActiveTool.ToolType);
 
             _frameTiming.MarkSwapAndLog(frameTime);
         }
@@ -158,7 +158,7 @@ namespace CloudScope
         {
             _width = width;
             _height = height;
-            _renderBackend.Resize(width, height);
+            _frameLifecycle.Resize(width, height);
             _cam.SetViewportSize(width, height);
         }
 

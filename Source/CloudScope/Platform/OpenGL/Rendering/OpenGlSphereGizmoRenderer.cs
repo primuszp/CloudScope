@@ -27,7 +27,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
         // ── Public entry point ────────────────────────────────────────────────
 
-        public override void Render(ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera cam)
+        public override void Render(IRenderFrameData frameData, ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera cam)
         {
             var sphere = (SphereSelectionTool)tool;
             if (sphere.Radius < 1e-5f) return;

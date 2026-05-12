@@ -21,9 +21,12 @@ namespace CloudScope.Platform.Metal.Rendering
         }
 
         public void RenderPivotIndicator(
+            IRenderFrameData frameData,
             ref Matrix4 view, ref Matrix4 proj,
             OrbitCamera camera, Vector3 pivot, float fade, float flash)
         {
+            if (frameData is not MetalFrameState frame) return;
+            _renderer.SetFrame(frame);
             float alpha = System.Math.Clamp(fade + flash, 0f, 1f);
             if (alpha <= 0.01f) return;
 
@@ -34,8 +37,10 @@ namespace CloudScope.Platform.Metal.Rendering
                 new Vector4(1f, 0.85f, 0.15f, alpha), depthTest: false);
         }
 
-        public void RenderCenterCrosshair(int width, int height, float alpha)
+        public void RenderCenterCrosshair(IRenderFrameData frameData, int width, int height, float alpha)
         {
+            if (frameData is not MetalFrameState frame) return;
+            _renderer.SetFrame(frame);
             float sx = 15f / width;
             float sy = 15f / height;
             _renderer.UpdateBuffer(ref _crosshairBuffer, new[]
@@ -47,8 +52,10 @@ namespace CloudScope.Platform.Metal.Rendering
                 Matrix4.Identity, new Vector4(0.55f, 0.55f, 0.55f, alpha), depthTest: false);
         }
 
-        public void RenderModeIndicator(int width, int height, SelectionToolType toolType)
+        public void RenderModeIndicator(IRenderFrameData frameData, int width, int height, SelectionToolType toolType)
         {
+            if (frameData is not MetalFrameState frame) return;
+            _renderer.SetFrame(frame);
             float x  = -1f + 30f / width;
             float y  =  1f - 30f / height;
             float sx = 8f / width;
