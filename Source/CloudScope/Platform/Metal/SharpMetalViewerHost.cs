@@ -56,8 +56,8 @@ namespace CloudScope.Platform.Metal
                     DepthStencilPixelFormat = MTLPixelFormat.Depth32Float,
                     ClearColor              = new MTLClearColor { red = 0.0, green = 0.0, blue = 0.0, alpha = 1.0 },
                     FramebufferOnly         = false,
-                    Paused                  = true,
-                    EnableSetNeedsDisplay   = true
+                    Paused                  = false,
+                    EnableSetNeedsDisplay   = false
                 };
 
                 ulong style = (ulong)(NSStyleMask.Titled | NSStyleMask.Closable | NSStyleMask.Resizable | NSStyleMask.Miniaturizable);
@@ -93,7 +93,6 @@ namespace CloudScope.Platform.Metal
                                 _controller.Load();
                                 _controllerLoaded = true;
                                 stopwatch.Restart();
-                                RequestFrame();
                             }
                             catch (Exception ex)
                             {
@@ -130,8 +129,6 @@ namespace CloudScope.Platform.Metal
                         
                         MetalFrameContext.End();
                         frameCount++;
-                        if (_controller.NeedsContinuousFrames || _keyboard.HasAnyKeyDown)
-                            RequestFrame();
                     }
                 };
 
@@ -143,18 +140,15 @@ namespace CloudScope.Platform.Metal
                     _controller.Resize(w, h);
                     _drawableWidth = w;
                     _drawableHeight = h;
-                    RequestFrame();
                 };
 
                 _mtkView.Delegate = _viewDelegate;
-                _mtkView.OnMouseDown_  = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _controller.MouseDown(btn, x, y); RequestFrame(immediate: true); };
-                _mtkView.OnMouseUp_    = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _controller.MouseUp(btn, x, y); RequestFrame(immediate: true); };
-                _mtkView.OnMouseMove_  = (x, y)      => { _lastMouseX = x; _lastMouseY = y; _controller.MouseMove(x, y); RequestFrame(immediate: true); };
-                _mtkView.OnMouseWheel_ = (x, y, d)   => { _lastMouseX = x; _lastMouseY = y; _controller.MouseWheel(x, y, d); RequestFrame(immediate: true); };
+                _mtkView.OnMouseDown_  = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _controller.MouseDown(btn, x, y); };
+                _mtkView.OnMouseUp_    = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _controller.MouseUp(btn, x, y); };
+                _mtkView.OnMouseMove_  = (x, y)      => { _lastMouseX = x; _lastMouseY = y; _controller.MouseMove(x, y); };
+                _mtkView.OnMouseWheel_ = (x, y, d)   => { _lastMouseX = x; _lastMouseY = y; _controller.MouseWheel(x, y, d); };
                 _mtkView.OnKeyDown_    = code         => HandleKeyDown(code);
-                _mtkView.OnKeyUp_      = code         => { _keyboard.KeyUp(MapKey(code)); RequestFrame(); };
-
-                RequestFrame();
+                _mtkView.OnKeyUp_      = code         => _keyboard.KeyUp(MapKey(code));
             };
         }
 
@@ -174,13 +168,6 @@ namespace CloudScope.Platform.Metal
             _controller.Resize(w, h);
             _drawableWidth = w;
             _drawableHeight = h;
-        }
-
-        private void RequestFrame(bool immediate = false)
-        {
-            _mtkView?.SetNeedsDisplay();
-            if (immediate)
-                _mtkView?.DisplayIfNeeded();
         }
 
         private void PresentClearFrame(MTKView view, MTLRenderPassDescriptor descriptor, CAMetalDrawable drawable)
@@ -204,7 +191,6 @@ namespace CloudScope.Platform.Metal
             _keyboard.KeyDown(key);
             bool ctrl = _keyboard.IsKeyDown(ViewerKey.LeftControl) || _keyboard.IsKeyDown(ViewerKey.RightControl);
             _controller.KeyDown(key, ctrl, mx, my);
-            RequestFrame();
         }
 
         private static ViewerKey MapKey(ushort code) => code switch

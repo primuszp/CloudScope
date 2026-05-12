@@ -79,9 +79,7 @@ void main()
             if (_pointCount <= 0)
                 return 0;
 
-            float subsampleRatio = (float)(cloudRadius / Math.Max(halfViewSize, cloudRadius * 0.001));
-            float subsampleFactor = Math.Clamp(subsampleRatio * subsampleRatio, 0.005f, 1f);
-            int drawCount = Math.Max((int)(_pointCount * subsampleFactor), Math.Min(100_000, _pointCount));
+            int drawCount = PointDrawBudget.Compute(_pointCount, halfViewSize, cloudRadius);
 
             GL.UseProgram(_shader);
             GL.UniformMatrix4(_uView, false, ref view);

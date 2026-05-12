@@ -3,13 +3,13 @@ using System.Diagnostics;
 using CloudScope;
 using CloudScope.Loading;
 
-string lasFile = args.Length > 0
-    ? args[0]
-    : @"/Users/primuszpeter/Library/CloudStorage/OneDrive-Személyes/BorderEye/data/jeli_parkolo.las";
-
 //string lasFile = args.Length > 0
 //    ? args[0]
-//    : @"D:\Personal\OneDrive\BorderEye\data\jeli_parkolo.las";
+//    : @"/Users/primuszpeter/Library/CloudStorage/OneDrive-Személyes/BorderEye/data/jeli_parkolo.las";
+
+string lasFile = args.Length > 0
+    ? args[0]
+    : @"C:\Users\primu\OneDrive\BorderEye\data\jeli_parkolo.las";
 
 if (!System.IO.File.Exists(lasFile))
 {
@@ -49,10 +49,10 @@ Console.WriteLine($"\rLoaded : {cloud.LoadedCount:N0} points  ({sw.Elapsed.Total
 if (cloud.HasColor && Math.Abs(cloud.ColorScale - (1.0f / 255.0f)) < 0.000001f)
     Console.WriteLine("Info: Detected 8-bit colors (0-255). Scaling corrected.");
 
-// ── Fisher-Yates shuffle so first-K points give uniform spatial coverage ────
-// ProgressiveSubsample draws only the first N points based on zoom level.
-PointCloudLoader.ShuffleForProgressiveSubsample(cloud.Points, cloud.LoadedCount);
-Console.WriteLine("Shuffled  : points reordered for ProgressiveSubsample");
+// ── Prepare only the prefix used by fast overview rendering ─────────────────
+// This keeps first-K draws spatially representative without shuffling all points.
+int progressivePrefix = PointCloudLoader.PrepareProgressiveSubsample(cloud.Points, cloud.LoadedCount);
+Console.WriteLine($"Prepared  : {progressivePrefix:N0} points for ProgressiveSubsample prefix");
 
 // ── Compute cloud radius for initial camera fit ──────────────────────────────
 Console.WriteLine($"Cloud radius: {cloud.Radius:F1} m");
