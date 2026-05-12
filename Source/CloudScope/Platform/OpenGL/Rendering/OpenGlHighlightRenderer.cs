@@ -116,7 +116,7 @@ void main()
         }
 
         /// <summary>Render the box-selection preview highlight pass.</summary>
-        public void RenderPreview(ref Matrix4 view, ref Matrix4 proj, float pointSize)
+        public void RenderPreview(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj, float pointSize)
         {
             if (_previewCount == 0 || _shader == -1) return;
             GL.UseProgram(_shader);
@@ -134,7 +134,7 @@ void main()
         /// <summary>
         /// Rebuild the highlight buffer from the current label state, then render.
         /// </summary>
-        public void Render(PointData[] points, LabelManager labels,
+        public void Render(IRenderFrameData frameData, PointData[] points, LabelManager labels,
                            ref Matrix4 view, ref Matrix4 proj, float pointSize)
         {
             if (labels.Count == 0 && !_dirty) return;

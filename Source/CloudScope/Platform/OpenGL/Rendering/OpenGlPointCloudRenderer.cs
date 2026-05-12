@@ -74,7 +74,7 @@ void main()
             GL.BindVertexArray(0);
         }
 
-        public int Render(ref Matrix4 view, ref Matrix4 projection, float pointSize, double halfViewSize, float cloudRadius)
+        public int Render(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 projection, float pointSize, double halfViewSize, float cloudRadius)
         {
             if (_pointCount <= 0)
                 return 0;

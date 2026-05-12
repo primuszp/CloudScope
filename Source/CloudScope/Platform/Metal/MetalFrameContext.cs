@@ -15,23 +15,9 @@ namespace CloudScope.Platform.Metal
         public static MTLTexture      DepthTexture { get; private set; }
 
         // ── Per-frame (ThreadStatic so the render thread has its own slot) ───────
-        [ThreadStatic] private static MTKView?          _currentView;
-        [ThreadStatic] private static MTLRenderPassDescriptor _currentRenderPassDescriptor;
-        [ThreadStatic] private static CAMetalDrawable   _currentDrawable;
-        [ThreadStatic] private static MTLCommandBuffer  _currentCommandBuffer;
-        [ThreadStatic] private static MTLRenderCommandEncoder _currentRenderCommandEncoder;
+        [ThreadStatic] private static MetalFrameState? _currentFrame;
 
-        public static MTKView?         CurrentView          => _currentView;
-        public static MTLRenderPassDescriptor CurrentRenderPassDescriptor => _currentRenderPassDescriptor;
-        public static CAMetalDrawable CurrentDrawable => _currentDrawable;
-        public static MTLCommandBuffer CurrentCommandBuffer => _currentCommandBuffer;
-        
-        public static MTLRenderCommandEncoder CurrentRenderCommandEncoder
-        {
-            get => _currentRenderCommandEncoder;
-            set => _currentRenderCommandEncoder = value;
-        }
-
+        public static MetalFrameState? CurrentFrame => _currentFrame;
         public static void Initialize(MTLDevice device, MTLCommandQueue commandQueue)
         {
             Device       = device;
@@ -46,20 +32,18 @@ namespace CloudScope.Platform.Metal
             CAMetalDrawable drawable,
             MTLCommandBuffer commandBuffer)
         {
-            _currentView                 = view;
-            _currentRenderPassDescriptor = renderPassDescriptor;
-            _currentDrawable             = drawable;
-            _currentCommandBuffer        = commandBuffer;
-            _currentRenderCommandEncoder = default;
+            _currentFrame = new MetalFrameState(view, renderPassDescriptor, drawable, commandBuffer);
+        }
+
+        public static void SetRenderCommandEncoder(MTLRenderCommandEncoder encoder)
+        {
+            if (_currentFrame != null)
+                _currentFrame.RenderCommandEncoder = encoder;
         }
 
         public static void End()
         {
-            _currentView          = null;
-            _currentRenderPassDescriptor = default;
-            _currentDrawable = default;
-            _currentCommandBuffer = default;
-            _currentRenderCommandEncoder = default;
+            _currentFrame = null;
         }
     }
 }

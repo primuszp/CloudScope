@@ -116,18 +116,6 @@ namespace CloudScope.Platform.Metal
                     catch (Exception ex) { Console.WriteLine($"[Render Error] {ex}"); }
                     finally
                     {
-                        var enc = MetalFrameContext.CurrentRenderCommandEncoder;
-                        if (enc.NativePtr != IntPtr.Zero)
-                            enc.EndEncoding();
-
-                        var cmdBuf = MetalFrameContext.CurrentCommandBuffer;
-                        if (cmdBuf.NativePtr != IntPtr.Zero)
-                        {
-                            cmdBuf.PresentDrawable(drawable);
-                            cmdBuf.Commit();
-                        }
-                        
-                        MetalFrameContext.End();
                         frameCount++;
                     }
                 };

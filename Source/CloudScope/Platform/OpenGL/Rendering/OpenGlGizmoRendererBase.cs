@@ -160,7 +160,7 @@ void main() { FragColor = uColor; }
 
         // ── Abstract ──────────────────────────────────────────────────────────
 
-        public abstract void Render(ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera cam);
+        public abstract void Render(IRenderFrameData frameData, ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera cam);
 
         public virtual void Dispose()
         {

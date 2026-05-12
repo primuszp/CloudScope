@@ -11,12 +11,15 @@ namespace CloudScope.Platform.Metal.Rendering
     [SupportedOSPlatform("macos")]
     internal sealed class MetalPrimitiveRenderer : IDisposable
     {
+        private MetalFrameState? _frame;
         private MTLRenderPipelineState _pipeline;
         private MTLDepthStencilState _depthOn;
         private MTLDepthStencilState _depthOff;
         private MTLBuffer _uniformsBuffer;
         private int _uniformOffset;
         private bool _initialized;
+
+        public void SetFrame(MetalFrameState frame) => _frame = frame;
 
         public void EnsureResources()
         {
@@ -77,7 +80,7 @@ namespace CloudScope.Platform.Metal.Rendering
             if (vertexBuffer.NativePtr == IntPtr.Zero || vertexCount <= 0 || !_initialized)
                 return;
 
-            var encoder = MetalFrameContext.CurrentRenderCommandEncoder;
+            var encoder = _frame?.RenderCommandEncoder ?? default;
             if (encoder.NativePtr == IntPtr.Zero)
                 return;
 

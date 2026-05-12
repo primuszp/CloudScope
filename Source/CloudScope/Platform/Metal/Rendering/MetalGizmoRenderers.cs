@@ -20,7 +20,16 @@ namespace CloudScope.Platform.Metal.Rendering
             new(0.25f, 0.55f, 1.00f, 0.75f),
         };
 
-        public abstract void Render(ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera camera);
+        public abstract void Render(IRenderFrameData frameData, ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera camera);
+
+        protected bool TrySetFrame(IRenderFrameData frameData)
+        {
+            if (frameData is not MetalFrameState frame)
+                return false;
+
+            Renderer.SetFrame(frame);
+            return true;
+        }
 
         protected void EnsureBase()
         {
@@ -83,8 +92,9 @@ namespace CloudScope.Platform.Metal.Rendering
         private readonly float[] _diamondBuf = new float[18];
         private readonly float[] _ringBuf = new float[64 * 6];
 
-        public override void Render(ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera camera)
+        public override void Render(IRenderFrameData frameData, ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera camera)
         {
+            if (!TrySetFrame(frameData)) return;
             var box = (BoxSelectionTool)tool;
             EnsureResources();
             Matrix4 mvp = box.GetModelMatrix() * view * proj;
@@ -98,8 +108,9 @@ namespace CloudScope.Platform.Metal.Rendering
             if (box.IsFlat) RenderExtrudeArrow(box, camera);
         }
 
-        public void RenderPlacementRect(int x0, int y0, int x1, int y1, int viewportWidth, int viewportHeight)
+        public void RenderPlacementRect(IRenderFrameData frameData, int x0, int y0, int x1, int y1, int viewportWidth, int viewportHeight)
         {
+            if (!TrySetFrame(frameData)) return;
             EnsureResources();
             float nx0 = Math.Min(x0, x1) / (float)viewportWidth  * 2f - 1f;
             float nx1 = Math.Max(x0, x1) / (float)viewportWidth  * 2f - 1f;
@@ -305,8 +316,9 @@ namespace CloudScope.Platform.Metal.Rendering
         private MTLBuffer _circleBuffer;
         private int _circleVertexCount;
 
-        public override void Render(ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera camera)
+        public override void Render(IRenderFrameData frameData, ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera camera)
         {
+            if (!TrySetFrame(frameData)) return;
             var sphere = (SphereSelectionTool)tool;
             if (sphere.Radius < 1e-5f) return;
 
@@ -367,8 +379,9 @@ namespace CloudScope.Platform.Metal.Rendering
         private MTLBuffer _wireBuffer;
         private int _wireVertexCount;
 
-        public override void Render(ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera camera)
+        public override void Render(IRenderFrameData frameData, ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera camera)
         {
+            if (!TrySetFrame(frameData)) return;
             var cyl = (CylinderSelectionTool)tool;
             if (cyl.Radius < 1e-5f || cyl.HalfHeight < 1e-5f) return;
 
