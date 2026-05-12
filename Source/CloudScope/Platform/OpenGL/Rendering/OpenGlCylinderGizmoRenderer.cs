@@ -169,8 +169,10 @@ namespace CloudScope.Platform.OpenGL.Rendering
             float   vpW = cam.ViewportWidth, vpH = cam.ViewportHeight;
             var (fnx, fny) = ScreenToNdc(fx, fy, vpW, vpH);
             var (tnx, tny) = ScreenToNdc(tx, ty, vpW, vpH);
-            bool    hov    = cyl.HoveredHandle == 1;
-            Vector4 col    = hov ? new(1f, 1f, 0.15f, 1f) : new(1f, 0.6f, 0f, 0.95f);
+            bool    hov    = cyl.HoveredHandle >= 0
+                && cyl.GetGrip(cyl.HoveredHandle).IsPrimary;
+            GripDescriptor grip = cyl.GetGrip(1);
+            GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(grip, hov);
 
             Matrix4 id = Matrix4.Identity;
             GL.UseProgram(_shader);
@@ -179,11 +181,11 @@ namespace CloudScope.Platform.OpenGL.Rendering
             GL.DepthMask(false);
 
             DrawLine(fnx, fny, tnx, tny);
-            SetColor(col);
-            GL.LineWidth(hov ? 4f : 3f);
+            SetColor(style.Color);
+            GL.LineWidth(style.LineWidth);
             GL.DrawArrays(PrimitiveType.Lines, 0, 2);
 
-            DrawArrowHead(tnx, tny, fnx, fny, 0.02f, col with { W = 1f });
+            DrawArrowHead(tnx, tny, fnx, fny, 0.02f, style.Color with { W = 1f });
 
             GL.DepthMask(true);
             GL.Enable(EnableCap.DepthTest);
@@ -206,9 +208,11 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
             for (int axis = 0; axis < 3; axis++)
             {
-                bool    hov = cyl.HoveredHandle == 7 + axis;
-                Vector4 col = hov ? new(1f, 1f, 0.15f, 1f) : AxisColor[axis] with { W = 0.80f };
-                GL.LineWidth(hov ? 3f : 2f);
+                bool    hov = cyl.HoveredHandle >= 0
+                    && cyl.GetGrip(cyl.HoveredHandle).Kind == GripKind.RotationRing
+                    && cyl.GetGrip(cyl.HoveredHandle).Axis == axis;
+                GripVisualDescriptor style = GripVisualStyleResolver.ResolveRing(hov, AxisColor[axis]);
+                GL.LineWidth(style.LineWidth);
 
                 int   vc  = 0;
                 float psx = 0, psy = 0;
@@ -237,7 +241,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 }
                 if (vc == 0) continue;
                 Dyn(_ringSegBuf, vc);
-                SetColor(col);
+                SetColor(style.Color);
                 GL.DrawArrays(PrimitiveType.Lines, 0, vc / 3);
             }
 
@@ -256,22 +260,20 @@ namespace CloudScope.Platform.OpenGL.Rendering
             GL.Disable(EnableCap.DepthTest);
             GL.DepthMask(false);
 
-            // Point handles 0-6 (skip rings 7-9 — they have no diamond)
-            for (int i = 0; i < 7; i++)
+            foreach (GripDescriptor grip in cyl.Grips)
             {
+                if (grip.Kind == GripKind.RotationRing)
+                    continue;
+
+                int i = grip.Index;
                 var (sx, sy, behind) = cam.WorldToScreen(cyl.HandleWorldPosition(i));
                 if (behind) continue;
 
                 var (nx, ny) = ScreenToNdc(sx, sy, vpW, vpH);
                 float hx = 12f / vpW, hy = 12f / vpH;
 
-                Vector4 col = i == cyl.HoveredHandle
-                    ? new(1f, 1f, 0.15f, 1f)
-                    : i == 0
-                        ? new(0.3f, 1f, 0.45f, 0.85f)  // center: green
-                        : new(0.9f, 0.9f, 0.9f, 0.80f); // caps + radial: white
-
-                DrawDiamond(nx, ny, hx, hy, col);
+                GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(grip, i == cyl.HoveredHandle);
+                DrawDiamond(nx, ny, hx, hy, style.Color);
             }
 
             GL.DepthMask(true);

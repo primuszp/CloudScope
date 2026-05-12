@@ -22,8 +22,6 @@ namespace CloudScope
         private readonly bool _metalFrameLog = true; // FORCE LOG ON
         private int _metalFrameLogCounter;
 
-        private readonly ISelectionGizmoRenderer[]   _renderers;
-
         private int _width;
         private int _height;
 
@@ -38,7 +36,6 @@ namespace CloudScope
             _selectionGizmoRenderers = renderBackend.CreateSelectionGizmoRenderers();
             _selection = new SelectionController(_highlightRenderer.MarkDirty);
             _cam.SetDepthPicker(renderBackend.CreateDepthPicker());
-            _renderers = _selectionGizmoRenderers.All;
         }
 
         public void Load()
@@ -135,10 +132,11 @@ namespace CloudScope
             if (_selection.Mode == InteractionMode.Label)
             {
                 var tool = _selection.ActiveTool;
-                if (tool is BoxSelectionTool box && box.Phase == ToolPhase.Drawing)
-                    _selectionGizmoRenderers.Box.RenderPlacementRect(box.StartX, box.StartY, box.EndX, box.EndY, _width, _height);
-                else if (tool.HasVolume || tool.Phase == ToolPhase.Drawing)
-                    _renderers[_selection.ActiveToolIndex].Render(tool, view, proj, _cam);
+                if (!_selectionGizmoRenderers.TryRenderPlacement(tool, _width, _height)
+                    && (tool.HasVolume || tool.Phase == ToolPhase.Drawing))
+                {
+                    _selectionGizmoRenderers.Render(tool, view, proj, _cam);
+                }
             }
             _frameTiming.MarkGizmo();
 
@@ -168,7 +166,9 @@ namespace CloudScope
         {
             _pointRenderer.Dispose();
             _overlayRenderer.Dispose();
-            foreach (var renderer in _renderers) renderer.Dispose();
+            _selectionGizmoRenderers.Box.Dispose();
+            _selectionGizmoRenderers.Sphere.Dispose();
+            _selectionGizmoRenderers.Cylinder.Dispose();
             _highlightRenderer.Dispose();
             _selection.Dispose();
         }

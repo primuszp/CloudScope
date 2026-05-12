@@ -21,11 +21,22 @@ namespace CloudScope.Selection
     {
         public override SelectionToolType ToolType  => SelectionToolType.Sphere;
         public override int               HandleCount => 7;
+        public override IReadOnlyList<GripDescriptor> Grips => GripLayout;
 
         public override bool HasVolume =>
             (IsActive || IsEditing) && Radius > 1e-4f;
 
         public float Radius { get; set; }
+        private static readonly GripDescriptor[] GripLayout =
+        {
+            new(0, GripKind.Center),
+            new(1, GripKind.RadiusResize, 0,  1),
+            new(2, GripKind.RadiusResize, 0, -1),
+            new(3, GripKind.RadiusResize, 1,  1),
+            new(4, GripKind.RadiusResize, 1, -1),
+            new(5, GripKind.RadiusResize, 2,  1),
+            new(6, GripKind.RadiusResize, 2, -1),
+        };
 
         // ── Sphere-specific drag state ────────────────────────────────────────
         private float   _editStartRadius;
@@ -48,7 +59,7 @@ namespace CloudScope.Selection
             Radius = (worldPt - Center).Length;
         }
 
-        public override void OnMouseUp(int mx, int my)
+        public override void OnMouseUp(int mx, int my, OrbitCamera camera)
         {
             if (!IsActive) return;
             Phase = Radius > 0.01f ? ToolPhase.Editing : ToolPhase.Idle;
@@ -73,14 +84,9 @@ namespace CloudScope.Selection
         protected override void OnBeginHandleDragExtra(int handle, int mx, int my, OrbitCamera cam)
         {
             _editStartRadius = Radius;
-            if (handle != 0)
+            if (GetGrip(handle).Kind != GripKind.Center)
             {
-                // Screen-space direction from center toward this pole
-                var (cx, cy, _cb) = cam.WorldToScreen(Center);
-                var (px, py, _pb) = cam.WorldToScreen(HandleWorldPosition(handle));
-                float dx = px - cx, dy = py - cy;
-                float len = MathF.Sqrt(dx * dx + dy * dy);
-                _poleScreenDir = len > 0.5f ? new Vector2(dx / len, dy / len) : new Vector2(1f, 0f);
+                _poleScreenDir = GripInteractionMath.ComputeScreenDirection(cam, Center, HandleWorldPosition(handle));
             }
         }
 
@@ -88,17 +94,21 @@ namespace CloudScope.Selection
         {
             if (_activeHandle < 0) return;
 
-            if (_activeHandle == 0)
+            if (GetGrip(_activeHandle).Kind == GripKind.Center)
             {
                 // Depth-correct world-space drag
-                Vector3 startWorld = cam.ScreenToWorldAtDepth(_editStartX, _editStartY, _editViewZ);
-                Vector3 curWorld   = cam.ScreenToWorldAtDepth(mx, my, _editViewZ);
-                Center = _editStartCenter + (curWorld - startWorld);
+                Center = _editStartCenter + GripInteractionMath.ComputeWorldDragDelta(
+                    cam,
+                    _editStartX,
+                    _editStartY,
+                    mx,
+                    my,
+                    _editViewZ);
             }
             else
             {
                 // Project mouse delta onto pole's outward screen direction
-                float proj   = (mx - _editStartX) * _poleScreenDir.X + (my - _editStartY) * _poleScreenDir.Y;
+                float proj   = GripInteractionMath.ProjectMouseDelta(_editStartX, _editStartY, mx, my, _poleScreenDir);
                 float factor = 1f + proj * MouseDragSensitivity;
                 Radius = MathF.Max(_editStartRadius * factor, 0.01f);
             }

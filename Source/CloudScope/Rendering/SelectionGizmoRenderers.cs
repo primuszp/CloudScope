@@ -1,3 +1,7 @@
+using System;
+using CloudScope.Selection;
+using OpenTK.Mathematics;
+
 namespace CloudScope.Rendering
 {
     public sealed class SelectionGizmoRenderers
@@ -10,12 +14,32 @@ namespace CloudScope.Rendering
             Box = box;
             Sphere = sphere;
             Cylinder = cylinder;
-            All = new ISelectionGizmoRenderer[] { box, sphere, cylinder };
         }
 
         public IBoxSelectionGizmoRenderer Box { get; }
         public ISelectionGizmoRenderer Sphere { get; }
         public ISelectionGizmoRenderer Cylinder { get; }
-        public ISelectionGizmoRenderer[] All { get; }
+        public ISelectionGizmoRenderer Resolve(SelectionToolType toolType) => toolType switch
+        {
+            SelectionToolType.Box => Box,
+            SelectionToolType.Sphere => Sphere,
+            SelectionToolType.Cylinder => Cylinder,
+            _ => throw new ArgumentOutOfRangeException(nameof(toolType), toolType, "Unsupported selection tool type.")
+        };
+
+        public void Render(ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera camera)
+            => Resolve(tool.ToolType).Render(tool, view, proj, camera);
+
+        public bool TryRenderPlacement(
+            ISelectionTool tool,
+            int viewportWidth,
+            int viewportHeight)
+        {
+            if (tool is not BoxSelectionTool box || box.Phase != ToolPhase.Drawing)
+                return false;
+
+            Box.RenderPlacementRect(box.StartX, box.StartY, box.EndX, box.EndY, viewportWidth, viewportHeight);
+            return true;
+        }
     }
 }

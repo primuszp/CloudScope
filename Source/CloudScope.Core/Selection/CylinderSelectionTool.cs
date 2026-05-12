@@ -26,6 +26,7 @@ namespace CloudScope.Selection
     {
         public override SelectionToolType ToolType    => SelectionToolType.Cylinder;
         public override int               HandleCount => 10;
+        public override IReadOnlyList<GripDescriptor> Grips => GripLayout;
 
         public override bool HasVolume =>
             IsEditing && Radius > 1e-4f && HalfHeight > 1e-4f;
@@ -33,6 +34,19 @@ namespace CloudScope.Selection
         public float      Radius     { get; set; }
         public float      HalfHeight { get; set; }
         public Quaternion Rotation   = DefaultRotation;
+        private static readonly GripDescriptor[] GripLayout =
+        {
+            new(0, GripKind.Center),
+            new(1, GripKind.HeightResize, 2,  1, true),
+            new(2, GripKind.HeightResize, 2, -1),
+            new(3, GripKind.RadiusResize, 0,  1),
+            new(4, GripKind.RadiusResize, 0, -1),
+            new(5, GripKind.RadiusResize, 1,  1),
+            new(6, GripKind.RadiusResize, 1, -1),
+            new(7, GripKind.RotationRing, 0),
+            new(8, GripKind.RotationRing, 1),
+            new(9, GripKind.RotationRing, 2),
+        };
 
         // Rotate 90° around X: local Y → world Z (upright, Z is up in LiDAR coordinates)
         private static readonly Quaternion DefaultRotation = Quaternion.Identity;
@@ -45,8 +59,8 @@ namespace CloudScope.Selection
         // Ring radius: slightly larger than the cylinder for visual clarity
         public float RingRadius => MathF.Max(Radius, HalfHeight) * 1.35f;
 
-        public static bool IsRingHandle(int i) => i >= 7 && i <= 9;
-        public static int  RingAxis(int i)     => i - 7;
+        public static bool IsRingHandle(int i) => GripLayout[i].Kind == GripKind.RotationRing;
+        public static int  RingAxis(int i)     => GripLayout[i].Axis;
 
         // ── Drag/edit state ───────────────────────────────────────────────────
         private float      _editStartRadius;
@@ -76,7 +90,7 @@ namespace CloudScope.Selection
             Radius = MathF.Max(MathF.Sqrt(dx * dx + dy * dy), 0f);
         }
 
-        public override void OnMouseUp(int mx, int my)
+        public override void OnMouseUp(int mx, int my, OrbitCamera camera)
         {
             if (!IsActive) return;
             if (Radius < 0.01f) { Phase = ToolPhase.Idle; return; }
@@ -100,67 +114,12 @@ namespace CloudScope.Selection
 
         // ── Handle hit test (overrides base to add ring proximity test) ───────
 
-        public override int HitTestHandles(int mx, int my, OrbitCamera cam, float threshold = 12f)
+        protected override float GetGripHitDistance(GripDescriptor grip, int mx, int my, OrbitCamera cam)
         {
-            if (Phase != ToolPhase.Editing) return HoverNone;
+            if (grip.Kind == GripKind.RotationRing)
+                return GripInteractionMath.RingScreenDistance(cam, Center, Rotation, grip.Axis, RingRadius, mx, my);
 
-            int   best     = HoverNone;
-            float bestDist = threshold;
-
-            // Point handles 0-6
-            for (int i = 0; i < 7; i++)
-            {
-                var (sx, sy, behind) = cam.WorldToScreen(HandleWorldPosition(i));
-                if (behind) continue;
-                float d = MathF.Sqrt((sx - mx) * (sx - mx) + (sy - my) * (sy - my));
-                if (d < bestDist) { bestDist = d; best = i; }
-            }
-
-            // Ring handles 7-9
-            for (int r = 0; r < 3; r++)
-            {
-                float d = RingScreenDist(r, mx, my, cam);
-                if (d < bestDist) { bestDist = d; best = 7 + r; }
-            }
-
-            return best;
-        }
-
-        private float RingScreenDist(int axis, int mx, int my, OrbitCamera cam)
-        {
-            const int N    = 32;
-            float     rad  = RingRadius;
-            Matrix3   invR = Matrix3.Transpose(Matrix3.CreateFromQuaternion(Rotation));
-
-            float minDist = float.MaxValue;
-            float psx = 0, psy = 0;
-            bool  pok  = false;
-
-            for (int j = 0; j <= N; j++)
-            {
-                float t = j * MathF.Tau / N;
-                float ct = MathF.Cos(t), st = MathF.Sin(t);
-                Vector3 local = axis switch
-                {
-                    0 => new Vector3(0f, ct, st),
-                    1 => new Vector3(ct, 0f, st),
-                    _ => new Vector3(ct, st, 0f),
-                } * rad;
-
-                var (sx, sy, behind) = cam.WorldToScreen(Center + invR * local);
-                if (!behind && pok)
-                {
-                    float ddx = sx - psx, ddy = sy - psy;
-                    float lenSq = ddx * ddx + ddy * ddy;
-                    float t2 = lenSq < 1e-6f ? 0f :
-                        Math.Clamp(((mx - psx) * ddx + (my - psy) * ddy) / lenSq, 0f, 1f);
-                    float qx = psx + t2 * ddx - mx, qy = psy + t2 * ddy - my;
-                    float d  = MathF.Sqrt(qx * qx + qy * qy);
-                    if (d < minDist) minDist = d;
-                }
-                psx = sx; psy = sy; pok = !behind;
-            }
-            return minDist;
+            return base.GetGripHitDistance(grip, mx, my, cam);
         }
 
         // ── Handle drag ───────────────────────────────────────────────────────
@@ -171,15 +130,9 @@ namespace CloudScope.Selection
             _editStartHalfHeight = HalfHeight;
             _editStartRotation   = Rotation;
 
-            if (handle >= 3 && handle <= 6)
+            if (GetGrip(handle).Kind == GripKind.RadiusResize)
             {
-                var (cx, cy, _) = cam.WorldToScreen(Center);
-                var (px, py, _) = cam.WorldToScreen(HandleWorldPosition(handle));
-                float dx = px - cx, dy = py - cy;
-                float len = MathF.Sqrt(dx * dx + dy * dy);
-                _radialScreenDir = len > 0.5f
-                    ? new Vector2(dx / len, dy / len)
-                    : new Vector2(1f, 0f);
+                _radialScreenDir = GripInteractionMath.ComputeScreenDirection(cam, Center, HandleWorldPosition(handle));
             }
         }
 
@@ -193,20 +146,24 @@ namespace CloudScope.Selection
                 return;
             }
 
-            switch (_activeHandle)
+            switch (GetGrip(_activeHandle).Kind)
             {
-                case 0:
+                case GripKind.Center:
                 {
-                    Vector3 s = cam.ScreenToWorldAtDepth(_editStartX, _editStartY, _editViewZ);
-                    Vector3 c = cam.ScreenToWorldAtDepth(mx, my, _editViewZ);
-                    Center = _editStartCenter + (c - s);
+                    Center = _editStartCenter + GripInteractionMath.ComputeWorldDragDelta(
+                        cam,
+                        _editStartX,
+                        _editStartY,
+                        mx,
+                        my,
+                        _editViewZ);
                     break;
                 }
-                case 1:  // Top cap — fix bottom, move top only
+                case GripKind.HeightResize when GetGrip(_activeHandle).Sign > 0:
                 {
-                    Vector3 s    = cam.ScreenToWorldAtDepth(_editStartX, _editStartY, _editViewZ);
-                    Vector3 c    = cam.ScreenToWorldAtDepth(mx, my, _editViewZ);
-                    float   proj = Vector3.Dot(c - s, Axis);
+                    float   proj = Vector3.Dot(
+                        GripInteractionMath.ComputeWorldDragDelta(cam, _editStartX, _editStartY, mx, my, _editViewZ),
+                        Axis);
                     // Fixed end = bottom at drag start
                     Vector3 fixedEnd  = _editStartCenter - Axis * _editStartHalfHeight;
                     float   newHeight = MathF.Max(_editStartHalfHeight * 2f + proj, 0.02f);
@@ -214,11 +171,11 @@ namespace CloudScope.Selection
                     Center     = fixedEnd + Axis * HalfHeight;
                     break;
                 }
-                case 2:  // Bottom cap — fix top, move bottom only
+                case GripKind.HeightResize:
                 {
-                    Vector3 s    = cam.ScreenToWorldAtDepth(_editStartX, _editStartY, _editViewZ);
-                    Vector3 c    = cam.ScreenToWorldAtDepth(mx, my, _editViewZ);
-                    float   proj = Vector3.Dot(c - s, Axis);
+                    float   proj = Vector3.Dot(
+                        GripInteractionMath.ComputeWorldDragDelta(cam, _editStartX, _editStartY, mx, my, _editViewZ),
+                        Axis);
                     // Fixed end = top at drag start
                     Vector3 fixedEnd  = _editStartCenter + Axis * _editStartHalfHeight;
                     float   newHeight = MathF.Max(_editStartHalfHeight * 2f - proj, 0.02f);
@@ -226,37 +183,28 @@ namespace CloudScope.Selection
                     Center     = fixedEnd - Axis * HalfHeight;
                     break;
                 }
-                default: // Radial handles 3-6
+                case GripKind.RadiusResize:
                 {
-                    float proj = (mx - _editStartX) * _radialScreenDir.X
-                               + (my - _editStartY) * _radialScreenDir.Y;
+                    float proj = GripInteractionMath.ProjectMouseDelta(_editStartX, _editStartY, mx, my, _radialScreenDir);
                     Radius = MathF.Max(_editStartRadius * (1f + proj * MouseDragSensitivity), 0.01f);
                     break;
                 }
+                default:
+                    break;
             }
         }
 
         private void UpdateRingDrag(int mx, int my, OrbitCamera cam)
         {
-            int     axis      = RingAxis(_activeHandle);
-            Matrix3 invRot    = Matrix3.Transpose(Matrix3.CreateFromQuaternion(_editStartRotation));
-            Vector3 localAxis = axis switch { 0 => Vector3.UnitX, 1 => Vector3.UnitY, _ => Vector3.UnitZ };
-            Vector3 worldAxis = (invRot * localAxis).Normalized();
-
-            float   viewZ = cam.WorldToViewZ(Center);
-            Vector3 p0    = cam.ScreenToWorldAtDepth(_editStartX, _editStartY, viewZ);
-            Vector3 p1    = cam.ScreenToWorldAtDepth(mx, my, viewZ);
-
-            Vector3 v0 = p0 - Center; v0 -= Vector3.Dot(v0, worldAxis) * worldAxis;
-            Vector3 v1 = p1 - Center; v1 -= Vector3.Dot(v1, worldAxis) * worldAxis;
-            if (v0.LengthSquared < 1e-8f || v1.LengthSquared < 1e-8f) return;
-
-            v0 = v0.Normalized(); v1 = v1.Normalized();
-            float angle = MathF.Acos(Math.Clamp(Vector3.Dot(v0, v1), -1f, 1f));
-            if (Vector3.Dot(Vector3.Cross(v0, v1), worldAxis) < 0f) angle = -angle;
-
-            Rotation = Quaternion.FromAxisAngle(worldAxis, angle) * _editStartRotation;
-            Rotation.Normalize();
+            Rotation = GripInteractionMath.RotateAroundRingDrag(
+                cam,
+                Center,
+                _editStartRotation,
+                RingAxis(_activeHandle),
+                _editStartX,
+                _editStartY,
+                mx,
+                my);
         }
 
         // ── Keyboard editing ──────────────────────────────────────────────────

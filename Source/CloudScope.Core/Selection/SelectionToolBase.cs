@@ -23,6 +23,7 @@ namespace CloudScope.Selection
 
         // ── Center ────────────────────────────────────────────────────────────
         public virtual Vector3 Center { get; set; }
+        public abstract IReadOnlyList<GripDescriptor> Grips { get; }
 
         // ── Handle state ──────────────────────────────────────────────────────
         public int  HoveredHandle    { get; set; } = HoverNone;
@@ -41,9 +42,10 @@ namespace CloudScope.Selection
         public abstract bool   HasVolume            { get; }
         public abstract int    HandleCount          { get; }
         public abstract Vector3 HandleWorldPosition(int i);
+        public GripDescriptor GetGrip(int handle) => Grips[handle];
         public abstract void   OnMouseDown(int mx, int my, OrbitCamera camera);
         public abstract void   OnMouseMove(int mx, int my, OrbitCamera camera);
-        public abstract void   OnMouseUp(int mx, int my);
+        public abstract void   OnMouseUp(int mx, int my, OrbitCamera camera);
         public abstract void   UpdateHandleDrag(int mx, int my, OrbitCamera cam);
         public abstract void   AdjustScale(float delta);
         public abstract IPointSelectionQuery CreateQuery();
@@ -55,14 +57,20 @@ namespace CloudScope.Selection
             if (Phase != ToolPhase.Editing) return HoverNone;
             int   best     = HoverNone;
             float bestDist = threshold;
-            for (int i = 0; i < HandleCount; i++)
+            foreach (GripDescriptor grip in Grips)
             {
-                var (sx, sy, behind) = cam.WorldToScreen(HandleWorldPosition(i));
-                if (behind) continue;
-                float d = MathF.Sqrt((sx - mx) * (sx - mx) + (sy - my) * (sy - my));
-                if (d < bestDist) { bestDist = d; best = i; }
+                float d = GetGripHitDistance(grip, mx, my, cam);
+                if (d < bestDist) { bestDist = d; best = grip.Index; }
             }
             return best;
+        }
+
+        protected virtual float GetGripHitDistance(GripDescriptor grip, int mx, int my, OrbitCamera cam)
+        {
+            if (grip.Kind == GripKind.RotationRing)
+                return float.MaxValue;
+
+            return GripHitTestSupport.PointDistance(cam, HandleWorldPosition(grip.Index), mx, my);
         }
 
         public virtual void BeginHandleDrag(int handle, int mx, int my, OrbitCamera cam)
@@ -106,9 +114,13 @@ namespace CloudScope.Selection
             if (!IsEditing) return;
             if (_kbAction == EditAction.Grab)
             {
-                Vector3 s = camera.ScreenToWorldAtDepth(_editStartX, _editStartY, _editViewZ);
-                Vector3 c = camera.ScreenToWorldAtDepth(mx, my, _editViewZ);
-                Vector3 d = c - s;
+                Vector3 d = GripInteractionMath.ComputeWorldDragDelta(
+                    camera,
+                    _editStartX,
+                    _editStartY,
+                    mx,
+                    my,
+                    _editViewZ);
                 if (_kbAxis >= 0)
                 {
                     Vector3 m = _kbAxis switch { 0 => Vector3.UnitX, 1 => Vector3.UnitY, _ => Vector3.UnitZ };
