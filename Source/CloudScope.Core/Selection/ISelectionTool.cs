@@ -18,11 +18,13 @@ namespace CloudScope.Selection
         bool      HasVolume { get; }
 
         Vector3 Center { get; }
+        IReadOnlyList<GripDescriptor> Grips { get; }
 
         // ── Handle interaction ────────────────────────────────────────────────
         int  HoveredHandle    { get; set; }
         bool IsHandleDragging { get; }
         int  HitTestHandles(int mx, int my, OrbitCamera cam, float threshold = 12f);
+        GripDescriptor GetGrip(int handle);
         void BeginHandleDrag(int handle, int mx, int my, OrbitCamera cam);
         void UpdateHandleDrag(int mx, int my, OrbitCamera cam);
         void EndHandleDrag();
@@ -30,7 +32,7 @@ namespace CloudScope.Selection
         // ── Phase 1: Placement ────────────────────────────────────────────────
         void OnMouseDown(int mx, int my, OrbitCamera camera);
         void OnMouseMove(int mx, int my, OrbitCamera camera);
-        void OnMouseUp(int mx, int my);
+        void OnMouseUp(int mx, int my, OrbitCamera camera);
 
         // ── Phase 2: Keyboard editing ─────────────────────────────────────────
         void BeginGrab(int mx, int my, OrbitCamera camera);

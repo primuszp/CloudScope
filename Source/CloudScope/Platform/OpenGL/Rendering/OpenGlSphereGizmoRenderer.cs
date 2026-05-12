@@ -103,21 +103,17 @@ namespace CloudScope.Platform.OpenGL.Rendering
             GL.Disable(EnableCap.DepthTest);
             GL.DepthMask(false);
 
-            for (int i = 0; i < sphere.HandleCount; i++)
+            foreach (GripDescriptor grip in sphere.Grips)
             {
+                int i = grip.Index;
                 var (sx, sy, behind) = cam.WorldToScreen(sphere.HandleWorldPosition(i));
                 if (behind) continue;
 
                 var (nx, ny) = ScreenToNdc(sx, sy, vpW, vpH);
                 float hx = 12f/vpW, hy = 12f/vpH;
 
-                Vector4 col = i == sphere.HoveredHandle
-                    ? new(1f, 1f, 0.15f, 1f)
-                    : i == 0
-                        ? new(0.3f, 1f, 0.45f, 0.85f)
-                        : new(0.9f, 0.9f, 0.9f, 0.80f);
-
-                DrawDiamond(nx, ny, hx, hy, col);
+                GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(grip, i == sphere.HoveredHandle);
+                DrawDiamond(nx, ny, hx, hy, style.Color);
             }
 
             GL.DepthMask(true);

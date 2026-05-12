@@ -35,7 +35,6 @@ namespace CloudScope
 
         public InteractionMode Mode { get; private set; } = InteractionMode.Navigate;
         public ISelectionTool ActiveTool => _tools[_activeToolIndex];
-        public int ActiveToolIndex => _activeToolIndex;
         public LabelManager Labels => _labelManager;
         public PointData[]? Points => _points;
 
@@ -105,21 +104,9 @@ namespace CloudScope
             if (tool.Phase != ToolPhase.Drawing)
                 return;
 
-            if (tool is BoxSelectionTool box)
-            {
-                box.OnMouseUp(x, y);
-                if (box.Phase == ToolPhase.Drawing)
-                {
-                    box.FinalizeBoxFromScreen(camera);
-                    Console.WriteLine("Box drawn — drag the orange arrow (+Z) to extrude. Rings=rotate, corners=resize. Enter to label.");
-                }
-            }
-            else
-            {
-                tool.OnMouseUp(x, y);
-                if (tool.IsEditing)
-                    Console.WriteLine("Selection placed — drag orange arrow to set height. Enter to label.");
-            }
+            tool.OnMouseUp(x, y, camera);
+            if (tool.IsEditing)
+                Console.WriteLine($"{tool.ToolType} selection placed - use grips or G/S/R, then Enter to label.");
         }
 
         public void MouseMove(int x, int y, OrbitCamera camera)
