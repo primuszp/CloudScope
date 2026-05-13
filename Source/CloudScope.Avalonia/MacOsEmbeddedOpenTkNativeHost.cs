@@ -91,7 +91,7 @@ public sealed unsafe class MacOsEmbeddedOpenTkNativeHost : NativeControlHost, IE
             int logicalWidth = Math.Max(1, (int)Math.Round(finalRect.Width));
             int logicalHeight = Math.Max(1, (int)Math.Round(finalRect.Height));
             _viewer.ClientSize = new Vector2i(logicalWidth, logicalHeight);
-            var (pixelWidth, pixelHeight) = GetBackingPixelSize(_nsView, logicalWidth, logicalHeight);
+            var (pixelWidth, pixelHeight) = ToBackingPixelSize(logicalWidth, logicalHeight);
             _viewer.SyncFramebufferViewport(pixelWidth, pixelHeight);
         }
     }
@@ -114,22 +114,18 @@ public sealed unsafe class MacOsEmbeddedOpenTkNativeHost : NativeControlHost, IE
                 return;
 
             viewer.PumpActions();
-            var (pixelWidth, pixelHeight) = GetBackingPixelSize(_nsView, viewer.FramebufferSize.X, viewer.FramebufferSize.Y);
+            var (pixelWidth, pixelHeight) = ToBackingPixelSize(viewer.ClientSize.X, viewer.ClientSize.Y);
             viewer.SyncFramebufferViewport(pixelWidth, pixelHeight);
             viewer.PumpEmbeddedFrame(1.0 / 60.0);
         };
         _pumpTimer.Start();
     }
 
-    private static (int width, int height) GetBackingPixelSize(IntPtr nsView, int fallbackWidth, int fallbackHeight)
+    private (int width, int height) ToBackingPixelSize(int logicalWidth, int logicalHeight)
     {
-        if (nsView == IntPtr.Zero)
-            return (Math.Max(1, fallbackWidth), Math.Max(1, fallbackHeight));
-
-        RectStruct bounds = Rect_objc_msgSend(nsView, sel_bounds);
-        RectStruct backingBounds = Rect_objc_msgSend_rect(nsView, sel_convertRectToBacking, bounds);
-        int width = Math.Max(1, (int)Math.Round(backingBounds.Width));
-        int height = Math.Max(1, (int)Math.Round(backingBounds.Height));
+        double scale = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
+        int width = Math.Max(1, (int)Math.Round(logicalWidth * scale));
+        int height = Math.Max(1, (int)Math.Round(logicalHeight * scale));
         return (width, height);
     }
 
@@ -149,26 +145,9 @@ public sealed unsafe class MacOsEmbeddedOpenTkNativeHost : NativeControlHost, IE
     [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
     private static extern byte Byte_objc_msgSend_IntPtr(IntPtr receiver, IntPtr selector, IntPtr value);
 
-    [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
-    private static extern RectStruct Rect_objc_msgSend(IntPtr receiver, IntPtr selector);
-
-    [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
-    private static extern RectStruct Rect_objc_msgSend_rect(IntPtr receiver, IntPtr selector, RectStruct rect);
-
     private static readonly IntPtr sel_retain = SelRegisterName("retain");
     private static readonly IntPtr sel_release = SelRegisterName("release");
     private static readonly IntPtr sel_window = SelRegisterName("window");
     private static readonly IntPtr sel_makeFirstResponder = SelRegisterName("makeFirstResponder:");
     private static readonly IntPtr sel_setWantsLayer = SelRegisterName("setWantsLayer:");
-    private static readonly IntPtr sel_bounds = SelRegisterName("bounds");
-    private static readonly IntPtr sel_convertRectToBacking = SelRegisterName("convertRectToBacking:");
-
-    [StructLayout(LayoutKind.Sequential)]
-    private readonly struct RectStruct
-    {
-        public readonly double X;
-        public readonly double Y;
-        public readonly double Width;
-        public readonly double Height;
-    }
 }
