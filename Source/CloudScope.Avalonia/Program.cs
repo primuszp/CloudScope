@@ -1,6 +1,6 @@
 using Avalonia;
 
-namespace CloudScope.Avalonia.OpenGlHostTest;
+namespace CloudScope.Avalonia;
 
 internal static class Program
 {

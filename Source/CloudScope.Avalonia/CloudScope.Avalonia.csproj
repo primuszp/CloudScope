@@ -6,17 +6,21 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <RuntimeIdentifiers>win-x64;osx-x64;osx-arm64</RuntimeIdentifiers>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <UseAppHost>true</UseAppHost>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.0.3" />
     <PackageReference Include="Avalonia.Desktop" Version="12.0.3" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.3" />
+    <PackageReference Include="OpenTK" Version="4.9.4" />
     <PackageReference Include="OpenTK.Mathematics" Version="4.9.4" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\CloudScope\CloudScope.csproj" AdditionalProperties="EnableSharpMetal=false;EnableImGui=false" />
     <ProjectReference Include="..\CloudScope.Core\CloudScope.Core.csproj" />
   </ItemGroup>
 

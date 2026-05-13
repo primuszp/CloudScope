@@ -22,7 +22,11 @@ namespace CloudScope
                 throw new PlatformNotSupportedException(
                     "The Metal viewer host requires macOS. Use CLOUDSCOPE_RENDER_BACKEND=opengl on this platform.");
 
+#if ENABLE_SHARPMETAL
             return new Platform.Metal.SharpMetalViewerHost(width, height, backend);
+#else
+            throw new PlatformNotSupportedException("This build was created without the SharpMetal viewer host.");
+#endif
         }
     }
 }

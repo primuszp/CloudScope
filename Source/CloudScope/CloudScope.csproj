@@ -6,11 +6,15 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <EnableSharpMetal Condition="'$(EnableSharpMetal)' == ''">true</EnableSharpMetal>
+    <EnableImGui Condition="'$(EnableImGui)' == ''">true</EnableImGui>
+    <DefineConstants Condition="'$(EnableSharpMetal)' == 'true'">$(DefineConstants);ENABLE_SHARPMETAL</DefineConstants>
+    <DefineConstants Condition="'$(EnableImGui)' == 'true'">$(DefineConstants);ENABLE_IMGUI</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SharpMetal" Version="1.1.0" />
-    <PackageReference Include="ImGui.NET" Version="1.91.6.1" />
+    <PackageReference Include="SharpMetal" Version="1.1.0" PrivateAssets="all" Condition="'$(EnableSharpMetal)' == 'true'" />
+    <PackageReference Include="ImGui.NET" Version="1.91.6.1" PrivateAssets="all" Condition="'$(EnableImGui)' == 'true'" />
     <PackageReference Include="OpenTK" Version="4.9.4" />
     <PackageReference Include="OpenTK.Core" Version="4.9.4" />
     <PackageReference Include="OpenTK.Mathematics" Version="4.9.4" />
@@ -19,6 +23,15 @@
 
   <ItemGroup>
     <ProjectReference Include="..\CloudScope.Core\CloudScope.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(EnableSharpMetal)' != 'true'">
+    <Compile Remove="Platform\Metal\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(EnableImGui)' != 'true'">
+    <Compile Remove="Platform\OpenGL\ImGuiController.cs" />
+    <Compile Remove="Ui\CommandLineOverlay.cs" />
   </ItemGroup>
 
 </Project>
