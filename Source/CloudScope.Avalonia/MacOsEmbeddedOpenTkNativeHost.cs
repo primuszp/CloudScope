@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Avalonia;
 using Avalonia.Controls;
@@ -42,12 +41,6 @@ public sealed unsafe class MacOsEmbeddedOpenTkNativeHost : NativeControlHost, IE
 
     public void FocusViewer()
     {
-        if (_nsView == IntPtr.Zero)
-            return;
-
-        IntPtr window = IntPtr_objc_msgSend(_nsView, sel_window);
-        if (window != IntPtr.Zero)
-            Byte_objc_msgSend_IntPtr(window, sel_makeFirstResponder, _nsView);
     }
 
     protected override IPlatformHandle CreateNativeControlCore(IPlatformHandle parent)
@@ -60,8 +53,6 @@ public sealed unsafe class MacOsEmbeddedOpenTkNativeHost : NativeControlHost, IE
         if (_nsView == IntPtr.Zero)
             throw new InvalidOperationException("GLFW did not return an NSView for the embedded OpenTK window.");
 
-        Retain(_nsView);
-        ConfigureView(_nsView);
         _viewer.InitializeEmbedded();
         StartPump();
         return new PlatformHandle(_nsView, "NSView");
@@ -74,11 +65,7 @@ public sealed unsafe class MacOsEmbeddedOpenTkNativeHost : NativeControlHost, IE
         _viewer?.Close();
         _viewer = null;
 
-        if (_nsView != IntPtr.Zero)
-        {
-            Release(_nsView);
-            _nsView = IntPtr.Zero;
-        }
+        _nsView = IntPtr.Zero;
 
         base.DestroyNativeControlCore(control);
     }
@@ -94,11 +81,6 @@ public sealed unsafe class MacOsEmbeddedOpenTkNativeHost : NativeControlHost, IE
             var (pixelWidth, pixelHeight) = ToBackingPixelSize(logicalWidth, logicalHeight);
             _viewer.SyncFramebufferViewport(pixelWidth, pixelHeight);
         }
-    }
-
-    private static void ConfigureView(IntPtr nsView)
-    {
-        Void_objc_msgSend_byte(nsView, sel_setWantsLayer, 1);
     }
 
     private void StartPump()
@@ -128,26 +110,4 @@ public sealed unsafe class MacOsEmbeddedOpenTkNativeHost : NativeControlHost, IE
         int height = Math.Max(1, (int)Math.Round(logicalHeight * scale));
         return (width, height);
     }
-
-    private static void Retain(IntPtr obj) => IntPtr_objc_msgSend(obj, sel_retain);
-
-    private static void Release(IntPtr obj) => IntPtr_objc_msgSend(obj, sel_release);
-
-    [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "sel_registerName")]
-    private static extern IntPtr SelRegisterName(string selector);
-
-    [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
-    private static extern IntPtr IntPtr_objc_msgSend(IntPtr receiver, IntPtr selector);
-
-    [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
-    private static extern void Void_objc_msgSend_byte(IntPtr receiver, IntPtr selector, byte value);
-
-    [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
-    private static extern byte Byte_objc_msgSend_IntPtr(IntPtr receiver, IntPtr selector, IntPtr value);
-
-    private static readonly IntPtr sel_retain = SelRegisterName("retain");
-    private static readonly IntPtr sel_release = SelRegisterName("release");
-    private static readonly IntPtr sel_window = SelRegisterName("window");
-    private static readonly IntPtr sel_makeFirstResponder = SelRegisterName("makeFirstResponder:");
-    private static readonly IntPtr sel_setWantsLayer = SelRegisterName("setWantsLayer:");
 }
