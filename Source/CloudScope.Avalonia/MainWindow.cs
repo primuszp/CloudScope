@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -7,7 +8,7 @@ using CloudScope.Library;
 using CloudScope.Loading;
 using AvaloniaThickness = Avalonia.Thickness;
 
-namespace CloudScope.Avalonia.OpenGlHostTest;
+namespace CloudScope.Avalonia;
 
 public sealed class MainWindow : Window
 {
@@ -15,10 +16,11 @@ public sealed class MainWindow : Window
     private readonly TextBlock _statusText = new();
     private readonly TextBox _commandBox = new();
     private readonly ListBox _history = new();
+    private ViewportInputHost? _viewport;
 
     public MainWindow()
     {
-        Title = "CloudScope Avalonia OpenGL Host Test";
+        Title = "CloudScope Avalonia";
         Width = 1280;
         Height = 800;
         MinWidth = 900;
@@ -26,6 +28,8 @@ public sealed class MainWindow : Window
 
         _hostController.StatusChanged += OnStatusChanged;
         Content = BuildLayout();
+        AddHandler(KeyDownEvent, OnWindowKeyDown, RoutingStrategies.Tunnel);
+        AddHandler(KeyUpEvent, OnWindowKeyUp, RoutingStrategies.Tunnel);
     }
 
     private Control BuildLayout()
@@ -44,7 +48,8 @@ public sealed class MainWindow : Window
         DockPanel.SetDock(statusBar, Dock.Bottom);
         root.Children.Add(statusBar);
 
-        root.Children.Add(new ViewportInputHost(_hostController));
+        _viewport = new ViewportInputHost(_hostController);
+        root.Children.Add(_viewport);
 
         return root;
     }
@@ -63,6 +68,27 @@ public sealed class MainWindow : Window
         var exit = new MenuItem { Header = "E_xit" };
         exit.Click += (_, _) => Close();
 
+        var navigate = new MenuItem { Header = "_Navigate" };
+        navigate.Click += (_, _) => ExecuteCommand("NAVIGATE");
+
+        var labelMode = new MenuItem { Header = "_Label Mode" };
+        labelMode.Click += (_, _) => ExecuteCommand("LABELMODE");
+
+        var box = new MenuItem { Header = "_Box" };
+        box.Click += (_, _) => ExecuteCommand("SELECT B");
+
+        var sphere = new MenuItem { Header = "_Sphere" };
+        sphere.Click += (_, _) => ExecuteCommand("SELECT S");
+
+        var cylinder = new MenuItem { Header = "_Cylinder" };
+        cylinder.Click += (_, _) => ExecuteCommand("SELECT C");
+
+        var confirm = new MenuItem { Header = "_Confirm" };
+        confirm.Click += (_, _) => ExecuteCommand("CONFIRM");
+
+        var cancel = new MenuItem { Header = "_Cancel" };
+        cancel.Click += (_, _) => ExecuteCommand("CANCEL");
+
         return new Menu
         {
             ItemsSource = new[]
@@ -71,6 +97,11 @@ public sealed class MainWindow : Window
                 {
                     Header = "_Host",
                     ItemsSource = new[] { openLas, status, reset, exit }
+                },
+                new MenuItem
+                {
+                    Header = "_Viewer",
+                    ItemsSource = new[] { navigate, labelMode, box, sphere, cylinder, confirm, cancel }
                 }
             }
         };
@@ -78,7 +109,7 @@ public sealed class MainWindow : Window
 
     private Control BuildCommandLine()
     {
-        _commandBox.PlaceholderText = "Command: STATUS, RESET, HELP";
+        _commandBox.PlaceholderText = "Command: SELECT B/S/C, LABELMODE, NAVIGATE, CONFIRM, CANCEL, STATUS";
         _commandBox.KeyDown += (_, e) =>
         {
             if (e.Key != Key.Enter)
@@ -86,6 +117,7 @@ public sealed class MainWindow : Window
 
             ExecuteCommand(_commandBox.Text ?? "");
             _commandBox.Text = "";
+            FocusViewer();
             e.Handled = true;
         };
 
@@ -118,6 +150,37 @@ public sealed class MainWindow : Window
 
         AddHistory($"> {command.Trim()}");
         _hostController.ExecuteCommand(command);
+    }
+
+    private void FocusViewer()
+    {
+        Dispatcher.UIThread.Post(() => _viewport?.FocusViewer(), DispatcherPriority.Input);
+    }
+
+    private void OnWindowKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (ReferenceEquals(e.Source, _commandBox))
+            return;
+
+        ViewerKey key = ViewportInputHost.ToViewerKey(e.Key);
+        if (key == ViewerKey.Unknown)
+            return;
+
+        _hostController.ForwardKeyDown(key);
+        e.Handled = true;
+    }
+
+    private void OnWindowKeyUp(object? sender, KeyEventArgs e)
+    {
+        if (ReferenceEquals(e.Source, _commandBox))
+            return;
+
+        ViewerKey key = ViewportInputHost.ToViewerKey(e.Key);
+        if (key == ViewerKey.Unknown)
+            return;
+
+        _hostController.ForwardKeyUp(key);
+        e.Handled = true;
     }
 
     private void OnStatusChanged(string message)

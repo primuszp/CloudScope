@@ -1,7 +1,9 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+#if ENABLE_SHARPMETAL
 using CloudScope.Platform.Metal;
+#endif
 using CloudScope.Platform.OpenGL;
 
 namespace CloudScope.Rendering
@@ -16,9 +18,11 @@ namespace CloudScope.Rendering
             if (string.Equals(requested, "metal", StringComparison.OrdinalIgnoreCase))
                 return Create(RenderBackendKind.Metal);
 
+#if ENABLE_SHARPMETAL
             // macOS-en Metal az alapértelmezett
             if (OperatingSystem.IsMacOS())
                 return Create(RenderBackendKind.Metal);
+#endif
 
             return Create(RenderBackendKind.OpenGL);
         }
@@ -39,7 +43,12 @@ namespace CloudScope.Rendering
         }
 
         [SupportedOSPlatform("macos")]
+#if ENABLE_SHARPMETAL
         private static IRenderBackend CreateMetal() => new MetalRenderBackend();
+#else
+        private static IRenderBackend CreateMetal() =>
+            throw new PlatformNotSupportedException("This build was created without the Metal backend.");
+#endif
 
         public static bool IsApplePlatform =>
             RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ||

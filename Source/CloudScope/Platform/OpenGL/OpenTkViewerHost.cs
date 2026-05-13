@@ -16,8 +16,12 @@ namespace CloudScope
     public class OpenTkViewerHost : GameWindow
     {
         private readonly ViewerController _controller;
+        private readonly bool _enableOverlay;
+        private readonly ViewerCommandDispatcher _commandDispatcher;
+#if ENABLE_IMGUI
         private ImGuiController? _imgui;
         private CommandLineOverlay? _commandLine;
+#endif
 
         /// <summary>
         /// Scale factor from logical pixels (GLFW/OS) to physical pixels (framebuffer).
@@ -35,7 +39,7 @@ namespace CloudScope
         {
         }
 
-        public OpenTkViewerHost(int width, int height, IRenderBackend renderBackend)
+        public OpenTkViewerHost(int width, int height, IRenderBackend renderBackend, bool enableOverlay = true)
             : base(GameWindowSettings.Default, new NativeWindowSettings
             {
                 ClientSize = new Vector2i(width, height),
@@ -45,6 +49,8 @@ namespace CloudScope
             })
         {
             _controller = new ViewerController(width, height, renderBackend);
+            _commandDispatcher = new ViewerCommandDispatcher(_controller);
+            _enableOverlay = enableOverlay;
         }
 
         public void LoadPointCloud(PointData[] points, float cloudRadius = 50f) =>
@@ -52,26 +58,38 @@ namespace CloudScope
 
         public void SetLasFilePath(string path) => _controller.SetLasFilePath(path);
 
+        public string ExecuteCommand(string commandText) => _commandDispatcher.Execute(commandText);
+
+        public void ForwardKeyDown(ViewerKey key, bool ctrl, int mouseX, int mouseY) =>
+            _controller.KeyDown(key, ctrl, mouseX, mouseY);
+
         protected override void OnLoad()
         {
             base.OnLoad();
             _controller.Load();
-            _imgui = new ImGuiController(ClientSize.X, ClientSize.Y);
-            _commandLine = new CommandLineOverlay(_controller);
+#if ENABLE_IMGUI
+            if (_enableOverlay)
+            {
+                _imgui = new ImGuiController(ClientSize.X, ClientSize.Y);
+                _commandLine = new CommandLineOverlay(_controller);
+            }
+#endif
         }
 
         protected override void OnUpdateFrame(FrameEventArgs args)
         {
             base.OnUpdateFrame(args);
-            if (_controller.UpdateFrame((float)args.Time, new OpenTkKeyboardAdapter(KeyboardState)))
+            if (_controller.UpdateFrame((float)args.Time, CreateKeyboardAdapter()))
                 Close();
         }
 
         protected override void OnMouseDown(MouseButtonEventArgs e)
         {
             base.OnMouseDown(e);
+#if ENABLE_IMGUI
             if (_imgui?.WantsMouse == true)
                 return;
+#endif
 
             _controller.MouseDown(ToViewerButton(e.Button),
                 ToPhysical(MouseState.Position.X), ToPhysical(MouseState.Position.Y));
@@ -80,8 +98,10 @@ namespace CloudScope
         protected override void OnMouseUp(MouseButtonEventArgs e)
         {
             base.OnMouseUp(e);
+#if ENABLE_IMGUI
             if (_imgui?.WantsMouse == true)
                 return;
+#endif
 
             _controller.MouseUp(ToViewerButton(e.Button),
                 ToPhysical(MouseState.Position.X), ToPhysical(MouseState.Position.Y));
@@ -90,8 +110,10 @@ namespace CloudScope
         protected override void OnMouseMove(MouseMoveEventArgs e)
         {
             base.OnMouseMove(e);
+#if ENABLE_IMGUI
             if (_imgui?.WantsMouse == true)
                 return;
+#endif
 
             _controller.MouseMove(ToPhysical(e.X), ToPhysical(e.Y));
         }
@@ -99,8 +121,10 @@ namespace CloudScope
         protected override void OnMouseWheel(MouseWheelEventArgs e)
         {
             base.OnMouseWheel(e);
+#if ENABLE_IMGUI
             if (_imgui?.WantsMouse == true)
                 return;
+#endif
 
             _controller.MouseWheel(
                 ToPhysical(MouseState.Position.X), ToPhysical(MouseState.Position.Y), e.OffsetY);
@@ -109,8 +133,10 @@ namespace CloudScope
         protected override void OnKeyDown(KeyboardKeyEventArgs e)
         {
             base.OnKeyDown(e);
+#if ENABLE_IMGUI
             if (_imgui?.WantsKeyboard == true)
                 return;
+#endif
 
             bool ctrl = KeyboardState.IsKeyDown(Keys.LeftControl) || KeyboardState.IsKeyDown(Keys.RightControl);
             _controller.KeyDown(ToViewerKey(e.Key), ctrl,
@@ -120,19 +146,23 @@ namespace CloudScope
         protected override void OnTextInput(TextInputEventArgs e)
         {
             base.OnTextInput(e);
+#if ENABLE_IMGUI
             _imgui?.PressChar((uint)e.Unicode);
+#endif
         }
 
         protected override void OnRenderFrame(FrameEventArgs args)
         {
             base.OnRenderFrame(args);
             _controller.RenderFrame(args.Time);
+#if ENABLE_IMGUI
             if (_imgui != null && _commandLine != null)
             {
                 _imgui.Update(this, (float)args.Time);
                 _commandLine.Render(ClientSize.X, ClientSize.Y);
                 _imgui.Render();
             }
+#endif
             SwapBuffers();
         }
 
@@ -152,10 +182,14 @@ namespace CloudScope
 
         protected override void OnUnload()
         {
+#if ENABLE_IMGUI
             _imgui?.Dispose();
+#endif
             _controller.Dispose();
             base.OnUnload();
         }
+
+        protected virtual IViewerKeyboard CreateKeyboardAdapter() => new OpenTkKeyboardAdapter(KeyboardState);
 
         private static ViewerMouseButton ToViewerButton(MouseButton button) => button switch
         {
@@ -165,7 +199,7 @@ namespace CloudScope
             _ => ViewerMouseButton.Left
         };
 
-        private static ViewerKey ToViewerKey(Keys key)
+        protected static ViewerKey ToViewerKey(Keys key)
         {
             foreach (ViewerKey viewerKey in Enum.GetValues<ViewerKey>())
             {

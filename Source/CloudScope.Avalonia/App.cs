@@ -4,7 +4,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
 
-namespace CloudScope.Avalonia.OpenGlHostTest;
+namespace CloudScope.Avalonia;
 
 public sealed class App : Application
 {
