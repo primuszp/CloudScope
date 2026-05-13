@@ -39,13 +39,14 @@ namespace CloudScope
         {
         }
 
-        public OpenTkViewerHost(int width, int height, IRenderBackend renderBackend, bool enableOverlay = true)
+        public OpenTkViewerHost(int width, int height, IRenderBackend renderBackend, bool enableOverlay = true, bool startVisible = true)
             : base(GameWindowSettings.Default, new NativeWindowSettings
             {
                 ClientSize = new Vector2i(width, height),
                 Title = "CloudScope - Point Cloud Viewer",
                 APIVersion = new Version(3, 3),
                 Profile = ContextProfile.Core,
+                StartVisible = startVisible,
             })
         {
             _controller = new ViewerController(width, height, renderBackend);

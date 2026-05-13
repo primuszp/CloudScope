@@ -10,7 +10,7 @@ using OpenTK.Windowing.Desktop;
 
 namespace CloudScope.Avalonia;
 
-public sealed unsafe class Win32EmbeddedOpenTkNativeHost : NativeControlHost
+public sealed unsafe class Win32EmbeddedOpenTkNativeHost : NativeControlHost, IEmbeddedOpenTkNativeHost
 {
     private readonly HostController _hostController;
     private EmbeddedOpenTkViewerHost? _viewer;

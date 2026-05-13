@@ -3,7 +3,7 @@ namespace CloudScope.Avalonia;
 public sealed class HostController
 {
     private DateTime _startTimeUtc = DateTime.UtcNow;
-    private Win32EmbeddedOpenTkNativeHost? _embeddedHost;
+    private IEmbeddedOpenTkNativeHost? _embeddedHost;
     private int _renderedPointCount;
     private string _viewerState = "Embedded OpenTK host not created";
 
@@ -11,12 +11,12 @@ public sealed class HostController
 
     public string Status => $"Points: {_renderedPointCount:N0} | {_viewerState}";
 
-    public void SetEmbeddedHost(Win32EmbeddedOpenTkNativeHost embeddedHost)
+    public void SetEmbeddedHost(IEmbeddedOpenTkNativeHost embeddedHost)
     {
         _embeddedHost = embeddedHost;
-        _viewerState = OperatingSystem.IsWindows()
+        _viewerState = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
             ? "Embedded OpenTK host ready"
-            : "Embedded OpenTK host is currently Windows-only";
+            : "Embedded OpenTK host is currently implemented for Windows and macOS";
         PublishStatus();
     }
 

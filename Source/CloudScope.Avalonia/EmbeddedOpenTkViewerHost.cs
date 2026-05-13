@@ -1,9 +1,7 @@
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using CloudScope.Platform.OpenGL;
 using CloudScope.Rendering;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.GraphicsLibraryFramework;
+using System.Collections.Concurrent;
 
 namespace CloudScope.Avalonia;
 
@@ -14,7 +12,7 @@ public sealed class EmbeddedOpenTkViewerHost : OpenTkViewerHost
     private readonly ManualResetEventSlim _loaded = new(false);
 
     public EmbeddedOpenTkViewerHost(int width, int height, IRenderBackend renderBackend)
-        : base(width, height, renderBackend, enableOverlay: false)
+        : base(width, height, renderBackend, enableOverlay: false, startVisible: false)
     {
     }
 
