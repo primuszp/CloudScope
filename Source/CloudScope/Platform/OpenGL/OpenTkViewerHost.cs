@@ -29,10 +29,15 @@ namespace CloudScope
         /// All mouse coordinates from OpenTK are in logical pixels and must be
         /// multiplied by this before being passed to the renderer.
         /// </summary>
-        private float PixelScale =>
+        private float PixelScaleX =>
             ClientSize.X > 0 ? (float)FramebufferSize.X / ClientSize.X : 1f;
 
-        private int ToPhysical(float logical) => (int)(logical * PixelScale);
+        private float PixelScaleY =>
+            ClientSize.Y > 0 ? (float)FramebufferSize.Y / ClientSize.Y : 1f;
+
+        private int ToPhysicalX(float logical) => (int)(logical * PixelScaleX);
+
+        private int ToPhysicalY(float logical) => (int)(logical * PixelScaleY);
 
         public OpenTkViewerHost(int width, int height)
             : this(width, height, RenderBackendFactory.CreateDefault())
@@ -93,7 +98,7 @@ namespace CloudScope
 #endif
 
             _controller.MouseDown(ToViewerButton(e.Button),
-                ToPhysical(MouseState.Position.X), ToPhysical(MouseState.Position.Y));
+                ToPhysicalX(MouseState.Position.X), ToPhysicalY(MouseState.Position.Y));
         }
 
         protected override void OnMouseUp(MouseButtonEventArgs e)
@@ -105,7 +110,7 @@ namespace CloudScope
 #endif
 
             _controller.MouseUp(ToViewerButton(e.Button),
-                ToPhysical(MouseState.Position.X), ToPhysical(MouseState.Position.Y));
+                ToPhysicalX(MouseState.Position.X), ToPhysicalY(MouseState.Position.Y));
         }
 
         protected override void OnMouseMove(MouseMoveEventArgs e)
@@ -116,7 +121,7 @@ namespace CloudScope
                 return;
 #endif
 
-            _controller.MouseMove(ToPhysical(e.X), ToPhysical(e.Y));
+            _controller.MouseMove(ToPhysicalX(e.X), ToPhysicalY(e.Y));
         }
 
         protected override void OnMouseWheel(MouseWheelEventArgs e)
@@ -128,7 +133,7 @@ namespace CloudScope
 #endif
 
             _controller.MouseWheel(
-                ToPhysical(MouseState.Position.X), ToPhysical(MouseState.Position.Y), e.OffsetY);
+                ToPhysicalX(MouseState.Position.X), ToPhysicalY(MouseState.Position.Y), e.OffsetY);
         }
 
         protected override void OnKeyDown(KeyboardKeyEventArgs e)
@@ -141,7 +146,7 @@ namespace CloudScope
 
             bool ctrl = KeyboardState.IsKeyDown(Keys.LeftControl) || KeyboardState.IsKeyDown(Keys.RightControl);
             _controller.KeyDown(ToViewerKey(e.Key), ctrl,
-                ToPhysical(MouseState.Position.X), ToPhysical(MouseState.Position.Y));
+                ToPhysicalX(MouseState.Position.X), ToPhysicalY(MouseState.Position.Y));
         }
 
         protected override void OnTextInput(TextInputEventArgs e)
@@ -172,14 +177,16 @@ namespace CloudScope
             base.OnResize(e);
             // Use FramebufferSize for the GL viewport — on HiDPI/Retina displays
             // the framebuffer resolution differs from the logical window size.
-            _controller.Resize(FramebufferSize.X, FramebufferSize.Y);
+            ResizeFramebuffer(FramebufferSize.X, FramebufferSize.Y);
         }
 
         protected override void OnFramebufferResize(FramebufferResizeEventArgs e)
         {
             base.OnFramebufferResize(e);
-            _controller.Resize(e.Width, e.Height);
+            ResizeFramebuffer(e.Width, e.Height);
         }
+
+        protected void ResizeFramebuffer(int width, int height) => _controller.Resize(width, height);
 
         protected override void OnUnload()
         {

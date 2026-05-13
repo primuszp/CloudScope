@@ -87,7 +87,10 @@ public sealed unsafe class MacOsEmbeddedOpenTkNativeHost : NativeControlHost, IE
     {
         base.ArrangeCore(finalRect);
         if (_viewer != null)
+        {
             _viewer.ClientSize = new Vector2i(Math.Max(1, (int)finalRect.Width), Math.Max(1, (int)finalRect.Height));
+            _viewer.SyncFramebufferViewport();
+        }
     }
 
     private static void ConfigureView(IntPtr nsView)
@@ -108,6 +111,7 @@ public sealed unsafe class MacOsEmbeddedOpenTkNativeHost : NativeControlHost, IE
                 return;
 
             viewer.PumpActions();
+            viewer.SyncFramebufferViewport();
             viewer.PumpEmbeddedFrame(1.0 / 60.0);
         };
         _pumpTimer.Start();

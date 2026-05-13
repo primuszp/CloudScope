@@ -88,13 +88,25 @@ public sealed class EmbeddedOpenTkViewerHost : OpenTkViewerHost
 
     protected override IViewerKeyboard CreateKeyboardAdapter() => _keyboard;
 
-    private int ToPhysicalMouseX() => ToPhysical(MouseState.Position.X);
+    public void SyncFramebufferViewport()
+    {
+        if (FramebufferSize.X > 0 && FramebufferSize.Y > 0)
+            ResizeFramebuffer(FramebufferSize.X, FramebufferSize.Y);
+    }
 
-    private int ToPhysicalMouseY() => ToPhysical(MouseState.Position.Y);
+    private int ToPhysicalMouseX() => ToPhysicalX(MouseState.Position.X);
 
-    private int ToPhysical(float logical)
+    private int ToPhysicalMouseY() => ToPhysicalY(MouseState.Position.Y);
+
+    private int ToPhysicalX(float logical)
     {
         float scale = ClientSize.X > 0 ? (float)FramebufferSize.X / ClientSize.X : 1f;
+        return (int)(logical * scale);
+    }
+
+    private int ToPhysicalY(float logical)
+    {
+        float scale = ClientSize.Y > 0 ? (float)FramebufferSize.Y / ClientSize.Y : 1f;
         return (int)(logical * scale);
     }
 
