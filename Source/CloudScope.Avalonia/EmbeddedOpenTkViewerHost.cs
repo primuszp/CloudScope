@@ -10,6 +10,8 @@ public sealed class EmbeddedOpenTkViewerHost : OpenTkViewerHost
     private readonly ConcurrentQueue<Action<EmbeddedOpenTkViewerHost>> _actions = new();
     private readonly ManualViewerKeyboard _keyboard = new();
     private readonly ManualResetEventSlim _loaded = new(false);
+    private int _effectiveFramebufferWidth;
+    private int _effectiveFramebufferHeight;
 
     public EmbeddedOpenTkViewerHost(int width, int height, IRenderBackend renderBackend)
         : base(width, height, renderBackend, enableOverlay: false, startVisible: false)
@@ -93,8 +95,18 @@ public sealed class EmbeddedOpenTkViewerHost : OpenTkViewerHost
         int framebufferWidth = width ?? FramebufferSize.X;
         int framebufferHeight = height ?? FramebufferSize.Y;
         if (framebufferWidth > 0 && framebufferHeight > 0)
+        {
+            _effectiveFramebufferWidth = framebufferWidth;
+            _effectiveFramebufferHeight = framebufferHeight;
             ResizeFramebuffer(framebufferWidth, framebufferHeight);
+        }
     }
+
+    protected override int EffectiveFramebufferWidth =>
+        _effectiveFramebufferWidth > 0 ? _effectiveFramebufferWidth : base.EffectiveFramebufferWidth;
+
+    protected override int EffectiveFramebufferHeight =>
+        _effectiveFramebufferHeight > 0 ? _effectiveFramebufferHeight : base.EffectiveFramebufferHeight;
 
     private int ToPhysicalMouseX() => ToPhysicalX(MouseState.Position.X);
 
@@ -102,13 +114,13 @@ public sealed class EmbeddedOpenTkViewerHost : OpenTkViewerHost
 
     private int ToPhysicalX(float logical)
     {
-        float scale = ClientSize.X > 0 ? (float)FramebufferSize.X / ClientSize.X : 1f;
+        float scale = ClientSize.X > 0 ? (float)EffectiveFramebufferWidth / ClientSize.X : 1f;
         return (int)(logical * scale);
     }
 
     private int ToPhysicalY(float logical)
     {
-        float scale = ClientSize.Y > 0 ? (float)FramebufferSize.Y / ClientSize.Y : 1f;
+        float scale = ClientSize.Y > 0 ? (float)EffectiveFramebufferHeight / ClientSize.Y : 1f;
         return (int)(logical * scale);
     }
 

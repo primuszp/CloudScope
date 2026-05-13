@@ -30,14 +30,18 @@ namespace CloudScope
         /// multiplied by this before being passed to the renderer.
         /// </summary>
         private float PixelScaleX =>
-            ClientSize.X > 0 ? (float)FramebufferSize.X / ClientSize.X : 1f;
+            ClientSize.X > 0 ? (float)EffectiveFramebufferWidth / ClientSize.X : 1f;
 
         private float PixelScaleY =>
-            ClientSize.Y > 0 ? (float)FramebufferSize.Y / ClientSize.Y : 1f;
+            ClientSize.Y > 0 ? (float)EffectiveFramebufferHeight / ClientSize.Y : 1f;
 
         private int ToPhysicalX(float logical) => (int)(logical * PixelScaleX);
 
         private int ToPhysicalY(float logical) => (int)(logical * PixelScaleY);
+
+        protected virtual int EffectiveFramebufferWidth => FramebufferSize.X;
+
+        protected virtual int EffectiveFramebufferHeight => FramebufferSize.Y;
 
         public OpenTkViewerHost(int width, int height)
             : this(width, height, RenderBackendFactory.CreateDefault())
