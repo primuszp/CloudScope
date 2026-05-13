@@ -9,8 +9,8 @@ namespace CloudScope.Selection
     /// World-space upright cylinder (axis = world Z) — two-phase workflow.
     ///
     /// Phase 1 – Drawing:
-    ///   Click sets center on the point cloud, drag sets radius (world-space distance).
-    ///   Release → thin disk placed, Phase = Editing.
+    ///   Click sets center from screen input, drag sets radius by projecting the
+    ///   screen cursor at the center depth. Release → thin disk placed, Phase = Editing.
     ///
     /// Phase 2 – Editing:
     ///   10 handles:
@@ -67,35 +67,42 @@ namespace CloudScope.Selection
         private float      _editStartHalfHeight;
         private Quaternion _editStartRotation;
         private Vector2    _radialScreenDir;
+        private float      _placementViewZ;
 
         // ── Phase 1: Placement ────────────────────────────────────────────────
 
         public override void OnMouseDown(int mx, int my, OrbitCamera camera)
         {
             var (worldPt, _) = camera.ScreenToWorldPoint(mx, my, 11);
-            Center     = worldPt;
-            Radius     = 0f;
-            HalfHeight = 0f;
-            Rotation   = DefaultRotation;
-            Phase      = ToolPhase.Drawing;
+            _placementViewZ = camera.WorldToViewZ(worldPt);
+            Center          = worldPt;
+            Radius          = 0f;
+            HalfHeight      = 0f;
+            Rotation        = DefaultRotation;
+            Phase           = ToolPhase.Drawing;
         }
 
         public override void OnMouseMove(int mx, int my, OrbitCamera camera)
         {
             if (!IsActive) return;
-            var (worldPt, _) = camera.ScreenToWorldPoint(mx, my, 11);
-            // Horizontal distance in XY plane (Z is up)
-            float dx = worldPt.X - Center.X;
-            float dy = worldPt.Y - Center.Y;
-            Radius = MathF.Max(MathF.Sqrt(dx * dx + dy * dy), 0f);
+            Radius = ComputePlacementRadius(mx, my, camera);
         }
 
         public override void OnMouseUp(int mx, int my, OrbitCamera camera)
         {
             if (!IsActive) return;
+            Radius = ComputePlacementRadius(mx, my, camera);
             if (Radius < 0.01f) { Phase = ToolPhase.Idle; return; }
             HalfHeight = Radius;   // default: cube-ish proportions, user extrudes from here
             Phase      = ToolPhase.Editing;
+        }
+
+        private float ComputePlacementRadius(int mx, int my, OrbitCamera camera)
+        {
+            Vector3 worldPt = camera.ScreenToWorldAtDepth(mx, my, _placementViewZ);
+            Vector3 radial = worldPt - Center;
+            radial -= Vector3.Dot(radial, Axis) * Axis;
+            return MathF.Max(radial.Length, 0f);
         }
 
         // ── Handle positions ──────────────────────────────────────────────────

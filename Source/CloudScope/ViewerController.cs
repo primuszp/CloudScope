@@ -58,6 +58,19 @@ namespace CloudScope
 
         public bool NeedsContinuousFrames => _cameraInput.NeedsContinuousFrames;
 
+        public InteractionMode Mode => _selection.Mode;
+        public SelectionToolType ActiveToolType => _selection.ActiveTool.ToolType;
+
+        public void SetMode(InteractionMode mode) => _selection.SetMode(mode);
+
+        public void SetTool(SelectionToolType toolType) => _selection.SetTool(toolType);
+
+        public void SetLabel(string label) => _selection.SetLabel(label);
+
+        public void ConfirmActiveSelection() => _selection.ConfirmActiveSelection();
+
+        public void CancelOrExitLabelMode() => _selection.CancelOrExitLabelMode();
+
         public bool UpdateFrame(float dt, IViewerKeyboard keyboard)
         {
             bool shouldClose = _cameraInput.UpdateFrame(dt, keyboard, _cam, _cloudRadius, _selection.Mode == InteractionMode.Label && _selection.ActiveTool.HasVolume, _width, _height);

@@ -7,7 +7,8 @@ namespace CloudScope.Selection
 {
     /// <summary>
     /// World-space sphere selection with two-phase workflow.
-    /// Placement: click center, drag radius. Release → Editing.
+    /// Placement: click screen center, drag screen radius projected at center depth.
+    /// Release → Editing.
     /// Editing: handle drag (center + 6 poles), G/S keyboard, scroll = fine-tune.
     /// Enter to confirm, Escape to cancel.
     ///
@@ -47,21 +48,21 @@ namespace CloudScope.Selection
         public override void OnMouseDown(int mx, int my, OrbitCamera camera)
         {
             var (worldPt, _) = camera.ScreenToWorldPoint(mx, my, 21);
-            Center   = worldPt;
-            Radius   = 0f;
-            Phase    = ToolPhase.Drawing;
+            Center = worldPt;
+            Radius = 0f;
+            Phase  = ToolPhase.Drawing;
         }
 
         public override void OnMouseMove(int mx, int my, OrbitCamera camera)
         {
             if (!IsActive) return;
-            var (worldPt, _) = camera.ScreenToWorldPoint(mx, my, 21);
-            Radius = (worldPt - Center).Length;
+            Radius = camera.ScreenToWorldRadius(Center, mx, my);
         }
 
         public override void OnMouseUp(int mx, int my, OrbitCamera camera)
         {
             if (!IsActive) return;
+            Radius = camera.ScreenToWorldRadius(Center, mx, my);
             Phase = Radius > 0.01f ? ToolPhase.Editing : ToolPhase.Idle;
         }
 
