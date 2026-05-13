@@ -42,6 +42,44 @@ namespace CloudScope
 
         public void SetLasFilePath(string path) => _lasFilePath = path;
 
+        public void SetMode(InteractionMode mode)
+        {
+            if (Mode == mode)
+                return;
+
+            Mode = mode;
+            ActiveTool.Cancel();
+            _pendingAction = EditAction.None;
+            _editDragging = false;
+            Console.WriteLine($"Mode: {Mode}  (tool: {ActiveTool.ToolType}, label: '{_currentLabel}')");
+        }
+
+        public void SetTool(SelectionToolType toolType)
+        {
+            if (ActiveTool.IsEditing || ActiveTool.IsActive)
+                ActiveTool.Cancel();
+
+            _activeToolIndex = toolType switch
+            {
+                SelectionToolType.Box => 0,
+                SelectionToolType.Sphere => 1,
+                SelectionToolType.Cylinder => 2,
+                _ => _activeToolIndex
+            };
+
+            Mode = InteractionMode.Label;
+            Console.WriteLine($"Tool: {ActiveTool.ToolType}");
+        }
+
+        public void SetLabel(string label)
+        {
+            if (string.IsNullOrWhiteSpace(label))
+                return;
+
+            _currentLabel = label.Trim();
+            Console.WriteLine($"Label: '{_currentLabel}'");
+        }
+
         public bool MouseDownLeft(int x, int y, OrbitCamera camera)
         {
             if (Mode != InteractionMode.Label)
@@ -152,11 +190,7 @@ namespace CloudScope
         {
             if (key == ViewerKey.L)
             {
-                Mode = Mode == InteractionMode.Navigate ? InteractionMode.Label : InteractionMode.Navigate;
-                ActiveTool.Cancel();
-                _pendingAction = EditAction.None;
-                _editDragging = false;
-                Console.WriteLine($"Mode: {Mode}  (tool: {ActiveTool.ToolType}, label: '{_currentLabel}')");
+                SetMode(Mode == InteractionMode.Navigate ? InteractionMode.Label : InteractionMode.Navigate);
             }
 
             if (key == ViewerKey.Escape && Mode == InteractionMode.Label)
@@ -190,7 +224,7 @@ namespace CloudScope
 
         public void Dispose() => _previewWorker.Dispose();
 
-        private void CancelOrExitLabelMode()
+        public void CancelOrExitLabelMode()
         {
             if (_editDragging)
             {
@@ -211,7 +245,7 @@ namespace CloudScope
             }
         }
 
-        private void ConfirmActiveSelection()
+        public void ConfirmActiveSelection()
         {
             if (_points != null)
             {
@@ -242,9 +276,9 @@ namespace CloudScope
 
         private void HandleToolSwitch(ViewerKey key)
         {
-            if (key == ViewerKey.D1) { _activeToolIndex = 0; Console.WriteLine("Tool: Box"); }
-            if (key == ViewerKey.D2) { _activeToolIndex = 1; Console.WriteLine("Tool: Sphere"); }
-            if (key == ViewerKey.D3) { _activeToolIndex = 2; Console.WriteLine("Tool: Cylinder"); }
+            if (key == ViewerKey.D1) SetTool(SelectionToolType.Box);
+            if (key == ViewerKey.D2) SetTool(SelectionToolType.Sphere);
+            if (key == ViewerKey.D3) SetTool(SelectionToolType.Cylinder);
         }
 
         private void HandleLabelShortcut(ViewerKey key)
@@ -254,8 +288,7 @@ namespace CloudScope
             {
                 if (key == presetKeys[i])
                 {
-                    _currentLabel = LabelPresets[i];
-                    Console.WriteLine($"Label: '{_currentLabel}'");
+                    SetLabel(LabelPresets[i]);
                 }
             }
         }

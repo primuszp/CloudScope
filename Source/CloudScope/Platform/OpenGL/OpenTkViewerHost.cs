@@ -3,7 +3,9 @@ using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using OpenTK.Windowing.GraphicsLibraryFramework;
+using CloudScope.Platform.OpenGL;
 using CloudScope.Rendering;
+using CloudScope.Ui;
 
 namespace CloudScope
 {
@@ -14,6 +16,8 @@ namespace CloudScope
     public class OpenTkViewerHost : GameWindow
     {
         private readonly ViewerController _controller;
+        private ImGuiController? _imgui;
+        private CommandLineOverlay? _commandLine;
 
         /// <summary>
         /// Scale factor from logical pixels (GLFW/OS) to physical pixels (framebuffer).
@@ -52,6 +56,8 @@ namespace CloudScope
         {
             base.OnLoad();
             _controller.Load();
+            _imgui = new ImGuiController(ClientSize.X, ClientSize.Y);
+            _commandLine = new CommandLineOverlay(_controller);
         }
 
         protected override void OnUpdateFrame(FrameEventArgs args)
@@ -64,6 +70,9 @@ namespace CloudScope
         protected override void OnMouseDown(MouseButtonEventArgs e)
         {
             base.OnMouseDown(e);
+            if (_imgui?.WantsMouse == true)
+                return;
+
             _controller.MouseDown(ToViewerButton(e.Button),
                 ToPhysical(MouseState.Position.X), ToPhysical(MouseState.Position.Y));
         }
@@ -71,6 +80,9 @@ namespace CloudScope
         protected override void OnMouseUp(MouseButtonEventArgs e)
         {
             base.OnMouseUp(e);
+            if (_imgui?.WantsMouse == true)
+                return;
+
             _controller.MouseUp(ToViewerButton(e.Button),
                 ToPhysical(MouseState.Position.X), ToPhysical(MouseState.Position.Y));
         }
@@ -78,12 +90,18 @@ namespace CloudScope
         protected override void OnMouseMove(MouseMoveEventArgs e)
         {
             base.OnMouseMove(e);
+            if (_imgui?.WantsMouse == true)
+                return;
+
             _controller.MouseMove(ToPhysical(e.X), ToPhysical(e.Y));
         }
 
         protected override void OnMouseWheel(MouseWheelEventArgs e)
         {
             base.OnMouseWheel(e);
+            if (_imgui?.WantsMouse == true)
+                return;
+
             _controller.MouseWheel(
                 ToPhysical(MouseState.Position.X), ToPhysical(MouseState.Position.Y), e.OffsetY);
         }
@@ -91,15 +109,30 @@ namespace CloudScope
         protected override void OnKeyDown(KeyboardKeyEventArgs e)
         {
             base.OnKeyDown(e);
+            if (_imgui?.WantsKeyboard == true)
+                return;
+
             bool ctrl = KeyboardState.IsKeyDown(Keys.LeftControl) || KeyboardState.IsKeyDown(Keys.RightControl);
             _controller.KeyDown(ToViewerKey(e.Key), ctrl,
                 ToPhysical(MouseState.Position.X), ToPhysical(MouseState.Position.Y));
+        }
+
+        protected override void OnTextInput(TextInputEventArgs e)
+        {
+            base.OnTextInput(e);
+            _imgui?.PressChar((uint)e.Unicode);
         }
 
         protected override void OnRenderFrame(FrameEventArgs args)
         {
             base.OnRenderFrame(args);
             _controller.RenderFrame(args.Time);
+            if (_imgui != null && _commandLine != null)
+            {
+                _imgui.Update(this, (float)args.Time);
+                _commandLine.Render(ClientSize.X, ClientSize.Y);
+                _imgui.Render();
+            }
             SwapBuffers();
         }
 
@@ -119,6 +152,7 @@ namespace CloudScope
 
         protected override void OnUnload()
         {
+            _imgui?.Dispose();
             _controller.Dispose();
             base.OnUnload();
         }
