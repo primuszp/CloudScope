@@ -13,13 +13,22 @@ public sealed class ViewportInputHost : Border
         _hostController = hostController;
         Background = Brushes.Transparent;
         Focusable = true;
-        Child = OperatingSystem.IsWindows()
-            ? new Win32EmbeddedOpenTkNativeHost(hostController)
-            : new AvaloniaOpenGlHostControl();
+        Child = CreatePlatformHost(hostController);
 
         PointerPressed += (_, _) => Focus();
         KeyDown += OnKeyDown;
         KeyUp += OnKeyUp;
+    }
+
+    private static Control CreatePlatformHost(HostController hostController)
+    {
+        if (OperatingSystem.IsWindows())
+            return new Win32EmbeddedOpenTkNativeHost(hostController);
+
+        if (OperatingSystem.IsMacOS())
+            return new MacOsEmbeddedOpenTkNativeHost(hostController);
+
+        return new AvaloniaOpenGlHostControl();
     }
 
     public void FocusViewer()
