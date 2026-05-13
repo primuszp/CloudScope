@@ -88,10 +88,12 @@ public sealed class EmbeddedOpenTkViewerHost : OpenTkViewerHost
 
     protected override IViewerKeyboard CreateKeyboardAdapter() => _keyboard;
 
-    public void SyncFramebufferViewport()
+    public void SyncFramebufferViewport(int? width = null, int? height = null)
     {
-        if (FramebufferSize.X > 0 && FramebufferSize.Y > 0)
-            ResizeFramebuffer(FramebufferSize.X, FramebufferSize.Y);
+        int framebufferWidth = width ?? FramebufferSize.X;
+        int framebufferHeight = height ?? FramebufferSize.Y;
+        if (framebufferWidth > 0 && framebufferHeight > 0)
+            ResizeFramebuffer(framebufferWidth, framebufferHeight);
     }
 
     private int ToPhysicalMouseX() => ToPhysicalX(MouseState.Position.X);

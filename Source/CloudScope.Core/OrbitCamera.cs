@@ -533,9 +533,10 @@ namespace CloudScope
         /// </summary>
         private Vector3 ScreenToView(int px, int py, float viewZ)
         {
-            float pixToView = hw * 2f / _vpW;
-            float x = px * pixToView - hw;
-            float y = -(py * pixToView - hh);
+            float pixToViewX = hw * 2f / _vpW;
+            float pixToViewY = hh * 2f / _vpH;
+            float x = px * pixToViewX - hw;
+            float y = -(py * pixToViewY - hh);
 
             // Perspective correction (for ortho, iez=0 -> no effect)
             x += -x * viewZ * iez + tsx * viewZ;
