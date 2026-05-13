@@ -44,9 +44,9 @@ namespace CloudScope.Ui
 
             if (ImGui.BeginMenu("Label"))
             {
-                if (ImGui.MenuItem("Box", "B")) Execute("BOX");
-                if (ImGui.MenuItem("Sphere")) Execute("SPHERE");
-                if (ImGui.MenuItem("Cylinder")) Execute("CYLINDER");
+                if (ImGui.MenuItem("Box", "B")) Execute("SELECT B");
+                if (ImGui.MenuItem("Sphere")) Execute("SELECT S");
+                if (ImGui.MenuItem("Cylinder")) Execute("SELECT C");
                 ImGui.Separator();
                 if (ImGui.MenuItem("Confirm", "Enter")) Execute("CONFIRM");
                 if (ImGui.MenuItem("Cancel", "Esc")) Execute("CANCEL");

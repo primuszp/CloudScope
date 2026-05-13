@@ -23,6 +23,10 @@ namespace CloudScope.Ui
 
             switch (verb)
             {
+                case "SEL":
+                case "SELECT":
+                    return ExecuteSelect(argument);
+
                 case "B":
                 case "BOX":
                     _viewer.SetTool(SelectionToolType.Box);
@@ -68,11 +72,32 @@ namespace CloudScope.Ui
 
                 case "HELP":
                 case "?":
-                    return "Commands: BOX, SPHERE, CYLINDER, LABEL <name>, LABELMODE, NAVIGATE, CONFIRM, CANCEL";
+                    return "Commands: SELECT [Box/Sphere/Cylinder], LABEL <name>, LABELMODE, NAVIGATE, CONFIRM, CANCEL";
 
                 default:
                     return $"Unknown command: {command}";
             }
+        }
+
+        private string ExecuteSelect(string option)
+        {
+            if (string.IsNullOrWhiteSpace(option))
+                return "Select [Box/Sphere/Cylinder] <Box>:";
+
+            string normalized = option.Trim().ToUpperInvariant();
+            SelectionToolType? toolType = normalized switch
+            {
+                "B" or "BOX" => SelectionToolType.Box,
+                "S" or "SPH" or "SPHERE" => SelectionToolType.Sphere,
+                "C" or "CYL" or "CYLINDER" => SelectionToolType.Cylinder,
+                _ => null
+            };
+
+            if (toolType == null)
+                return "Invalid option. Select [Box/Sphere/Cylinder] <Box>:";
+
+            _viewer.SetTool(toolType.Value);
+            return $"Tool: {toolType.Value}";
         }
     }
 }

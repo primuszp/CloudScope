@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="CloudScope/CloudScope.csproj" />
+  <Project Path="CloudScope.Avalonia.OpenGlHostTest/CloudScope.Avalonia.OpenGlHostTest.csproj" />
   <Project Path="CloudScope.Core/CloudScope.Core.csproj" />
   <Project Path="MetalTriangleTest/MetalTriangleTest.csproj" />
   <Project Path="MetalNetTriangle/MetalNetTriangle.csproj" />
