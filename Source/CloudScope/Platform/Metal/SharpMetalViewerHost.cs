@@ -56,8 +56,8 @@ namespace CloudScope.Platform.Metal
                     DepthStencilPixelFormat = MTLPixelFormat.Depth32Float,
                     ClearColor              = new MTLClearColor { red = 0.0, green = 0.0, blue = 0.0, alpha = 1.0 },
                     FramebufferOnly         = false,
-                    Paused                  = false,
-                    EnableSetNeedsDisplay   = false
+                    Paused                  = true,
+                    EnableSetNeedsDisplay   = true
                 };
 
                 ulong style = (ulong)(NSStyleMask.Titled | NSStyleMask.Closable | NSStyleMask.Resizable | NSStyleMask.Miniaturizable);
@@ -93,6 +93,7 @@ namespace CloudScope.Platform.Metal
                                 _controller.Load();
                                 _controllerLoaded = true;
                                 stopwatch.Restart();
+                                RequestRedraw();
                             }
                             catch (Exception ex)
                             {
@@ -112,6 +113,8 @@ namespace CloudScope.Platform.Metal
                         var cmdBuf = _commandQueue.Value.CommandBuffer();
                         MetalFrameContext.Begin(view, descriptor, drawable, cmdBuf);
                         _controller.RenderFrame(0);
+                        if (_controller.NeedsContinuousFrames)
+                            RequestRedraw();
                     }
                     catch (Exception ex) { Console.WriteLine($"[Render Error] {ex}"); }
                     finally
@@ -131,18 +134,23 @@ namespace CloudScope.Platform.Metal
                 };
 
                 _mtkView.Delegate = _viewDelegate;
-                _mtkView.OnMouseDown_  = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _controller.MouseDown(btn, x, y); };
-                _mtkView.OnMouseUp_    = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _controller.MouseUp(btn, x, y); };
-                _mtkView.OnMouseMove_  = (x, y)      => { _lastMouseX = x; _lastMouseY = y; _controller.MouseMove(x, y); };
-                _mtkView.OnMouseWheel_ = (x, y, d)   => { _lastMouseX = x; _lastMouseY = y; _controller.MouseWheel(x, y, d); };
-                _mtkView.OnKeyDown_    = code         => HandleKeyDown(code);
-                _mtkView.OnKeyUp_      = code         => _keyboard.KeyUp(MapKey(code));
+                _mtkView.OnMouseDown_  = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _controller.MouseDown(btn, x, y); RequestRedraw(); };
+                _mtkView.OnMouseUp_    = (btn, x, y) => { _lastMouseX = x; _lastMouseY = y; _controller.MouseUp(btn, x, y); RequestRedraw(); };
+                _mtkView.OnMouseMove_  = (x, y)      => { _lastMouseX = x; _lastMouseY = y; _controller.MouseMove(x, y); RequestRedraw(); };
+                _mtkView.OnMouseWheel_ = (x, y, d)   => { _lastMouseX = x; _lastMouseY = y; _controller.MouseWheel(x, y, d); RequestRedraw(); };
+                _mtkView.OnKeyDown_    = code         => { HandleKeyDown(code); RequestRedraw(); };
+                _mtkView.OnKeyUp_      = code         => { _keyboard.KeyUp(MapKey(code)); RequestRedraw(); };
+                RequestRedraw();
             };
         }
 
         public void Run() => _app.Run();
 
-        public void LoadPointCloud(PointData[] points, float cloudRadius = 50f) => _controller.LoadPointCloud(points, cloudRadius);
+        public void LoadPointCloud(PointData[] points, float cloudRadius = 50f)
+        {
+            _controller.LoadPointCloud(points, cloudRadius);
+            RequestRedraw();
+        }
         public void SetLasFilePath(string path) => _controller.SetLasFilePath(path);
         public void Dispose() => _controller.Dispose();
 
@@ -179,6 +187,11 @@ namespace CloudScope.Platform.Metal
             _keyboard.KeyDown(key);
             bool ctrl = _keyboard.IsKeyDown(ViewerKey.LeftControl) || _keyboard.IsKeyDown(ViewerKey.RightControl);
             _controller.KeyDown(key, ctrl, mx, my);
+        }
+
+        private void RequestRedraw()
+        {
+            _mtkView?.SetNeedsDisplay();
         }
 
         private static ViewerKey MapKey(ushort code) => code switch
