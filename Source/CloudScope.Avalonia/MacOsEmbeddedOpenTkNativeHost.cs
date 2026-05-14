@@ -108,7 +108,6 @@ public sealed unsafe class MacOsEmbeddedOpenTkNativeHost : NativeControlHost, IE
     {
         SetNativeViewFrame(logicalWidth, logicalHeight);
         viewer.ClientSize = new Vector2i(logicalWidth, logicalHeight);
-        GLFW.SetWindowSize(viewer.WindowPtr, logicalWidth, logicalHeight);
         var (pixelWidth, pixelHeight) = ToBackingPixelSize(logicalWidth, logicalHeight);
         viewer.SyncFramebufferViewport(pixelWidth, pixelHeight);
     }
@@ -132,9 +131,10 @@ public sealed unsafe class MacOsEmbeddedOpenTkNativeHost : NativeControlHost, IE
         if (_nsView == IntPtr.Zero)
             return;
 
-        var rect = new NSRect(0, 0, logicalWidth, logicalHeight);
-        ObjcMsgSendRect(_nsView, SelSetFrame, rect);
-        ObjcMsgSendRect(_nsView, SelSetBounds, rect);
+        var size = new NSSize(logicalWidth, logicalHeight);
+        var bounds = new NSRect(0, 0, logicalWidth, logicalHeight);
+        ObjcMsgSendSize(_nsView, SelSetFrameSize, size);
+        ObjcMsgSendRect(_nsView, SelSetBounds, bounds);
         ObjcMsgSendBool(_nsView, SelSetNeedsDisplay, true);
     }
 
@@ -156,7 +156,7 @@ public sealed unsafe class MacOsEmbeddedOpenTkNativeHost : NativeControlHost, IE
         return new Vector2(x, y);
     }
 
-    private static readonly IntPtr SelSetFrame = sel_registerName("setFrame:");
+    private static readonly IntPtr SelSetFrameSize = sel_registerName("setFrameSize:");
     private static readonly IntPtr SelSetBounds = sel_registerName("setBounds:");
     private static readonly IntPtr SelSetNeedsDisplay = sel_registerName("setNeedsDisplay:");
     private static readonly IntPtr SelWindow = sel_registerName("window");
@@ -173,6 +173,9 @@ public sealed unsafe class MacOsEmbeddedOpenTkNativeHost : NativeControlHost, IE
 
     [DllImport("libobjc.dylib", EntryPoint = "objc_msgSend")]
     private static extern void ObjcMsgSendRect(IntPtr receiver, IntPtr selector, NSRect rect);
+
+    [DllImport("libobjc.dylib", EntryPoint = "objc_msgSend")]
+    private static extern void ObjcMsgSendSize(IntPtr receiver, IntPtr selector, NSSize size);
 
     [DllImport("libobjc.dylib", EntryPoint = "objc_msgSend")]
     private static extern void ObjcMsgSendBool(IntPtr receiver, IntPtr selector, bool value);
@@ -199,6 +202,19 @@ public sealed unsafe class MacOsEmbeddedOpenTkNativeHost : NativeControlHost, IE
         {
             X = x;
             Y = y;
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct NSSize
+    {
+        public readonly double Width;
+        public readonly double Height;
+
+        public NSSize(double width, double height)
+        {
+            Width = width;
+            Height = height;
         }
     }
 
