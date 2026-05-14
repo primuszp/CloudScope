@@ -1,0 +1,42 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:CloudScope.Avalonia"
+        x:Class="CloudScope.Avalonia.MainWindow"
+        Title="CloudScope Avalonia"
+        Width="1280"
+        Height="800"
+        MinWidth="900"
+        MinHeight="560">
+  <DockPanel>
+    <Menu x:Name="MainMenuBar" DockPanel.Dock="Top">
+      <MenuItem Header="_Host">
+        <MenuItem x:Name="OpenLasMenuItem" Header="_Open LAS..." />
+        <MenuItem x:Name="StatusMenuItem" Header="_Status" />
+        <MenuItem x:Name="ResetMenuItem" Header="_Reset Host" />
+        <MenuItem x:Name="ExitMenuItem" Header="E_xit" />
+      </MenuItem>
+      <MenuItem Header="_Viewer">
+        <MenuItem x:Name="NavigateMenuItem" Header="_Navigate" />
+        <MenuItem x:Name="LabelModeMenuItem" Header="_Label Mode" />
+        <MenuItem x:Name="BoxMenuItem" Header="_Box" />
+        <MenuItem x:Name="SphereMenuItem" Header="_Sphere" />
+        <MenuItem x:Name="CylinderMenuItem" Header="_Cylinder" />
+        <MenuItem x:Name="ConfirmMenuItem" Header="_Confirm" />
+        <MenuItem x:Name="CancelMenuItem" Header="_Cancel" />
+      </MenuItem>
+    </Menu>
+
+    <StackPanel DockPanel.Dock="Bottom" Margin="8" Spacing="8">
+      <ListBox x:Name="HistoryList" Height="84" />
+      <TextBox x:Name="CommandBox"
+               PlaceholderText="Command: SELECT B/S/C, LABELMODE, NAVIGATE, CONFIRM, CANCEL, STATUS" />
+    </StackPanel>
+
+    <TextBlock x:Name="StatusText"
+               DockPanel.Dock="Bottom"
+               Margin="8,2"
+               VerticalAlignment="Center" />
+
+    <ContentControl x:Name="ViewportHost" />
+  </DockPanel>
+</Window>

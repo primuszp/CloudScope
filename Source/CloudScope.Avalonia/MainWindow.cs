@@ -1,146 +1,138 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Layout;
+using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CloudScope.Library;
 using CloudScope.Loading;
-using AvaloniaThickness = Avalonia.Thickness;
 
 namespace CloudScope.Avalonia;
 
-public sealed class MainWindow : Window
+public sealed partial class MainWindow : Window
 {
     private readonly HostController _hostController = new();
-    private readonly TextBlock _statusText = new();
-    private readonly TextBox _commandBox = new();
-    private readonly ListBox _history = new();
+    private readonly bool _useNativeMenu = OperatingSystem.IsMacOS();
     private ViewportInputHost? _viewport;
+    private Menu MainMenuControl => this.FindControl<Menu>("MainMenuBar")
+        ?? throw new InvalidOperationException("MainMenuBar control is missing.");
+    private TextBlock StatusBlock => this.FindControl<TextBlock>("StatusText")
+        ?? throw new InvalidOperationException("StatusText control is missing.");
+    private TextBox CommandInput => this.FindControl<TextBox>("CommandBox")
+        ?? throw new InvalidOperationException("CommandBox control is missing.");
+    private ListBox HistoryView => this.FindControl<ListBox>("HistoryList")
+        ?? throw new InvalidOperationException("HistoryList control is missing.");
+    private ContentControl ViewportContainer => this.FindControl<ContentControl>("ViewportHost")
+        ?? throw new InvalidOperationException("ViewportHost control is missing.");
 
     public MainWindow()
     {
-        Title = "CloudScope Avalonia";
-        Width = 1280;
-        Height = 800;
-        MinWidth = 900;
-        MinHeight = 560;
-
+        InitializeComponent();
         _hostController.StatusChanged += OnStatusChanged;
-        Content = BuildLayout();
+        ConfigureMenuUi();
+        WireMenu();
+        WireCommandBox();
+        _viewport = new ViewportInputHost(_hostController);
+        ViewportContainer.Content = _viewport;
         AddHandler(KeyDownEvent, OnWindowKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, OnWindowKeyUp, RoutingStrategies.Tunnel);
+        StatusBlock.Text = _hostController.Status;
     }
 
-    private Control BuildLayout()
+    private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
+
+    private void ConfigureMenuUi()
     {
-        var root = new DockPanel();
+        if (!_useNativeMenu)
+            return;
 
-        Control menu = BuildMenu();
-        DockPanel.SetDock(menu, Dock.Top);
-        root.Children.Add(menu);
-
-        Control commandLine = BuildCommandLine();
-        DockPanel.SetDock(commandLine, Dock.Bottom);
-        root.Children.Add(commandLine);
-
-        Control statusBar = BuildStatusBar();
-        DockPanel.SetDock(statusBar, Dock.Bottom);
-        root.Children.Add(statusBar);
-
-        _viewport = new ViewportInputHost(_hostController);
-        root.Children.Add(_viewport);
-
-        return root;
+        MainMenuControl.IsVisible = false;
+        NativeMenu.SetMenu(this, BuildNativeMenu());
     }
 
-    private Menu BuildMenu()
+    private void WireMenu()
     {
-        var openLas = new MenuItem { Header = "_Open LAS..." };
-        openLas.Click += async (_, _) => await OpenLasAsync();
-
-        var status = new MenuItem { Header = "_Status" };
-        status.Click += (_, _) => ExecuteCommand("STATUS");
-
-        var reset = new MenuItem { Header = "_Reset Host" };
-        reset.Click += (_, _) => ExecuteCommand("RESET");
-
-        var exit = new MenuItem { Header = "E_xit" };
-        exit.Click += (_, _) => Close();
-
-        var navigate = new MenuItem { Header = "_Navigate" };
-        navigate.Click += (_, _) => ExecuteCommand("NAVIGATE");
-
-        var labelMode = new MenuItem { Header = "_Label Mode" };
-        labelMode.Click += (_, _) => ExecuteCommand("LABELMODE");
-
-        var box = new MenuItem { Header = "_Box" };
-        box.Click += (_, _) => ExecuteCommand("SELECT B");
-
-        var sphere = new MenuItem { Header = "_Sphere" };
-        sphere.Click += (_, _) => ExecuteCommand("SELECT S");
-
-        var cylinder = new MenuItem { Header = "_Cylinder" };
-        cylinder.Click += (_, _) => ExecuteCommand("SELECT C");
-
-        var confirm = new MenuItem { Header = "_Confirm" };
-        confirm.Click += (_, _) => ExecuteCommand("CONFIRM");
-
-        var cancel = new MenuItem { Header = "_Cancel" };
-        cancel.Click += (_, _) => ExecuteCommand("CANCEL");
-
-        return new Menu
-        {
-            ItemsSource = new[]
-            {
-                new MenuItem
-                {
-                    Header = "_Host",
-                    ItemsSource = new[] { openLas, status, reset, exit }
-                },
-                new MenuItem
-                {
-                    Header = "_Viewer",
-                    ItemsSource = new[] { navigate, labelMode, box, sphere, cylinder, confirm, cancel }
-                }
-            }
-        };
+        MenuItem("OpenLasMenuItem").Click += async (_, _) => await OpenLasAsync();
+        MenuItem("StatusMenuItem").Click += (_, _) => ExecuteCommand("STATUS");
+        MenuItem("ResetMenuItem").Click += (_, _) => ExecuteCommand("RESET");
+        MenuItem("ExitMenuItem").Click += (_, _) => Close();
+        MenuItem("NavigateMenuItem").Click += (_, _) => ExecuteCommand("NAVIGATE");
+        MenuItem("LabelModeMenuItem").Click += (_, _) => ExecuteCommand("LABELMODE");
+        MenuItem("BoxMenuItem").Click += (_, _) => ExecuteCommand("SELECT B");
+        MenuItem("SphereMenuItem").Click += (_, _) => ExecuteCommand("SELECT S");
+        MenuItem("CylinderMenuItem").Click += (_, _) => ExecuteCommand("SELECT C");
+        MenuItem("ConfirmMenuItem").Click += (_, _) => ExecuteCommand("CONFIRM");
+        MenuItem("CancelMenuItem").Click += (_, _) => ExecuteCommand("CANCEL");
     }
 
-    private Control BuildCommandLine()
+    private void WireCommandBox()
     {
-        _commandBox.PlaceholderText = "Command: SELECT B/S/C, LABELMODE, NAVIGATE, CONFIRM, CANCEL, STATUS";
-        _commandBox.KeyDown += (_, e) =>
+        CommandInput.KeyDown += (_, e) =>
         {
             if (e.Key != Key.Enter)
                 return;
 
-            ExecuteCommand(_commandBox.Text ?? "");
-            _commandBox.Text = "";
+            ExecuteCommand(CommandInput.Text ?? "");
+            CommandInput.Text = "";
             FocusViewer();
             e.Handled = true;
         };
-
-        _history.Height = 84;
-
-        var panel = new DockPanel
-        {
-            Margin = new AvaloniaThickness(8),
-            LastChildFill = true
-        };
-
-        DockPanel.SetDock(_history, Dock.Top);
-        panel.Children.Add(_history);
-        panel.Children.Add(_commandBox);
-        return panel;
     }
 
-    private Control BuildStatusBar()
+    private MenuItem MenuItem(string name) => this.FindControl<MenuItem>(name)
+        ?? throw new InvalidOperationException($"{name} control is missing.");
+
+    private NativeMenu BuildNativeMenu()
     {
-        _statusText.Text = _hostController.Status;
-        _statusText.VerticalAlignment = VerticalAlignment.Center;
-        _statusText.Margin = new AvaloniaThickness(8, 2);
-        return _statusText;
+        var menu = new NativeMenu();
+
+        menu.Items.Add(CreateNativeGroup("Host",
+        [
+            NativeAction("Open LAS...", async (_, _) => await OpenLasAsync(), "Meta+O"),
+            NativeAction("Status", (_, _) => ExecuteCommand("STATUS")),
+            NativeAction("Reset Host", (_, _) => ExecuteCommand("RESET")),
+            new NativeMenuItemSeparator(),
+            NativeAction("Exit", (_, _) => Close(), "Meta+Q")
+        ]));
+
+        menu.Items.Add(CreateNativeGroup("Viewer",
+        [
+            NativeAction("Navigate", (_, _) => ExecuteCommand("NAVIGATE")),
+            NativeAction("Label Mode", (_, _) => ExecuteCommand("LABELMODE")),
+            new NativeMenuItemSeparator(),
+            NativeAction("Box", (_, _) => ExecuteCommand("SELECT B")),
+            NativeAction("Sphere", (_, _) => ExecuteCommand("SELECT S")),
+            NativeAction("Cylinder", (_, _) => ExecuteCommand("SELECT C")),
+            new NativeMenuItemSeparator(),
+            NativeAction("Confirm", (_, _) => ExecuteCommand("CONFIRM"), "Meta+Enter"),
+            NativeAction("Cancel", (_, _) => ExecuteCommand("CANCEL"), "Escape")
+        ]));
+
+        return menu;
+    }
+
+    private static NativeMenuItem CreateNativeGroup(string header, params NativeMenuItemBase[] items)
+    {
+        var group = new NativeMenuItem(header)
+        {
+            Menu = new NativeMenu()
+        };
+
+        foreach (NativeMenuItemBase item in items)
+            group.Menu.Add(item);
+
+        return group;
+    }
+
+    private static NativeMenuItem NativeAction(string header, EventHandler handler, string? gesture = null)
+    {
+        var item = new NativeMenuItem(header);
+        item.Click += handler;
+
+        if (!string.IsNullOrWhiteSpace(gesture))
+            item.Gesture = KeyGesture.Parse(gesture);
+
+        return item;
     }
 
     private void ExecuteCommand(string command)
@@ -159,7 +151,7 @@ public sealed class MainWindow : Window
 
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
     {
-        if (ReferenceEquals(e.Source, _commandBox))
+        if (ReferenceEquals(e.Source, CommandInput))
             return;
 
         ViewerKey key = ViewportInputHost.ToViewerKey(e.Key);
@@ -172,7 +164,7 @@ public sealed class MainWindow : Window
 
     private void OnWindowKeyUp(object? sender, KeyEventArgs e)
     {
-        if (ReferenceEquals(e.Source, _commandBox))
+        if (ReferenceEquals(e.Source, CommandInput))
             return;
 
         ViewerKey key = ViewportInputHost.ToViewerKey(e.Key);
@@ -187,16 +179,16 @@ public sealed class MainWindow : Window
     {
         Dispatcher.UIThread.Post(() =>
         {
-            _statusText.Text = _hostController.Status;
+            StatusBlock.Text = _hostController.Status;
             AddHistory(message);
         });
     }
 
     private void AddHistory(string message)
     {
-        _history.Items.Add(message);
-        while (_history.Items.Count > 20)
-            _history.Items.RemoveAt(0);
+        HistoryView.Items.Add(message);
+        while (HistoryView.Items.Count > 20)
+            HistoryView.Items.RemoveAt(0);
     }
 
     private async Task OpenLasAsync()
@@ -229,7 +221,7 @@ public sealed class MainWindow : Window
 
         try
         {
-            var progress = new Progress<int>(pct => Dispatcher.UIThread.Post(() => _statusText.Text = $"Loading {pct}%"));
+            var progress = new Progress<int>(pct => Dispatcher.UIThread.Post(() => StatusBlock.Text = $"Loading {pct}%"));
             LoadedPointCloud cloud = await Task.Run(() =>
             {
                 using var reader = new LasReader(path);
