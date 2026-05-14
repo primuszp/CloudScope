@@ -1,4 +1,5 @@
 using CloudScope.Rendering;
+using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.GraphicsLibraryFramework;
 using System.Collections.Concurrent;
@@ -17,6 +18,8 @@ public sealed class EmbeddedOpenTkViewerHost : OpenTkViewerHost
         : base(width, height, renderBackend, enableOverlay: false, startVisible: false)
     {
     }
+
+    public Func<Vector2?>? LogicalMousePositionProvider { get; set; }
 
     public void Enqueue(Action<EmbeddedOpenTkViewerHost> action) => _actions.Enqueue(action);
 
@@ -108,9 +111,15 @@ public sealed class EmbeddedOpenTkViewerHost : OpenTkViewerHost
     protected override int EffectiveFramebufferHeight =>
         _effectiveFramebufferHeight > 0 ? _effectiveFramebufferHeight : base.EffectiveFramebufferHeight;
 
-    private int ToPhysicalMouseX() => ToPhysicalX(MouseState.Position.X);
+    protected override float CurrentLogicalMouseX =>
+        LogicalMousePositionProvider?.Invoke()?.X ?? base.CurrentLogicalMouseX;
 
-    private int ToPhysicalMouseY() => ToPhysicalY(MouseState.Position.Y);
+    protected override float CurrentLogicalMouseY =>
+        LogicalMousePositionProvider?.Invoke()?.Y ?? base.CurrentLogicalMouseY;
+
+    private int ToPhysicalMouseX() => ToPhysicalX(CurrentLogicalMouseX);
+
+    private int ToPhysicalMouseY() => ToPhysicalY(CurrentLogicalMouseY);
 
     private int ToPhysicalX(float logical)
     {

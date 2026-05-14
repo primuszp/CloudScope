@@ -91,6 +91,10 @@ namespace CloudScope
                     _displayPivot = camera.Pivot;
                     _pivotFlash = 1.0f;
                 }
+                else
+                {
+                    _displayPivot = camera.Pivot;
+                }
 
                 _leftDown = true;
                 _orbitVelX = 0f;

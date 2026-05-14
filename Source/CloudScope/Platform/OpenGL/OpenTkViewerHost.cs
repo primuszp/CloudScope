@@ -39,6 +39,10 @@ namespace CloudScope
 
         private int ToPhysicalY(float logical) => (int)(logical * PixelScaleY);
 
+        protected virtual float CurrentLogicalMouseX => MouseState.Position.X;
+
+        protected virtual float CurrentLogicalMouseY => MouseState.Position.Y;
+
         protected virtual int EffectiveFramebufferWidth => FramebufferSize.X;
 
         protected virtual int EffectiveFramebufferHeight => FramebufferSize.Y;
@@ -102,7 +106,7 @@ namespace CloudScope
 #endif
 
             _controller.MouseDown(ToViewerButton(e.Button),
-                ToPhysicalX(MouseState.Position.X), ToPhysicalY(MouseState.Position.Y));
+                ToPhysicalX(CurrentLogicalMouseX), ToPhysicalY(CurrentLogicalMouseY));
         }
 
         protected override void OnMouseUp(MouseButtonEventArgs e)
@@ -114,7 +118,7 @@ namespace CloudScope
 #endif
 
             _controller.MouseUp(ToViewerButton(e.Button),
-                ToPhysicalX(MouseState.Position.X), ToPhysicalY(MouseState.Position.Y));
+                ToPhysicalX(CurrentLogicalMouseX), ToPhysicalY(CurrentLogicalMouseY));
         }
 
         protected override void OnMouseMove(MouseMoveEventArgs e)
@@ -125,7 +129,8 @@ namespace CloudScope
                 return;
 #endif
 
-            _controller.MouseMove(ToPhysicalX(e.X), ToPhysicalY(e.Y));
+            _controller.MouseMove(
+                ToPhysicalX(CurrentLogicalMouseX), ToPhysicalY(CurrentLogicalMouseY));
         }
 
         protected override void OnMouseWheel(MouseWheelEventArgs e)
@@ -137,7 +142,7 @@ namespace CloudScope
 #endif
 
             _controller.MouseWheel(
-                ToPhysicalX(MouseState.Position.X), ToPhysicalY(MouseState.Position.Y), e.OffsetY);
+                ToPhysicalX(CurrentLogicalMouseX), ToPhysicalY(CurrentLogicalMouseY), e.OffsetY);
         }
 
         protected override void OnKeyDown(KeyboardKeyEventArgs e)
@@ -150,7 +155,7 @@ namespace CloudScope
 
             bool ctrl = KeyboardState.IsKeyDown(Keys.LeftControl) || KeyboardState.IsKeyDown(Keys.RightControl);
             _controller.KeyDown(ToViewerKey(e.Key), ctrl,
-                ToPhysicalX(MouseState.Position.X), ToPhysicalY(MouseState.Position.Y));
+                ToPhysicalX(CurrentLogicalMouseX), ToPhysicalY(CurrentLogicalMouseY));
         }
 
         protected override void OnTextInput(TextInputEventArgs e)
