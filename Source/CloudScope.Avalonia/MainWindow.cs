@@ -4,6 +4,8 @@ using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using CloudScope.Avalonia.Hosting;
+using CloudScope.Avalonia.Hosting.Input;
 using CloudScope.Library;
 using CloudScope.Loading;
 
@@ -154,7 +156,7 @@ public sealed partial class MainWindow : Window
         if (ReferenceEquals(e.Source, CommandInput))
             return;
 
-        ViewerKey key = ViewportInputHost.ToViewerKey(e.Key);
+        ViewerKey key = AvaloniaViewerKeyMapper.ToViewerKey(e.Key);
         if (key == ViewerKey.Unknown)
             return;
 
@@ -167,7 +169,7 @@ public sealed partial class MainWindow : Window
         if (ReferenceEquals(e.Source, CommandInput))
             return;
 
-        ViewerKey key = ViewportInputHost.ToViewerKey(e.Key);
+        ViewerKey key = AvaloniaViewerKeyMapper.ToViewerKey(e.Key);
         if (key == ViewerKey.Unknown)
             return;
 
