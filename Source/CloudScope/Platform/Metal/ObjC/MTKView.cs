@@ -2,6 +2,8 @@ using System.Runtime.Versioning;
 using SharpMetal.Metal;
 using SharpMetal.ObjectiveCCore;
 using SharpMetal.QuartzCore;
+using NSRect = CloudScope.Platform.MacOS.ObjC.NSRect;
+using ObjectiveCGeometryMessaging = CloudScope.Platform.MacOS.ObjC.ObjectiveCGeometryMessaging;
 
 namespace CloudScope.Platform.Metal.ObjC
 {
@@ -16,7 +18,11 @@ namespace CloudScope.Platform.Metal.ObjC
         public MTKView(NSRect frame, MTLDevice device)
         {
             var ptr = new ObjectiveCClass("MTKView").Alloc();
-            NativePtr = ObjectiveC.IntPtr_objc_msgSend(ptr, "initWithFrame:device:", frame, device);
+            NativePtr = ObjectiveCGeometryMessaging.InitializeView(
+                ptr,
+                "initWithFrame:device:",
+                frame,
+                device.NativePtr);
         }
 
         public MTLPixelFormat ColorPixelFormat

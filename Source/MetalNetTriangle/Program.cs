@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
 using Metal.NET;
+using NSRect = CloudScope.Platform.MacOS.ObjC.NSRect;
 
 [SupportedOSPlatform("macos")]
 static unsafe class Program
@@ -29,9 +30,6 @@ static unsafe class Program
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] static extern void  MsgVoidClearColor(nint r, nint s, MTLClearColor c);
 
     // ── Value types passed to ObjC ────────────────────────────────────────────────
-    [StructLayout(LayoutKind.Sequential)]
-    struct NSRect { public double X, Y, W, H; public NSRect(double x, double y, double w, double h) { X=x; Y=y; W=w; H=h; } }
-
     // ── Static delegates (GC must not collect them) ────────────────────────────────
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void NotifCb(nint id, nint cmd, nint notif);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void DrawCb(nint id, nint cmd, nint view);

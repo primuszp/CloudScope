@@ -8,6 +8,7 @@ using SharpMetal.Foundation;
 using SharpMetal.Metal;
 using SharpMetal.ObjectiveCCore;
 using SharpMetal.QuartzCore;
+using NSRect = CloudScope.Platform.MacOS.ObjC.NSRect;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Minimal Metal Triangle Test

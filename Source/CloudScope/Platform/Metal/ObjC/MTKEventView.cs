@@ -6,6 +6,9 @@ using System.Text;
 using SharpMetal.Metal;
 using SharpMetal.ObjectiveCCore;
 using SharpMetal.QuartzCore;
+using NSPoint = CloudScope.Platform.MacOS.ObjC.NSPoint;
+using NSRect = CloudScope.Platform.MacOS.ObjC.NSRect;
+using ObjectiveCGeometryMessaging = CloudScope.Platform.MacOS.ObjC.ObjectiveCGeometryMessaging;
 
 namespace CloudScope.Platform.Metal.ObjC
 {
@@ -73,7 +76,11 @@ namespace CloudScope.Platform.Metal.ObjC
         {
             _ = s_class.Value;
             var ptr = new ObjectiveCClass("CloudScopeMTKEventView").Alloc();
-            NativePtr = ObjectiveC.IntPtr_objc_msgSend(ptr, "initWithFrame:device:", frame, device);
+            NativePtr = ObjectiveCGeometryMessaging.InitializeView(
+                ptr,
+                "initWithFrame:device:",
+                frame,
+                device.NativePtr);
             if (NativePtr == IntPtr.Zero)
                 throw new InvalidOperationException("Failed to create MTKEventView.");
             _drawableHeight = (int)frame.Size.Y;

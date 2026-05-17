@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Platform;
 using CloudScope.Avalonia.Hosting;
+using CloudScope.Platform.MacOS.ObjC;
 using OpenTK.Mathematics;
 using OpenTK.Windowing.GraphicsLibraryFramework;
 
@@ -142,47 +143,4 @@ public sealed unsafe class MacOsEmbeddedOpenTkNativeHost : EmbeddedOpenTkNativeH
 
     [DllImport("libobjc.dylib", EntryPoint = "objc_msgSend")]
     private static extern NSPoint ObjcMsgSendPointArgIntPtr(IntPtr receiver, IntPtr selector, NSPoint point, IntPtr view);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private readonly struct NSPoint
-    {
-        public readonly double X;
-        public readonly double Y;
-
-        public NSPoint(double x, double y)
-        {
-            X = x;
-            Y = y;
-        }
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private readonly struct NSSize
-    {
-        public readonly double Width;
-        public readonly double Height;
-
-        public NSSize(double width, double height)
-        {
-            Width = width;
-            Height = height;
-        }
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private readonly struct NSRect
-    {
-        public readonly double X;
-        public readonly double Y;
-        public readonly double Width;
-        public readonly double Height;
-
-        public NSRect(double x, double y, double width, double height)
-        {
-            X = x;
-            Y = y;
-            Width = width;
-            Height = height;
-        }
-    }
 }

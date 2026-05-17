@@ -1,6 +1,8 @@
 using System.Runtime.Versioning;
 using SharpMetal.Foundation;
 using SharpMetal.ObjectiveCCore;
+using NSRect = CloudScope.Platform.MacOS.ObjC.NSRect;
+using ObjectiveCGeometryMessaging = CloudScope.Platform.MacOS.ObjC.ObjectiveCGeometryMessaging;
 
 namespace CloudScope.Platform.Metal.ObjC
 {
@@ -12,8 +14,13 @@ namespace CloudScope.Platform.Metal.ObjC
         public NSWindow(NSRect rect, ulong styleMask)
         {
             NativePtr = new ObjectiveCClass("NSWindow").Alloc();
-            ObjectiveC.objc_msgSend(NativePtr, "initWithContentRect:styleMask:backing:defer:",
-                rect, styleMask, 2UL, false);
+            ObjectiveCGeometryMessaging.InitializeWindow(
+                NativePtr,
+                "initWithContentRect:styleMask:backing:defer:",
+                rect,
+                styleMask,
+                2UL,
+                false);
         }
 
         public NSString Title
