@@ -20,7 +20,8 @@
     <Compile Include="..\CloudScope\Platform\Metal\ObjC\NSApplication.cs" />
     <Compile Include="..\CloudScope\Platform\Metal\ObjC\NSApplicationDelegate.cs" />
     <Compile Include="..\CloudScope\Platform\Metal\ObjC\NSWindow.cs" />
-    <Compile Include="..\CloudScope\Platform\Metal\ObjC\NSSize.cs" />
+    <Compile Include="..\CloudScope\Platform\MacOS\ObjC\NSGeometry.cs" />
+    <Compile Include="..\CloudScope\Platform\MacOS\ObjC\ObjectiveCGeometryMessaging.cs" />
     <Compile Include="..\CloudScope\Platform\Metal\ObjC\MTKView.cs" />
     <Compile Include="..\CloudScope\Platform\Metal\ObjC\MTKViewDelegate.cs" />
     <Compile Include="..\CloudScope\Platform\Metal\ObjC\MTKEventView.cs" />

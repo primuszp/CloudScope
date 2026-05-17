@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
 using SharpMetal.ObjectiveCCore;
+using NSSize = CloudScope.Platform.MacOS.ObjC.NSSize;
 
 namespace CloudScope.Platform.Metal.ObjC
 {
