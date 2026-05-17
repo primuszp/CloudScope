@@ -2,7 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 
-namespace CloudScope.Avalonia;
+namespace CloudScope.Avalonia.Hosting;
 
 public sealed class AvaloniaOpenGlHostControl : Border
 {

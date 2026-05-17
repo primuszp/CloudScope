@@ -1,47 +1,19 @@
 using System.Runtime.InteropServices;
 using Avalonia;
-using Avalonia.Controls;
 using Avalonia.Platform;
-using Avalonia.Threading;
-using CloudScope.Platform.OpenGL;
-using OpenTK.Mathematics;
-using OpenTK.Windowing.Common;
-using OpenTK.Windowing.Desktop;
+using CloudScope.Avalonia.Hosting;
 
-namespace CloudScope.Avalonia;
+namespace CloudScope.Avalonia.Hosting.Platform.Windows;
 
-public sealed unsafe class Win32EmbeddedOpenTkNativeHost : NativeControlHost, IEmbeddedOpenTkNativeHost
+public sealed unsafe class Win32EmbeddedOpenTkNativeHost : EmbeddedOpenTkNativeHostBase
 {
-    private readonly HostController _hostController;
-    private EmbeddedOpenTkViewerHost? _viewer;
     private IntPtr _hwnd;
-    private DispatcherTimer? _pumpTimer;
 
-    public Win32EmbeddedOpenTkNativeHost(HostController hostController)
+    public Win32EmbeddedOpenTkNativeHost(HostController hostController) : base(hostController)
     {
-        _hostController = hostController;
-        _hostController.SetEmbeddedHost(this);
     }
 
-    public void LoadPointCloud(PointData[] points, float radius)
-    {
-        EmbeddedOpenTkViewerHost? viewer = _viewer;
-        if (viewer == null)
-            return;
-
-        viewer.Enqueue(v => v.LoadPointCloud(points, radius));
-    }
-
-    public string ExecuteViewerCommand(string commandText)
-    {
-        return _viewer?.ExecuteCommand(commandText) ?? "Embedded OpenTK host is not ready.";
-    }
-
-    public void ForwardKeyDown(ViewerKey key) => _viewer?.ForwardKeyDown(key);
-
-    public void ForwardKeyUp(ViewerKey key) => _viewer?.SetKeyState(key, false);
-
-    public void FocusViewer()
+    public override void FocusViewer()
     {
         if (_hwnd != IntPtr.Zero)
             SetFocus(_hwnd);
@@ -52,20 +24,16 @@ public sealed unsafe class Win32EmbeddedOpenTkNativeHost : NativeControlHost, IE
         if (!OperatingSystem.IsWindows())
             return base.CreateNativeControlCore(parent);
 
-        _viewer = new EmbeddedOpenTkViewerHost(1280, 800, new OpenGlRenderBackend());
-        _hwnd = GlfwGetWin32Window((IntPtr)_viewer.WindowPtr);
+        EmbeddedOpenTkViewerHost viewer = CreateViewer();
+        _hwnd = GlfwGetWin32Window((IntPtr)viewer.WindowPtr);
         ConfigureChildWindow(_hwnd, parent.Handle);
-        _viewer.InitializeEmbedded();
-        StartPump();
+        InitializeViewerAndStartPump();
         return new PlatformHandle(_hwnd, "HWND");
     }
 
     protected override void DestroyNativeControlCore(IPlatformHandle control)
     {
-        _pumpTimer?.Stop();
-        _pumpTimer = null;
-        _viewer?.Close();
-        _viewer = null;
+        DestroyViewer();
         _hwnd = IntPtr.Zero;
         base.DestroyNativeControlCore(control);
     }
@@ -86,24 +54,6 @@ public sealed unsafe class Win32EmbeddedOpenTkNativeHost : NativeControlHost, IE
         SetWindowLongPtr(child, GwlStyle, style);
         ShowWindow(child, SwShow);
         SetFocus(child);
-    }
-
-    private void StartPump()
-    {
-        _pumpTimer = new DispatcherTimer
-        {
-            Interval = TimeSpan.FromMilliseconds(16)
-        };
-        _pumpTimer.Tick += (_, _) =>
-        {
-            EmbeddedOpenTkViewerHost? viewer = _viewer;
-            if (viewer == null)
-                return;
-
-            viewer.PumpActions();
-            viewer.PumpEmbeddedFrame(1.0 / 60.0);
-        };
-        _pumpTimer.Start();
     }
 
     private const int GwlStyle = -16;

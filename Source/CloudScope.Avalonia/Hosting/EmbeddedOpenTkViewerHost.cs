@@ -4,7 +4,7 @@ using OpenTK.Windowing.Common;
 using OpenTK.Windowing.GraphicsLibraryFramework;
 using System.Collections.Concurrent;
 
-namespace CloudScope.Avalonia;
+namespace CloudScope.Avalonia.Hosting;
 
 public sealed class EmbeddedOpenTkViewerHost : OpenTkViewerHost
 {

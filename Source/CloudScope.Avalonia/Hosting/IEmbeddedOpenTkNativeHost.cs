@@ -1,4 +1,4 @@
-namespace CloudScope.Avalonia;
+namespace CloudScope.Avalonia.Hosting;
 
 public interface IEmbeddedOpenTkNativeHost
 {
