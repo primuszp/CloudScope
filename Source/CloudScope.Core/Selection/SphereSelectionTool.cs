@@ -85,7 +85,7 @@ namespace CloudScope.Selection
         protected override void OnBeginHandleDragExtra(int handle, int mx, int my, OrbitCamera cam)
         {
             _editStartRadius = Radius;
-            if (GetGrip(handle).Kind != GripKind.Center)
+            if (ActiveGrip.Kind != GripKind.Center)
             {
                 _poleScreenDir = GripInteractionMath.ComputeScreenDirection(cam, Center, HandleWorldPosition(handle));
             }
@@ -95,7 +95,7 @@ namespace CloudScope.Selection
         {
             if (_activeHandle < 0) return;
 
-            if (GetGrip(_activeHandle).Kind == GripKind.Center)
+            if (ActiveGrip.Kind == GripKind.Center)
             {
                 // Depth-correct world-space drag
                 Center = _editStartCenter + GripInteractionMath.ComputeWorldDragDelta(
