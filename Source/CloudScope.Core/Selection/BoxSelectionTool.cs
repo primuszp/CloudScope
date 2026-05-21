@@ -222,7 +222,7 @@ namespace CloudScope.Selection
 
             if (IsFaceHandle(_activeHandle))
             {
-                GripDescriptor grip = GetGrip(_activeHandle);
+                GripDescriptor grip = ActiveGrip;
                 int   faceAxis  = grip.Axis;
                 float sign      = grip.Sign;
                 float axisDelta = faceAxis switch { 0 => localDelta.X, 1 => localDelta.Y, _ => localDelta.Z } * sign;

@@ -26,6 +26,7 @@ namespace CloudScope.Selection
         bool IsHandleDragging { get; }
         int  HitTestHandles(int mx, int my, OrbitCamera cam, float threshold = 12f);
         GripDescriptor GetGrip(int handle);
+        bool TryGetGrip(int handle, out GripDescriptor grip);
         void BeginHandleDrag(int handle, int mx, int my, OrbitCamera cam);
         void UpdateHandleDrag(int mx, int my, OrbitCamera cam);
         void EndHandleDrag();

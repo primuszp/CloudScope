@@ -137,7 +137,7 @@ namespace CloudScope.Selection
             _editStartHalfHeight = HalfHeight;
             _editStartRotation   = Rotation;
 
-            if (GetGrip(handle).Kind == GripKind.RadiusResize)
+            if (ActiveGrip.Kind == GripKind.RadiusResize)
             {
                 _radialScreenDir = GripInteractionMath.ComputeScreenDirection(cam, Center, HandleWorldPosition(handle));
             }
@@ -153,7 +153,8 @@ namespace CloudScope.Selection
                 return;
             }
 
-            switch (GetGrip(_activeHandle).Kind)
+            GripDescriptor grip = ActiveGrip;
+            switch (grip.Kind)
             {
                 case GripKind.Center:
                 {
@@ -166,7 +167,7 @@ namespace CloudScope.Selection
                         _editViewZ);
                     break;
                 }
-                case GripKind.HeightResize when GetGrip(_activeHandle).Sign > 0:
+                case GripKind.HeightResize when grip.Sign > 0:
                 {
                     float   proj = Vector3.Dot(
                         GripInteractionMath.ComputeWorldDragDelta(cam, _editStartX, _editStartY, mx, my, _editViewZ),

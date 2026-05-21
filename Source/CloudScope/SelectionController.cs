@@ -17,7 +17,7 @@ namespace CloudScope
 
         private int _activeToolIndex;
         private EditAction _pendingAction = EditAction.None;
-        private bool _editDragging;
+        private SelectionInteractionState _interactionState = SelectionInteractionState.Navigate;
         private float _previewTimer = 999f;
         private bool _previewWasActive;
         private string _currentLabel = "Ground";
@@ -34,6 +34,7 @@ namespace CloudScope
         }
 
         public InteractionMode Mode { get; private set; } = InteractionMode.Navigate;
+        public SelectionInteractionState InteractionState => _interactionState;
         public ISelectionTool ActiveTool => _tools[_activeToolIndex];
         public LabelManager Labels => _labelManager;
         public PointData[]? Points => _points;
@@ -50,7 +51,7 @@ namespace CloudScope
             Mode = mode;
             ActiveTool.Cancel();
             _pendingAction = EditAction.None;
-            _editDragging = false;
+            SetRestingInteractionState();
             Console.WriteLine($"Mode: {Mode}  (tool: {ActiveTool.ToolType}, label: '{_currentLabel}')");
         }
 
@@ -68,6 +69,8 @@ namespace CloudScope
             };
 
             Mode = InteractionMode.Label;
+            _pendingAction = EditAction.None;
+            SetRestingInteractionState();
             Console.WriteLine($"Tool: {ActiveTool.ToolType}");
         }
 
@@ -86,37 +89,26 @@ namespace CloudScope
                 return false;
 
             var tool = ActiveTool;
-            if (tool.Phase == ToolPhase.Idle)
+            switch (_interactionState)
             {
-                tool.OnMouseDown(x, y, camera);
-                return true;
+                case SelectionInteractionState.ReadyToPlace:
+                    tool.OnMouseDown(x, y, camera);
+                    SetInteractionState(SelectionInteractionState.Placing);
+                    return true;
+
+                case SelectionInteractionState.Placing:
+                    return true;
+
+                case SelectionInteractionState.Editing:
+                    return BeginEditingGesture(tool, x, y, camera);
+
+                case SelectionInteractionState.DraggingGrip:
+                case SelectionInteractionState.KeyboardEdit:
+                    return true;
+
+                default:
+                    return false;
             }
-
-            if (tool.Phase == ToolPhase.Drawing)
-                return true;
-
-            if (tool.Phase != ToolPhase.Editing)
-                return false;
-
-            int handle = tool.HitTestHandles(x, y, camera);
-            if (handle >= 0)
-            {
-                tool.BeginHandleDrag(handle, x, y, camera);
-                return true;
-            }
-
-            if (_pendingAction == EditAction.None)
-                return false;
-
-            switch (_pendingAction)
-            {
-                case EditAction.Grab: tool.BeginGrab(x, y, camera); break;
-                case EditAction.Scale: tool.BeginScale(x, y, camera); break;
-                case EditAction.Rotate: tool.BeginRotate(x, y, camera); break;
-            }
-
-            _editDragging = true;
-            return true;
         }
 
         public void MouseUpLeft(int x, int y, OrbitCamera camera)
@@ -125,26 +117,29 @@ namespace CloudScope
                 return;
 
             var tool = ActiveTool;
-            if (tool.IsHandleDragging)
+            switch (_interactionState)
             {
-                tool.EndHandleDrag();
-                return;
+                case SelectionInteractionState.DraggingGrip:
+                    tool.EndHandleDrag();
+                    SetInteractionState(SelectionInteractionState.Editing);
+                    return;
+
+                case SelectionInteractionState.KeyboardEdit:
+                    tool.EndEdit();
+                    _pendingAction = EditAction.None;
+                    SetInteractionState(SelectionInteractionState.Editing);
+                    return;
+
+                case SelectionInteractionState.Placing:
+                    tool.OnMouseUp(x, y, camera);
+                    if (tool.IsEditing)
+                        Console.WriteLine($"{tool.ToolType} selection placed - use grips or G/S/R, then Enter to label.");
+                    SetRestingInteractionState();
+                    return;
+
+                default:
+                    return;
             }
-
-            if (_editDragging)
-            {
-                tool.EndEdit();
-                _editDragging = false;
-                _pendingAction = EditAction.None;
-                return;
-            }
-
-            if (tool.Phase != ToolPhase.Drawing)
-                return;
-
-            tool.OnMouseUp(x, y, camera);
-            if (tool.IsEditing)
-                Console.WriteLine($"{tool.ToolType} selection placed - use grips or G/S/R, then Enter to label.");
         }
 
         public void MouseMove(int x, int y, OrbitCamera camera)
@@ -153,14 +148,39 @@ namespace CloudScope
                 return;
 
             var tool = ActiveTool;
-            if (tool.Phase == ToolPhase.Drawing)
-                tool.OnMouseMove(x, y, camera);
-            else if (tool.IsHandleDragging)
-                tool.UpdateHandleDrag(x, y, camera);
-            else if (_editDragging)
-                tool.UpdateEdit(x, y, camera);
-            else if (tool.Phase == ToolPhase.Editing)
-                tool.HoveredHandle = tool.HitTestHandles(x, y, camera);
+            switch (_interactionState)
+            {
+                case SelectionInteractionState.Placing:
+                    tool.OnMouseMove(x, y, camera);
+                    break;
+                case SelectionInteractionState.DraggingGrip:
+                    tool.UpdateHandleDrag(x, y, camera);
+                    break;
+                case SelectionInteractionState.KeyboardEdit:
+                    tool.UpdateEdit(x, y, camera);
+                    break;
+                case SelectionInteractionState.Editing:
+                    tool.HoveredHandle = tool.HitTestHandles(x, y, camera);
+                    break;
+            }
+        }
+
+        public bool MouseWheel(float delta)
+        {
+            if (Mode != InteractionMode.Label)
+                return false;
+
+            var tool = ActiveTool;
+            if (!tool.IsEditing || _interactionState != SelectionInteractionState.Editing)
+                return false;
+
+            float wheelStep = Math.Clamp(delta, -1f, 1f);
+            if (wheelStep == 0f)
+                return true;
+
+            tool.AdjustScale(wheelStep);
+            _previewTimer = PreviewInterval;
+            return true;
         }
 
         public void UpdatePreview(float dt)
@@ -202,6 +222,12 @@ namespace CloudScope
             if (Mode != InteractionMode.Label)
                 return;
 
+            if (ctrl)
+            {
+                HandleControlShortcut(key);
+                return;
+            }
+
             if (key == ViewerKey.Enter && ActiveTool.IsEditing)
                 ConfirmActiveSelection();
 
@@ -212,35 +238,29 @@ namespace CloudScope
                 HandleToolSwitch(key);
 
             HandleLabelShortcut(key);
-
-            if (ctrl && key == ViewerKey.Z && _labelManager.Undo())
-                Console.WriteLine($"Undo — labels: {_labelManager.Count}");
-
-            if (ctrl && key == ViewerKey.S && !string.IsNullOrEmpty(_lasFilePath))
-                LabelFileIO.Save(_lasFilePath, _labelManager);
-            if (ctrl && key == ViewerKey.O && !string.IsNullOrEmpty(_lasFilePath))
-                LabelFileIO.Load(_lasFilePath, _labelManager);
         }
 
         public void Dispose() => _previewWorker.Dispose();
 
         public void CancelOrExitLabelMode()
         {
-            if (_editDragging)
+            if (_interactionState == SelectionInteractionState.KeyboardEdit)
             {
                 ActiveTool.EndEdit();
-                _editDragging = false;
                 _pendingAction = EditAction.None;
+                SetInteractionState(SelectionInteractionState.Editing);
             }
             else if (ActiveTool.IsEditing || ActiveTool.IsActive)
             {
                 ActiveTool.Cancel();
                 _pendingAction = EditAction.None;
+                SetRestingInteractionState();
                 Console.WriteLine("Selection cancelled");
             }
             else
             {
                 Mode = InteractionMode.Navigate;
+                SetRestingInteractionState();
                 Console.WriteLine("Mode: Navigate");
             }
         }
@@ -262,6 +282,47 @@ namespace CloudScope
             }
 
             ActiveTool.Confirm();
+            _pendingAction = EditAction.None;
+            SetRestingInteractionState();
+        }
+
+        private void SetInteractionState(SelectionInteractionState state)
+            => _interactionState = state;
+
+        private void SetRestingInteractionState()
+        {
+            _interactionState = Mode switch
+            {
+                InteractionMode.Navigate => SelectionInteractionState.Navigate,
+                _ when ActiveTool.IsEditing => SelectionInteractionState.Editing,
+                _ when ActiveTool.IsActive => SelectionInteractionState.Placing,
+                _ => SelectionInteractionState.ReadyToPlace
+            };
+        }
+
+        private bool BeginEditingGesture(ISelectionTool tool, int x, int y, OrbitCamera camera)
+        {
+            int handle = tool.HitTestHandles(x, y, camera);
+            if (handle >= 0)
+            {
+                tool.BeginHandleDrag(handle, x, y, camera);
+                if (tool.IsHandleDragging)
+                    SetInteractionState(SelectionInteractionState.DraggingGrip);
+                return true;
+            }
+
+            if (_pendingAction == EditAction.None)
+                return false;
+
+            switch (_pendingAction)
+            {
+                case EditAction.Grab: tool.BeginGrab(x, y, camera); break;
+                case EditAction.Scale: tool.BeginScale(x, y, camera); break;
+                case EditAction.Rotate: tool.BeginRotate(x, y, camera); break;
+            }
+
+            SetInteractionState(SelectionInteractionState.KeyboardEdit);
+            return true;
         }
 
         private void HandleEditShortcut(ViewerKey key)
@@ -272,6 +333,18 @@ namespace CloudScope
             if (key == ViewerKey.X) { ActiveTool.SetAxisConstraint(0); Console.WriteLine("Constraint: X axis"); }
             if (key == ViewerKey.Y) { ActiveTool.SetAxisConstraint(1); Console.WriteLine("Constraint: Y axis"); }
             if (key == ViewerKey.Z) { ActiveTool.SetAxisConstraint(2); Console.WriteLine("Constraint: Z axis"); }
+        }
+
+        private void HandleControlShortcut(ViewerKey key)
+        {
+            if (key == ViewerKey.Z && _labelManager.Undo())
+                Console.WriteLine($"Undo — labels: {_labelManager.Count}");
+
+            if (key == ViewerKey.S && !string.IsNullOrEmpty(_lasFilePath))
+                LabelFileIO.Save(_lasFilePath, _labelManager);
+
+            if (key == ViewerKey.O && !string.IsNullOrEmpty(_lasFilePath))
+                LabelFileIO.Load(_lasFilePath, _labelManager);
         }
 
         private void HandleToolSwitch(ViewerKey key)

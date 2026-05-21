@@ -59,6 +59,7 @@ namespace CloudScope
         public bool NeedsContinuousFrames => _cameraInput.NeedsContinuousFrames;
 
         public InteractionMode Mode => _selection.Mode;
+        public SelectionInteractionState SelectionInteractionState => _selection.InteractionState;
         public SelectionToolType ActiveToolType => _selection.ActiveTool.ToolType;
 
         public void SetMode(InteractionMode mode) => _selection.SetMode(mode);
@@ -104,6 +105,9 @@ namespace CloudScope
 
         public void MouseWheel(int mx, int my, float offsetY)
         {
+            if (_selection.MouseWheel(offsetY))
+                return;
+
             _cameraInput.MouseWheel(mx, my, offsetY, _cam, _cloudRadius);
         }
 

@@ -6,6 +6,16 @@ namespace CloudScope.Selection
         Label
     }
 
+    public enum SelectionInteractionState
+    {
+        Navigate,
+        ReadyToPlace,
+        Placing,
+        Editing,
+        DraggingGrip,
+        KeyboardEdit
+    }
+
     public enum SelectionToolType
     {
         Box,
