@@ -22,7 +22,7 @@ namespace CloudScope.Selection
 
         // ── OBB ──────────────────────────────────────────────────────────────
         public Vector3    HalfExtents;
-        public Quaternion Rotation = Quaternion.Identity;
+        public override Quaternion Rotation { get; set; } = Quaternion.Identity;
 
         // ── Phase 1: Drawing ─────────────────────────────────────────────────
         public int StartX, StartY, EndX, EndY;
@@ -78,8 +78,7 @@ namespace CloudScope.Selection
         public bool IsFlat => HalfExtents.Z < Math.Max(HalfExtents.X, HalfExtents.Y) * 0.05f;
 
         // ── Box-specific edit state ───────────────────────────────────────────
-        private Vector3    _editStartExtents;
-        private Quaternion _editStartRotation;
+        private Vector3 _editStartExtents;
 
         // ── Phase 1: Drawing ─────────────────────────────────────────────────
 
@@ -189,7 +188,6 @@ namespace CloudScope.Selection
         {
             _editStartExtents  = HalfExtents;
             _editStartRotation = Rotation;
-            // _ringStartAngle unused — ring drag uses _editStartX/Y directly
         }
 
         public override void UpdateHandleDrag(int mx, int my, OrbitCamera cam)
@@ -254,19 +252,6 @@ namespace CloudScope.Selection
             }
         }
 
-        private void UpdateRingDrag(int mx, int my, OrbitCamera cam)
-        {
-            Rotation = GripInteractionMath.RotateAroundRingDrag(
-                cam,
-                Center,
-                _editStartRotation,
-                RingAxis(_activeHandle),
-                _editStartX,
-                _editStartY,
-                mx,
-                my);
-        }
-
         public float RingScreenDistance(int axis, int mx, int my, OrbitCamera cam)
         {
             return GripInteractionMath.RingScreenDistance(cam, Center, Rotation, axis, RingRadius, mx, my);
@@ -276,14 +261,6 @@ namespace CloudScope.Selection
 
         protected override void OnBeginScaleExtra(int mx, int my, OrbitCamera cam)
             => _editStartExtents = HalfExtents;
-
-        public override void BeginRotate(int mx, int my, OrbitCamera camera)
-        {
-            if (!IsEditing) return;
-            _kbAction          = EditAction.Rotate;
-            _editStartX        = mx;
-            _editStartRotation = Rotation;
-        }
 
         protected override void UpdateEditShape(EditAction action, int mx, int my, OrbitCamera cam)
         {

@@ -25,12 +25,6 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private int _edgeVao = -1, _edgeVbo = -1;
         private int _faceVao = -1, _faceVbo = -1;
 
-        // Pre-allocated scratch buffers for render helpers
-        private readonly float[] _lineBuf     = new float[6];   // 2-vert line
-        private readonly float[] _arrowBuf    = new float[9];   // 3-vert arrowhead
-        private readonly float[] _dotBuf      = new float[18];  // 6-vert diamond fill
-        private          float[] _ringSegBuf  = new float[64 * 6]; // ring segments (N=64)
-
         private static readonly float[] Edges =
         {
             -1,-1,-1,  1,-1,-1,   1,-1,-1,  1, 1,-1,
@@ -95,10 +89,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
             GL.Enable(EnableCap.Blend);
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
-            GL.UseProgram(_shader);
-            Matrix4 id = Matrix4.Identity;
-            GL.UniformMatrix4(_uMVP, false, ref id);
-            GL.Disable(EnableCap.DepthTest);
+            BeginScreenSpaceRender();
 
             SetColor(0f, 0.78f, 1f, 0.12f);
             Dyn(new[]{ nx0,ny0,0f, nx1,ny0,0f, nx1,ny1,0f, nx0,ny0,0f, nx1,ny1,0f, nx0,ny1,0f });
@@ -118,7 +109,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
             });
             GL.DrawArrays(PrimitiveType.Lines, 0, 16);
 
-            GL.Enable(EnableCap.DepthTest);
+            EndScreenSpaceRender();
             GL.Disable(EnableCap.Blend);
         }
 
@@ -171,11 +162,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
             Matrix3 invRot = Matrix3.Transpose(Matrix3.CreateFromQuaternion(box.Rotation));
             float   aw     = MathF.Max(box.ArrowWorldLength, 0.01f);
 
-            Matrix4 id = Matrix4.Identity;
-            GL.UseProgram(_shader);
-            GL.UniformMatrix4(_uMVP, false, ref id);
-            GL.Disable(EnableCap.DepthTest);
-            GL.DepthMask(false);
+            BeginScreenSpaceRender();
 
             foreach (GripDescriptor grip in box.Grips)
             {
@@ -194,7 +181,6 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 var (fnx, fny) = ScreenToNdc(fx, fy, vpW, vpH);
                 var (tnx, tny) = ScreenToNdc(tx, ty, vpW, vpH);
 
-                int     ax  = i / 2;
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
                     grip,
                     i == box.HoveredHandle,
@@ -211,20 +197,15 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 DrawArrowHead(tnx, tny, fnx, fny, 0.013f, style.Color);
             }
 
-            GL.DepthMask(true);
-            GL.Enable(EnableCap.DepthTest);
+            EndScreenSpaceRender();
         }
 
         // ── Layer 5: Corner + center handles ─────────────────────────────────
 
         private void RenderCornerHandles(BoxSelectionTool box, OrbitCamera cam)
         {
-            float   vpW = cam.ViewportWidth, vpH = cam.ViewportHeight;
-            Matrix4 id  = Matrix4.Identity;
-            GL.UseProgram(_shader);
-            GL.UniformMatrix4(_uMVP, false, ref id);
-            GL.Disable(EnableCap.DepthTest);
-            GL.DepthMask(false);
+            float vpW = cam.ViewportWidth, vpH = cam.ViewportHeight;
+            BeginScreenSpaceRender();
 
             foreach (GripDescriptor grip in box.Grips)
             {
@@ -244,8 +225,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 DrawDiamond(nx, ny, hx, hy, style.Color);
             }
 
-            GL.DepthMask(true);
-            GL.Enable(EnableCap.DepthTest);
+            EndScreenSpaceRender();
         }
 
         // ── Layer 6: Rotation rings ───────────────────────────────────────────
@@ -257,15 +237,11 @@ namespace CloudScope.Platform.OpenGL.Rendering
             Matrix3   invRot = Matrix3.Transpose(Matrix3.CreateFromQuaternion(box.Rotation));
             float     vpW    = cam.ViewportWidth, vpH = cam.ViewportHeight;
 
-            Matrix4 id = Matrix4.Identity;
-            GL.UseProgram(_shader);
-            GL.UniformMatrix4(_uMVP, false, ref id);
-            GL.Disable(EnableCap.DepthTest);
-            GL.DepthMask(false);
+            BeginScreenSpaceRender();
 
             for (int axis = 0; axis < 3; axis++)
             {
-                bool    hov = box.HoveredHandle >= 0
+                bool hov = box.HoveredHandle >= 0
                     && box.GetGrip(box.HoveredHandle).Kind == GripKind.RotationRing
                     && box.GetGrip(box.HoveredHandle).Axis == axis;
                 bool active = box.ActiveHandle >= 0
@@ -291,6 +267,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
                     var (nx, ny) = ScreenToNdc(sx, sy, vpW, vpH);
                     if (pok && !behind)
                     {
+                        if (vc + 6 > _ringSegBuf.Length) Array.Resize(ref _ringSegBuf, _ringSegBuf.Length * 2);
                         _ringSegBuf[vc++]=psx; _ringSegBuf[vc++]=psy; _ringSegBuf[vc++]=0f;
                         _ringSegBuf[vc++]=nx;  _ringSegBuf[vc++]=ny;  _ringSegBuf[vc++]=0f;
                     }
@@ -302,8 +279,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 GL.DrawArrays(PrimitiveType.Lines, 0, vc / 3);
             }
 
-            GL.DepthMask(true);
-            GL.Enable(EnableCap.DepthTest);
+            EndScreenSpaceRender();
         }
 
         // ── Layer 7: Extrude arrow (flat box only) ────────────────────────────
@@ -320,21 +296,16 @@ namespace CloudScope.Platform.OpenGL.Rendering
             var (tx, ty, tb) = cam.WorldToScreen(tipPos);
             if (fb || tb) return;
 
-            float   vpW     = cam.ViewportWidth, vpH = cam.ViewportHeight;
-            var (fnx, fny)  = ScreenToNdc(fx, fy, vpW, vpH);
-            var (tnx, tny)  = ScreenToNdc(tx, ty, vpW, vpH);
+            float   vpW    = cam.ViewportWidth, vpH = cam.ViewportHeight;
+            var (fnx, fny) = ScreenToNdc(fx, fy, vpW, vpH);
+            var (tnx, tny) = ScreenToNdc(tx, ty, vpW, vpH);
             GripDescriptor grip = box.GetGrip(BoxSelectionTool.ExtrudeHandle);
-            bool hovered = box.HoveredHandle == grip.Index;
             GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(
                 grip,
-                hovered,
-                box.ActiveHandle == grip.Index);
+                box.HoveredHandle == grip.Index,
+                box.ActiveHandle  == grip.Index);
 
-            Matrix4 id = Matrix4.Identity;
-            GL.UseProgram(_shader);
-            GL.UniformMatrix4(_uMVP, false, ref id);
-            GL.Disable(EnableCap.DepthTest);
-            GL.DepthMask(false);
+            BeginScreenSpaceRender();
 
             DrawLine(fnx, fny, tnx, tny);
             SetColor(style.Color);
@@ -343,31 +314,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
             DrawArrowHead(tnx, tny, fnx, fny, 0.02f, style.Color with { W = 1f });
 
-            GL.DepthMask(true);
-            GL.Enable(EnableCap.DepthTest);
-        }
-
-        // ── Screen-space helpers ──────────────────────────────────────────────
-
-        private void DrawLine(float x0, float y0, float x1, float y1)
-        {
-            _lineBuf[0] = x0; _lineBuf[1] = y0; _lineBuf[2] = 0f;
-            _lineBuf[3] = x1; _lineBuf[4] = y1; _lineBuf[5] = 0f;
-            Dyn(_lineBuf);
-        }
-
-        private void DrawArrowHead(float tnx, float tny, float fnx, float fny, float hs, Vector4 col)
-        {
-            float dx = tnx - fnx, dy = tny - fny;
-            float len = MathF.Sqrt(dx * dx + dy * dy);
-            if (len < 1e-4f) return;
-            float nx = dx/len, ny = dy/len, px = -ny, py = nx;
-            _arrowBuf[0] = tnx;                   _arrowBuf[1] = tny;                   _arrowBuf[2] = 0f;
-            _arrowBuf[3] = tnx-nx*hs*2f+px*hs;   _arrowBuf[4] = tny-ny*hs*2f+py*hs;   _arrowBuf[5] = 0f;
-            _arrowBuf[6] = tnx-nx*hs*2f-px*hs;   _arrowBuf[7] = tny-ny*hs*2f-py*hs;   _arrowBuf[8] = 0f;
-            Dyn(_arrowBuf);
-            SetColor(col);
-            GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
+            EndScreenSpaceRender();
         }
 
         // ── Resource init ─────────────────────────────────────────────────────

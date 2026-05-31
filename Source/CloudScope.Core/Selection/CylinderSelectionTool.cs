@@ -33,7 +33,7 @@ namespace CloudScope.Selection
 
         public float      Radius     { get; set; }
         public float      HalfHeight { get; set; }
-        public Quaternion Rotation   = DefaultRotation;
+        public override   Quaternion Rotation { get; set; } = DefaultRotation;
         private static readonly GripDescriptor[] GripLayout =
         {
             new(0, GripKind.Center),
@@ -65,7 +65,6 @@ namespace CloudScope.Selection
         // ── Drag/edit state ───────────────────────────────────────────────────
         private float      _editStartRadius;
         private float      _editStartHalfHeight;
-        private Quaternion _editStartRotation;
         private Vector2    _radialScreenDir;
         private float      _placementViewZ;
 
@@ -202,28 +201,7 @@ namespace CloudScope.Selection
             }
         }
 
-        private void UpdateRingDrag(int mx, int my, OrbitCamera cam)
-        {
-            Rotation = GripInteractionMath.RotateAroundRingDrag(
-                cam,
-                Center,
-                _editStartRotation,
-                RingAxis(_activeHandle),
-                _editStartX,
-                _editStartY,
-                mx,
-                my);
-        }
-
         // ── Keyboard editing ──────────────────────────────────────────────────
-
-        public override void BeginRotate(int mx, int my, OrbitCamera camera)
-        {
-            if (!IsEditing) return;
-            _kbAction          = EditAction.Rotate;
-            _editStartX        = mx;
-            _editStartRotation = Rotation;
-        }
 
         protected override void OnBeginScaleExtra(int mx, int my, OrbitCamera cam)
         {
