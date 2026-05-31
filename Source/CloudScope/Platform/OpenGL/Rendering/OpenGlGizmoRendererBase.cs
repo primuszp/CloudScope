@@ -20,6 +20,9 @@ namespace CloudScope.Platform.OpenGL.Rendering
         // Pre-allocated scratch buffers — avoids per-frame heap allocations.
         private readonly float[] _diamondFillBuf    = new float[18]; // 6 verts
         private readonly float[] _diamondOutlineBuf = new float[15]; // 5 verts
+        private readonly float[] _lineBuf           = new float[6];  // 2-vert line
+        private readonly float[] _arrowBuf          = new float[9];  // 3-vert arrowhead
+        protected        float[] _ringSegBuf        = new float[64 * 6]; // ring segments (N=64)
 
         protected static readonly Vector4[] AxisColor =
         {
@@ -103,28 +106,49 @@ void main() { FragColor = uColor; }
 
         // ── NDC conversion ────────────────────────────────────────────────────
 
-        /// <summary>Convert pixel coordinates to normalized device coordinates.</summary>
         protected static (float nx, float ny) ScreenToNdc(float sx, float sy, float vpW, float vpH)
             => (sx / vpW * 2f - 1f, 1f - sy / vpH * 2f);
 
-        // ── Shared axis-line rendering ────────────────────────────────────────
+        // ── Screen-space render state helpers ─────────────────────────────────
 
-        /// <summary>Draw 3 local-axis diameter lines (X/Y/Z), depth-disabled, ghosted.</summary>
-        protected void RenderAxisLines(Matrix4 mvp)
+        /// <summary>Switch to screen-space (NDC) rendering: identity MVP, depth disabled.</summary>
+        protected void BeginScreenSpaceRender()
         {
+            Matrix4 id = Matrix4.Identity;
             GL.UseProgram(_shader);
-            GL.BindVertexArray(_axisVao);
-            GL.UniformMatrix4(_uMVP, false, ref mvp);
+            GL.UniformMatrix4(_uMVP, false, ref id);
             GL.Disable(EnableCap.DepthTest);
             GL.DepthMask(false);
-            GL.LineWidth(1.5f);
-            for (int ax = 0; ax < 3; ax++)
-            {
-                SetColor(AxisColor[ax].X, AxisColor[ax].Y, AxisColor[ax].Z, 0.65f);
-                GL.DrawArrays(PrimitiveType.Lines, ax * 2, 2);
-            }
+        }
+
+        /// <summary>Restore depth state after screen-space rendering.</summary>
+        protected static void EndScreenSpaceRender()
+        {
             GL.DepthMask(true);
             GL.Enable(EnableCap.DepthTest);
+        }
+
+        // ── Screen-space draw helpers ─────────────────────────────────────────
+
+        protected void DrawLine(float x0, float y0, float x1, float y1)
+        {
+            _lineBuf[0] = x0; _lineBuf[1] = y0; _lineBuf[2] = 0f;
+            _lineBuf[3] = x1; _lineBuf[4] = y1; _lineBuf[5] = 0f;
+            Dyn(_lineBuf);
+        }
+
+        protected void DrawArrowHead(float tnx, float tny, float fnx, float fny, float hs, Vector4 col)
+        {
+            float dx = tnx - fnx, dy = tny - fny;
+            float len = MathF.Sqrt(dx * dx + dy * dy);
+            if (len < 1e-4f) return;
+            float nx = dx/len, ny = dy/len, px = -ny, py = nx;
+            _arrowBuf[0] = tnx;                   _arrowBuf[1] = tny;                   _arrowBuf[2] = 0f;
+            _arrowBuf[3] = tnx-nx*hs*2f+px*hs;   _arrowBuf[4] = tny-ny*hs*2f+py*hs;   _arrowBuf[5] = 0f;
+            _arrowBuf[6] = tnx-nx*hs*2f-px*hs;   _arrowBuf[7] = tny-ny*hs*2f-py*hs;   _arrowBuf[8] = 0f;
+            Dyn(_arrowBuf);
+            SetColor(col);
+            GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
         }
 
         // ── Screen-space diamond handles ──────────────────────────────────────
@@ -158,13 +182,33 @@ void main() { FragColor = uColor; }
             GL.DrawArrays(PrimitiveType.LineStrip, 0, 5);
         }
 
+        // ── Shared axis-line rendering ────────────────────────────────────────
+
+        /// <summary>Draw 3 local-axis diameter lines (X/Y/Z), depth-disabled, ghosted.</summary>
+        protected void RenderAxisLines(Matrix4 mvp)
+        {
+            GL.UseProgram(_shader);
+            GL.BindVertexArray(_axisVao);
+            GL.UniformMatrix4(_uMVP, false, ref mvp);
+            GL.Disable(EnableCap.DepthTest);
+            GL.DepthMask(false);
+            GL.LineWidth(1.5f);
+            for (int ax = 0; ax < 3; ax++)
+            {
+                SetColor(AxisColor[ax].X, AxisColor[ax].Y, AxisColor[ax].Z, 0.65f);
+                GL.DrawArrays(PrimitiveType.Lines, ax * 2, 2);
+            }
+            GL.DepthMask(true);
+            GL.Enable(EnableCap.DepthTest);
+        }
+
         // ── Abstract ──────────────────────────────────────────────────────────
 
         public abstract void Render(IRenderFrameData frameData, ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera cam);
 
         public virtual void Dispose()
         {
-            if (_shader  != -1) { GL.DeleteProgram(_shader);                               _shader  = -1; }
+            if (_shader  != -1) { GL.DeleteProgram(_shader);                                _shader  = -1; }
             if (_dynVao  != -1) { GL.DeleteVertexArray(_dynVao);  GL.DeleteBuffer(_dynVbo); _dynVao  = -1; }
             if (_axisVao != -1) { GL.DeleteVertexArray(_axisVao); GL.DeleteBuffer(_axisVbo); _axisVao = -1; }
         }

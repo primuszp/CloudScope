@@ -8,29 +8,59 @@ namespace CloudScope
     {
         private const float PreviewInterval = 0.08f;
 
-        private readonly BoxSelectionTool _boxTool = new();
-        private readonly SphereSelectionTool _sphereTool = new();
+        private readonly BoxSelectionTool      _boxTool      = new();
+        private readonly SphereSelectionTool   _sphereTool   = new();
         private readonly CylinderSelectionTool _cylinderTool = new();
-        private readonly ISelectionTool[] _tools;
+        private readonly ISelectionTool[]      _tools;
         private readonly SelectionPreviewWorker _previewWorker = new();
-        private readonly LabelManager _labelManager = new();
+        private readonly LabelManager          _labelManager  = new();
+        private readonly Action<string>        _log;
 
-        private int _activeToolIndex;
-        private EditAction _pendingAction = EditAction.None;
+        private int                      _activeToolIndex;
+        private EditAction               _pendingAction    = EditAction.None;
         private SelectionInteractionState _interactionState = SelectionInteractionState.Navigate;
-        private float _previewTimer = 999f;
-        private bool _previewWasActive;
-        private string _currentLabel = "Ground";
+        private float  _previewTimer    = 999f;
+        private bool   _previewWasActive;
+        private string _currentLabel   = "Ground";
         private PointData[]? _points;
-        private string _lasFilePath = "";
+        private string _lasFilePath    = "";
 
-        private static readonly string[] LabelPresets =
-            { "Ground", "Building", "Vegetation", "Vehicle", "Road", "Water", "Wire" };
-
-        public SelectionController(Action labelsChanged)
+        private static readonly Dictionary<ViewerKey, SelectionToolType> ToolSwitchMap = new()
         {
-            _tools = new ISelectionTool[] { _boxTool, _sphereTool, _cylinderTool };
+            [ViewerKey.D1] = SelectionToolType.Box,
+            [ViewerKey.D2] = SelectionToolType.Sphere,
+            [ViewerKey.D3] = SelectionToolType.Cylinder,
+        };
+
+        private static readonly Dictionary<ViewerKey, string> LabelPresetMap = new()
+        {
+            [ViewerKey.D4] = "Ground",
+            [ViewerKey.D5] = "Building",
+            [ViewerKey.D6] = "Vegetation",
+            [ViewerKey.D7] = "Vehicle",
+            [ViewerKey.D8] = "Road",
+            [ViewerKey.D9] = "Water",
+        };
+
+        private static readonly Dictionary<ViewerKey, EditAction> EditActionMap = new()
+        {
+            [ViewerKey.G] = EditAction.Grab,
+            [ViewerKey.S] = EditAction.Scale,
+            [ViewerKey.R] = EditAction.Rotate,
+        };
+
+        private static readonly Dictionary<ViewerKey, int> AxisConstraintMap = new()
+        {
+            [ViewerKey.X] = 0,
+            [ViewerKey.Y] = 1,
+            [ViewerKey.Z] = 2,
+        };
+
+        public SelectionController(Action labelsChanged, Action<string>? log = null)
+        {
+            _tools = [_boxTool, _sphereTool, _cylinderTool];
             _labelManager.LabelsChanged += labelsChanged;
+            _log = log ?? Console.WriteLine;
         }
 
         public InteractionMode Mode { get; private set; } = InteractionMode.Navigate;
@@ -52,7 +82,7 @@ namespace CloudScope
             ActiveTool.Cancel();
             _pendingAction = EditAction.None;
             SetRestingInteractionState();
-            Console.WriteLine($"Mode: {Mode}  (tool: {ActiveTool.ToolType}, label: '{_currentLabel}')");
+            _log($"Mode: {Mode}  (tool: {ActiveTool.ToolType}, label: '{_currentLabel}')");
         }
 
         public void SetTool(SelectionToolType toolType)
@@ -62,16 +92,16 @@ namespace CloudScope
 
             _activeToolIndex = toolType switch
             {
-                SelectionToolType.Box => 0,
-                SelectionToolType.Sphere => 1,
+                SelectionToolType.Box      => 0,
+                SelectionToolType.Sphere   => 1,
                 SelectionToolType.Cylinder => 2,
-                _ => _activeToolIndex
+                _                          => _activeToolIndex
             };
 
             Mode = InteractionMode.Label;
             _pendingAction = EditAction.None;
             SetRestingInteractionState();
-            Console.WriteLine($"Tool: {ActiveTool.ToolType}");
+            _log($"Tool: {ActiveTool.ToolType}");
         }
 
         public void SetLabel(string label)
@@ -80,7 +110,7 @@ namespace CloudScope
                 return;
 
             _currentLabel = label.Trim();
-            Console.WriteLine($"Label: '{_currentLabel}'");
+            _log($"Label: '{_currentLabel}'");
         }
 
         public bool MouseDownLeft(int x, int y, OrbitCamera camera)
@@ -133,7 +163,7 @@ namespace CloudScope
                 case SelectionInteractionState.Placing:
                     tool.OnMouseUp(x, y, camera);
                     if (tool.IsEditing)
-                        Console.WriteLine($"{tool.ToolType} selection placed - use grips or G/S/R, then Enter to label.");
+                        _log($"{tool.ToolType} placed — use grips or G/S/R, then Enter to label.");
                     SetRestingInteractionState();
                     return;
 
@@ -209,9 +239,7 @@ namespace CloudScope
         public void KeyDown(ViewerKey key, bool ctrl)
         {
             if (key == ViewerKey.L)
-            {
                 SetMode(Mode == InteractionMode.Navigate ? InteractionMode.Label : InteractionMode.Navigate);
-            }
 
             if (key == ViewerKey.Escape && Mode == InteractionMode.Label)
             {
@@ -255,13 +283,13 @@ namespace CloudScope
                 ActiveTool.Cancel();
                 _pendingAction = EditAction.None;
                 SetRestingInteractionState();
-                Console.WriteLine("Selection cancelled");
+                _log("Selection cancelled");
             }
             else
             {
                 Mode = InteractionMode.Navigate;
                 SetRestingInteractionState();
-                Console.WriteLine("Mode: Navigate");
+                _log("Mode: Navigate");
             }
         }
 
@@ -273,11 +301,11 @@ namespace CloudScope
                 if (selected.Count > 0)
                 {
                     _labelManager.ApplyLabel(selected, _currentLabel);
-                    Console.WriteLine($"Labeled {selected.Count} points as '{_currentLabel}'  (total: {_labelManager.Count})");
+                    _log($"Labeled {selected.Count} points as '{_currentLabel}'  (total: {_labelManager.Count})");
                 }
                 else
                 {
-                    Console.WriteLine("No points in selection volume");
+                    _log("No points in selection volume");
                 }
             }
 
@@ -295,8 +323,8 @@ namespace CloudScope
             {
                 InteractionMode.Navigate => SelectionInteractionState.Navigate,
                 _ when ActiveTool.IsEditing => SelectionInteractionState.Editing,
-                _ when ActiveTool.IsActive => SelectionInteractionState.Placing,
-                _ => SelectionInteractionState.ReadyToPlace
+                _ when ActiveTool.IsActive  => SelectionInteractionState.Placing,
+                _                           => SelectionInteractionState.ReadyToPlace
             };
         }
 
@@ -316,8 +344,8 @@ namespace CloudScope
 
             switch (_pendingAction)
             {
-                case EditAction.Grab: tool.BeginGrab(x, y, camera); break;
-                case EditAction.Scale: tool.BeginScale(x, y, camera); break;
+                case EditAction.Grab:   tool.BeginGrab(x, y, camera);   break;
+                case EditAction.Scale:  tool.BeginScale(x, y, camera);  break;
                 case EditAction.Rotate: tool.BeginRotate(x, y, camera); break;
             }
 
@@ -327,18 +355,30 @@ namespace CloudScope
 
         private void HandleEditShortcut(ViewerKey key)
         {
-            if (key == ViewerKey.G) { _pendingAction = EditAction.Grab; Console.WriteLine("Grab — left-click + drag to move"); }
-            if (key == ViewerKey.S) { _pendingAction = EditAction.Scale; Console.WriteLine("Scale — left-click + drag to resize"); }
-            if (key == ViewerKey.R) { _pendingAction = EditAction.Rotate; Console.WriteLine("Rotate — left-click + drag to rotate"); }
-            if (key == ViewerKey.X) { ActiveTool.SetAxisConstraint(0); Console.WriteLine("Constraint: X axis"); }
-            if (key == ViewerKey.Y) { ActiveTool.SetAxisConstraint(1); Console.WriteLine("Constraint: Y axis"); }
-            if (key == ViewerKey.Z) { ActiveTool.SetAxisConstraint(2); Console.WriteLine("Constraint: Z axis"); }
+            if (EditActionMap.TryGetValue(key, out EditAction action))
+            {
+                _pendingAction = action;
+                string hint = action switch
+                {
+                    EditAction.Grab   => "Grab — left-click + drag to move",
+                    EditAction.Scale  => "Scale — left-click + drag to resize",
+                    EditAction.Rotate => "Rotate — left-click + drag to rotate",
+                    _                 => action.ToString()
+                };
+                _log(hint);
+            }
+
+            if (AxisConstraintMap.TryGetValue(key, out int axis))
+            {
+                ActiveTool.SetAxisConstraint(axis);
+                _log($"Constraint: {key} axis");
+            }
         }
 
         private void HandleControlShortcut(ViewerKey key)
         {
             if (key == ViewerKey.Z && _labelManager.Undo())
-                Console.WriteLine($"Undo — labels: {_labelManager.Count}");
+                _log($"Undo — labels: {_labelManager.Count}");
 
             if (key == ViewerKey.S && !string.IsNullOrEmpty(_lasFilePath))
                 LabelFileIO.Save(_lasFilePath, _labelManager);
@@ -349,21 +389,14 @@ namespace CloudScope
 
         private void HandleToolSwitch(ViewerKey key)
         {
-            if (key == ViewerKey.D1) SetTool(SelectionToolType.Box);
-            if (key == ViewerKey.D2) SetTool(SelectionToolType.Sphere);
-            if (key == ViewerKey.D3) SetTool(SelectionToolType.Cylinder);
+            if (ToolSwitchMap.TryGetValue(key, out SelectionToolType toolType))
+                SetTool(toolType);
         }
 
         private void HandleLabelShortcut(ViewerKey key)
         {
-            ViewerKey[] presetKeys = { ViewerKey.D4, ViewerKey.D5, ViewerKey.D6, ViewerKey.D7, ViewerKey.D8, ViewerKey.D9 };
-            for (int i = 0; i < presetKeys.Length && i < LabelPresets.Length; i++)
-            {
-                if (key == presetKeys[i])
-                {
-                    SetLabel(LabelPresets[i]);
-                }
-            }
+            if (LabelPresetMap.TryGetValue(key, out string? label))
+                SetLabel(label);
         }
     }
 }

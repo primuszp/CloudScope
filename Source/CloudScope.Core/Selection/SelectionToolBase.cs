@@ -38,12 +38,15 @@ namespace CloudScope.Selection
         protected float      _editViewZ;
         protected EditAction _kbAction = EditAction.None;
         protected int        _kbAxis   = -1;
+        protected Quaternion _editStartRotation;
 
         // ── Abstract ──────────────────────────────────────────────────────────
         public abstract SelectionToolType ToolType  { get; }
         public abstract bool   HasVolume            { get; }
         public abstract int    HandleCount          { get; }
         public abstract Vector3 HandleWorldPosition(int i);
+
+        public virtual  Quaternion Rotation { get; set; } = Quaternion.Identity;
         public GripDescriptor GetGrip(int handle)
         {
             if (TryGetGrip(handle, out GripDescriptor grip))
@@ -145,7 +148,20 @@ namespace CloudScope.Selection
         }
         protected virtual void OnBeginScaleExtra(int mx, int my, OrbitCamera cam) { }
 
-        public virtual void BeginRotate(int mx, int my, OrbitCamera camera) { }
+        public virtual void BeginRotate(int mx, int my, OrbitCamera camera)
+        {
+            if (!IsEditing) return;
+            _kbAction          = EditAction.Rotate;
+            _editStartX        = mx;
+            _editStartRotation = Rotation;
+        }
+
+        protected virtual void UpdateRingDrag(int mx, int my, OrbitCamera cam)
+        {
+            int axis = GetGrip(_activeHandle).Axis;
+            Rotation = GripInteractionMath.RotateAroundRingDrag(
+                cam, Center, _editStartRotation, axis, _editStartX, _editStartY, mx, my);
+        }
 
         public virtual void UpdateEdit(int mx, int my, OrbitCamera camera)
         {

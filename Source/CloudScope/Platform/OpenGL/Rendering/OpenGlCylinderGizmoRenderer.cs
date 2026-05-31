@@ -27,11 +27,6 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private const int CapSeg = 64;
         private const int LatSeg = 12;
 
-        // Pre-allocated scratch buffers
-        private readonly float[] _lineBuf    = new float[6];
-        private readonly float[] _arrowBuf   = new float[9];
-        private          float[] _ringSegBuf = new float[64 * 6];
-
         // ── Public entry point ────────────────────────────────────────────────
 
         public override void Render(IRenderFrameData frameData, ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera cam)
@@ -83,7 +78,6 @@ namespace CloudScope.Platform.OpenGL.Rendering
             for (int j = 0; j <= N; j++)
             {
                 float t = j * MathF.Tau / N;
-                // Z-up: horizontal circle is in XY plane
                 Vector3 pt = cyl.Center + new Vector3(MathF.Cos(t) * cyl.Radius, MathF.Sin(t) * cyl.Radius, 0f);
                 var (sx, sy, beh) = cam.WorldToScreen(pt);
                 var (nx, ny) = ScreenToNdc(sx, sy, vpW, vpH);
@@ -97,21 +91,15 @@ namespace CloudScope.Platform.OpenGL.Rendering
             }
             if (vc == 0) return;
 
-            Matrix4 id = Matrix4.Identity;
-            GL.UseProgram(_shader);
-            GL.UniformMatrix4(_uMVP, false, ref id);
-            GL.Disable(EnableCap.DepthTest);
-            GL.DepthMask(false);
+            BeginScreenSpaceRender();
             Dyn(_ringSegBuf, vc);
             SetColor(0.25f, 0.85f, 0.95f, 0.90f);
             GL.LineWidth(2f);
             GL.DrawArrays(PrimitiveType.Lines, 0, vc / 3);
-            // Center cross
             var (cnx, cny) = ScreenToNdc(cx, cy, vpW, vpH);
             float hx = 6f / vpW, hy = 6f / vpH;
             DrawDiamondFill(cnx, cny, hx, hy, new(0.3f, 1f, 0.45f, 0.9f));
-            GL.DepthMask(true);
-            GL.Enable(EnableCap.DepthTest);
+            EndScreenSpaceRender();
         }
 
         // ── Layer 1: Transparent fill ─────────────────────────────────────────
@@ -159,29 +147,23 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
         private void RenderExtrudeArrow(CylinderSelectionTool cyl, OrbitCamera cam)
         {
-            Vector3 topPos = cyl.HandleWorldPosition(1);              // top cap center
+            Vector3 topPos = cyl.HandleWorldPosition(1);
             Vector3 tipPos = topPos + cyl.Axis * MathF.Max(cyl.Radius * 0.55f, 0.05f);
 
             var (fx, fy, fb) = cam.WorldToScreen(topPos);
             var (tx, ty, tb) = cam.WorldToScreen(tipPos);
             if (fb || tb) return;
 
-            float   vpW = cam.ViewportWidth, vpH = cam.ViewportHeight;
+            float   vpW    = cam.ViewportWidth, vpH = cam.ViewportHeight;
             var (fnx, fny) = ScreenToNdc(fx, fy, vpW, vpH);
             var (tnx, tny) = ScreenToNdc(tx, ty, vpW, vpH);
-            bool    hov    = cyl.HoveredHandle >= 0
-                && cyl.GetGrip(cyl.HoveredHandle).IsPrimary;
             GripDescriptor grip = cyl.GetGrip(1);
             GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(
                 grip,
-                hov,
+                cyl.HoveredHandle >= 0 && cyl.GetGrip(cyl.HoveredHandle).IsPrimary,
                 cyl.ActiveHandle == grip.Index);
 
-            Matrix4 id = Matrix4.Identity;
-            GL.UseProgram(_shader);
-            GL.UniformMatrix4(_uMVP, false, ref id);
-            GL.Disable(EnableCap.DepthTest);
-            GL.DepthMask(false);
+            BeginScreenSpaceRender();
 
             DrawLine(fnx, fny, tnx, tny);
             SetColor(style.Color);
@@ -190,8 +172,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
             DrawArrowHead(tnx, tny, fnx, fny, 0.02f, style.Color with { W = 1f });
 
-            GL.DepthMask(true);
-            GL.Enable(EnableCap.DepthTest);
+            EndScreenSpaceRender();
         }
 
         // ── Layer 5: Rotation rings ───────────────────────────────────────────
@@ -203,15 +184,11 @@ namespace CloudScope.Platform.OpenGL.Rendering
             Matrix3   invR = Matrix3.Transpose(Matrix3.CreateFromQuaternion(cyl.Rotation));
             float     vpW  = cam.ViewportWidth, vpH = cam.ViewportHeight;
 
-            Matrix4 id = Matrix4.Identity;
-            GL.UseProgram(_shader);
-            GL.UniformMatrix4(_uMVP, false, ref id);
-            GL.Disable(EnableCap.DepthTest);
-            GL.DepthMask(false);
+            BeginScreenSpaceRender();
 
             for (int axis = 0; axis < 3; axis++)
             {
-                bool    hov = cyl.HoveredHandle >= 0
+                bool hov = cyl.HoveredHandle >= 0
                     && cyl.GetGrip(cyl.HoveredHandle).Kind == GripKind.RotationRing
                     && cyl.GetGrip(cyl.HoveredHandle).Axis == axis;
                 bool active = cyl.ActiveHandle >= 0
@@ -251,20 +228,15 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 GL.DrawArrays(PrimitiveType.Lines, 0, vc / 3);
             }
 
-            GL.DepthMask(true);
-            GL.Enable(EnableCap.DepthTest);
+            EndScreenSpaceRender();
         }
 
         // ── Layer 6: Handle diamonds ──────────────────────────────────────────
 
         private void RenderHandles(CylinderSelectionTool cyl, OrbitCamera cam)
         {
-            float   vpW = cam.ViewportWidth, vpH = cam.ViewportHeight;
-            Matrix4 id  = Matrix4.Identity;
-            GL.UseProgram(_shader);
-            GL.UniformMatrix4(_uMVP, false, ref id);
-            GL.Disable(EnableCap.DepthTest);
-            GL.DepthMask(false);
+            float vpW = cam.ViewportWidth, vpH = cam.ViewportHeight;
+            BeginScreenSpaceRender();
 
             foreach (GripDescriptor grip in cyl.Grips)
             {
@@ -285,31 +257,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 DrawDiamond(nx, ny, hx, hy, style.Color);
             }
 
-            GL.DepthMask(true);
-            GL.Enable(EnableCap.DepthTest);
-        }
-
-        // ── Screen-space helpers ──────────────────────────────────────────────
-
-        private void DrawLine(float x0, float y0, float x1, float y1)
-        {
-            _lineBuf[0] = x0; _lineBuf[1] = y0; _lineBuf[2] = 0f;
-            _lineBuf[3] = x1; _lineBuf[4] = y1; _lineBuf[5] = 0f;
-            Dyn(_lineBuf);
-        }
-
-        private void DrawArrowHead(float tnx, float tny, float fnx, float fny, float hs, Vector4 col)
-        {
-            float dx = tnx - fnx, dy = tny - fny;
-            float len = MathF.Sqrt(dx * dx + dy * dy);
-            if (len < 1e-4f) return;
-            float nx = dx / len, ny = dy / len, px = -ny, py = nx;
-            _arrowBuf[0] = tnx;                  _arrowBuf[1] = tny;                  _arrowBuf[2] = 0f;
-            _arrowBuf[3] = tnx - nx*hs*2f + px*hs; _arrowBuf[4] = tny - ny*hs*2f + py*hs; _arrowBuf[5] = 0f;
-            _arrowBuf[6] = tnx - nx*hs*2f - px*hs; _arrowBuf[7] = tny - ny*hs*2f - py*hs; _arrowBuf[8] = 0f;
-            Dyn(_arrowBuf);
-            SetColor(col);
-            GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
+            EndScreenSpaceRender();
         }
 
         // ── Resource init ─────────────────────────────────────────────────────
