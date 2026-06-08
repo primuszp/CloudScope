@@ -8,15 +8,12 @@ namespace CloudScope
     {
         private const float PreviewInterval = 0.08f;
 
-        private readonly BoxSelectionTool      _boxTool      = new();
-        private readonly SphereSelectionTool   _sphereTool   = new();
-        private readonly CylinderSelectionTool _cylinderTool = new();
-        private readonly ISelectionTool[]      _tools;
+        private readonly IReadOnlyDictionary<SelectionToolType, ISelectionTool> _tools;
         private readonly SelectionPreviewWorker _previewWorker = new();
         private readonly LabelManager          _labelManager  = new();
         private readonly Action<string>        _log;
 
-        private int                      _activeToolIndex;
+        private SelectionToolType        _activeToolType = SelectionToolType.Box;
         private EditAction               _pendingAction    = EditAction.None;
         private SelectionInteractionState _interactionState = SelectionInteractionState.Navigate;
         private float  _previewTimer    = 999f;
@@ -58,16 +55,23 @@ namespace CloudScope
 
         public SelectionController(Action labelsChanged, Action<string>? log = null)
         {
-            _tools = [_boxTool, _sphereTool, _cylinderTool];
+            ISelectionTool[] tools =
+            [
+                new BoxSelectionTool(),
+                new SphereSelectionTool(),
+                new CylinderSelectionTool()
+            ];
+            _tools = tools.ToDictionary(tool => tool.ToolType);
             _labelManager.LabelsChanged += labelsChanged;
             _log = log ?? Console.WriteLine;
         }
 
         public InteractionMode Mode { get; private set; } = InteractionMode.Navigate;
         public SelectionInteractionState InteractionState => _interactionState;
-        public ISelectionTool ActiveTool => _tools[_activeToolIndex];
+        public ISelectionTool ActiveTool => _tools[_activeToolType];
         public LabelManager Labels => _labelManager;
         public PointData[]? Points => _points;
+        public bool HasActiveSelection => ActiveTool.IsActive || ActiveTool.IsEditing;
 
         public void LoadPointCloud(PointData[] points) => _points = points;
 
@@ -90,13 +94,10 @@ namespace CloudScope
             if (ActiveTool.IsEditing || ActiveTool.IsActive)
                 ActiveTool.Cancel();
 
-            _activeToolIndex = toolType switch
-            {
-                SelectionToolType.Box      => 0,
-                SelectionToolType.Sphere   => 1,
-                SelectionToolType.Cylinder => 2,
-                _                          => _activeToolIndex
-            };
+            if (!_tools.ContainsKey(toolType))
+                throw new ArgumentOutOfRangeException(nameof(toolType), toolType, "Unknown selection tool.");
+
+            _activeToolType = toolType;
 
             Mode = InteractionMode.Label;
             _pendingAction = EditAction.None;
@@ -236,28 +237,34 @@ namespace CloudScope
 
         public bool TryTakePreview(out IReadOnlyList<int>? indices) => _previewWorker.TryTakeLatest(out indices);
 
-        public void KeyDown(ViewerKey key, bool ctrl)
+        public bool KeyDown(ViewerKey key, bool ctrl)
         {
             if (key == ViewerKey.L)
+            {
                 SetMode(Mode == InteractionMode.Navigate ? InteractionMode.Label : InteractionMode.Navigate);
+                return true;
+            }
 
             if (key == ViewerKey.Escape && Mode == InteractionMode.Label)
             {
                 CancelOrExitLabelMode();
-                return;
+                return true;
             }
 
             if (Mode != InteractionMode.Label)
-                return;
+                return false;
 
             if (ctrl)
             {
                 HandleControlShortcut(key);
-                return;
+                return true;
             }
 
             if (key == ViewerKey.Enter && ActiveTool.IsEditing)
+            {
                 ConfirmActiveSelection();
+                return true;
+            }
 
             if (ActiveTool.IsEditing)
                 HandleEditShortcut(key);
@@ -266,6 +273,7 @@ namespace CloudScope
                 HandleToolSwitch(key);
 
             HandleLabelShortcut(key);
+            return true;
         }
 
         public void Dispose() => _previewWorker.Dispose();
@@ -295,6 +303,12 @@ namespace CloudScope
 
         public void ConfirmActiveSelection()
         {
+            if (!ActiveTool.IsEditing || !ActiveTool.HasVolume)
+            {
+                _log("No active selection to confirm");
+                return;
+            }
+
             if (_points != null)
             {
                 var selected = ActiveTool.CreateQuery().Resolve(_points);
@@ -312,6 +326,27 @@ namespace CloudScope
             ActiveTool.Confirm();
             _pendingAction = EditAction.None;
             SetRestingInteractionState();
+        }
+
+        public bool UndoSelectionCommand()
+        {
+            if (ActiveTool.IsActive || ActiveTool.IsEditing)
+            {
+                ActiveTool.Cancel();
+                _pendingAction = EditAction.None;
+                SetRestingInteractionState();
+                _log("Current selection undone");
+                return true;
+            }
+
+            if (_labelManager.Undo())
+            {
+                _log($"Undo — labels: {_labelManager.Count}");
+                return true;
+            }
+
+            _log("Nothing to undo");
+            return false;
         }
 
         private void SetInteractionState(SelectionInteractionState state)

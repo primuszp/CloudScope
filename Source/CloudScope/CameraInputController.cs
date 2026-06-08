@@ -31,9 +31,10 @@ namespace CloudScope
             float cloudRadius,
             bool selectionVolumeActive,
             int viewportWidth,
-            int viewportHeight)
+            int viewportHeight,
+            bool allowEscapeClose)
         {
-            bool shouldClose = keyboard.IsKeyPressed(ViewerKey.Escape);
+            bool shouldClose = allowEscapeClose && keyboard.IsKeyPressed(ViewerKey.Escape);
 
             if (keyboard.IsKeyPressed(ViewerKey.KeyPadAdd))
                 _pointSize = MathF.Min(_pointSize + 0.5f, 20f);

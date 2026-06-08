@@ -4,100 +4,150 @@ namespace CloudScope.Ui
 {
     public sealed class ViewerCommandDispatcher
     {
+        private const string SelectPrompt = "Select shape [Box/Sphere/Cylinder/Undo] <Box>:";
+        private const string EditPrompt = "Adjust using grips or [Confirm/Undo/Cancel]:";
         private readonly ViewerController _viewer;
+        private readonly Dictionary<string, Func<string, string>> _commands;
+        private bool _selectActive;
+        private bool _shapeChosen;
 
         public ViewerCommandDispatcher(ViewerController viewer)
         {
             _viewer = viewer;
+            _commands = new(StringComparer.OrdinalIgnoreCase);
+
+            Register(ExecuteSelect, "SEL", "SELECT");
+            Register(_ => Confirm(), "CONFIRM", "ENTER");
+            Register(_ => Cancel(), "CANCEL", "ESC", "ESCAPE");
+            Register(_ => Undo(), "U", "UNDO");
+            Register(_ => SetMode(InteractionMode.Label), "L", "LABELMODE");
+            Register(_ => SetMode(InteractionMode.Navigate), "N", "NAV", "NAVIGATE");
+            Register(SetLabel, "LABEL");
+            Register(_ => HelpText, "HELP", "?");
         }
+
+        private const string HelpText =
+            "Commands: SELECT/SEL, LABEL <name>, NAVIGATE. SELECT options: Box, Sphere, Cylinder, Undo.";
 
         public string Execute(string commandText)
         {
             string command = commandText.Trim();
             if (command.Length == 0)
-                return string.Empty;
+                return ExecuteEmpty();
 
             string[] parts = command.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            string verb = parts[0].ToUpperInvariant();
+            string verb = parts[0];
             string argument = parts.Length > 1 ? parts[1] : string.Empty;
 
-            switch (verb)
-            {
-                case "SEL":
-                case "SELECT":
-                    return ExecuteSelect(argument);
+            if (_selectActive && parts.Length == 1)
+                return ExecuteSelectOption(verb);
 
-                case "B":
-                case "BOX":
-                    _viewer.SetTool(SelectionToolType.Box);
-                    return "Tool: Box";
+            return _commands.TryGetValue(verb, out Func<string, string>? execute)
+                ? execute(argument)
+                : $"Unknown command: {command}";
+        }
 
-                case "SPH":
-                case "SPHERE":
-                    _viewer.SetTool(SelectionToolType.Sphere);
-                    return "Tool: Sphere";
+        private string ExecuteEmpty()
+        {
+            if (!_selectActive)
+                return string.Empty;
 
-                case "CYL":
-                case "CYLINDER":
-                    _viewer.SetTool(SelectionToolType.Cylinder);
-                    return "Tool: Cylinder";
+            if (_viewer.HasActiveSelection)
+                return Confirm();
 
-                case "L":
-                case "LABELMODE":
-                    _viewer.SetMode(InteractionMode.Label);
-                    return "Mode: Label";
-
-                case "N":
-                case "NAV":
-                case "NAVIGATE":
-                    _viewer.SetMode(InteractionMode.Navigate);
-                    return "Mode: Navigate";
-
-                case "LABEL":
-                    if (string.IsNullOrWhiteSpace(argument))
-                        return "Usage: LABEL <name>";
-                    _viewer.SetLabel(argument);
-                    return $"Label: {argument}";
-
-                case "CONFIRM":
-                case "ENTER":
-                    _viewer.ConfirmActiveSelection();
-                    return "Confirm";
-
-                case "CANCEL":
-                case "ESC":
-                case "ESCAPE":
-                    _viewer.CancelOrExitLabelMode();
-                    return "Cancel";
-
-                case "HELP":
-                case "?":
-                    return "Commands: SELECT [Box/Sphere/Cylinder], LABEL <name>, LABELMODE, NAVIGATE, CONFIRM, CANCEL";
-
-                default:
-                    return $"Unknown command: {command}";
-            }
+            return _shapeChosen ? EditPrompt : SelectTool(SelectionToolType.Box);
         }
 
         private string ExecuteSelect(string option)
         {
-            if (string.IsNullOrWhiteSpace(option))
-                return "Select [Box/Sphere/Cylinder] <Box>:";
+            _selectActive = true;
+            return string.IsNullOrWhiteSpace(option) ? SelectPrompt : ExecuteSelectOption(option);
+        }
 
+        private string ExecuteSelectOption(string option)
+        {
             string normalized = option.Trim().ToUpperInvariant();
-            SelectionToolType? toolType = normalized switch
+            return normalized switch
             {
-                "B" or "BOX" => SelectionToolType.Box,
-                "S" or "SPH" or "SPHERE" => SelectionToolType.Sphere,
-                "C" or "CYL" or "CYLINDER" => SelectionToolType.Cylinder,
-                _ => null
+                "B" or "BOX" => SelectTool(SelectionToolType.Box),
+                "S" or "SPH" or "SPHERE" => SelectTool(SelectionToolType.Sphere),
+                "C" or "CYL" or "CYLINDER" => SelectTool(SelectionToolType.Cylinder),
+                "U" or "UNDO" => Undo(),
+                "CONFIRM" or "ENTER" => Confirm(),
+                "CANCEL" or "ESC" or "ESCAPE" => Cancel(),
+                _ => $"Invalid option. {SelectPrompt}"
             };
+        }
 
-            if (toolType == null)
-                return "Invalid option. Select [Box/Sphere/Cylinder] <Box>:";
+        private string SelectTool(SelectionToolType toolType)
+        {
+            _selectActive = true;
+            _shapeChosen = true;
+            _viewer.SetTool(toolType);
+            return $"{toolType} selection started. Draw the volume, then use grips. {EditPrompt}";
+        }
 
-            _viewer.SetTool(toolType.Value);
-            return $"Tool: {toolType.Value}";
+        private string Confirm()
+        {
+            if (!_selectActive || !_viewer.HasActiveSelection)
+                return _selectActive ? EditPrompt : "No active SELECT command.";
+
+            _viewer.ConfirmActiveSelection();
+            _selectActive = false;
+            _shapeChosen = false;
+            return "Selection applied.";
+        }
+
+        private string Undo()
+        {
+            bool hadActiveSelection = _viewer.HasActiveSelection;
+            bool undone = _viewer.UndoSelectionCommand();
+            if (hadActiveSelection)
+                _shapeChosen = false;
+            return undone
+                ? (_selectActive ? $"Last selection change undone. {SelectPrompt}" : "Last selection change undone.")
+                : "Nothing to undo.";
+        }
+
+        private string Cancel()
+        {
+            if (!_selectActive)
+                return "No active SELECT command.";
+
+            if (_viewer.HasActiveSelection)
+            {
+                _viewer.CancelOrExitLabelMode();
+                _shapeChosen = false;
+                return $"Current selection cancelled. {SelectPrompt}";
+            }
+
+            _viewer.SetMode(InteractionMode.Navigate);
+            _selectActive = false;
+            _shapeChosen = false;
+            return "SELECT cancelled.";
+        }
+
+        private string SetMode(InteractionMode mode)
+        {
+            _selectActive = false;
+            _shapeChosen = false;
+            _viewer.SetMode(mode);
+            return $"Mode: {mode}";
+        }
+
+        private string SetLabel(string label)
+        {
+            if (string.IsNullOrWhiteSpace(label))
+                return "Usage: LABEL <name>";
+
+            _viewer.SetLabel(label);
+            return $"Label: {label.Trim()}";
+        }
+
+        private void Register(Func<string, string> execute, params string[] aliases)
+        {
+            foreach (string alias in aliases)
+                _commands.Add(alias, execute);
         }
     }
 }

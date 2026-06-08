@@ -30,20 +30,20 @@ public sealed class HostController
         PublishStatus();
     }
 
-    public string ExecuteCommand(string commandText)
+    public string ExecuteCommand(string commandText, bool publishResult = true)
     {
         string trimmed = commandText.Trim();
         string command = trimmed.ToUpperInvariant();
         string result = command switch
         {
-            "" => "",
+            "" => _embeddedHost?.ExecuteViewerCommand("") ?? "",
             "STATUS" => Status,
             "RESET" => Reset(),
             "HOSTHELP" => "Host commands: STATUS, RESET, HOSTHELP.",
             _ => _embeddedHost?.ExecuteViewerCommand(trimmed) ?? "Embedded OpenTK host is not ready."
         };
 
-        if (result.Length > 0)
+        if (publishResult && result.Length > 0)
             StatusChanged?.Invoke(result);
 
         return result;

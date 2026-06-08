@@ -12,10 +12,10 @@ namespace CloudScope.Ui
         private string _commandText = "";
         private bool _focusCommandLine;
 
-        public CommandLineOverlay(ViewerController viewer)
+        public CommandLineOverlay(ViewerController viewer, ViewerCommandDispatcher dispatcher)
         {
             _viewer = viewer;
-            _dispatcher = new ViewerCommandDispatcher(viewer);
+            _dispatcher = dispatcher;
             _history.Add("Command line ready. Type HELP for commands.");
         }
 
@@ -49,6 +49,7 @@ namespace CloudScope.Ui
                 if (ImGui.MenuItem("Cylinder")) Execute("SELECT C");
                 ImGui.Separator();
                 if (ImGui.MenuItem("Confirm", "Enter")) Execute("CONFIRM");
+                if (ImGui.MenuItem("Undo", "U")) Execute("UNDO");
                 if (ImGui.MenuItem("Cancel", "Esc")) Execute("CANCEL");
                 ImGui.EndMenu();
             }
@@ -116,10 +117,7 @@ namespace CloudScope.Ui
 
         private void Execute(string command)
         {
-            if (string.IsNullOrWhiteSpace(command))
-                return;
-
-            _history.Add($"> {command.Trim()}");
+            _history.Add(command.Length == 0 ? ">" : $"> {command.Trim()}");
             string result = _dispatcher.Execute(command);
             if (!string.IsNullOrWhiteSpace(result))
                 _history.Add(result);
