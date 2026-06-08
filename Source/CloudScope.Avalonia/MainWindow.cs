@@ -71,6 +71,14 @@ public sealed partial class MainWindow : Window
     {
         CommandInput.KeyDown += (_, e) =>
         {
+            if (e.Key == Key.Escape)
+            {
+                ExecuteCommand("CANCEL");
+                CommandInput.Text = "";
+                e.Handled = true;
+                return;
+            }
+
             if (e.Key != Key.Enter)
                 return;
 
@@ -139,11 +147,10 @@ public sealed partial class MainWindow : Window
 
     private void ExecuteCommand(string command)
     {
-        if (string.IsNullOrWhiteSpace(command))
-            return;
-
-        AddHistory($"> {command.Trim()}");
-        _hostController.ExecuteCommand(command);
+        AddHistory(command.Length == 0 ? ">" : $"> {command.Trim()}");
+        string result = _hostController.ExecuteCommand(command, publishResult: false);
+        if (!string.IsNullOrWhiteSpace(result))
+            AddHistory(result);
     }
 
     private void FocusViewer()

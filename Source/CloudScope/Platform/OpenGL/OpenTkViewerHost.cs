@@ -85,7 +85,7 @@ namespace CloudScope
             if (_enableOverlay)
             {
                 _imgui = new ImGuiController(ClientSize.X, ClientSize.Y);
-                _commandLine = new CommandLineOverlay(_controller);
+                _commandLine = new CommandLineOverlay(_controller, _commandDispatcher);
             }
 #endif
         }

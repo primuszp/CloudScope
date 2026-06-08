@@ -19,8 +19,7 @@ namespace CloudScope
         private float _cloudRadius = 50f;
 
         private readonly CameraInputController _cameraInput = new();
-        private readonly bool _metalFrameLog = true; // FORCE LOG ON
-        private int _metalFrameLogCounter;
+        private bool _suppressEscapeClose;
 
         private int _width;
         private int _height;
@@ -61,6 +60,7 @@ namespace CloudScope
         public InteractionMode Mode => _selection.Mode;
         public SelectionInteractionState SelectionInteractionState => _selection.InteractionState;
         public SelectionToolType ActiveToolType => _selection.ActiveTool.ToolType;
+        public bool HasActiveSelection => _selection.HasActiveSelection;
 
         public void SetMode(InteractionMode mode) => _selection.SetMode(mode);
 
@@ -72,9 +72,22 @@ namespace CloudScope
 
         public void CancelOrExitLabelMode() => _selection.CancelOrExitLabelMode();
 
+        public bool UndoSelectionCommand() => _selection.UndoSelectionCommand();
+
         public bool UpdateFrame(float dt, IViewerKeyboard keyboard)
         {
-            bool shouldClose = _cameraInput.UpdateFrame(dt, keyboard, _cam, _cloudRadius, _selection.Mode == InteractionMode.Label && _selection.ActiveTool.HasVolume, _width, _height);
+            if (_suppressEscapeClose && !keyboard.IsKeyDown(ViewerKey.Escape))
+                _suppressEscapeClose = false;
+
+            bool shouldClose = _cameraInput.UpdateFrame(
+                dt,
+                keyboard,
+                _cam,
+                _cloudRadius,
+                _selection.Mode == InteractionMode.Label && _selection.ActiveTool.HasVolume,
+                _width,
+                _height,
+                !_suppressEscapeClose);
             _selection.UpdatePreview(dt);
             return shouldClose;
         }
@@ -113,7 +126,8 @@ namespace CloudScope
 
         public void KeyDown(ViewerKey key, bool ctrl, int mouseX, int mouseY)
         {
-            _selection.KeyDown(key, ctrl);
+            if (_selection.KeyDown(key, ctrl) && key == ViewerKey.Escape)
+                _suppressEscapeClose = true;
             if (key == ViewerKey.Space)
             {
                 _cam.PickDepthWindow(mouseX, mouseY, 11);
@@ -133,9 +147,6 @@ namespace CloudScope
 
             int drawCount = _pointRenderer.Render(frameData, ref view, ref proj, _cameraInput.PointSize, _cam.Hvs, _cloudRadius);
             _frameTiming.MarkMainDraw(drawCount);
-
-            if (_metalFrameLog && (++_metalFrameLogCounter % 60) == 0)
-                Console.WriteLine($"[Cam] Pivot: {_cam.Pivot.X:F1}, {_cam.Pivot.Y:F1}, {_cam.Pivot.Z:F1} | Hvs: {_cam.Hvs:F2} | Draw: {drawCount}");
 
             if (_selection.Points != null && _selection.Labels.Count > 0)
                 _highlightRenderer.Render(frameData, _selection.Points, _selection.Labels, ref view, ref proj, _cameraInput.PointSize);

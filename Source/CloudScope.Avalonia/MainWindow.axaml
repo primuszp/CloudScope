@@ -29,7 +29,7 @@
     <StackPanel DockPanel.Dock="Bottom" Margin="8" Spacing="8">
       <ListBox x:Name="HistoryList" Height="84" />
       <TextBox x:Name="CommandBox"
-               PlaceholderText="Command: SELECT B/S/C, LABELMODE, NAVIGATE, CONFIRM, CANCEL, STATUS" />
+               PlaceholderText="Command: SELECT/SEL, then B/S/C/U; Enter confirms, Esc cancels" />
     </StackPanel>
 
     <TextBlock x:Name="StatusText"
