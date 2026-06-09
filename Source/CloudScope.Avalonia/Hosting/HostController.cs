@@ -10,6 +10,7 @@ public sealed class HostController
     public event Action<string>? StatusChanged;
 
     public string Status => $"Points: {_renderedPointCount:N0} | {_viewerState}";
+    public string CommandPrompt => _embeddedHost?.CommandPrompt ?? "Command:";
 
     public void SetEmbeddedHost(IEmbeddedOpenTkNativeHost embeddedHost)
     {
@@ -45,7 +46,6 @@ public sealed class HostController
 
         if (publishResult && result.Length > 0)
             StatusChanged?.Invoke(result);
-
         return result;
     }
 

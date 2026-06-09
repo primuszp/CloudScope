@@ -595,7 +595,7 @@ namespace CloudScope.Platform.Metal.Rendering
             var (fnx, fny) = ScreenToNdc(fx, fy, camera.ViewportWidth, camera.ViewportHeight);
             var (tnx, tny) = ScreenToNdc(tx, ty, camera.ViewportWidth, camera.ViewportHeight);
             GripDescriptor grip = cyl.GetGrip(1);
-            bool hovered = cyl.HoveredHandle >= 0 && cyl.GetGrip(cyl.HoveredHandle).IsPrimary;
+            bool hovered = cyl.TryGetGrip(cyl.HoveredHandle, out GripDescriptor hoveredPrimary) && hoveredPrimary.IsPrimary;
             GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(grip, hovered, cyl.ActiveHandle == grip.Index);
             DrawLine(fnx, fny, tnx, tny, style.Color);
             DrawArrowHead(tnx, tny, fnx, fny, 0.02f, style.Color with { W = 1f });
@@ -633,12 +633,12 @@ namespace CloudScope.Platform.Metal.Rendering
                 }
                 if (write == 0) continue;
 
-                bool hovered = cyl.HoveredHandle >= 0
-                    && cyl.GetGrip(cyl.HoveredHandle).Kind == GripKind.RotationRing
-                    && cyl.GetGrip(cyl.HoveredHandle).Axis == axis;
-                bool active = cyl.ActiveHandle >= 0
-                    && cyl.GetGrip(cyl.ActiveHandle).Kind == GripKind.RotationRing
-                    && cyl.GetGrip(cyl.ActiveHandle).Axis == axis;
+                bool hovered = cyl.TryGetGrip(cyl.HoveredHandle, out GripDescriptor hoveredGrip)
+                    && hoveredGrip.Kind == GripKind.RotationRing
+                    && hoveredGrip.Axis == axis;
+                bool active = cyl.TryGetGrip(cyl.ActiveHandle, out GripDescriptor activeGrip)
+                    && activeGrip.Kind == GripKind.RotationRing
+                    && activeGrip.Axis == axis;
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveRing(hovered, AxisColor[axis], active);
                 DrawDynamic(_ringBuf, write / 3, MTLPrimitiveType.Line, style.Color);
             }

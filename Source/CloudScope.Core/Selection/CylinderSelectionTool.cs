@@ -26,7 +26,7 @@ namespace CloudScope.Selection
     {
         public override SelectionToolType ToolType    => SelectionToolType.Cylinder;
         public override int               HandleCount => 10;
-        public override IReadOnlyList<GripDescriptor> Grips => GripLayout;
+        public override IReadOnlyList<GripDescriptor> Grips => BuildGrips();
 
         public override bool HasVolume =>
             IsEditing && Radius > 1e-4f && HalfHeight > 1e-4f;
@@ -34,19 +34,22 @@ namespace CloudScope.Selection
         public float      Radius     { get; set; }
         public float      HalfHeight { get; set; }
         public override   Quaternion Rotation { get; set; } = DefaultRotation;
-        private static readonly GripDescriptor[] GripLayout =
+        private readonly GripDescriptor[] _grips = new GripDescriptor[10];
+
+        private IReadOnlyList<GripDescriptor> BuildGrips()
         {
-            new(0, GripKind.Center),
-            new(1, GripKind.HeightResize, 2,  1, true),
-            new(2, GripKind.HeightResize, 2, -1),
-            new(3, GripKind.RadiusResize, 0,  1),
-            new(4, GripKind.RadiusResize, 0, -1),
-            new(5, GripKind.RadiusResize, 1,  1),
-            new(6, GripKind.RadiusResize, 1, -1),
-            new(7, GripKind.RotationRing, 0),
-            new(8, GripKind.RotationRing, 1),
-            new(9, GripKind.RotationRing, 2),
-        };
+            _grips[0] = GripDescriptor.Center(0, Center);
+            _grips[1] = GripDescriptor.AlongAxis(1, GripKind.HeightResize, HandleWorldPosition(1), Axis, 2, 1, true);
+            _grips[2] = GripDescriptor.AlongAxis(2, GripKind.HeightResize, HandleWorldPosition(2), -Axis, 2, -1);
+            _grips[3] = GripDescriptor.Uniform(3, GripKind.RadiusResize, HandleWorldPosition(3), LocalX, 0, 1);
+            _grips[4] = GripDescriptor.Uniform(4, GripKind.RadiusResize, HandleWorldPosition(4), -LocalX, 0, -1);
+            _grips[5] = GripDescriptor.Uniform(5, GripKind.RadiusResize, HandleWorldPosition(5), LocalY, 1, 1);
+            _grips[6] = GripDescriptor.Uniform(6, GripKind.RadiusResize, HandleWorldPosition(6), -LocalY, 1, -1);
+            _grips[7] = GripDescriptor.Ring(7, Center, LocalX, 0);
+            _grips[8] = GripDescriptor.Ring(8, Center, LocalY, 1);
+            _grips[9] = GripDescriptor.Ring(9, Center, Axis, 2);
+            return _grips;
+        }
 
         // Rotate 90° around X: local Y → world Z (upright, Z is up in LiDAR coordinates)
         private static readonly Quaternion DefaultRotation = Quaternion.Identity;
@@ -59,8 +62,8 @@ namespace CloudScope.Selection
         // Ring radius: slightly larger than the cylinder for visual clarity
         public float RingRadius => MathF.Max(Radius, HalfHeight) * 1.35f;
 
-        public static bool IsRingHandle(int i) => GripLayout[i].Kind == GripKind.RotationRing;
-        public static int  RingAxis(int i)     => GripLayout[i].Axis;
+        public static bool IsRingHandle(int i) => i is >= 7 and <= 9;
+        public static int  RingAxis(int i)     => i - 7;
 
         // ── Drag/edit state ───────────────────────────────────────────────────
         private float      _editStartRadius;
@@ -124,9 +127,15 @@ namespace CloudScope.Selection
         {
             if (grip.Kind == GripKind.RotationRing)
                 return GripInteractionMath.RingScreenDistance(cam, Center, Rotation, grip.Axis, RingRadius, mx, my);
+            if (grip.Kind == GripKind.HeightResize)
+                return GripArrowSupport.ScreenHitDistance(
+                    GripArrowSupport.Create(grip, ArrowLength(grip)), cam, mx, my);
 
             return base.GetGripHitDistance(grip, mx, my, cam);
         }
+
+        public float ArrowLength(GripDescriptor grip) =>
+            MathF.Max(MathF.Max(Radius, HalfHeight) * (grip.IsPrimary ? 0.55f : 0.30f), 0.05f);
 
         // ── Handle drag ───────────────────────────────────────────────────────
 
@@ -157,20 +166,12 @@ namespace CloudScope.Selection
             {
                 case GripKind.Center:
                 {
-                    Center = _editStartCenter + GripInteractionMath.ComputeWorldDragDelta(
-                        cam,
-                        _editStartX,
-                        _editStartY,
-                        mx,
-                        my,
-                        _editViewZ);
+                    Center = _editStartCenter + GripManipulator3D.Translation(ActiveDragContext, cam, mx, my);
                     break;
                 }
                 case GripKind.HeightResize when grip.Sign > 0:
                 {
-                    float   proj = Vector3.Dot(
-                        GripInteractionMath.ComputeWorldDragDelta(cam, _editStartX, _editStartY, mx, my, _editViewZ),
-                        Axis);
+                    float proj = GripManipulator3D.AxisDistance(ActiveDragContext, cam, mx, my);
                     // Fixed end = bottom at drag start
                     Vector3 fixedEnd  = _editStartCenter - Axis * _editStartHalfHeight;
                     float   newHeight = MathF.Max(_editStartHalfHeight * 2f + proj, 0.02f);
@@ -180,9 +181,7 @@ namespace CloudScope.Selection
                 }
                 case GripKind.HeightResize:
                 {
-                    float   proj = Vector3.Dot(
-                        GripInteractionMath.ComputeWorldDragDelta(cam, _editStartX, _editStartY, mx, my, _editViewZ),
-                        Axis);
+                    float proj = -GripManipulator3D.AxisDistance(ActiveDragContext, cam, mx, my);
                     // Fixed end = top at drag start
                     Vector3 fixedEnd  = _editStartCenter + Axis * _editStartHalfHeight;
                     float   newHeight = MathF.Max(_editStartHalfHeight * 2f - proj, 0.02f);
@@ -192,8 +191,8 @@ namespace CloudScope.Selection
                 }
                 case GripKind.RadiusResize:
                 {
-                    float proj = GripInteractionMath.ProjectMouseDelta(_editStartX, _editStartY, mx, my, _radialScreenDir);
-                    Radius = MathF.Max(_editStartRadius * (1f + proj * MouseDragSensitivity), 0.01f);
+                    float factor = GripManipulator3D.ScreenScale(ActiveDragContext, cam, mx, my, MouseDragSensitivity);
+                    Radius = MathF.Max(_editStartRadius * factor, 0.01f);
                     break;
                 }
                 default:

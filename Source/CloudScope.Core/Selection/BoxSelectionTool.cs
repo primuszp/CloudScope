@@ -15,8 +15,6 @@ namespace CloudScope.Selection
     {
         public override SelectionToolType ToolType => SelectionToolType.Box;
         public override int HandleCount => 18;
-        public override IReadOnlyList<GripDescriptor> Grips => GripLayout;
-
         public override bool HasVolume =>
             Phase == ToolPhase.Editing && HalfExtents.LengthSquared > 1e-8f;
 
@@ -34,27 +32,8 @@ namespace CloudScope.Selection
         // 14:   center
         // 15-17: rotation rings (local X, Y, Z)
         public const int ExtrudeHandle = 5;
-        private static readonly GripDescriptor[] GripLayout =
-        {
-            new(0, GripKind.AxisResize, 0, -1),
-            new(1, GripKind.AxisResize, 0,  1),
-            new(2, GripKind.AxisResize, 1, -1),
-            new(3, GripKind.AxisResize, 1,  1),
-            new(4, GripKind.AxisResize, 2, -1),
-            new(5, GripKind.AxisResize, 2,  1, true),
-            new(6, GripKind.CornerResize),
-            new(7, GripKind.CornerResize),
-            new(8, GripKind.CornerResize),
-            new(9, GripKind.CornerResize),
-            new(10, GripKind.CornerResize),
-            new(11, GripKind.CornerResize),
-            new(12, GripKind.CornerResize),
-            new(13, GripKind.CornerResize),
-            new(14, GripKind.Center),
-            new(15, GripKind.RotationRing, 0),
-            new(16, GripKind.RotationRing, 1),
-            new(17, GripKind.RotationRing, 2),
-        };
+        private readonly GripDescriptor[] _grips = new GripDescriptor[18];
+        public override IReadOnlyList<GripDescriptor> Grips => BuildGrips();
 
         public static readonly Vector3[] HandleLocalPos = new Vector3[15];
         static BoxSelectionTool()
@@ -69,11 +48,33 @@ namespace CloudScope.Selection
             HandleLocalPos[14] = Vector3.Zero;
         }
 
-        public static bool IsFaceHandle(int i)   => GripLayout[i].Kind == GripKind.AxisResize;
-        public static bool IsCornerHandle(int i) => GripLayout[i].Kind == GripKind.CornerResize;
-        public static bool IsCenterHandle(int i) => GripLayout[i].Kind == GripKind.Center;
-        public static bool IsRingHandle(int i)   => GripLayout[i].Kind == GripKind.RotationRing;
-        public static int  RingAxis(int i)       => GripLayout[i].Axis;
+        public static bool IsFaceHandle(int i)   => i is >= 0 and <= 5;
+        public static bool IsCornerHandle(int i) => i is >= 6 and <= 13;
+        public static bool IsCenterHandle(int i) => i == 14;
+        public static bool IsRingHandle(int i)   => i is >= 15 and <= 17;
+        public static int  RingAxis(int i)       => i - 15;
+
+        private IReadOnlyList<GripDescriptor> BuildGrips()
+        {
+            Matrix3 invRot = Matrix3.Transpose(Matrix3.CreateFromQuaternion(Rotation));
+            for (int i = 0; i < 6; i++)
+            {
+                int axis = i / 2;
+                int sign = i % 2 == 0 ? -1 : 1;
+                _grips[i] = GripDescriptor.AlongAxis(i, GripKind.AxisResize, HandleWorldPosition(i),
+                    (invRot * HandleLocalPos[i]).Normalized(), axis, sign, i == ExtrudeHandle);
+            }
+            for (int i = 6; i < 14; i++)
+                _grips[i] = GripDescriptor.Uniform(i, GripKind.CornerResize, HandleWorldPosition(i),
+                    (HandleWorldPosition(i) - Center).Normalized());
+            _grips[14] = GripDescriptor.Center(14, Center);
+            for (int axis = 0; axis < 3; axis++)
+            {
+                Vector3 local = axis switch { 0 => Vector3.UnitX, 1 => Vector3.UnitY, _ => Vector3.UnitZ };
+                _grips[15 + axis] = GripDescriptor.Ring(15 + axis, Center, invRot * local, axis);
+            }
+            return _grips;
+        }
 
         public bool IsFlat => HalfExtents.Z < Math.Max(HalfExtents.X, HalfExtents.Y) * 0.05f;
 
@@ -151,14 +152,8 @@ namespace CloudScope.Selection
         protected override float GetGripHitDistance(GripDescriptor grip, int mx, int my, OrbitCamera cam)
         {
             if (grip.Kind == GripKind.AxisResize)
-            {
-                var (fx, fy, fb) = cam.WorldToScreen(HandleWorldPosition(grip.Index));
-                var (tx, ty, tb) = cam.WorldToScreen(FaceArrowTipWorldPosition(grip.Index));
-                if (fb && tb)
-                    return float.MaxValue;
-
-                return GripInteractionMath.SegmentDistance(mx, my, fx, fy, tx, ty);
-            }
+                return GripArrowSupport.ScreenHitDistance(
+                    GripArrowSupport.Create(grip, ArrowLength(grip)), cam, mx, my);
 
             if (grip.Kind == GripKind.RotationRing)
                 return RingScreenDistance(grip.Axis, mx, my, cam);
@@ -168,13 +163,21 @@ namespace CloudScope.Selection
 
         public override Vector3 HandleWorldPosition(int i)
         {
-            if (i >= 15) return Center;
+            if (i < 0 || i >= HandleCount)
+                return Center;
+            if (i >= HandleLocalPos.Length)
+                return Center;
             Vector4 wp = new Vector4(HandleLocalPos[i], 1f) * GetModelMatrix();
             return wp.Xyz;
         }
 
         public float ArrowWorldLength =>
             MathF.Max(MathF.Max(HalfExtents.X, HalfExtents.Y), HalfExtents.Z) * 0.22f;
+
+        public float ArrowLength(GripDescriptor grip) =>
+            grip.IsPrimary && IsFlat
+                ? MathF.Max(HalfExtents.X, HalfExtents.Y) * 0.55f
+                : ArrowWorldLength;
 
         public Vector3 FaceArrowTipWorldPosition(int i)
         {
@@ -200,13 +203,7 @@ namespace CloudScope.Selection
                 return;
             }
 
-            Vector3 worldDelta = GripInteractionMath.ComputeWorldDragDelta(
-                cam,
-                _editStartX,
-                _editStartY,
-                mx,
-                my,
-                _editViewZ);
+            Vector3 worldDelta = GripManipulator3D.Translation(ActiveDragContext, cam, mx, my);
 
             if (IsCenterHandle(_activeHandle))
             {
@@ -238,6 +235,8 @@ namespace CloudScope.Selection
             }
             else // corner
             {
+                if (_activeHandle < 0 || _activeHandle >= HandleLocalPos.Length)
+                    return;
                 Vector3 cs = HandleLocalPos[_activeHandle];
                 Vector3 de = new Vector3(localDelta.X * cs.X, localDelta.Y * cs.Y, localDelta.Z * cs.Z);
 

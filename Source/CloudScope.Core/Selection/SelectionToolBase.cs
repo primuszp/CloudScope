@@ -31,6 +31,7 @@ namespace CloudScope.Selection
         public bool IsHandleDragging => _activeHandle >= 0;
         protected int _activeHandle  = HoverNone;
         private GripDescriptor _activeGrip;
+        protected GripDragContext ActiveDragContext { get; private set; }
 
         // ── Shared edit state ─────────────────────────────────────────────────
         protected int        _editStartX, _editStartY;
@@ -57,6 +58,12 @@ namespace CloudScope.Selection
 
         public bool TryGetGrip(int handle, out GripDescriptor grip)
         {
+            if (handle < 0 || handle >= HandleCount)
+            {
+                grip = default;
+                return false;
+            }
+
             foreach (GripDescriptor candidate in Grips)
             {
                 if (candidate.Index == handle)
@@ -99,7 +106,7 @@ namespace CloudScope.Selection
             if (grip.Kind == GripKind.RotationRing)
                 return float.MaxValue;
 
-            return GripHitTestSupport.PointDistance(cam, HandleWorldPosition(grip.Index), mx, my);
+            return GripManipulator3D.PointHitDistance(grip, cam, mx, my);
         }
 
         public virtual void BeginHandleDrag(int handle, int mx, int my, OrbitCamera cam)
@@ -116,7 +123,8 @@ namespace CloudScope.Selection
             _editStartX      = mx;
             _editStartY      = my;
             _editStartCenter = Center;
-            _editViewZ       = cam.WorldToViewZ(HandleWorldPosition(grip.Index));
+            _editViewZ       = cam.WorldToViewZ(grip.Position);
+            ActiveDragContext = new GripDragContext(grip, Center, mx, my, _editViewZ);
             OnBeginHandleDragExtra(grip.Index, mx, my, cam);
         }
         protected virtual void OnBeginHandleDragExtra(int handle, int mx, int my, OrbitCamera cam) { }
@@ -158,7 +166,10 @@ namespace CloudScope.Selection
 
         protected virtual void UpdateRingDrag(int mx, int my, OrbitCamera cam)
         {
-            int axis = GetGrip(_activeHandle).Axis;
+            if (!TryGetGrip(_activeHandle, out GripDescriptor grip) || grip.Axis is < 0 or > 2)
+                return;
+
+            int axis = grip.Axis;
             Rotation = GripInteractionMath.RotateAroundRingDrag(
                 cam, Center, _editStartRotation, axis, _editStartX, _editStartY, mx, my);
         }

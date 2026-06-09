@@ -2,6 +2,7 @@ namespace CloudScope.Avalonia.Hosting;
 
 public interface IEmbeddedOpenTkNativeHost
 {
+    string CommandPrompt { get; }
     void LoadPointCloud(PointData[] points, float radius);
 
     string ExecuteViewerCommand(string commandText);

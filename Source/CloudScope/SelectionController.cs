@@ -22,37 +22,6 @@ namespace CloudScope
         private PointData[]? _points;
         private string _lasFilePath    = "";
 
-        private static readonly Dictionary<ViewerKey, SelectionToolType> ToolSwitchMap = new()
-        {
-            [ViewerKey.D1] = SelectionToolType.Box,
-            [ViewerKey.D2] = SelectionToolType.Sphere,
-            [ViewerKey.D3] = SelectionToolType.Cylinder,
-        };
-
-        private static readonly Dictionary<ViewerKey, string> LabelPresetMap = new()
-        {
-            [ViewerKey.D4] = "Ground",
-            [ViewerKey.D5] = "Building",
-            [ViewerKey.D6] = "Vegetation",
-            [ViewerKey.D7] = "Vehicle",
-            [ViewerKey.D8] = "Road",
-            [ViewerKey.D9] = "Water",
-        };
-
-        private static readonly Dictionary<ViewerKey, EditAction> EditActionMap = new()
-        {
-            [ViewerKey.G] = EditAction.Grab,
-            [ViewerKey.S] = EditAction.Scale,
-            [ViewerKey.R] = EditAction.Rotate,
-        };
-
-        private static readonly Dictionary<ViewerKey, int> AxisConstraintMap = new()
-        {
-            [ViewerKey.X] = 0,
-            [ViewerKey.Y] = 1,
-            [ViewerKey.Z] = 2,
-        };
-
         public SelectionController(Action labelsChanged, Action<string>? log = null)
         {
             ISelectionTool[] tools =
@@ -198,20 +167,7 @@ namespace CloudScope
 
         public bool MouseWheel(float delta)
         {
-            if (Mode != InteractionMode.Label)
-                return false;
-
-            var tool = ActiveTool;
-            if (!tool.IsEditing || _interactionState != SelectionInteractionState.Editing)
-                return false;
-
-            float wheelStep = Math.Clamp(delta, -1f, 1f);
-            if (wheelStep == 0f)
-                return true;
-
-            tool.AdjustScale(wheelStep);
-            _previewTimer = PreviewInterval;
-            return true;
+            return false;
         }
 
         public void UpdatePreview(float dt)
@@ -239,12 +195,6 @@ namespace CloudScope
 
         public bool KeyDown(ViewerKey key, bool ctrl)
         {
-            if (key == ViewerKey.L)
-            {
-                SetMode(Mode == InteractionMode.Navigate ? InteractionMode.Label : InteractionMode.Navigate);
-                return true;
-            }
-
             if (key == ViewerKey.Escape && Mode == InteractionMode.Label)
             {
                 CancelOrExitLabelMode();
@@ -254,25 +204,6 @@ namespace CloudScope
             if (Mode != InteractionMode.Label)
                 return false;
 
-            if (ctrl)
-            {
-                HandleControlShortcut(key);
-                return true;
-            }
-
-            if (key == ViewerKey.Enter && ActiveTool.IsEditing)
-            {
-                ConfirmActiveSelection();
-                return true;
-            }
-
-            if (ActiveTool.IsEditing)
-                HandleEditShortcut(key);
-
-            if (!ActiveTool.IsEditing && !ActiveTool.IsActive)
-                HandleToolSwitch(key);
-
-            HandleLabelShortcut(key);
             return true;
         }
 
@@ -325,6 +256,7 @@ namespace CloudScope
 
             ActiveTool.Confirm();
             _pendingAction = EditAction.None;
+            Mode = InteractionMode.Navigate;
             SetRestingInteractionState();
         }
 
@@ -388,50 +320,16 @@ namespace CloudScope
             return true;
         }
 
-        private void HandleEditShortcut(ViewerKey key)
+        public bool SaveLabels() => !string.IsNullOrEmpty(_lasFilePath) && SaveLabelsCore();
+
+        public bool LoadLabels() => !string.IsNullOrEmpty(_lasFilePath) && LabelFileIO.Load(_lasFilePath, _labelManager);
+
+        public void ClearLabels() => _labelManager.ClearAll();
+
+        private bool SaveLabelsCore()
         {
-            if (EditActionMap.TryGetValue(key, out EditAction action))
-            {
-                _pendingAction = action;
-                string hint = action switch
-                {
-                    EditAction.Grab   => "Grab — left-click + drag to move",
-                    EditAction.Scale  => "Scale — left-click + drag to resize",
-                    EditAction.Rotate => "Rotate — left-click + drag to rotate",
-                    _                 => action.ToString()
-                };
-                _log(hint);
-            }
-
-            if (AxisConstraintMap.TryGetValue(key, out int axis))
-            {
-                ActiveTool.SetAxisConstraint(axis);
-                _log($"Constraint: {key} axis");
-            }
-        }
-
-        private void HandleControlShortcut(ViewerKey key)
-        {
-            if (key == ViewerKey.Z && _labelManager.Undo())
-                _log($"Undo — labels: {_labelManager.Count}");
-
-            if (key == ViewerKey.S && !string.IsNullOrEmpty(_lasFilePath))
-                LabelFileIO.Save(_lasFilePath, _labelManager);
-
-            if (key == ViewerKey.O && !string.IsNullOrEmpty(_lasFilePath))
-                LabelFileIO.Load(_lasFilePath, _labelManager);
-        }
-
-        private void HandleToolSwitch(ViewerKey key)
-        {
-            if (ToolSwitchMap.TryGetValue(key, out SelectionToolType toolType))
-                SetTool(toolType);
-        }
-
-        private void HandleLabelShortcut(ViewerKey key)
-        {
-            if (LabelPresetMap.TryGetValue(key, out string? label))
-                SetLabel(label);
+            LabelFileIO.Save(_lasFilePath, _labelManager);
+            return true;
         }
     }
 }

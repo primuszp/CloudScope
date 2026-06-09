@@ -1,42 +1,208 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:local="using:CloudScope.Avalonia"
         x:Class="CloudScope.Avalonia.MainWindow"
-        Title="CloudScope Avalonia"
-        Width="1280"
-        Height="800"
-        MinWidth="900"
-        MinHeight="560">
-  <DockPanel>
-    <Menu x:Name="MainMenuBar" DockPanel.Dock="Top">
-      <MenuItem Header="_Host">
-        <MenuItem x:Name="OpenLasMenuItem" Header="_Open LAS..." />
-        <MenuItem x:Name="StatusMenuItem" Header="_Status" />
-        <MenuItem x:Name="ResetMenuItem" Header="_Reset Host" />
+        Title="CloudScope — Point Cloud Workspace"
+        Width="1440"
+        Height="900"
+        MinWidth="1040"
+        MinHeight="680"
+        Background="#1E2228"
+        FontFamily="Segoe UI, Arial">
+  <Window.Styles>
+    <Style Selector="Menu">
+      <Setter Property="Background" Value="#242A31" />
+      <Setter Property="Foreground" Value="#E4E9EE" />
+    </Style>
+    <Style Selector="MenuItem">
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="Button.tool">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="#D9E0E7" />
+      <Setter Property="BorderBrush" Value="#3E4852" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="2" />
+      <Setter Property="Padding" Value="9,5" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="Button.tool:pointerover">
+      <Setter Property="Background" Value="#39434D" />
+    </Style>
+    <Style Selector="Button.commandChip">
+      <Setter Property="Background" Value="#303942" />
+      <Setter Property="Foreground" Value="#D8E0E7" />
+      <Setter Property="BorderBrush" Value="#46515C" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="2" />
+      <Setter Property="Padding" Value="8,3" />
+      <Setter Property="FontSize" Value="11" />
+    </Style>
+    <Style Selector="TextBlock.sectionTitle">
+      <Setter Property="Foreground" Value="#AAB6C2" />
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="TextBlock.propertyName">
+      <Setter Property="Foreground" Value="#9DA9B5" />
+      <Setter Property="FontSize" Value="11" />
+    </Style>
+    <Style Selector="TextBlock.propertyValue">
+      <Setter Property="Foreground" Value="#E0E6EC" />
+      <Setter Property="FontSize" Value="11" />
+    </Style>
+  </Window.Styles>
+
+  <Grid RowDefinitions="30,58,*,146,24">
+    <Menu x:Name="MainMenuBar" Grid.Row="0">
+      <MenuItem Header="_File">
+        <MenuItem x:Name="OpenLasMenuItem" Header="_Open point cloud..." InputGesture="Ctrl+O" />
+        <Separator />
         <MenuItem x:Name="ExitMenuItem" Header="E_xit" />
       </MenuItem>
-      <MenuItem Header="_Viewer">
+      <MenuItem Header="_Home">
         <MenuItem x:Name="NavigateMenuItem" Header="_Navigate" />
-        <MenuItem x:Name="LabelModeMenuItem" Header="_Label Mode" />
-        <MenuItem x:Name="BoxMenuItem" Header="_Box" />
-        <MenuItem x:Name="SphereMenuItem" Header="_Sphere" />
-        <MenuItem x:Name="CylinderMenuItem" Header="_Cylinder" />
+        <MenuItem x:Name="LabelModeMenuItem" Header="_Label mode" />
+        <Separator />
+        <MenuItem x:Name="BoxMenuItem" Header="_Box selection" />
+        <MenuItem x:Name="SphereMenuItem" Header="_Sphere selection" />
+        <MenuItem x:Name="CylinderMenuItem" Header="_Cylinder selection" />
+      </MenuItem>
+      <MenuItem Header="_Edit">
         <MenuItem x:Name="ConfirmMenuItem" Header="_Confirm" />
         <MenuItem x:Name="CancelMenuItem" Header="_Cancel" />
       </MenuItem>
+      <MenuItem Header="_View">
+        <MenuItem x:Name="StatusMenuItem" Header="_Status" />
+        <MenuItem x:Name="ResetMenuItem" Header="_Reset host" />
+      </MenuItem>
     </Menu>
 
-    <StackPanel DockPanel.Dock="Bottom" Margin="8" Spacing="8">
-      <ListBox x:Name="HistoryList" Height="84" />
-      <TextBox x:Name="CommandBox"
-               PlaceholderText="Command: SELECT/SEL, then B/S/C/U; Enter confirms, Esc cancels" />
-    </StackPanel>
+    <Border Grid.Row="1" Background="#2B323A" BorderBrush="#12161A" BorderThickness="0,0,0,1">
+      <Grid ColumnDefinitions="Auto,1,Auto,1,Auto,*,Auto" Margin="8,5">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2">
+          <Button x:Name="OpenToolbarButton" Classes="tool" ToolTip.Tip="Open point cloud (Ctrl+O)">
+            <StackPanel>
+              <TextBlock Text="OPEN" Foreground="#4DB7E5" FontWeight="Bold" HorizontalAlignment="Center" />
+              <TextBlock Text="Point Cloud" FontSize="10" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button x:Name="NavigateToolbarButton" Classes="tool">
+            <StackPanel>
+              <TextBlock Text="PAN / ORBIT" Foreground="#D7DEE5" FontWeight="Bold" HorizontalAlignment="Center" />
+              <TextBlock Text="Navigate" FontSize="10" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+        <Border Grid.Column="1" Background="#4A555F" Margin="8,0" />
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
+          <Button x:Name="BoxToolbarButton" Classes="tool">
+            <StackPanel><TextBlock Text="▭" Foreground="#50BFE8" FontSize="20" HorizontalAlignment="Center" /><TextBlock Text="Box" FontSize="10" /></StackPanel>
+          </Button>
+          <Button x:Name="SphereToolbarButton" Classes="tool">
+            <StackPanel><TextBlock Text="○" Foreground="#50BFE8" FontSize="20" HorizontalAlignment="Center" /><TextBlock Text="Sphere" FontSize="10" /></StackPanel>
+          </Button>
+          <Button x:Name="CylinderToolbarButton" Classes="tool">
+            <StackPanel><TextBlock Text="◉" Foreground="#50BFE8" FontSize="20" HorizontalAlignment="Center" /><TextBlock Text="Cylinder" FontSize="10" /></StackPanel>
+          </Button>
+        </StackPanel>
+        <Border Grid.Column="3" Background="#4A555F" Margin="8,0" />
+        <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="2">
+          <Button x:Name="ConfirmToolbarButton" Classes="tool">
+            <StackPanel><TextBlock Text="✓" Foreground="#72D391" FontSize="20" HorizontalAlignment="Center" /><TextBlock Text="Confirm" FontSize="10" /></StackPanel>
+          </Button>
+          <Button x:Name="CancelToolbarButton" Classes="tool">
+            <StackPanel><TextBlock Text="×" Foreground="#EF7B7B" FontSize="20" HorizontalAlignment="Center" /><TextBlock Text="Cancel" FontSize="10" /></StackPanel>
+          </Button>
+        </StackPanel>
+        <TextBlock Grid.Column="6" Text="CLOUDSCOPE  ·  POINT CLOUD" Foreground="#8795A2"
+                   FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center" Margin="16,0" />
+      </Grid>
+    </Border>
 
-    <TextBlock x:Name="StatusText"
-               DockPanel.Dock="Bottom"
-               Margin="8,2"
-               VerticalAlignment="Center" />
+    <Grid Grid.Row="2" ColumnDefinitions="*,236">
+      <Border Background="#11171C" BorderBrush="#0A0D10" BorderThickness="0,0,1,0">
+        <Grid>
+          <ContentControl x:Name="ViewportHost" />
+          <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12"
+                  Background="#B8181E24" BorderBrush="#51606C" BorderThickness="1" CornerRadius="2" Padding="8,5">
+            <StackPanel>
+              <TextBlock Text="[ TOP ]" Foreground="#E0E7ED" FontSize="11" FontWeight="SemiBold" />
+              <TextBlock Text="2D WIREFRAME" Foreground="#8595A3" FontSize="9" />
+            </StackPanel>
+          </Border>
+          <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12"
+                  Background="#B8181E24" BorderBrush="#51606C" BorderThickness="1" CornerRadius="2" Padding="8">
+            <StackPanel Spacing="4">
+              <TextBlock Text="   TOP" Foreground="#D5DDE4" FontSize="9" HorizontalAlignment="Center" />
+              <TextBlock Text="LEFT  ◇  RIGHT" Foreground="#7991A3" FontSize="9" />
+              <TextBlock Text="  FRONT" Foreground="#D5DDE4" FontSize="9" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Border>
+          <StackPanel HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="12" Spacing="2">
+            <TextBlock Text="Y" Foreground="#69D488" FontWeight="Bold" FontSize="11" />
+            <TextBlock Text="└── X" Foreground="#E16D6D" FontWeight="Bold" FontSize="11" />
+          </StackPanel>
+        </Grid>
+      </Border>
 
-    <ContentControl x:Name="ViewportHost" />
-  </DockPanel>
+      <Border Grid.Column="1" Background="#252C33" Padding="10">
+        <StackPanel Spacing="10">
+          <TextBlock Text="PROPERTIES" Classes="sectionTitle" />
+          <Border Height="1" Background="#46515B" />
+          <Grid ColumnDefinitions="94,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="7">
+            <TextBlock Grid.Row="0" Text="Mode" Classes="propertyName" />
+            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="ModePropertyText" Text="Navigate" Classes="propertyValue" />
+            <TextBlock Grid.Row="1" Text="Selection" Classes="propertyName" />
+            <TextBlock Grid.Row="1" Grid.Column="1" Text="None" Classes="propertyValue" />
+            <TextBlock Grid.Row="2" Text="Layer" Classes="propertyName" />
+            <TextBlock Grid.Row="2" Grid.Column="1" Text="Point Cloud" Classes="propertyValue" />
+            <TextBlock Grid.Row="3" Text="Color" Classes="propertyName" />
+            <TextBlock Grid.Row="3" Grid.Column="1" Text="Classification" Classes="propertyValue" />
+            <TextBlock Grid.Row="4" Text="Point size" Classes="propertyName" />
+            <TextBlock Grid.Row="4" Grid.Column="1" Text="1.0 px" Classes="propertyValue" />
+          </Grid>
+          <TextBlock Text="COMMAND ALIASES" Classes="sectionTitle" Margin="0,10,0,0" />
+          <TextBlock Text="B  Box selection&#10;S  Sphere selection&#10;C  Cylinder selection&#10;U  Undo&#10;Esc  Cancel"
+                     Foreground="#9FAAB4" FontFamily="Cascadia Mono, Consolas" FontSize="10" LineHeight="18" />
+        </StackPanel>
+      </Border>
+    </Grid>
+
+    <Border Grid.Row="3" Background="#171C21" BorderBrush="#4A5661" BorderThickness="0,1,0,1">
+      <Grid RowDefinitions="24,*,34">
+        <Grid Background="#222930" ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Text="COMMAND LINE" Foreground="#C4CDD5" FontSize="10" FontWeight="SemiBold"
+                     VerticalAlignment="Center" Margin="10,0" />
+          <TextBlock Grid.Column="2" Text="F2  EXPAND HISTORY" Foreground="#74828E" FontSize="9"
+                     VerticalAlignment="Center" Margin="10,0" />
+        </Grid>
+        <TextBox x:Name="HistoryText" Grid.Row="1" Background="#171C21" BorderThickness="0"
+                 Foreground="#CAD3DB" FontFamily="Cascadia Mono, Consolas" FontSize="11"
+                 Padding="8,3" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto" />
+        <Border Grid.Row="2" Background="#20262C" BorderBrush="#4DB7E5" BorderThickness="2,1,0,0">
+          <Grid ColumnDefinitions="Auto,*">
+            <TextBlock x:Name="CommandPromptText" Text="Command:" Foreground="#E5EBF0" FontFamily="Cascadia Mono, Consolas"
+                       FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Margin="9,0,0,0" />
+            <TextBox x:Name="CommandBox" Grid.Column="1" Background="Transparent" BorderThickness="0"
+                     Foreground="#F0F4F7" CaretBrush="#51BDE8" FontFamily="Cascadia Mono, Consolas"
+                     FontSize="12" VerticalContentAlignment="Center"
+                     PlaceholderText="Type a command or press F1 for help" />
+          </Grid>
+        </Border>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="4" Background="#2585B8">
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+        <TextBlock Text="●  READY" Foreground="White" FontSize="10" VerticalAlignment="Center" Margin="9,0" />
+        <TextBlock x:Name="StatusText" Grid.Column="1" Foreground="White" FontSize="10"
+                   VerticalAlignment="Center" Margin="8,0" />
+        <TextBlock Grid.Column="2" Text="SNAP   GRID   ORTHO   POLAR" Foreground="#D9F1FC"
+                   FontSize="9" VerticalAlignment="Center" Margin="8,0" />
+        <TextBlock Grid.Column="3" Text="MODEL" Foreground="White" FontSize="10" FontWeight="Bold"
+                   VerticalAlignment="Center" Margin="12,0" />
+      </Grid>
+    </Border>
+  </Grid>
 </Window>

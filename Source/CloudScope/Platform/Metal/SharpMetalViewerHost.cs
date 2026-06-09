@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using CloudScope.Platform.Metal.ObjC;
 using CloudScope.Rendering;
+using CloudScope.Ui;
 using SharpMetal.Foundation;
 using SharpMetal.Metal;
 using SharpMetal.ObjectiveCCore;
@@ -15,6 +16,7 @@ namespace CloudScope.Platform.Metal
     internal sealed class SharpMetalViewerHost : IViewerHost
     {
         private readonly ViewerController      _controller;
+        private readonly ViewerCommandDispatcher _commandDispatcher;
         private readonly NSApplication         _app;
         private readonly NSApplicationDelegate _appDelegate;
         private MTLDevice?       _device;
@@ -34,6 +36,7 @@ namespace CloudScope.Platform.Metal
         public SharpMetalViewerHost(int width, int height, IRenderBackend renderBackend)
         {
             _controller = new ViewerController(width, height, renderBackend);
+            _commandDispatcher = new ViewerCommandDispatcher(_controller);
             ObjectiveC.LinkMetal();
             ObjectiveC.LinkCoreGraphics();
             ObjectiveC.LinkAppKit();
@@ -187,7 +190,8 @@ namespace CloudScope.Platform.Metal
             int mx = _lastMouseX, my = _lastMouseY;
             _keyboard.KeyDown(key);
             bool ctrl = _keyboard.IsKeyDown(ViewerKey.LeftControl) || _keyboard.IsKeyDown(ViewerKey.RightControl);
-            _controller.KeyDown(key, ctrl, mx, my);
+            if (!_commandDispatcher.TryExecuteShortcut(key, ctrl))
+                _controller.KeyDown(key, ctrl, mx, my);
         }
 
         private void RequestRedraw()
