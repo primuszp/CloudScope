@@ -73,9 +73,13 @@ namespace CloudScope
         public void SetLasFilePath(string path) => _controller.SetLasFilePath(path);
 
         public string ExecuteCommand(string commandText) => _commandDispatcher.Execute(commandText);
+        public string CommandPrompt => _commandDispatcher.CurrentPrompt;
 
-        public void ForwardKeyDown(ViewerKey key, bool ctrl, int mouseX, int mouseY) =>
-            _controller.KeyDown(key, ctrl, mouseX, mouseY);
+        public void ForwardKeyDown(ViewerKey key, bool ctrl, int mouseX, int mouseY)
+        {
+            if (!_commandDispatcher.TryExecuteShortcut(key, ctrl))
+                _controller.KeyDown(key, ctrl, mouseX, mouseY);
+        }
 
         protected override void OnLoad()
         {
@@ -149,12 +153,22 @@ namespace CloudScope
         {
             base.OnKeyDown(e);
 #if ENABLE_IMGUI
+            if (_commandLine != null && e.Key is Keys.Enter or Keys.Space)
+            {
+                _commandLine.Submit();
+                return;
+            }
+            if (_commandLine != null && e.Key == Keys.Escape && _imgui?.WantsKeyboard == true)
+            {
+                _commandLine.Cancel();
+                return;
+            }
             if (_imgui?.WantsKeyboard == true)
                 return;
 #endif
 
             bool ctrl = KeyboardState.IsKeyDown(Keys.LeftControl) || KeyboardState.IsKeyDown(Keys.RightControl);
-            _controller.KeyDown(ToViewerKey(e.Key), ctrl,
+            ForwardKeyDown(ToViewerKey(e.Key), ctrl,
                 ToPhysicalX(CurrentLogicalMouseX), ToPhysicalY(CurrentLogicalMouseY));
         }
 
@@ -226,5 +240,6 @@ namespace CloudScope
 
             return ViewerKey.Unknown;
         }
+
     }
 }

@@ -147,30 +147,22 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
         private void RenderExtrudeArrow(CylinderSelectionTool cyl, OrbitCamera cam)
         {
-            Vector3 topPos = cyl.HandleWorldPosition(1);
-            Vector3 tipPos = topPos + cyl.Axis * MathF.Max(cyl.Radius * 0.55f, 0.05f);
+            GripDescriptor grip = cyl.GetGrip(1);
+            GripArrow3D arrow = GripArrowSupport.Create(grip, cyl.ArrowLength(grip));
 
-            var (fx, fy, fb) = cam.WorldToScreen(topPos);
-            var (tx, ty, tb) = cam.WorldToScreen(tipPos);
+            var (fx, fy, fb) = cam.WorldToScreen(arrow.Start);
+            var (tx, ty, tb) = cam.WorldToScreen(arrow.Tip);
             if (fb || tb) return;
 
             float   vpW    = cam.ViewportWidth, vpH = cam.ViewportHeight;
-            var (fnx, fny) = ScreenToNdc(fx, fy, vpW, vpH);
-            var (tnx, tny) = ScreenToNdc(tx, ty, vpW, vpH);
-            GripDescriptor grip = cyl.GetGrip(1);
             GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(
                 grip,
-                cyl.HoveredHandle >= 0 && cyl.GetGrip(cyl.HoveredHandle).IsPrimary,
+                cyl.TryGetGrip(cyl.HoveredHandle, out GripDescriptor hoveredPrimary) && hoveredPrimary.IsPrimary,
                 cyl.ActiveHandle == grip.Index);
 
             BeginScreenSpaceRender();
 
-            DrawLine(fnx, fny, tnx, tny);
-            SetColor(style.Color);
-            GL.LineWidth(style.LineWidth);
-            GL.DrawArrays(PrimitiveType.Lines, 0, 2);
-
-            DrawArrowHead(tnx, tny, fnx, fny, 0.02f, style.Color with { W = 1f });
+            DrawProfessionalArrow(fx, fy, tx, ty, vpW, vpH, style.Color, MathF.Max(style.LineWidth, 3f));
 
             EndScreenSpaceRender();
         }
@@ -188,12 +180,12 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
             for (int axis = 0; axis < 3; axis++)
             {
-                bool hov = cyl.HoveredHandle >= 0
-                    && cyl.GetGrip(cyl.HoveredHandle).Kind == GripKind.RotationRing
-                    && cyl.GetGrip(cyl.HoveredHandle).Axis == axis;
-                bool active = cyl.ActiveHandle >= 0
-                    && cyl.GetGrip(cyl.ActiveHandle).Kind == GripKind.RotationRing
-                    && cyl.GetGrip(cyl.ActiveHandle).Axis == axis;
+                bool hov = cyl.TryGetGrip(cyl.HoveredHandle, out GripDescriptor hoveredGrip)
+                    && hoveredGrip.Kind == GripKind.RotationRing
+                    && hoveredGrip.Axis == axis;
+                bool active = cyl.TryGetGrip(cyl.ActiveHandle, out GripDescriptor activeGrip)
+                    && activeGrip.Kind == GripKind.RotationRing
+                    && activeGrip.Axis == axis;
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveRing(hov, AxisColor[axis], active);
                 GL.LineWidth(style.LineWidth);
 
@@ -244,7 +236,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
                     continue;
 
                 int i = grip.Index;
-                var (sx, sy, behind) = cam.WorldToScreen(cyl.HandleWorldPosition(i));
+                var (sx, sy, behind) = cam.WorldToScreen(grip.Position);
                 if (behind) continue;
 
                 var (nx, ny) = ScreenToNdc(sx, sy, vpW, vpH);

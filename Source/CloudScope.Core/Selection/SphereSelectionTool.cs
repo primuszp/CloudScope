@@ -22,22 +22,26 @@ namespace CloudScope.Selection
     {
         public override SelectionToolType ToolType  => SelectionToolType.Sphere;
         public override int               HandleCount => 7;
-        public override IReadOnlyList<GripDescriptor> Grips => GripLayout;
+        public override IReadOnlyList<GripDescriptor> Grips => BuildGrips();
 
         public override bool HasVolume =>
             (IsActive || IsEditing) && Radius > 1e-4f;
 
         public float Radius { get; set; }
-        private static readonly GripDescriptor[] GripLayout =
+        private readonly GripDescriptor[] _grips = new GripDescriptor[7];
+
+        private IReadOnlyList<GripDescriptor> BuildGrips()
         {
-            new(0, GripKind.Center),
-            new(1, GripKind.RadiusResize, 0,  1),
-            new(2, GripKind.RadiusResize, 0, -1),
-            new(3, GripKind.RadiusResize, 1,  1),
-            new(4, GripKind.RadiusResize, 1, -1),
-            new(5, GripKind.RadiusResize, 2,  1),
-            new(6, GripKind.RadiusResize, 2, -1),
-        };
+            _grips[0] = GripDescriptor.Center(0, Center);
+            for (int i = 1; i < 7; i++)
+            {
+                int axis = (i - 1) / 2;
+                int sign = i % 2 == 1 ? 1 : -1;
+                Vector3 direction = axis switch { 0 => Vector3.UnitX, 1 => Vector3.UnitY, _ => Vector3.UnitZ };
+                _grips[i] = GripDescriptor.Uniform(i, GripKind.RadiusResize, HandleWorldPosition(i), direction * sign, axis, sign);
+            }
+            return _grips;
+        }
 
         // ── Sphere-specific drag state ────────────────────────────────────────
         private float   _editStartRadius;
@@ -98,19 +102,12 @@ namespace CloudScope.Selection
             if (ActiveGrip.Kind == GripKind.Center)
             {
                 // Depth-correct world-space drag
-                Center = _editStartCenter + GripInteractionMath.ComputeWorldDragDelta(
-                    cam,
-                    _editStartX,
-                    _editStartY,
-                    mx,
-                    my,
-                    _editViewZ);
+                Center = _editStartCenter + GripManipulator3D.Translation(ActiveDragContext, cam, mx, my);
             }
             else
             {
                 // Project mouse delta onto pole's outward screen direction
-                float proj   = GripInteractionMath.ProjectMouseDelta(_editStartX, _editStartY, mx, my, _poleScreenDir);
-                float factor = 1f + proj * MouseDragSensitivity;
+                float factor = GripManipulator3D.ScreenScale(ActiveDragContext, cam, mx, my, MouseDragSensitivity);
                 Radius = MathF.Max(_editStartRadius * factor, 0.01f);
             }
         }

@@ -151,6 +151,33 @@ void main() { FragColor = uColor; }
             GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
         }
 
+        protected void DrawProfessionalArrow(
+            float startX,
+            float startY,
+            float tipX,
+            float tipY,
+            float viewportWidth,
+            float viewportHeight,
+            Vector4 color,
+            float lineWidth)
+        {
+            var (snx, sny) = ScreenToNdc(startX, startY, viewportWidth, viewportHeight);
+            var (tnx, tny) = ScreenToNdc(tipX, tipY, viewportWidth, viewportHeight);
+
+            DrawLine(snx, sny, tnx, tny);
+            SetColor(color with { W = 0.35f });
+            GL.LineWidth(lineWidth + 3f);
+            GL.DrawArrays(PrimitiveType.Lines, 0, 2);
+
+            DrawLine(snx, sny, tnx, tny);
+            SetColor(color with { W = 1f });
+            GL.LineWidth(lineWidth);
+            GL.DrawArrays(PrimitiveType.Lines, 0, 2);
+
+            DrawDiamondFill(snx, sny, 5f / viewportWidth, 5f / viewportHeight, color with { W = 1f });
+            DrawArrowHead(tnx, tny, snx, sny, 0.017f, color with { W = 1f });
+        }
+
         // ── Screen-space diamond handles ──────────────────────────────────────
 
         /// <summary>Draw diamond fill only (no outline), using pre-allocated buffer.</summary>

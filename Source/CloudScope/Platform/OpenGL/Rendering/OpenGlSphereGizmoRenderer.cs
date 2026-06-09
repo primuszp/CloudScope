@@ -106,7 +106,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
             foreach (GripDescriptor grip in sphere.Grips)
             {
                 int i = grip.Index;
-                var (sx, sy, behind) = cam.WorldToScreen(sphere.HandleWorldPosition(i));
+                var (sx, sy, behind) = cam.WorldToScreen(grip.Position);
                 if (behind) continue;
 
                 var (nx, ny) = ScreenToNdc(sx, sy, vpW, vpH);

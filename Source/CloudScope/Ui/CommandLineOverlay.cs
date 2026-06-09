@@ -1,5 +1,6 @@
 using System.Numerics;
 using CloudScope.Selection;
+using CloudScope.Commands;
 using ImGuiNET;
 
 namespace CloudScope.Ui
@@ -8,21 +9,31 @@ namespace CloudScope.Ui
     {
         private readonly ViewerController _viewer;
         private readonly ViewerCommandDispatcher _dispatcher;
-        private readonly List<string> _history = new();
+        private readonly CommandLineSession _session;
         private string _commandText = "";
         private bool _focusCommandLine;
+        private bool _submitRequested;
 
         public CommandLineOverlay(ViewerController viewer, ViewerCommandDispatcher dispatcher)
         {
             _viewer = viewer;
             _dispatcher = dispatcher;
-            _history.Add("Command line ready. Type HELP for commands.");
+            _session = dispatcher.Session;
         }
 
         public bool WantsKeyboard => ImGui.GetIO().WantCaptureKeyboard;
         public bool WantsMouse => ImGui.GetIO().WantCaptureMouse;
 
         public void FocusCommandLine() => _focusCommandLine = true;
+
+        public void Submit() => _submitRequested = true;
+
+        public void Cancel()
+        {
+            Execute("CANCEL");
+            _commandText = "";
+            _focusCommandLine = true;
+        }
 
         public void Render(int width, int height)
         {
@@ -38,26 +49,27 @@ namespace CloudScope.Ui
             if (ImGui.BeginMenu("File"))
             {
                 ImGui.MenuItem("Open LAS", null, false, false);
-                ImGui.MenuItem("Save Labels", "Ctrl+S");
+                if (ImGui.MenuItem("Save Labels")) Stage("SAVELABELS");
+                if (ImGui.MenuItem("Load Labels")) Stage("LOADLABELS");
                 ImGui.EndMenu();
             }
 
             if (ImGui.BeginMenu("Label"))
             {
-                if (ImGui.MenuItem("Box", "B")) Execute("SELECT B");
-                if (ImGui.MenuItem("Sphere")) Execute("SELECT S");
-                if (ImGui.MenuItem("Cylinder")) Execute("SELECT C");
+                if (ImGui.MenuItem("Box")) Stage("SELECT B");
+                if (ImGui.MenuItem("Sphere")) Stage("SELECT S");
+                if (ImGui.MenuItem("Cylinder")) Stage("SELECT C");
                 ImGui.Separator();
-                if (ImGui.MenuItem("Confirm", "Enter")) Execute("CONFIRM");
-                if (ImGui.MenuItem("Undo", "U")) Execute("UNDO");
-                if (ImGui.MenuItem("Cancel", "Esc")) Execute("CANCEL");
+                if (ImGui.MenuItem("Confirm")) Stage("CONFIRM");
+                if (ImGui.MenuItem("Undo")) Stage("UNDO");
+                if (ImGui.MenuItem("Cancel")) Stage("CANCEL");
                 ImGui.EndMenu();
             }
 
             if (ImGui.BeginMenu("Mode"))
             {
-                if (ImGui.MenuItem("Navigate", null, _viewer.Mode == InteractionMode.Navigate)) Execute("NAVIGATE");
-                if (ImGui.MenuItem("Label", null, _viewer.Mode == InteractionMode.Label)) Execute("LABELMODE");
+                if (ImGui.MenuItem("Navigate", null, _viewer.Mode == InteractionMode.Navigate)) Stage("NAVIGATE");
+                if (ImGui.MenuItem("Label", null, _viewer.Mode == InteractionMode.Label)) Stage("LABELMODE");
                 ImGui.EndMenu();
             }
 
@@ -82,12 +94,12 @@ namespace CloudScope.Ui
             ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(0.04f, 0.045f, 0.055f, 0.92f));
             ImGui.Begin("CloudScopeCommandLine", flags);
 
-            int start = Math.Max(0, _history.Count - 2);
-            for (int i = start; i < _history.Count; i++)
-                ImGui.TextUnformatted(_history[i]);
+            int start = Math.Max(0, _session.History.Count - 2);
+            for (int i = start; i < _session.History.Count; i++)
+                ImGui.TextUnformatted(_session.History[i]);
 
             ImGui.Separator();
-            ImGui.TextUnformatted("Command:");
+            ImGui.TextUnformatted(_dispatcher.CurrentPrompt);
             ImGui.SameLine();
             ImGui.SetNextItemWidth(-1f);
 
@@ -103,8 +115,9 @@ namespace CloudScope.Ui
                 256,
                 ImGuiInputTextFlags.EnterReturnsTrue);
 
-            if (submitted)
+            if (submitted || _submitRequested)
             {
+                _submitRequested = false;
                 Execute(_commandText);
                 _commandText = "";
                 _focusCommandLine = true;
@@ -117,13 +130,14 @@ namespace CloudScope.Ui
 
         private void Execute(string command)
         {
-            _history.Add(command.Length == 0 ? ">" : $"> {command.Trim()}");
-            string result = _dispatcher.Execute(command);
-            if (!string.IsNullOrWhiteSpace(result))
-                _history.Add(result);
+            _session.Submit(command);
+        }
 
-            while (_history.Count > 32)
-                _history.RemoveAt(0);
+        private void Stage(string command)
+        {
+            _session.Stage(command);
+            _commandText = command;
+            _focusCommandLine = true;
         }
     }
 }

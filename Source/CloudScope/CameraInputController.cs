@@ -36,17 +36,6 @@ namespace CloudScope
         {
             bool shouldClose = allowEscapeClose && keyboard.IsKeyPressed(ViewerKey.Escape);
 
-            if (keyboard.IsKeyPressed(ViewerKey.KeyPadAdd))
-                _pointSize = MathF.Min(_pointSize + 0.5f, 20f);
-            if (keyboard.IsKeyPressed(ViewerKey.KeyPadSubtract))
-                _pointSize = MathF.Max(_pointSize - 0.5f, 0.5f);
-
-            if (keyboard.IsKeyPressed(ViewerKey.KeyPad1)) camera.SetFrontView();
-            if (keyboard.IsKeyPressed(ViewerKey.KeyPad3)) camera.SetRightView();
-            if (keyboard.IsKeyPressed(ViewerKey.KeyPad7)) camera.SetTopView();
-            if (keyboard.IsKeyPressed(ViewerKey.KeyPad5)) camera.SetIsometric();
-            if (keyboard.IsKeyPressed(ViewerKey.Home)) camera.ResetView(cloudRadius);
-
             float moveSpeed = camera.NavigationScale * 2.0f * dt;
             if (keyboard.IsKeyDown(ViewerKey.LeftShift) || keyboard.IsKeyDown(ViewerKey.RightShift))
                 moveSpeed *= 5f;
@@ -70,6 +59,8 @@ namespace CloudScope
             UpdateInertia(camera, viewportWidth, viewportHeight);
             return shouldClose;
         }
+
+        public void SetPointSize(float size) => _pointSize = Math.Clamp(size, 0.5f, 20f);
 
         public void MouseDown(
             ViewerMouseButton button,

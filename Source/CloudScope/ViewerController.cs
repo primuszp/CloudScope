@@ -61,6 +61,8 @@ namespace CloudScope
         public SelectionInteractionState SelectionInteractionState => _selection.InteractionState;
         public SelectionToolType ActiveToolType => _selection.ActiveTool.ToolType;
         public bool HasActiveSelection => _selection.HasActiveSelection;
+        public double ZoomScale => _cam.Hvs;
+        public float PointSize => _cameraInput.PointSize;
 
         public void SetMode(InteractionMode mode) => _selection.SetMode(mode);
 
@@ -73,6 +75,41 @@ namespace CloudScope
         public void CancelOrExitLabelMode() => _selection.CancelOrExitLabelMode();
 
         public bool UndoSelectionCommand() => _selection.UndoSelectionCommand();
+
+        public void ZoomExtents() => _cam.ResetView(_cloudRadius);
+
+        public void ZoomByFactor(float factor)
+        {
+            _cam.PickDepthWindow(_width / 2, _height / 2, 11);
+            _cam.Zoom(_width / 2, _height / 2, factor);
+        }
+
+        public void ZoomCenter() => _cam.FocusOnCursor(_width / 2, _height / 2);
+
+        public void SetPointSize(float size) => _cameraInput.SetPointSize(size);
+
+        public void SetView(string view)
+        {
+            switch (view.ToUpperInvariant())
+            {
+                case "FRONT": _cam.SetFrontView(); break;
+                case "BACK": _cam.SetBackView(); break;
+                case "LEFT": _cam.SetLeftView(); break;
+                case "RIGHT": _cam.SetRightView(); break;
+                case "TOP": _cam.SetTopView(); break;
+                case "BOTTOM": _cam.SetBottomView(); break;
+                case "ISOMETRIC": _cam.SetIsometric(); break;
+                default: throw new ArgumentOutOfRangeException(nameof(view), view, "Unknown standard view.");
+            }
+        }
+
+        public void ToggleProjection() => _cam.ToggleProjection(_width / 2, _height / 2);
+
+        public bool SaveLabels() => _selection.SaveLabels();
+
+        public bool LoadLabels() => _selection.LoadLabels();
+
+        public void ClearLabels() => _selection.ClearLabels();
 
         public bool UpdateFrame(float dt, IViewerKeyboard keyboard)
         {
@@ -128,12 +165,6 @@ namespace CloudScope
         {
             if (_selection.KeyDown(key, ctrl) && key == ViewerKey.Escape)
                 _suppressEscapeClose = true;
-            if (key == ViewerKey.Space)
-            {
-                _cam.PickDepthWindow(mouseX, mouseY, 11);
-                _cam.ToggleProjection(mouseX, mouseY);
-            }
-            if (key == ViewerKey.F) _cam.FocusOnCursor(mouseX, mouseY);
         }
 
         public void RenderFrame(double frameTime)

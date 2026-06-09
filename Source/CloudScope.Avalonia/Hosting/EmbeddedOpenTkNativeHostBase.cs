@@ -15,6 +15,7 @@ public abstract class EmbeddedOpenTkNativeHostBase : NativeControlHost, IEmbedde
     }
 
     protected EmbeddedOpenTkViewerHost? Viewer { get; private set; }
+    public string CommandPrompt => Viewer?.CommandPrompt ?? "Command:";
 
     public void LoadPointCloud(PointData[] points, float radius)
     {
