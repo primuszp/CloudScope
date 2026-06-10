@@ -150,15 +150,14 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
         private void RenderHeightArrows(CylinderSelectionTool cyl, OrbitCamera cam, Matrix4 vp)
         {
-            float wpp     = WorldUnitsPerPixel(cyl.Center, cam);
-            float coneLen = GripArrowSupport.ConeHeightPixels * wpp;
-            float coneRad = GripArrowSupport.ConeRadiusPixels * wpp;
-
             BeginWorldSpaceOverlay(ref vp);
 
             for (int gripIdx = 1; gripIdx <= 2; gripIdx++)
             {
                 GripDescriptor grip  = cyl.GetGrip(gripIdx);
+                float wpp     = WorldUnitsPerPixel(grip.Position, cam);
+                float coneLen = GripArrowSupport.ConeHeightPixels * wpp;
+                float coneRad = GripArrowSupport.ConeRadiusPixels * wpp;
                 float totPx  = grip.IsPrimary
                     ? GripArrowSupport.ArrowHeightPixels * 1.2f
                     : GripArrowSupport.ArrowHeightPixels;
@@ -181,19 +180,17 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
         private void RenderRadiusArrows(CylinderSelectionTool cyl, OrbitCamera cam, Matrix4 vp)
         {
-            float wpp     = WorldUnitsPerPixel(cyl.Center, cam);
-            float coneLen = GripArrowSupport.ConeHeightPixels * wpp;
-            float coneRad = GripArrowSupport.ConeRadiusPixels * wpp;
-            float arrowWu = GripArrowSupport.ArrowHeightPixels * wpp;
-
             BeginWorldSpaceOverlay(ref vp);
 
             foreach (GripDescriptor grip in cyl.Grips)
             {
                 if (grip.Kind != GripKind.RadiusResize) continue;
 
+                float wpp     = WorldUnitsPerPixel(grip.Position, cam);
+                float coneLen = GripArrowSupport.ConeHeightPixels * wpp;
+                float coneRad = GripArrowSupport.ConeRadiusPixels * wpp;
                 int         i     = grip.Index;
-                GripArrow3D arrow = GripArrowSupport.Create(grip, arrowWu);
+                GripArrow3D arrow = GripArrowSupport.Create(grip, GripArrowSupport.ArrowHeightPixels * wpp);
 
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
                     grip,

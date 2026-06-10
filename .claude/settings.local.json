@@ -21,7 +21,9 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:api.github.com)",
       "Bash(cat)",
-      "Bash(dotnet run *)"
+      "Bash(dotnet run *)",
+      "Skill(code-review)",
+      "Skill(code-review:*)"
     ]
   }
 }
