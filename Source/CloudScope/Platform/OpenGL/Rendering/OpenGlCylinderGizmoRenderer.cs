@@ -54,7 +54,8 @@ namespace CloudScope.Platform.OpenGL.Rendering
             RenderFill(mvp);
             RenderAxisLines(mvp);
             RenderWireframe(mvp);
-            RenderExtrudeArrow(cyl, cam);
+            RenderHeightArrows(cyl, cam);
+            RenderRadiusArrows(cyl, cam);
             RenderRings(cyl, cam);
             RenderHandles(cyl, cam);
 
@@ -143,26 +144,61 @@ namespace CloudScope.Platform.OpenGL.Rendering
             GL.Enable(EnableCap.DepthTest);
         }
 
-        // ── Layer 4: Extrude arrow (top cap → up) ─────────────────────────────
+        // ── Layer 4: Height arrows (top cap ↑ and bottom cap ↓) ──────────────
 
-        private void RenderExtrudeArrow(CylinderSelectionTool cyl, OrbitCamera cam)
+        private void RenderHeightArrows(CylinderSelectionTool cyl, OrbitCamera cam)
         {
-            GripDescriptor grip = cyl.GetGrip(1);
-            GripArrow3D arrow = GripArrowSupport.Create(grip, cyl.ArrowLength(grip));
-
-            var (fx, fy, fb) = cam.WorldToScreen(arrow.Start);
-            var (tx, ty, tb) = cam.WorldToScreen(arrow.Tip);
-            if (fb || tb) return;
-
-            float   vpW    = cam.ViewportWidth, vpH = cam.ViewportHeight;
-            GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(
-                grip,
-                cyl.TryGetGrip(cyl.HoveredHandle, out GripDescriptor hoveredPrimary) && hoveredPrimary.IsPrimary,
-                cyl.ActiveHandle == grip.Index);
-
+            float vpW = cam.ViewportWidth, vpH = cam.ViewportHeight;
             BeginScreenSpaceRender();
 
-            DrawProfessionalArrow(fx, fy, tx, ty, vpW, vpH, style.Color, MathF.Max(style.LineWidth, 3f));
+            for (int gripIdx = 1; gripIdx <= 2; gripIdx++)
+            {
+                GripDescriptor grip = cyl.GetGrip(gripIdx);
+                GripArrow3D arrow = GripArrowSupport.Create(grip, cyl.ArrowLength(grip));
+
+                var (fx, fy, fb) = cam.WorldToScreen(arrow.Start);
+                var (tx, ty, tb) = cam.WorldToScreen(arrow.Tip);
+                if (fb || tb) continue;
+
+                GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
+                    grip,
+                    gripIdx == cyl.HoveredHandle,
+                    emphasizePrimary: true,
+                    AxisColor[grip.Axis],
+                    gripIdx == cyl.ActiveHandle);
+
+                DrawProfessionalArrow(fx, fy, tx, ty, vpW, vpH, style.Color, MathF.Max(style.LineWidth, 3f));
+            }
+
+            EndScreenSpaceRender();
+        }
+
+        // ── Layer 4b: Radius arrows (±LocalX, ±LocalY) ───────────────────────
+
+        private void RenderRadiusArrows(CylinderSelectionTool cyl, OrbitCamera cam)
+        {
+            float vpW = cam.ViewportWidth, vpH = cam.ViewportHeight;
+            BeginScreenSpaceRender();
+
+            foreach (GripDescriptor grip in cyl.Grips)
+            {
+                if (grip.Kind != GripKind.RadiusResize) continue;
+
+                GripArrow3D arrow = GripArrowSupport.Create(grip, cyl.ArrowLength(grip));
+                var (fx, fy, fb) = cam.WorldToScreen(arrow.Start);
+                var (tx, ty, tb) = cam.WorldToScreen(arrow.Tip);
+                if (fb || tb) continue;
+
+                int i = grip.Index;
+                GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
+                    grip,
+                    i == cyl.HoveredHandle,
+                    emphasizePrimary: false,
+                    AxisColor[grip.Axis],
+                    i == cyl.ActiveHandle);
+
+                DrawProfessionalArrow(fx, fy, tx, ty, vpW, vpH, style.Color, MathF.Max(style.LineWidth, 2f));
+            }
 
             EndScreenSpaceRender();
         }
@@ -223,29 +259,21 @@ namespace CloudScope.Platform.OpenGL.Rendering
             EndScreenSpaceRender();
         }
 
-        // ── Layer 6: Handle diamonds ──────────────────────────────────────────
+        // ── Layer 6: Center handle diamond ───────────────────────────────────
 
         private void RenderHandles(CylinderSelectionTool cyl, OrbitCamera cam)
         {
             float vpW = cam.ViewportWidth, vpH = cam.ViewportHeight;
             BeginScreenSpaceRender();
 
-            foreach (GripDescriptor grip in cyl.Grips)
+            GripDescriptor center = cyl.GetGrip(0);
+            var (sx, sy, behind) = cam.WorldToScreen(center.Position);
+            if (!behind)
             {
-                if (grip.Kind == GripKind.RotationRing)
-                    continue;
-
-                int i = grip.Index;
-                var (sx, sy, behind) = cam.WorldToScreen(grip.Position);
-                if (behind) continue;
-
                 var (nx, ny) = ScreenToNdc(sx, sy, vpW, vpH);
                 float hx = 12f / vpW, hy = 12f / vpH;
-
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(
-                    grip,
-                    i == cyl.HoveredHandle,
-                    i == cyl.ActiveHandle);
+                    center, 0 == cyl.HoveredHandle, 0 == cyl.ActiveHandle);
                 DrawDiamond(nx, ny, hx, hy, style.Color);
             }
 
