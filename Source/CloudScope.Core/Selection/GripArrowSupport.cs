@@ -11,10 +11,6 @@ namespace CloudScope.Selection
         public const float ConeHeightPixels  = 22f;  // cone tip screen height
         public const float ConeRadiusPixels  =  9f;  // cone base screen radius
 
-        // Cone proportions relative to total arrow length — used for object-proportional arrows.
-        public const float ConeToArrowRatio   = ConeHeightPixels / ArrowHeightPixels; // 0.275
-        public const float RadiusToArrowRatio = ConeRadiusPixels / ArrowHeightPixels; // 0.1125
-
         public static GripArrow3D Create(GripDescriptor grip, float length) =>
             new(grip.Position, grip.Position + grip.Direction * MathF.Max(length, 0.01f));
 
