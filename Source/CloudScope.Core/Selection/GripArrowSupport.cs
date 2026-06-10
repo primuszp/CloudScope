@@ -29,28 +29,10 @@ namespace CloudScope.Selection
 
         /// <summary>
         /// Returns how many world-space units correspond to one screen pixel
-        /// at <paramref name="worldPos"/> depth.
+        /// at <paramref name="worldPos"/> depth. Delegates to the camera's analytic Hilton math.
         /// </summary>
         public static float WorldUnitsPerPixel(Vector3 worldPos, OrbitCamera cam)
-        {
-            var (sx0, sy0, b0) = cam.WorldToScreen(worldPos);
-            if (b0) return 0.001f;
-
-            const float step = 1f;
-            var (sx1, sy1, b1) = cam.WorldToScreen(worldPos + new Vector3(step, 0f, 0f));
-            if (!b1)
-            {
-                float d = MathF.Sqrt((sx1 - sx0) * (sx1 - sx0) + (sy1 - sy0) * (sy1 - sy0));
-                if (d > 0.5f) return step / d;
-            }
-            (sx1, sy1, b1) = cam.WorldToScreen(worldPos + new Vector3(0f, step, 0f));
-            if (!b1)
-            {
-                float d = MathF.Sqrt((sx1 - sx0) * (sx1 - sx0) + (sy1 - sy0) * (sy1 - sy0));
-                if (d > 0.5f) return step / d;
-            }
-            return 0.001f;
-        }
+            => cam.WorldUnitsPerPixel(worldPos);
 
         public static float ScreenHitDistance(
             GripArrow3D arrow,

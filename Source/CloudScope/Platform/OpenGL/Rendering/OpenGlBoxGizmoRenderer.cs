@@ -169,11 +169,11 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 if (grip.Kind != GripKind.AxisResize || grip.Axis is < 0 or > 2)
                     continue;
 
-                int         i      = grip.Index;
-                float       totLen = grip.IsPrimary && box.IsFlat
+                int   i      = grip.Index;
+                float totPx  = grip.IsPrimary && box.IsFlat
                     ? GripArrowSupport.ArrowHeightPixels * 1.3f
                     : GripArrowSupport.ArrowHeightPixels;
-                GripArrow3D arrow  = GripArrowSupport.CreateScreenSized(grip, cam, totLen);
+                GripArrow3D arrow = GripArrowSupport.Create(grip, totPx * wpp);
 
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
                     grip,

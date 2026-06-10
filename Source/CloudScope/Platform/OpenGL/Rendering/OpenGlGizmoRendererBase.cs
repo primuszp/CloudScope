@@ -174,10 +174,10 @@ void main() { FragColor = uColor; }
 
         /// <summary>
         /// Returns world-space units per screen pixel at <paramref name="worldPos"/> depth.
-        /// Used to build zoom-invariant arrow geometry.
+        /// Delegates to the camera's analytic Hilton math — no screen sampling.
         /// </summary>
         protected static float WorldUnitsPerPixel(Vector3 worldPos, OrbitCamera cam)
-            => GripArrowSupport.WorldUnitsPerPixel(worldPos, cam);
+            => cam.WorldUnitsPerPixel(worldPos);
 
         /// <summary>
         /// Draws a 3-D arrow from <paramref name="start"/> to <paramref name="tip"/>

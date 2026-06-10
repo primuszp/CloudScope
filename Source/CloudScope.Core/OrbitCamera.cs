@@ -437,6 +437,28 @@ namespace CloudScope
         }
 
         /// <summary>
+        /// Returns how many world-space units correspond to one screen pixel at the depth of
+        /// <paramref name="worldPoint"/>. Uses the Hilton projection math directly — no sampling.
+        /// Divide a desired pixel size by this value to get the matching world-space length.
+        /// </summary>
+        public float WorldUnitsPerPixel(Vector3 worldPoint)
+        {
+            Vector3 vp = WorldToView(worldPoint, _vtw);
+            if (iez == 0f)
+            {
+                // Orthographic: scale is constant, independent of depth
+                return 2f * (float)_hvs / _vpH;
+            }
+            else
+            {
+                float ez    = 1f / iez;
+                float depth = ez - vp.Z;          // effective depth (always > 0 in front of eye)
+                if (depth < 1e-4f) depth = 1e-4f;
+                return 2f * (float)_hvs * depth / (ez * _vpH);
+            }
+        }
+
+        /// <summary>
         /// Projects a world-space point to Normalized Device Coordinates (NDC).
         /// NDC x,y ∈ [-1,1], z = depth.  Returns (ndc, behindCamera).
         /// This avoids reading GL state — purely CPU math on cached matrices.

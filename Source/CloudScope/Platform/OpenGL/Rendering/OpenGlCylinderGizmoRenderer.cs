@@ -159,10 +159,10 @@ namespace CloudScope.Platform.OpenGL.Rendering
             for (int gripIdx = 1; gripIdx <= 2; gripIdx++)
             {
                 GripDescriptor grip  = cyl.GetGrip(gripIdx);
-                float totLen = grip.IsPrimary
+                float totPx  = grip.IsPrimary
                     ? GripArrowSupport.ArrowHeightPixels * 1.2f
                     : GripArrowSupport.ArrowHeightPixels;
-                GripArrow3D arrow = GripArrowSupport.CreateScreenSized(grip, cam, totLen);
+                GripArrow3D arrow = GripArrowSupport.Create(grip, totPx * wpp);
 
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
                     grip,
@@ -184,6 +184,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
             float wpp     = WorldUnitsPerPixel(cyl.Center, cam);
             float coneLen = GripArrowSupport.ConeHeightPixels * wpp;
             float coneRad = GripArrowSupport.ConeRadiusPixels * wpp;
+            float arrowWu = GripArrowSupport.ArrowHeightPixels * wpp;
 
             BeginWorldSpaceOverlay(ref vp);
 
@@ -192,7 +193,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 if (grip.Kind != GripKind.RadiusResize) continue;
 
                 int         i     = grip.Index;
-                GripArrow3D arrow = GripArrowSupport.CreateScreenSized(grip, cam);
+                GripArrow3D arrow = GripArrowSupport.Create(grip, arrowWu);
 
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
                     grip,
