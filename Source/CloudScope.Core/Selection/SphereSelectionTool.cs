@@ -86,14 +86,15 @@ namespace CloudScope.Selection
 
         // ── Handle hit test ───────────────────────────────────────────────────
 
+        /// <summary>Object-aware, pixel-clamped arrow length (renderer + hit-test share this).</summary>
+        public float AdaptiveArrowLength(GripDescriptor grip, OrbitCamera cam) =>
+            GripArrowSupport.AdaptiveWorldLength(Radius, grip.Position, cam);
+
         protected override float GetGripHitDistance(GripDescriptor grip, int mx, int my, OrbitCamera cam)
         {
             if (grip.Kind == GripKind.RadiusResize)
-            {
-                float len = cam.WorldUnitsPerPixel(grip.Position) * GripArrowSupport.ArrowHeightPixels;
                 return GripArrowSupport.ScreenHitDistance(
-                    GripArrowSupport.Create(grip, len), cam, mx, my);
-            }
+                    GripArrowSupport.Create(grip, AdaptiveArrowLength(grip, cam)), cam, mx, my);
             return base.GetGripHitDistance(grip, mx, my, cam);
         }
 

@@ -154,14 +154,11 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
             for (int gripIdx = 1; gripIdx <= 2; gripIdx++)
             {
-                GripDescriptor grip  = cyl.GetGrip(gripIdx);
-                float wpp     = WorldUnitsPerPixel(grip.Position, cam);
-                float coneLen = GripArrowSupport.ConeHeightPixels * wpp;
-                float coneRad = GripArrowSupport.ConeRadiusPixels * wpp;
-                float totPx  = grip.IsPrimary
-                    ? GripArrowSupport.ArrowHeightPixels * 1.2f
-                    : GripArrowSupport.ArrowHeightPixels;
-                GripArrow3D arrow = GripArrowSupport.Create(grip, totPx * wpp);
+                GripDescriptor grip     = cyl.GetGrip(gripIdx);
+                float          arrowLen = cyl.AdaptiveArrowLength(grip, cam);
+                float          coneLen  = arrowLen * GripArrowSupport.ConeToArrowRatio;
+                float          coneRad  = arrowLen * GripArrowSupport.ConeRadiusToArrow;
+                GripArrow3D    arrow    = GripArrowSupport.Create(grip, arrowLen);
 
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
                     grip,
@@ -186,11 +183,11 @@ namespace CloudScope.Platform.OpenGL.Rendering
             {
                 if (grip.Kind != GripKind.RadiusResize) continue;
 
-                float wpp     = WorldUnitsPerPixel(grip.Position, cam);
-                float coneLen = GripArrowSupport.ConeHeightPixels * wpp;
-                float coneRad = GripArrowSupport.ConeRadiusPixels * wpp;
-                int         i     = grip.Index;
-                GripArrow3D arrow = GripArrowSupport.Create(grip, GripArrowSupport.ArrowHeightPixels * wpp);
+                int         i        = grip.Index;
+                float       arrowLen = cyl.AdaptiveArrowLength(grip, cam);
+                float       coneLen  = arrowLen * GripArrowSupport.ConeToArrowRatio;
+                float       coneRad  = arrowLen * GripArrowSupport.ConeRadiusToArrow;
+                GripArrow3D arrow    = GripArrowSupport.Create(grip, arrowLen);
 
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
                     grip,

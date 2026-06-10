@@ -128,18 +128,21 @@ namespace CloudScope.Selection
             if (grip.Kind == GripKind.RotationRing)
                 return GripInteractionMath.RingScreenDistance(cam, Center, Rotation, grip.Axis, RingRadius, mx, my);
             if (grip.Kind == GripKind.HeightResize || grip.Kind == GripKind.RadiusResize)
-            {
-                float px  = grip.IsPrimary ? GripArrowSupport.ArrowHeightPixels * 1.2f : GripArrowSupport.ArrowHeightPixels;
-                float len = cam.WorldUnitsPerPixel(grip.Position) * px;
                 return GripArrowSupport.ScreenHitDistance(
-                    GripArrowSupport.Create(grip, len), cam, mx, my);
-            }
+                    GripArrowSupport.Create(grip, AdaptiveArrowLength(grip, cam)), cam, mx, my);
 
             return base.GetGripHitDistance(grip, mx, my, cam);
         }
 
-        public float ArrowLength(GripDescriptor grip) =>
-            MathF.Max(MathF.Max(Radius, HalfHeight) * (grip.IsPrimary ? 0.55f : 0.30f), 0.05f);
+        /// <summary>Characteristic on-screen size driver for the gizmo arrows.</summary>
+        public float GizmoRadius => MathF.Max(Radius, HalfHeight);
+
+        /// <summary>Object-aware, pixel-clamped arrow length (renderer + hit-test share this).</summary>
+        public float AdaptiveArrowLength(GripDescriptor grip, OrbitCamera cam)
+        {
+            float emphasis = grip.IsPrimary ? 1.2f : 1f;
+            return GripArrowSupport.AdaptiveWorldLength(GizmoRadius, grip.Position, cam, emphasis);
+        }
 
         // ── Handle drag ───────────────────────────────────────────────────────
 

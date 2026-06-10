@@ -165,15 +165,11 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 if (grip.Kind != GripKind.AxisResize || grip.Axis is < 0 or > 2)
                     continue;
 
-                float wpp     = WorldUnitsPerPixel(grip.Position, cam);
-                float coneLen = GripArrowSupport.ConeHeightPixels * wpp;
-                float coneRad = GripArrowSupport.ConeRadiusPixels * wpp;
-
-                int   i      = grip.Index;
-                float totPx  = grip.IsPrimary && box.IsFlat
-                    ? GripArrowSupport.ArrowHeightPixels * 1.3f
-                    : GripArrowSupport.ArrowHeightPixels;
-                GripArrow3D arrow = GripArrowSupport.Create(grip, totPx * wpp);
+                int         i        = grip.Index;
+                float       arrowLen = box.AdaptiveArrowLength(grip, cam);
+                float       coneLen  = arrowLen * GripArrowSupport.ConeToArrowRatio;
+                float       coneRad  = arrowLen * GripArrowSupport.ConeRadiusToArrow;
+                GripArrow3D arrow    = GripArrowSupport.Create(grip, arrowLen);
 
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
                     grip,
@@ -266,30 +262,6 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 SetColor(style.Color);
                 GL.DrawArrays(PrimitiveType.Lines, 0, vc / 3);
             }
-
-            EndScreenSpaceRender();
-        }
-
-        // ── Layer 7: Extrude arrow (flat box only) ────────────────────────────
-
-        private void RenderExtrudeArrow(BoxSelectionTool box, OrbitCamera cam)
-        {
-            GripDescriptor grip = box.GetGrip(BoxSelectionTool.ExtrudeHandle);
-            GripArrow3D arrow = GripArrowSupport.Create(grip, box.ArrowLength(grip));
-
-            var (fx, fy, fb) = cam.WorldToScreen(arrow.Start);
-            var (tx, ty, tb) = cam.WorldToScreen(arrow.Tip);
-            if (fb || tb) return;
-
-            float   vpW    = cam.ViewportWidth, vpH = cam.ViewportHeight;
-            GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(
-                grip,
-                box.HoveredHandle == grip.Index,
-                box.ActiveHandle  == grip.Index);
-
-            BeginScreenSpaceRender();
-
-            DrawProfessionalArrow(fx, fy, tx, ty, vpW, vpH, style.Color, MathF.Max(style.LineWidth, 3f));
 
             EndScreenSpaceRender();
         }
