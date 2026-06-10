@@ -84,6 +84,16 @@ namespace CloudScope.Selection
             _ => Center
         };
 
+        // ── Handle hit test ───────────────────────────────────────────────────
+
+        protected override float GetGripHitDistance(GripDescriptor grip, int mx, int my, OrbitCamera cam)
+        {
+            if (grip.Kind == GripKind.RadiusResize)
+                return GripArrowSupport.ScreenHitDistance(
+                    GripArrowSupport.CreateScreenSized(grip, cam), cam, mx, my);
+            return base.GetGripHitDistance(grip, mx, my, cam);
+        }
+
         // ── Handle drag ───────────────────────────────────────────────────────
 
         protected override void OnBeginHandleDragExtra(int handle, int mx, int my, OrbitCamera cam)

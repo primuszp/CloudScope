@@ -173,21 +173,29 @@ void main() { FragColor = uColor; }
         }
 
         /// <summary>
+        /// Returns world-space units per screen pixel at <paramref name="worldPos"/> depth.
+        /// Used to build zoom-invariant arrow geometry.
+        /// </summary>
+        protected static float WorldUnitsPerPixel(Vector3 worldPos, OrbitCamera cam)
+            => GripArrowSupport.WorldUnitsPerPixel(worldPos, cam);
+
+        /// <summary>
         /// Draws a 3-D arrow from <paramref name="start"/> to <paramref name="tip"/>
         /// in world space. Assumes the shader MVP is already set to the VP matrix
         /// (view * proj) and depth test is disabled (call BeginWorldSpaceOverlay first).
-        /// The cone tip occupies the last 22 % of the total length.
+        /// <paramref name="coneLen"/> and <paramref name="coneRad"/> are explicit world-space
+        /// cone dimensions (compute them from WorldUnitsPerPixel for zoom invariance).
         /// </summary>
-        protected void DrawWorldSpaceArrow(Vector3 start, Vector3 tip, Vector4 color, float lineWidth)
+        protected void DrawWorldSpaceArrow(
+            Vector3 start, Vector3 tip,
+            float coneLen, float coneRad,
+            Vector4 color, float lineWidth)
         {
             Vector3 dir = tip - start;
             float   len = dir.Length;
             if (len < 1e-5f) return;
             dir /= len;
 
-            // Cone geometry: base circle is 22 % back from the tip
-            float   coneLen  = len  * 0.22f;
-            float   coneRad  = coneLen * 0.40f;
             Vector3 coneBase = tip - dir * coneLen;
 
             // Build two perpendicular vectors for the base circle
