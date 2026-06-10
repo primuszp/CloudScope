@@ -101,6 +101,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
             float wpp     = WorldUnitsPerPixel(sphere.Center, cam);
             float coneLen = GripArrowSupport.ConeHeightPixels * wpp;
             float coneRad = GripArrowSupport.ConeRadiusPixels * wpp;
+            float arrowWu = GripArrowSupport.ArrowHeightPixels * wpp;
 
             // World-space pass: arrows for all radius-resize poles
             BeginWorldSpaceOverlay(ref vp);
@@ -110,7 +111,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 if (grip.Kind != GripKind.RadiusResize) continue;
 
                 int         i     = grip.Index;
-                GripArrow3D arrow = GripArrowSupport.CreateScreenSized(grip, cam);
+                GripArrow3D arrow = GripArrowSupport.Create(grip, arrowWu);
 
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
                     grip,

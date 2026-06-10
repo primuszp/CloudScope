@@ -128,10 +128,12 @@ namespace CloudScope.Selection
             if (grip.Kind == GripKind.RotationRing)
                 return GripInteractionMath.RingScreenDistance(cam, Center, Rotation, grip.Axis, RingRadius, mx, my);
             if (grip.Kind == GripKind.HeightResize || grip.Kind == GripKind.RadiusResize)
+            {
+                float px  = grip.IsPrimary ? GripArrowSupport.ArrowHeightPixels * 1.2f : GripArrowSupport.ArrowHeightPixels;
+                float len = cam.WorldUnitsPerPixel(Center) * px;
                 return GripArrowSupport.ScreenHitDistance(
-                    GripArrowSupport.CreateScreenSized(grip, cam,
-                        grip.IsPrimary ? GripArrowSupport.ArrowHeightPixels * 1.2f
-                                       : GripArrowSupport.ArrowHeightPixels), cam, mx, my);
+                    GripArrowSupport.Create(grip, len), cam, mx, my);
+            }
 
             return base.GetGripHitDistance(grip, mx, my, cam);
         }

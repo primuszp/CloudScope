@@ -152,10 +152,12 @@ namespace CloudScope.Selection
         protected override float GetGripHitDistance(GripDescriptor grip, int mx, int my, OrbitCamera cam)
         {
             if (grip.Kind == GripKind.AxisResize)
+            {
+                float px  = grip.IsPrimary && IsFlat ? GripArrowSupport.ArrowHeightPixels * 1.3f : GripArrowSupport.ArrowHeightPixels;
+                float len = cam.WorldUnitsPerPixel(Center) * px;
                 return GripArrowSupport.ScreenHitDistance(
-                    GripArrowSupport.CreateScreenSized(grip, cam,
-                        grip.IsPrimary && IsFlat ? GripArrowSupport.ArrowHeightPixels * 1.3f
-                                                 : GripArrowSupport.ArrowHeightPixels), cam, mx, my);
+                    GripArrowSupport.Create(grip, len), cam, mx, my);
+            }
 
             if (grip.Kind == GripKind.RotationRing)
                 return RingScreenDistance(grip.Axis, mx, my, cam);

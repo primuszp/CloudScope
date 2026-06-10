@@ -89,8 +89,11 @@ namespace CloudScope.Selection
         protected override float GetGripHitDistance(GripDescriptor grip, int mx, int my, OrbitCamera cam)
         {
             if (grip.Kind == GripKind.RadiusResize)
+            {
+                float len = cam.WorldUnitsPerPixel(Center) * GripArrowSupport.ArrowHeightPixels;
                 return GripArrowSupport.ScreenHitDistance(
-                    GripArrowSupport.CreateScreenSized(grip, cam), cam, mx, my);
+                    GripArrowSupport.Create(grip, len), cam, mx, my);
+            }
             return base.GetGripHitDistance(grip, mx, my, cam);
         }
 
