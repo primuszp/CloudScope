@@ -158,6 +158,10 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
         private void RenderFaceArrows(BoxSelectionTool box, OrbitCamera cam, Matrix4 vp)
         {
+            float wpp     = WorldUnitsPerPixel(box.Center, cam);
+            float coneLen = GripArrowSupport.ConeHeightPixels * wpp;
+            float coneRad = GripArrowSupport.ConeRadiusPixels * wpp;
+
             BeginWorldSpaceOverlay(ref vp);
 
             foreach (GripDescriptor grip in box.Grips)
@@ -165,8 +169,11 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 if (grip.Kind != GripKind.AxisResize || grip.Axis is < 0 or > 2)
                     continue;
 
-                int         i     = grip.Index;
-                GripArrow3D arrow = GripArrowSupport.Create(grip, box.ArrowLength(grip));
+                int         i      = grip.Index;
+                float       totLen = grip.IsPrimary && box.IsFlat
+                    ? GripArrowSupport.ArrowHeightPixels * 1.3f
+                    : GripArrowSupport.ArrowHeightPixels;
+                GripArrow3D arrow  = GripArrowSupport.CreateScreenSized(grip, cam, totLen);
 
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
                     grip,
@@ -175,7 +182,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
                     AxisColor[grip.Axis],
                     i == box.ActiveHandle);
 
-                DrawWorldSpaceArrow(arrow.Start, arrow.Tip, style.Color, MathF.Max(style.LineWidth, 2f));
+                DrawWorldSpaceArrow(arrow.Start, arrow.Tip, coneLen, coneRad, style.Color, MathF.Max(style.LineWidth, 2f));
             }
 
             EndScreenSpaceRender();

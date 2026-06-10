@@ -150,12 +150,19 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
         private void RenderHeightArrows(CylinderSelectionTool cyl, OrbitCamera cam, Matrix4 vp)
         {
+            float wpp     = WorldUnitsPerPixel(cyl.Center, cam);
+            float coneLen = GripArrowSupport.ConeHeightPixels * wpp;
+            float coneRad = GripArrowSupport.ConeRadiusPixels * wpp;
+
             BeginWorldSpaceOverlay(ref vp);
 
             for (int gripIdx = 1; gripIdx <= 2; gripIdx++)
             {
                 GripDescriptor grip  = cyl.GetGrip(gripIdx);
-                GripArrow3D    arrow = GripArrowSupport.Create(grip, cyl.ArrowLength(grip));
+                float totLen = grip.IsPrimary
+                    ? GripArrowSupport.ArrowHeightPixels * 1.2f
+                    : GripArrowSupport.ArrowHeightPixels;
+                GripArrow3D arrow = GripArrowSupport.CreateScreenSized(grip, cam, totLen);
 
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
                     grip,
@@ -164,7 +171,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
                     AxisColor[grip.Axis],
                     gripIdx == cyl.ActiveHandle);
 
-                DrawWorldSpaceArrow(arrow.Start, arrow.Tip, style.Color, MathF.Max(style.LineWidth, 2.5f));
+                DrawWorldSpaceArrow(arrow.Start, arrow.Tip, coneLen, coneRad, style.Color, MathF.Max(style.LineWidth, 2.5f));
             }
 
             EndScreenSpaceRender();
@@ -174,6 +181,10 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
         private void RenderRadiusArrows(CylinderSelectionTool cyl, OrbitCamera cam, Matrix4 vp)
         {
+            float wpp     = WorldUnitsPerPixel(cyl.Center, cam);
+            float coneLen = GripArrowSupport.ConeHeightPixels * wpp;
+            float coneRad = GripArrowSupport.ConeRadiusPixels * wpp;
+
             BeginWorldSpaceOverlay(ref vp);
 
             foreach (GripDescriptor grip in cyl.Grips)
@@ -181,7 +192,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 if (grip.Kind != GripKind.RadiusResize) continue;
 
                 int         i     = grip.Index;
-                GripArrow3D arrow = GripArrowSupport.Create(grip, cyl.ArrowLength(grip));
+                GripArrow3D arrow = GripArrowSupport.CreateScreenSized(grip, cam);
 
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
                     grip,
@@ -190,7 +201,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
                     AxisColor[grip.Axis],
                     i == cyl.ActiveHandle);
 
-                DrawWorldSpaceArrow(arrow.Start, arrow.Tip, style.Color, MathF.Max(style.LineWidth, 2f));
+                DrawWorldSpaceArrow(arrow.Start, arrow.Tip, coneLen, coneRad, style.Color, MathF.Max(style.LineWidth, 2f));
             }
 
             EndScreenSpaceRender();

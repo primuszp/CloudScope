@@ -153,7 +153,9 @@ namespace CloudScope.Selection
         {
             if (grip.Kind == GripKind.AxisResize)
                 return GripArrowSupport.ScreenHitDistance(
-                    GripArrowSupport.Create(grip, ArrowLength(grip)), cam, mx, my);
+                    GripArrowSupport.CreateScreenSized(grip, cam,
+                        grip.IsPrimary && IsFlat ? GripArrowSupport.ArrowHeightPixels * 1.3f
+                                                 : GripArrowSupport.ArrowHeightPixels), cam, mx, my);
 
             if (grip.Kind == GripKind.RotationRing)
                 return RingScreenDistance(grip.Axis, mx, my, cam);
