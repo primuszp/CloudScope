@@ -63,7 +63,10 @@ public abstract class EmbeddedOpenTkNativeHostBase : NativeControlHost, IEmbedde
         _pumpTimer?.Stop();
         _pumpTimer = null;
 
-        Viewer?.Close();
+        // Deterministic GL teardown on the UI thread while the context is current.
+        // Leaving it to the GameWindow finalizer destroys the native GLFW window on
+        // the GC thread → access violation (0xC0000005) at a nondeterministic time.
+        Viewer?.ShutdownEmbedded();
         Viewer = null;
     }
 
