@@ -175,7 +175,7 @@ void main() { FragColor = uColor; }
             GL.DrawArrays(PrimitiveType.Lines, 0, 2);
 
             DrawDiamondFill(snx, sny, 5f / viewportWidth, 5f / viewportHeight, color with { W = 1f });
-            DrawArrowHead(tnx, tny, snx, sny, 0.017f, color with { W = 1f });
+            DrawArrowHead(tnx, tny, snx, sny, 0.022f, color with { W = 1f });
         }
 
         // ── Screen-space diamond handles ──────────────────────────────────────
