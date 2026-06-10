@@ -90,7 +90,7 @@ namespace CloudScope.Selection
         {
             if (grip.Kind == GripKind.RadiusResize)
             {
-                float len = cam.WorldUnitsPerPixel(Center) * GripArrowSupport.ArrowHeightPixels;
+                float len = cam.WorldUnitsPerPixel(grip.Position) * GripArrowSupport.ArrowHeightPixels;
                 return GripArrowSupport.ScreenHitDistance(
                     GripArrowSupport.Create(grip, len), cam, mx, my);
             }
