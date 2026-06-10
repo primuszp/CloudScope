@@ -171,7 +171,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
                     AxisColor[grip.Axis],
                     gripIdx == cyl.ActiveHandle);
 
-                DrawWorldSpaceArrow(arrow.Start, arrow.Tip, coneLen, coneRad, style.Color, MathF.Max(style.LineWidth, 2.5f));
+                DrawWorldSpaceArrow(arrow.Start, arrow.Tip, coneLen, coneRad, style.Color, MathF.Max(style.LineWidth, 2.5f), cam, ref vp);
             }
 
             EndScreenSpaceRender();
@@ -202,7 +202,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
                     AxisColor[grip.Axis],
                     i == cyl.ActiveHandle);
 
-                DrawWorldSpaceArrow(arrow.Start, arrow.Tip, coneLen, coneRad, style.Color, MathF.Max(style.LineWidth, 2f));
+                DrawWorldSpaceArrow(arrow.Start, arrow.Tip, coneLen, coneRad, style.Color, MathF.Max(style.LineWidth, 2f), cam, ref vp);
             }
 
             EndScreenSpaceRender();

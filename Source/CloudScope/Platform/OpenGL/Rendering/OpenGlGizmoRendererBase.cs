@@ -180,16 +180,17 @@ void main() { FragColor = uColor; }
             => cam.WorldUnitsPerPixel(worldPos);
 
         /// <summary>
-        /// Draws a 3-D arrow from <paramref name="start"/> to <paramref name="tip"/>
-        /// in world space. Assumes the shader MVP is already set to the VP matrix
-        /// (view * proj) and depth test is disabled (call BeginWorldSpaceOverlay first).
-        /// <paramref name="coneLen"/> and <paramref name="coneRad"/> are explicit world-space
-        /// cone dimensions (compute them from WorldUnitsPerPixel for zoom invariance).
+        /// Draws a 3-D arrow from <paramref name="start"/> to <paramref name="tip"/>.
+        /// The shaft is rendered in screen-space (NDC) for exact zoom invariance.
+        /// The cone is rendered in world-space for a 3-D look.
+        /// Assumes depth test is disabled (call BeginWorldSpaceOverlay first).
+        /// <paramref name="vp"/> is the current view*proj matrix (set by BeginWorldSpaceOverlay).
         /// </summary>
         protected void DrawWorldSpaceArrow(
             Vector3 start, Vector3 tip,
             float coneLen, float coneRad,
-            Vector4 color, float lineWidth)
+            Vector4 color, float lineWidth,
+            OrbitCamera cam, ref Matrix4 vp)
         {
             Vector3 dir = tip - start;
             float   len = dir.Length;
@@ -198,7 +199,35 @@ void main() { FragColor = uColor; }
 
             Vector3 coneBase = tip - dir * coneLen;
 
-            // Build two perpendicular vectors for the base circle
+            float vpW = cam.ViewportWidth;
+            float vpH = cam.ViewportHeight;
+
+            // Project shaft endpoints to screen space for direction-independent pixel length
+            var (startSx, startSy, startBehind) = cam.WorldToScreen(start);
+            var (cbSx,    cbSy,    cbBehind)    = cam.WorldToScreen(coneBase);
+
+            // Shaft: screen-space line (exact pixel size regardless of arrow direction)
+            if (!startBehind && !cbBehind)
+            {
+                var (snx, sny) = ScreenToNdc(startSx, startSy, vpW, vpH);
+                var (cnx, cny) = ScreenToNdc(cbSx,    cbSy,    vpW, vpH);
+
+                Matrix4 id = Matrix4.Identity;
+                GL.UniformMatrix4(_uMVP, false, ref id);
+
+                DrawLine(snx, sny, cnx, cny);
+                SetColor(color with { W = 0.28f });
+                GL.LineWidth(lineWidth + 3f);
+                GL.DrawArrays(PrimitiveType.Lines, 0, 2);
+                SetColor(color with { W = 0.95f });
+                GL.LineWidth(lineWidth);
+                GL.DrawArrays(PrimitiveType.Lines, 0, 2);
+
+                // Restore VP matrix for world-space cone
+                GL.UniformMatrix4(_uMVP, false, ref vp);
+            }
+
+            // Build two perpendicular vectors for the cone base circle
             Vector3 perp  = MathF.Abs(Vector3.Dot(dir, Vector3.UnitZ)) < 0.9f
                           ? Vector3.UnitZ : Vector3.UnitX;
             Vector3 right = Vector3.Cross(dir, perp).Normalized();
@@ -210,24 +239,13 @@ void main() { FragColor = uColor; }
                 _coneRing[i] = coneBase + (right * MathF.Cos(a) + up * MathF.Sin(a)) * coneRad;
             }
 
-            // Shaft: glow halo then solid line (start → coneBase)
-            _lineBuf[0] = start.X;    _lineBuf[1] = start.Y;    _lineBuf[2] = start.Z;
-            _lineBuf[3] = coneBase.X; _lineBuf[4] = coneBase.Y; _lineBuf[5] = coneBase.Z;
-            Dyn(_lineBuf);
-            SetColor(color with { W = 0.28f });
-            GL.LineWidth(lineWidth + 3f);
-            GL.DrawArrays(PrimitiveType.Lines, 0, 2);
-            SetColor(color with { W = 0.95f });
-            GL.LineWidth(lineWidth);
-            GL.DrawArrays(PrimitiveType.Lines, 0, 2);
-
             // Cone sides: tip → ring edge pairs
             int ci = 0;
             for (int i = 0; i < ConeSeg; i++)
             {
-                _coneBuf[ci++] = tip.X;             _coneBuf[ci++] = tip.Y;             _coneBuf[ci++] = tip.Z;
-                _coneBuf[ci++] = _coneRing[i].X;    _coneBuf[ci++] = _coneRing[i].Y;    _coneBuf[ci++] = _coneRing[i].Z;
-                _coneBuf[ci++] = _coneRing[i + 1].X; _coneBuf[ci++] = _coneRing[i + 1].Y; _coneBuf[ci++] = _coneRing[i + 1].Z;
+                _coneBuf[ci++] = tip.X;               _coneBuf[ci++] = tip.Y;               _coneBuf[ci++] = tip.Z;
+                _coneBuf[ci++] = _coneRing[i].X;      _coneBuf[ci++] = _coneRing[i].Y;      _coneBuf[ci++] = _coneRing[i].Z;
+                _coneBuf[ci++] = _coneRing[i + 1].X;  _coneBuf[ci++] = _coneRing[i + 1].Y;  _coneBuf[ci++] = _coneRing[i + 1].Z;
             }
             Dyn(_coneBuf);
             SetColor(color with { W = 0.97f });
@@ -237,7 +255,7 @@ void main() { FragColor = uColor; }
             ci = 0;
             for (int i = 0; i < ConeSeg; i++)
             {
-                _capBuf[ci++] = coneBase.X;           _capBuf[ci++] = coneBase.Y;           _capBuf[ci++] = coneBase.Z;
+                _capBuf[ci++] = coneBase.X;            _capBuf[ci++] = coneBase.Y;            _capBuf[ci++] = coneBase.Z;
                 _capBuf[ci++] = _coneRing[i + 1].X;   _capBuf[ci++] = _coneRing[i + 1].Y;   _capBuf[ci++] = _coneRing[i + 1].Z;
                 _capBuf[ci++] = _coneRing[i].X;       _capBuf[ci++] = _coneRing[i].Y;       _capBuf[ci++] = _coneRing[i].Z;
             }
