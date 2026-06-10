@@ -130,7 +130,7 @@ namespace CloudScope.Selection
             if (grip.Kind == GripKind.HeightResize || grip.Kind == GripKind.RadiusResize)
             {
                 float px  = grip.IsPrimary ? GripArrowSupport.ArrowHeightPixels * 1.2f : GripArrowSupport.ArrowHeightPixels;
-                float len = cam.WorldUnitsPerPixel(Center) * px;
+                float len = cam.WorldUnitsPerPixel(grip.Position) * px;
                 return GripArrowSupport.ScreenHitDistance(
                     GripArrowSupport.Create(grip, len), cam, mx, my);
             }
