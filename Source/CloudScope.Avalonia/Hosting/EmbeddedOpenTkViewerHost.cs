@@ -13,6 +13,7 @@ public sealed class EmbeddedOpenTkViewerHost : OpenTkViewerHost
     private readonly ManualResetEventSlim _loaded = new(false);
     private int _effectiveFramebufferWidth;
     private int _effectiveFramebufferHeight;
+    private bool _shutdown;
 
     public EmbeddedOpenTkViewerHost(int width, int height, IRenderBackend renderBackend)
         : base(width, height, renderBackend, enableOverlay: false, startVisible: false)
@@ -62,9 +63,34 @@ public sealed class EmbeddedOpenTkViewerHost : OpenTkViewerHost
 
     public void PumpEmbeddedFrame(double dt)
     {
+        if (_shutdown)
+            return;
+
         ProcessEvents(0);
         OnUpdateFrame(new FrameEventArgs(dt));
+
+        // OnUpdateFrame may trigger teardown (ShutdownEmbedded sets _shutdown).
+        // Rendering / SwapBuffers after that point faults, so bail out.
+        if (_shutdown)
+            return;
+
         OnRenderFrame(new FrameEventArgs(dt));
+    }
+
+    /// <summary>
+    /// Deterministic teardown counterpart to <see cref="InitializeEmbedded"/>.
+    /// Runs GL resource cleanup (OnUnload) and destroys the GLFW window while the
+    /// context is still current on the calling (UI) thread — preventing the
+    /// finalizer thread from destroying the native window later and faulting.
+    /// </summary>
+    public void ShutdownEmbedded()
+    {
+        if (_shutdown)
+            return;
+        _shutdown = true;
+
+        OnUnload();
+        Dispose();
     }
 
     protected override void OnLoad()
