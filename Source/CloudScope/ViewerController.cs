@@ -176,13 +176,16 @@ namespace CloudScope
             var view = _cam.GetViewMatrix();
             var proj = _cam.GetProjectionMatrix();
 
+            Breadcrumb("point-render");
             int drawCount = _pointRenderer.Render(frameData, ref view, ref proj, _cameraInput.PointSize, _cam.Hvs, _cloudRadius);
             _frameTiming.MarkMainDraw(drawCount);
 
+            Breadcrumb("highlight");
             if (_selection.Points != null && _selection.Labels.Count > 0)
                 _highlightRenderer.Render(frameData, _selection.Points, _selection.Labels, ref view, ref proj, _cameraInput.PointSize);
             _frameTiming.MarkHighlight();
 
+            Breadcrumb("preview");
             if (_selection.TryTakePreview(out var previewIndices))
                 _highlightRenderer.UpdatePreview(_selection.Points, previewIndices);
             _highlightRenderer.RenderPreview(frameData, ref view, ref proj, _cameraInput.PointSize);
@@ -191,6 +194,7 @@ namespace CloudScope
             if (_selection.Mode == InteractionMode.Label)
             {
                 var tool = _selection.ActiveTool;
+                Breadcrumb($"gizmo {tool.ToolType} phase={tool.Phase} vol={tool.HasVolume}");
                 if (!_selectionGizmoRenderers.TryRenderPlacement(frameData, tool, _width, _height)
                     && (tool.HasVolume || tool.Phase == ToolPhase.Drawing))
                 {
@@ -210,7 +214,27 @@ namespace CloudScope
             if (_selection.Mode == InteractionMode.Label)
                 _overlayRenderer.RenderModeIndicator(frameData, _width, _height, _selection.ActiveTool.ToolType);
 
+            Breadcrumb("overlay-done");
             _frameTiming.MarkSwapAndLog(frameTime);
+        }
+
+        // ── Crash breadcrumb (temporary AV diagnostic) ────────────────────────
+        // Writes the current render phase to %TEMP%\cloudscope_phase.log with an
+        // immediate flush. Because an access violation faults synchronously on the
+        // offending GL call, the LAST line in this file names the phase that crashed.
+        private static readonly string BreadcrumbPath =
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "cloudscope_phase.log");
+        private static long _breadcrumbSeq;
+
+        private static void Breadcrumb(string phase)
+        {
+            try
+            {
+                // Overwrite so the file stays tiny; the last write = the phase that crashed.
+                System.IO.File.WriteAllText(BreadcrumbPath,
+                    $"seq {System.Threading.Interlocked.Increment(ref _breadcrumbSeq)} @ {DateTime.Now:HH:mm:ss.fff}{Environment.NewLine}phase: {phase}{Environment.NewLine}");
+            }
+            catch { /* diagnostics must never throw */ }
         }
 
         public void Resize(int width, int height)
