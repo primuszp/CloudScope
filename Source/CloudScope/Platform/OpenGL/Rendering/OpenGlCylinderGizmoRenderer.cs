@@ -51,11 +51,13 @@ namespace CloudScope.Platform.OpenGL.Rendering
             GL.Enable(EnableCap.Blend);
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
+            Matrix4 vp = view * proj;
+
             RenderFill(mvp);
             RenderAxisLines(mvp);
             RenderWireframe(mvp);
-            RenderHeightArrows(cyl, cam);
-            RenderRadiusArrows(cyl, cam);
+            RenderHeightArrows(cyl, cam, vp);
+            RenderRadiusArrows(cyl, cam, vp);
             RenderRings(cyl, cam);
             RenderHandles(cyl, cam);
 
@@ -146,19 +148,14 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
         // ── Layer 4: Height arrows (top cap ↑ and bottom cap ↓) ──────────────
 
-        private void RenderHeightArrows(CylinderSelectionTool cyl, OrbitCamera cam)
+        private void RenderHeightArrows(CylinderSelectionTool cyl, OrbitCamera cam, Matrix4 vp)
         {
-            float vpW = cam.ViewportWidth, vpH = cam.ViewportHeight;
-            BeginScreenSpaceRender();
+            BeginWorldSpaceOverlay(ref vp);
 
             for (int gripIdx = 1; gripIdx <= 2; gripIdx++)
             {
-                GripDescriptor grip = cyl.GetGrip(gripIdx);
-                GripArrow3D arrow = GripArrowSupport.Create(grip, cyl.ArrowLength(grip));
-
-                var (fx, fy, fb) = cam.WorldToScreen(arrow.Start);
-                var (tx, ty, tb) = cam.WorldToScreen(arrow.Tip);
-                if (fb || tb) continue;
+                GripDescriptor grip  = cyl.GetGrip(gripIdx);
+                GripArrow3D    arrow = GripArrowSupport.Create(grip, cyl.ArrowLength(grip));
 
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
                     grip,
@@ -167,7 +164,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
                     AxisColor[grip.Axis],
                     gripIdx == cyl.ActiveHandle);
 
-                DrawProfessionalArrow(fx, fy, tx, ty, vpW, vpH, style.Color, MathF.Max(style.LineWidth, 3f));
+                DrawWorldSpaceArrow(arrow.Start, arrow.Tip, style.Color, MathF.Max(style.LineWidth, 2.5f));
             }
 
             EndScreenSpaceRender();
@@ -175,21 +172,17 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
         // ── Layer 4b: Radius arrows (±LocalX, ±LocalY) ───────────────────────
 
-        private void RenderRadiusArrows(CylinderSelectionTool cyl, OrbitCamera cam)
+        private void RenderRadiusArrows(CylinderSelectionTool cyl, OrbitCamera cam, Matrix4 vp)
         {
-            float vpW = cam.ViewportWidth, vpH = cam.ViewportHeight;
-            BeginScreenSpaceRender();
+            BeginWorldSpaceOverlay(ref vp);
 
             foreach (GripDescriptor grip in cyl.Grips)
             {
                 if (grip.Kind != GripKind.RadiusResize) continue;
 
+                int         i     = grip.Index;
                 GripArrow3D arrow = GripArrowSupport.Create(grip, cyl.ArrowLength(grip));
-                var (fx, fy, fb) = cam.WorldToScreen(arrow.Start);
-                var (tx, ty, tb) = cam.WorldToScreen(arrow.Tip);
-                if (fb || tb) continue;
 
-                int i = grip.Index;
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
                     grip,
                     i == cyl.HoveredHandle,
@@ -197,7 +190,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
                     AxisColor[grip.Axis],
                     i == cyl.ActiveHandle);
 
-                DrawProfessionalArrow(fx, fy, tx, ty, vpW, vpH, style.Color, MathF.Max(style.LineWidth, 2f));
+                DrawWorldSpaceArrow(arrow.Start, arrow.Tip, style.Color, MathF.Max(style.LineWidth, 2f));
             }
 
             EndScreenSpaceRender();

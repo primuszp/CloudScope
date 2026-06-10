@@ -40,10 +40,12 @@ namespace CloudScope.Platform.OpenGL.Rendering
             GL.Enable(EnableCap.Blend);
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
+            Matrix4 vp = view * proj;
+
             RenderFill(mvp);
             RenderAxisLines(mvp);
             RenderCircles(mvp);
-            RenderHandles(sphere, cam);
+            RenderHandles(sphere, cam, vp);
 
             GL.Disable(EnableCap.Blend);
         }
@@ -94,43 +96,46 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
         // ── Layer 4: Radius arrows + center diamond ───────────────────────────
 
-        private void RenderHandles(SphereSelectionTool sphere, OrbitCamera cam)
+        private void RenderHandles(SphereSelectionTool sphere, OrbitCamera cam, Matrix4 vp)
         {
-            float vpW      = cam.ViewportWidth, vpH = cam.ViewportHeight;
-            float arrowLen = MathF.Max(sphere.Radius * 0.35f, 0.05f);
+            float arrowLen = MathF.Max(sphere.Radius * 0.28f, 0.05f);
 
-            BeginScreenSpaceRender();
+            // World-space pass: arrows for all radius-resize poles
+            BeginWorldSpaceOverlay(ref vp);
 
             foreach (GripDescriptor grip in sphere.Grips)
             {
+                if (grip.Kind != GripKind.RadiusResize) continue;
+
                 int  i       = grip.Index;
-                bool hovered = i == sphere.HoveredHandle;
-                bool active  = i == sphere.ActiveHandle;
+                GripArrow3D arrow = GripArrowSupport.Create(grip, arrowLen);
 
-                if (grip.Kind == GripKind.RadiusResize)
-                {
-                    GripArrow3D arrow = GripArrowSupport.Create(grip, arrowLen);
-                    var (fx, fy, fb) = cam.WorldToScreen(arrow.Start);
-                    var (tx, ty, tb) = cam.WorldToScreen(arrow.Tip);
-                    if (fb || tb) continue;
+                GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
+                    grip,
+                    i == sphere.HoveredHandle,
+                    emphasizePrimary: false,
+                    AxisColor[grip.Axis],
+                    i == sphere.ActiveHandle);
 
-                    GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
-                        grip, hovered, emphasizePrimary: false, AxisColor[grip.Axis], active);
-
-                    DrawProfessionalArrow(fx, fy, tx, ty, vpW, vpH, style.Color, MathF.Max(style.LineWidth, 2f));
-                }
-                else
-                {
-                    var (sx, sy, behind) = cam.WorldToScreen(grip.Position);
-                    if (behind) continue;
-                    var (nx, ny) = ScreenToNdc(sx, sy, vpW, vpH);
-                    float hx = 12f / vpW, hy = 12f / vpH;
-                    GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(grip, hovered, active);
-                    DrawDiamond(nx, ny, hx, hy, style.Color);
-                }
+                DrawWorldSpaceArrow(arrow.Start, arrow.Tip, style.Color, MathF.Max(style.LineWidth, 2f));
             }
 
             EndScreenSpaceRender();
+
+            // Screen-space pass: center handle diamond
+            float vpW = cam.ViewportWidth, vpH = cam.ViewportHeight;
+            GripDescriptor center = sphere.GetGrip(0);
+            var (sx, sy, behind) = cam.WorldToScreen(center.Position);
+            if (!behind)
+            {
+                BeginScreenSpaceRender();
+                var (nx, ny) = ScreenToNdc(sx, sy, vpW, vpH);
+                float hx = 12f / vpW, hy = 12f / vpH;
+                GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(
+                    center, 0 == sphere.HoveredHandle, 0 == sphere.ActiveHandle);
+                DrawDiamond(nx, ny, hx, hy, style.Color);
+                EndScreenSpaceRender();
+            }
         }
 
         // ── Resource init ─────────────────────────────────────────────────────
