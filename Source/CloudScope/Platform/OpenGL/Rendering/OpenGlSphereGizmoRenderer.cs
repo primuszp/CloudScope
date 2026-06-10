@@ -105,11 +105,11 @@ namespace CloudScope.Platform.OpenGL.Rendering
             {
                 if (grip.Kind != GripKind.RadiusResize) continue;
 
-                float wpp     = WorldUnitsPerPixel(grip.Position, cam);
-                float coneLen = GripArrowSupport.ConeHeightPixels * wpp;
-                float coneRad = GripArrowSupport.ConeRadiusPixels * wpp;
+                float arrowLen = sphere.ArrowLength();
+                float coneLen  = arrowLen * GripArrowSupport.ConeToArrowRatio;
+                float coneRad  = arrowLen * GripArrowSupport.RadiusToArrowRatio;
                 int         i     = grip.Index;
-                GripArrow3D arrow = GripArrowSupport.Create(grip, GripArrowSupport.ArrowHeightPixels * wpp);
+                GripArrow3D arrow = GripArrowSupport.Create(grip, arrowLen);
 
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
                     grip,
