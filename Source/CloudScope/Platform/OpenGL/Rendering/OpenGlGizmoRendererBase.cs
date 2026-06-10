@@ -24,6 +24,12 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private readonly float[] _arrowBuf          = new float[9];  // 3-vert arrowhead
         protected        float[] _ringSegBuf        = new float[64 * 6]; // ring segments (N=64)
 
+        // 3-D cone arrowhead buffers
+        private const int ConeSeg = 12;
+        private readonly float[]   _coneBuf  = new float[ConeSeg * 9]; // sides: N triangles * 3 verts * 3 floats
+        private readonly float[]   _capBuf   = new float[ConeSeg * 9]; // cap disc
+        private readonly Vector3[] _coneRing = new Vector3[ConeSeg + 1];
+
         protected static readonly Vector4[] AxisColor =
         {
             new(0.95f, 0.20f, 0.20f, 1.00f),  // X  red
@@ -149,6 +155,87 @@ void main() { FragColor = uColor; }
             Dyn(_arrowBuf);
             SetColor(col);
             GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
+        }
+
+        // ── World-space 3-D cone arrow ────────────────────────────────────────
+
+        /// <summary>
+        /// Sets MVP to <paramref name="vp"/> and disables depth testing so subsequent
+        /// <see cref="DrawWorldSpaceArrow"/> calls render on top of everything.
+        /// Call <see cref="EndScreenSpaceRender"/> to restore depth state.
+        /// </summary>
+        protected void BeginWorldSpaceOverlay(ref Matrix4 vp)
+        {
+            GL.UseProgram(_shader);
+            GL.UniformMatrix4(_uMVP, false, ref vp);
+            GL.Disable(EnableCap.DepthTest);
+            GL.DepthMask(false);
+        }
+
+        /// <summary>
+        /// Draws a 3-D arrow from <paramref name="start"/> to <paramref name="tip"/>
+        /// in world space. Assumes the shader MVP is already set to the VP matrix
+        /// (view * proj) and depth test is disabled (call BeginWorldSpaceOverlay first).
+        /// The cone tip occupies the last 22 % of the total length.
+        /// </summary>
+        protected void DrawWorldSpaceArrow(Vector3 start, Vector3 tip, Vector4 color, float lineWidth)
+        {
+            Vector3 dir = tip - start;
+            float   len = dir.Length;
+            if (len < 1e-5f) return;
+            dir /= len;
+
+            // Cone geometry: base circle is 22 % back from the tip
+            float   coneLen  = len  * 0.22f;
+            float   coneRad  = coneLen * 0.40f;
+            Vector3 coneBase = tip - dir * coneLen;
+
+            // Build two perpendicular vectors for the base circle
+            Vector3 perp  = MathF.Abs(Vector3.Dot(dir, Vector3.UnitZ)) < 0.9f
+                          ? Vector3.UnitZ : Vector3.UnitX;
+            Vector3 right = Vector3.Cross(dir, perp).Normalized();
+            Vector3 up    = Vector3.Cross(dir, right);
+
+            for (int i = 0; i <= ConeSeg; i++)
+            {
+                float a = i * MathF.Tau / ConeSeg;
+                _coneRing[i] = coneBase + (right * MathF.Cos(a) + up * MathF.Sin(a)) * coneRad;
+            }
+
+            // Shaft: glow halo then solid line (start → coneBase)
+            _lineBuf[0] = start.X;    _lineBuf[1] = start.Y;    _lineBuf[2] = start.Z;
+            _lineBuf[3] = coneBase.X; _lineBuf[4] = coneBase.Y; _lineBuf[5] = coneBase.Z;
+            Dyn(_lineBuf);
+            SetColor(color with { W = 0.28f });
+            GL.LineWidth(lineWidth + 3f);
+            GL.DrawArrays(PrimitiveType.Lines, 0, 2);
+            SetColor(color with { W = 0.95f });
+            GL.LineWidth(lineWidth);
+            GL.DrawArrays(PrimitiveType.Lines, 0, 2);
+
+            // Cone sides: tip → ring edge pairs
+            int ci = 0;
+            for (int i = 0; i < ConeSeg; i++)
+            {
+                _coneBuf[ci++] = tip.X;             _coneBuf[ci++] = tip.Y;             _coneBuf[ci++] = tip.Z;
+                _coneBuf[ci++] = _coneRing[i].X;    _coneBuf[ci++] = _coneRing[i].Y;    _coneBuf[ci++] = _coneRing[i].Z;
+                _coneBuf[ci++] = _coneRing[i + 1].X; _coneBuf[ci++] = _coneRing[i + 1].Y; _coneBuf[ci++] = _coneRing[i + 1].Z;
+            }
+            Dyn(_coneBuf);
+            SetColor(color with { W = 0.97f });
+            GL.DrawArrays(PrimitiveType.Triangles, 0, ConeSeg * 3);
+
+            // Cone cap disc (darker face for 3-D depth cue)
+            ci = 0;
+            for (int i = 0; i < ConeSeg; i++)
+            {
+                _capBuf[ci++] = coneBase.X;           _capBuf[ci++] = coneBase.Y;           _capBuf[ci++] = coneBase.Z;
+                _capBuf[ci++] = _coneRing[i + 1].X;   _capBuf[ci++] = _coneRing[i + 1].Y;   _capBuf[ci++] = _coneRing[i + 1].Z;
+                _capBuf[ci++] = _coneRing[i].X;       _capBuf[ci++] = _coneRing[i].Y;       _capBuf[ci++] = _coneRing[i].Z;
+            }
+            Dyn(_capBuf);
+            SetColor(color.X * 0.50f, color.Y * 0.50f, color.Z * 0.50f, 0.90f);
+            GL.DrawArrays(PrimitiveType.Triangles, 0, ConeSeg * 3);
         }
 
         protected void DrawProfessionalArrow(

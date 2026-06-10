@@ -67,10 +67,12 @@ namespace CloudScope.Platform.OpenGL.Rendering
             GL.Enable(EnableCap.Blend);
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
+            Matrix4 vp = view * proj;
+
             RenderFaceFills(mvp);
             RenderAxisLines(mvp);
             RenderWireframe(mvp);
-            RenderFaceArrows(box, cam);
+            RenderFaceArrows(box, cam, vp);
             RenderCornerHandles(box, cam);
             RenderRings(box, cam);
             GL.Disable(EnableCap.Blend);
@@ -154,24 +156,17 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
         // ── Layer 4: Face arrow handles ───────────────────────────────────────
 
-        private void RenderFaceArrows(BoxSelectionTool box, OrbitCamera cam)
+        private void RenderFaceArrows(BoxSelectionTool box, OrbitCamera cam, Matrix4 vp)
         {
-            float   vpW    = cam.ViewportWidth, vpH = cam.ViewportHeight;
-            BeginScreenSpaceRender();
+            BeginWorldSpaceOverlay(ref vp);
 
             foreach (GripDescriptor grip in box.Grips)
             {
-                if (grip.Kind != GripKind.AxisResize)
-                    continue;
-                if (grip.Axis is < 0 or > 2)
+                if (grip.Kind != GripKind.AxisResize || grip.Axis is < 0 or > 2)
                     continue;
 
-                int i = grip.Index;
+                int         i     = grip.Index;
                 GripArrow3D arrow = GripArrowSupport.Create(grip, box.ArrowLength(grip));
-
-                var (fx, fy, fb) = cam.WorldToScreen(arrow.Start);
-                var (tx, ty, tb) = cam.WorldToScreen(arrow.Tip);
-                if (fb || tb) continue;
 
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
                     grip,
@@ -180,7 +175,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
                     AxisColor[grip.Axis],
                     i == box.ActiveHandle);
 
-                DrawProfessionalArrow(fx, fy, tx, ty, vpW, vpH, style.Color, MathF.Max(style.LineWidth, 2f));
+                DrawWorldSpaceArrow(arrow.Start, arrow.Tip, style.Color, MathF.Max(style.LineWidth, 2f));
             }
 
             EndScreenSpaceRender();
