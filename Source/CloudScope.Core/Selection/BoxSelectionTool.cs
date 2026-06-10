@@ -153,10 +153,8 @@ namespace CloudScope.Selection
         {
             if (grip.Kind == GripKind.AxisResize)
             {
-                float px  = grip.IsPrimary && IsFlat ? GripArrowSupport.ArrowHeightPixels * 1.3f : GripArrowSupport.ArrowHeightPixels;
-                float len = cam.WorldUnitsPerPixel(Center) * px;
                 return GripArrowSupport.ScreenHitDistance(
-                    GripArrowSupport.Create(grip, len), cam, mx, my);
+                    GripArrowSupport.Create(grip, ArrowLength(grip)), cam, mx, my);
             }
 
             if (grip.Kind == GripKind.RotationRing)

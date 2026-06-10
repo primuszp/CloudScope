@@ -154,14 +154,11 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
             for (int gripIdx = 1; gripIdx <= 2; gripIdx++)
             {
-                GripDescriptor grip  = cyl.GetGrip(gripIdx);
-                float wpp     = WorldUnitsPerPixel(grip.Position, cam);
-                float coneLen = GripArrowSupport.ConeHeightPixels * wpp;
-                float coneRad = GripArrowSupport.ConeRadiusPixels * wpp;
-                float totPx  = grip.IsPrimary
-                    ? GripArrowSupport.ArrowHeightPixels * 1.2f
-                    : GripArrowSupport.ArrowHeightPixels;
-                GripArrow3D arrow = GripArrowSupport.Create(grip, totPx * wpp);
+                GripDescriptor grip     = cyl.GetGrip(gripIdx);
+                float arrowLen = cyl.ArrowLength(grip);
+                float coneLen  = arrowLen * GripArrowSupport.ConeToArrowRatio;
+                float coneRad  = arrowLen * GripArrowSupport.RadiusToArrowRatio;
+                GripArrow3D arrow = GripArrowSupport.Create(grip, arrowLen);
 
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
                     grip,
@@ -186,11 +183,11 @@ namespace CloudScope.Platform.OpenGL.Rendering
             {
                 if (grip.Kind != GripKind.RadiusResize) continue;
 
-                float wpp     = WorldUnitsPerPixel(grip.Position, cam);
-                float coneLen = GripArrowSupport.ConeHeightPixels * wpp;
-                float coneRad = GripArrowSupport.ConeRadiusPixels * wpp;
+                float arrowLen = cyl.ArrowLength(grip);
+                float coneLen  = arrowLen * GripArrowSupport.ConeToArrowRatio;
+                float coneRad  = arrowLen * GripArrowSupport.RadiusToArrowRatio;
                 int         i     = grip.Index;
-                GripArrow3D arrow = GripArrowSupport.Create(grip, GripArrowSupport.ArrowHeightPixels * wpp);
+                GripArrow3D arrow = GripArrowSupport.Create(grip, arrowLen);
 
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveAxisGrip(
                     grip,
