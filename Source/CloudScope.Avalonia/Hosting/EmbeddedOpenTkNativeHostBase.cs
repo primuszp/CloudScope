@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Threading;
+using CloudScope.Commands;
 using CloudScope.Platform.OpenGL;
 using OpenTK.Mathematics;
 
@@ -26,8 +27,11 @@ public abstract class EmbeddedOpenTkNativeHostBase : NativeControlHost, IEmbedde
         viewer.Enqueue(v => v.LoadPointCloud(points, radius));
     }
 
+    public CommandResult ExecuteViewerCommandResult(string commandText) =>
+        Viewer?.ExecuteCommandResult(commandText) ?? CommandResult.End("Embedded OpenTK host is not ready.");
+
     public string ExecuteViewerCommand(string commandText) =>
-        Viewer?.ExecuteCommand(commandText) ?? "Embedded OpenTK host is not ready.";
+        ExecuteViewerCommandResult(commandText).Message;
 
     public void ForwardKeyDown(ViewerKey key) => Viewer?.ForwardKeyDown(key);
 

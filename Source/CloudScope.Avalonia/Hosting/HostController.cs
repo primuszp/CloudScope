@@ -1,8 +1,10 @@
+using CloudScope.Commands;
+
 namespace CloudScope.Avalonia.Hosting;
 
 public sealed class HostController
 {
-    private DateTime _startTimeUtc = DateTime.UtcNow;
+    private readonly CommandRuntime _hostRuntime;
     private IEmbeddedOpenTkNativeHost? _embeddedHost;
     private int _renderedPointCount;
     private string _viewerState = "Embedded OpenTK host not created";
@@ -11,6 +13,11 @@ public sealed class HostController
 
     public string Status => $"Points: {_renderedPointCount:N0} | {_viewerState}";
     public string CommandPrompt => _embeddedHost?.CommandPrompt ?? "Command:";
+
+    public HostController()
+    {
+        _hostRuntime = new CommandRuntime(this, new HostCommands(this));
+    }
 
     public void SetEmbeddedHost(IEmbeddedOpenTkNativeHost embeddedHost)
     {
@@ -26,28 +33,27 @@ public sealed class HostController
         _embeddedHost?.LoadPointCloud(points, radius);
         _renderedPointCount = count;
         _viewerState = $"Embedded OpenTK viewer: {sourceName}";
-
         StatusChanged?.Invoke($"Loaded into OpenTK viewer: {sourceName} ({count:N0} points)");
         PublishStatus();
     }
 
-    public string ExecuteCommand(string commandText, bool publishResult = true)
+    public CommandResult ExecuteCommandResult(string commandText, bool publishResult = true)
     {
         string trimmed = commandText.Trim();
-        string command = trimmed.ToUpperInvariant();
-        string result = command switch
-        {
-            "" => _embeddedHost?.ExecuteViewerCommand("") ?? "",
-            "STATUS" => Status,
-            "RESET" => Reset(),
-            "HOSTHELP" => "Host commands: STATUS, RESET, HOSTHELP.",
-            _ => _embeddedHost?.ExecuteViewerCommand(trimmed) ?? "Embedded OpenTK host is not ready."
-        };
+        string firstWord = trimmed.Length == 0 ? "" : trimmed.Split(' ', 2)[0];
 
-        if (publishResult && result.Length > 0)
-            StatusChanged?.Invoke(result);
+        CommandResult result = _hostRuntime.IsKnownCommand(firstWord)
+            ? _hostRuntime.Execute(trimmed)
+            : EmbeddedExecuteResult(trimmed);
+
+        if (publishResult && !string.IsNullOrWhiteSpace(result.Message))
+            StatusChanged?.Invoke(result.Message);
+
         return result;
     }
+
+    public string ExecuteCommand(string commandText, bool publishResult = true) =>
+        ExecuteCommandResult(commandText, publishResult).Message;
 
     public void ForwardKeyDown(ViewerKey key) => _embeddedHost?.ForwardKeyDown(key);
 
@@ -55,14 +61,16 @@ public sealed class HostController
 
     public void FocusViewer() => _embeddedHost?.FocusViewer();
 
-    private string Reset()
+    internal void PerformReset()
     {
-        _startTimeUtc = DateTime.UtcNow;
         _renderedPointCount = 0;
+        _viewerState = "Embedded OpenTK host not created";
         PublishStatus();
-        return "Host controller reset";
     }
 
-    private void PublishStatus() => StatusChanged?.Invoke(Status);
+    private CommandResult EmbeddedExecuteResult(string commandText) =>
+        _embeddedHost?.ExecuteViewerCommandResult(commandText)
+        ?? CommandResult.End("Embedded OpenTK host is not ready.");
 
+    private void PublishStatus() => StatusChanged?.Invoke(Status);
 }

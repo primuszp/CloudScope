@@ -44,7 +44,8 @@ public sealed class CommandLineSession
     public void AddHistory(string message)
     {
         _history.Add(message);
-        while (_history.Count > HistoryLimit) _history.RemoveAt(0);
+        int excess = _history.Count - HistoryLimit;
+        if (excess > 0) _history.RemoveRange(0, excess);
     }
 
     private void Remember(string command)
@@ -52,7 +53,8 @@ public sealed class CommandLineSession
         string trimmed = command.Trim();
         if (trimmed.Length > 0 && (_inputHistory.Count == 0 || _inputHistory[^1] != trimmed))
             _inputHistory.Add(trimmed);
-        while (_inputHistory.Count > 100) _inputHistory.RemoveAt(0);
+        int excess = _inputHistory.Count - 100;
+        if (excess > 0) _inputHistory.RemoveRange(0, excess);
         _historyCursor = _inputHistory.Count;
     }
 }
