@@ -152,17 +152,27 @@ namespace CloudScope.Selection
         protected override float GetGripHitDistance(GripDescriptor grip, int mx, int my, OrbitCamera cam)
         {
             if (grip.Kind == GripKind.AxisResize)
-            {
-                float px  = grip.IsPrimary && IsFlat ? GripArrowSupport.ArrowHeightPixels * 1.3f : GripArrowSupport.ArrowHeightPixels;
-                float len = cam.WorldUnitsPerPixel(grip.Position) * px;
                 return GripArrowSupport.ScreenHitDistance(
-                    GripArrowSupport.Create(grip, len), cam, mx, my);
-            }
+                    GripArrowSupport.Create(grip, AdaptiveArrowLength(grip, cam)), cam, mx, my);
 
             if (grip.Kind == GripKind.RotationRing)
                 return RingScreenDistance(grip.Axis, mx, my, cam);
 
             return base.GetGripHitDistance(grip, mx, my, cam);
+        }
+
+        /// <summary>Characteristic on-screen size driver for the gizmo arrows.</summary>
+        public float GizmoRadius =>
+            MathF.Max(MathF.Max(HalfExtents.X, HalfExtents.Y), HalfExtents.Z);
+
+        /// <summary>
+        /// Object-aware, pixel-clamped arrow length shared by the renderer and hit-test
+        /// so the clickable region always matches what is drawn.
+        /// </summary>
+        public float AdaptiveArrowLength(GripDescriptor grip, OrbitCamera cam)
+        {
+            float emphasis = grip.IsPrimary && IsFlat ? 1.3f : 1f;
+            return GripArrowSupport.AdaptiveWorldLength(GizmoRadius, grip.Position, cam, emphasis);
         }
 
         public override Vector3 HandleWorldPosition(int i)
@@ -175,13 +185,9 @@ namespace CloudScope.Selection
             return wp.Xyz;
         }
 
+        // Used by the Metal backend's flat-box extrude arrow.
         public float ArrowWorldLength =>
             MathF.Max(MathF.Max(HalfExtents.X, HalfExtents.Y), HalfExtents.Z) * 0.22f;
-
-        public float ArrowLength(GripDescriptor grip) =>
-            grip.IsPrimary && IsFlat
-                ? MathF.Max(HalfExtents.X, HalfExtents.Y) * 0.55f
-                : ArrowWorldLength;
 
         public Vector3 FaceArrowTipWorldPosition(int i)
         {
