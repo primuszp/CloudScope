@@ -158,16 +158,16 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
         private void RenderFaceArrows(BoxSelectionTool box, OrbitCamera cam, Matrix4 vp)
         {
-            float wpp     = WorldUnitsPerPixel(box.Center, cam);
-            float coneLen = GripArrowSupport.ConeHeightPixels * wpp;
-            float coneRad = GripArrowSupport.ConeRadiusPixels * wpp;
-
             BeginWorldSpaceOverlay(ref vp);
 
             foreach (GripDescriptor grip in box.Grips)
             {
                 if (grip.Kind != GripKind.AxisResize || grip.Axis is < 0 or > 2)
                     continue;
+
+                float wpp     = WorldUnitsPerPixel(grip.Position, cam);
+                float coneLen = GripArrowSupport.ConeHeightPixels * wpp;
+                float coneRad = GripArrowSupport.ConeRadiusPixels * wpp;
 
                 int   i      = grip.Index;
                 float totPx  = grip.IsPrimary && box.IsFlat
