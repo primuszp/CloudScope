@@ -3,13 +3,15 @@ using System.Diagnostics;
 using CloudScope;
 using CloudScope.Loading;
 
-//string lasFile = args.Length > 0
-//    ? args[0]
-//    : @"/Users/primuszpeter/Library/CloudStorage/OneDrive-Személyes/BorderEye/data/jeli_parkolo.las";
+if (args.Length == 0)
+{
+    Console.Error.WriteLine("Usage: CloudScope <las-file> [max-points]");
+    Console.Error.WriteLine("  las-file   Path to a .las or .laz point cloud file");
+    Console.Error.WriteLine("  max-points Maximum number of points to load (default: 50 000 000)");
+    return 1;
+}
 
-string lasFile = args.Length > 0
-    ? args[0]
-    : @"C:\Users\primu\OneDrive\BorderEye\data\jeli_parkolo.las";
+string lasFile = args[0];
 
 if (!System.IO.File.Exists(lasFile))
 {
@@ -66,6 +68,7 @@ Console.WriteLine("  Escape         - Exit");
 Console.WriteLine();
 Console.WriteLine("Command line:");
 Console.WriteLine("  Enter / Space  - Submit or repeat the last command");
+Console.WriteLine("  Up / Down      - Browse command history");
 Console.WriteLine("  Escape         - Cancel the active command");
 Console.WriteLine("  Commands       - SELECT, ZOOM, VIEW, PROJECTION, POINTSIZE,");
 Console.WriteLine("                   LABEL, SAVELABELS, LOADLABELS, UNDO, HELP");
@@ -78,4 +81,3 @@ viewer.SetLasFilePath(lasFile);
 viewer.Run();
 
 return 0;
-

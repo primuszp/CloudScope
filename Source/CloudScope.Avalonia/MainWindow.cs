@@ -18,89 +18,100 @@ public sealed partial class MainWindow : Window
     private readonly bool _useNativeMenu = OperatingSystem.IsMacOS();
     private readonly CommandLineSession _commandSession;
     private ViewportInputHost? _viewport;
-    private Menu MainMenuControl => this.FindControl<Menu>("MainMenuBar")
-        ?? throw new InvalidOperationException("MainMenuBar control is missing.");
-    private TextBlock StatusBlock => this.FindControl<TextBlock>("StatusText")
-        ?? throw new InvalidOperationException("StatusText control is missing.");
-    private TextBox CommandInput => this.FindControl<TextBox>("CommandBox")
-        ?? throw new InvalidOperationException("CommandBox control is missing.");
-    private TextBox HistoryOutput => this.FindControl<TextBox>("HistoryText")
-        ?? throw new InvalidOperationException("HistoryText control is missing.");
-    private TextBlock CommandPrompt => this.FindControl<TextBlock>("CommandPromptText")
-        ?? throw new InvalidOperationException("CommandPromptText control is missing.");
-    private ContentControl ViewportContainer => this.FindControl<ContentControl>("ViewportHost")
-        ?? throw new InvalidOperationException("ViewportHost control is missing.");
+
+    // Cached control references — resolved once after InitializeComponent
+    private Menu _mainMenuControl = null!;
+    private TextBlock _statusBlock = null!;
+    private TextBox _commandInput = null!;
+    private TextBox _historyOutput = null!;
+    private TextBlock _commandPrompt = null!;
+    private ContentControl _viewportContainer = null!;
 
     public MainWindow()
     {
         _commandSession = new CommandLineSession(
-            command => new CommandResult(
-                CommandStatus.Ended,
-                _hostController.ExecuteCommand(command, publishResult: false),
-                _hostController.CommandPrompt),
+            command => _hostController.ExecuteCommandResult(command, publishResult: false),
             () => _hostController.CommandPrompt);
+
         InitializeComponent();
+        ResolveControls();
+
         _hostController.StatusChanged += OnStatusChanged;
         ConfigureMenuUi();
         WireMenu();
         WireToolbar();
         WireCommandBox();
+
         _viewport = new ViewportInputHost(_hostController);
-        ViewportContainer.Content = _viewport;
+        _viewportContainer.Content = _viewport;
+
         AddHandler(KeyDownEvent, OnWindowKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, OnWindowKeyUp, RoutingStrategies.Tunnel);
-        StatusBlock.Text = _hostController.Status;
+
+        _statusBlock.Text = _hostController.Status;
         RefreshHistory();
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
+
+    private void ResolveControls()
+    {
+        _mainMenuControl  = this.FindControl<Menu>("MainMenuBar")              ?? throw new InvalidOperationException("MainMenuBar control is missing.");
+        _statusBlock      = this.FindControl<TextBlock>("StatusText")           ?? throw new InvalidOperationException("StatusText control is missing.");
+        _commandInput     = this.FindControl<TextBox>("CommandBox")             ?? throw new InvalidOperationException("CommandBox control is missing.");
+        _historyOutput    = this.FindControl<TextBox>("HistoryText")            ?? throw new InvalidOperationException("HistoryText control is missing.");
+        _commandPrompt    = this.FindControl<TextBlock>("CommandPromptText")    ?? throw new InvalidOperationException("CommandPromptText control is missing.");
+        _viewportContainer = this.FindControl<ContentControl>("ViewportHost")  ?? throw new InvalidOperationException("ViewportHost control is missing.");
+    }
 
     private void ConfigureMenuUi()
     {
         if (!_useNativeMenu)
             return;
 
-        MainMenuControl.IsVisible = false;
+        _mainMenuControl.IsVisible = false;
         NativeMenu.SetMenu(this, BuildNativeMenu());
     }
 
     private void WireMenu()
     {
-        MenuItem("OpenLasMenuItem").Click += async (_, _) => await OpenLasAsync();
-        MenuItem("StatusMenuItem").Click += (_, _) => StageCommand("STATUS");
-        MenuItem("ResetMenuItem").Click += (_, _) => StageCommand("RESET");
-        MenuItem("ExitMenuItem").Click += (_, _) => Close();
-        MenuItem("NavigateMenuItem").Click += (_, _) => StageCommand("NAVIGATE");
-        MenuItem("LabelModeMenuItem").Click += (_, _) => StageCommand("LABELMODE");
-        MenuItem("BoxMenuItem").Click += (_, _) => StageCommand("SELECT B");
-        MenuItem("SphereMenuItem").Click += (_, _) => StageCommand("SELECT S");
-        MenuItem("CylinderMenuItem").Click += (_, _) => StageCommand("SELECT C");
-        MenuItem("ConfirmMenuItem").Click += (_, _) => StageCommand("CONFIRM");
-        MenuItem("CancelMenuItem").Click += (_, _) => StageCommand("CANCEL");
+        MenuItem("OpenLasMenuItem").Click     += async (_, _) => await OpenLasAsync();
+        MenuItem("StatusMenuItem").Click      += (_, _) => StageCommand("STATUS");
+        MenuItem("ResetMenuItem").Click       += (_, _) => StageCommand("RESET");
+        MenuItem("ExitMenuItem").Click        += (_, _) => Close();
+        MenuItem("NavigateMenuItem").Click    += (_, _) => StageCommand("NAVIGATE");
+        MenuItem("LabelModeMenuItem").Click   += (_, _) => StageCommand("LABELMODE");
+        MenuItem("BoxMenuItem").Click         += (_, _) => StageCommand("SELECT B");
+        MenuItem("SphereMenuItem").Click      += (_, _) => StageCommand("SELECT S");
+        MenuItem("CylinderMenuItem").Click    += (_, _) => StageCommand("SELECT C");
+        MenuItem("ConfirmMenuItem").Click     += (_, _) => StageCommand("CONFIRM");
+        MenuItem("CancelMenuItem").Click      += (_, _) => StageCommand("CANCEL");
     }
 
     private void WireCommandBox()
     {
-        CommandInput.KeyDown += (_, e) =>
+        _commandInput.KeyDown += (_, e) =>
         {
             if (e.Key == Key.Escape)
             {
                 ExecuteCommand("CANCEL");
-                CommandInput.Text = "";
+                _commandInput.Text = "";
                 e.Handled = true;
                 return;
             }
 
             if (e.Key == Key.Up)
             {
-                CommandInput.Text = _commandSession.Recall(-1);
+                _commandInput.Text = _commandSession.Recall(-1);
+                _commandInput.CaretIndex = _commandInput.Text?.Length ?? 0;
                 e.Handled = true;
                 return;
             }
 
             if (e.Key == Key.Down)
             {
-                CommandInput.Text = _commandSession.Recall(1);
+                _commandInput.Text = _commandSession.Recall(1);
+                _commandInput.CaretIndex = _commandInput.Text?.Length ?? 0;
                 e.Handled = true;
                 return;
             }
@@ -108,10 +119,10 @@ public sealed partial class MainWindow : Window
             if (e.Key is not Key.Enter and not Key.Space)
                 return;
 
-            string command = CommandInput.Text ?? "";
+            string command = _commandInput.Text ?? "";
             ExecuteCommand(command);
-            CommandInput.Text = "";
-            CommandInput.Focus();
+            _commandInput.Text = "";
+            _commandInput.Focus();
             e.Handled = true;
         };
     }
@@ -120,11 +131,11 @@ public sealed partial class MainWindow : Window
     {
         Button("OpenToolbarButton").Click += async (_, _) => await OpenLasAsync();
         WireCommandButton("NavigateToolbarButton", "NAVIGATE");
-        WireCommandButton("BoxToolbarButton", "SELECT B");
-        WireCommandButton("SphereToolbarButton", "SELECT S");
+        WireCommandButton("BoxToolbarButton",      "SELECT B");
+        WireCommandButton("SphereToolbarButton",   "SELECT S");
         WireCommandButton("CylinderToolbarButton", "SELECT C");
-        WireCommandButton("ConfirmToolbarButton", "CONFIRM");
-        WireCommandButton("CancelToolbarButton", "CANCEL");
+        WireCommandButton("ConfirmToolbarButton",  "CONFIRM");
+        WireCommandButton("CancelToolbarButton",   "CANCEL");
     }
 
     private void WireCommandButton(string name, string command) =>
@@ -133,15 +144,17 @@ public sealed partial class MainWindow : Window
     private void StageCommand(string command)
     {
         _commandSession.Stage(command);
-        CommandInput.Text = command;
-        CommandInput.CaretIndex = command.Length;
-        CommandInput.Focus();
+        _commandInput.Text = command;
+        _commandInput.CaretIndex = command.Length;
+        _commandInput.Focus();
     }
 
-    private Button Button(string name) => this.FindControl<Button>(name)
+    private Button Button(string name) =>
+        this.FindControl<Button>(name)
         ?? throw new InvalidOperationException($"{name} control is missing.");
 
-    private MenuItem MenuItem(string name) => this.FindControl<MenuItem>(name)
+    private MenuItem MenuItem(string name) =>
+        this.FindControl<MenuItem>(name)
         ?? throw new InvalidOperationException($"{name} control is missing.");
 
     private NativeMenu BuildNativeMenu()
@@ -151,23 +164,23 @@ public sealed partial class MainWindow : Window
         menu.Items.Add(CreateNativeGroup("Host",
         [
             NativeAction("Open LAS...", async (_, _) => await OpenLasAsync(), "Meta+O"),
-            NativeAction("Status", (_, _) => StageCommand("STATUS")),
-            NativeAction("Reset Host", (_, _) => StageCommand("RESET")),
+            NativeAction("Status",      (_, _) => StageCommand("STATUS")),
+            NativeAction("Reset Host",  (_, _) => StageCommand("RESET")),
             new NativeMenuItemSeparator(),
-            NativeAction("Exit", (_, _) => Close(), "Meta+Q")
+            NativeAction("Exit",        (_, _) => Close(), "Meta+Q")
         ]));
 
         menu.Items.Add(CreateNativeGroup("Viewer",
         [
-            NativeAction("Navigate", (_, _) => StageCommand("NAVIGATE")),
+            NativeAction("Navigate",   (_, _) => StageCommand("NAVIGATE")),
             NativeAction("Label Mode", (_, _) => StageCommand("LABELMODE")),
             new NativeMenuItemSeparator(),
-            NativeAction("Box", (_, _) => StageCommand("SELECT B")),
-            NativeAction("Sphere", (_, _) => StageCommand("SELECT S")),
+            NativeAction("Box",      (_, _) => StageCommand("SELECT B")),
+            NativeAction("Sphere",   (_, _) => StageCommand("SELECT S")),
             NativeAction("Cylinder", (_, _) => StageCommand("SELECT C")),
             new NativeMenuItemSeparator(),
             NativeAction("Confirm", (_, _) => StageCommand("CONFIRM"), "Meta+Enter"),
-            NativeAction("Cancel", (_, _) => StageCommand("CANCEL"), "Escape")
+            NativeAction("Cancel",  (_, _) => StageCommand("CANCEL"),  "Escape")
         ]));
 
         return menu;
@@ -175,14 +188,9 @@ public sealed partial class MainWindow : Window
 
     private static NativeMenuItem CreateNativeGroup(string header, params NativeMenuItemBase[] items)
     {
-        var group = new NativeMenuItem(header)
-        {
-            Menu = new NativeMenu()
-        };
-
+        var group = new NativeMenuItem(header) { Menu = new NativeMenu() };
         foreach (NativeMenuItemBase item in items)
             group.Menu.Add(item);
-
         return group;
     }
 
@@ -190,10 +198,8 @@ public sealed partial class MainWindow : Window
     {
         var item = new NativeMenuItem(header);
         item.Click += handler;
-
         if (!string.IsNullOrWhiteSpace(gesture))
             item.Gesture = KeyGesture.Parse(gesture);
-
         return item;
     }
 
@@ -201,17 +207,12 @@ public sealed partial class MainWindow : Window
     {
         _commandSession.Submit(command);
         RefreshHistory();
-        CommandPrompt.Text = _hostController.CommandPrompt;
-    }
-
-    private void FocusViewer()
-    {
-        Dispatcher.UIThread.Post(() => _viewport?.FocusViewer(), DispatcherPriority.Input);
+        _commandPrompt.Text = _hostController.CommandPrompt;
     }
 
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
     {
-        if (ReferenceEquals(e.Source, CommandInput))
+        if (ReferenceEquals(e.Source, _commandInput))
             return;
 
         if (e.Key is Key.Enter or Key.Space)
@@ -225,7 +226,7 @@ public sealed partial class MainWindow : Window
         {
             if (e.Key == Key.F1)
                 StageCommand("HELP");
-            CommandInput.Focus();
+            _commandInput.Focus();
             e.Handled = true;
             return;
         }
@@ -240,7 +241,7 @@ public sealed partial class MainWindow : Window
 
     private void OnWindowKeyUp(object? sender, KeyEventArgs e)
     {
-        if (ReferenceEquals(e.Source, CommandInput))
+        if (ReferenceEquals(e.Source, _commandInput))
             return;
 
         ViewerKey key = AvaloniaViewerKeyMapper.ToViewerKey(e.Key);
@@ -255,9 +256,10 @@ public sealed partial class MainWindow : Window
     {
         Dispatcher.UIThread.Post(() =>
         {
-            StatusBlock.Text = _hostController.Status;
+            _statusBlock.Text = _hostController.Status;
             _commandSession.AddHistory(message);
             RefreshHistory();
+            _commandPrompt.Text = _hostController.CommandPrompt;
         });
     }
 
@@ -269,8 +271,8 @@ public sealed partial class MainWindow : Window
 
     private void RefreshHistory()
     {
-        HistoryOutput.Text = string.Join(Environment.NewLine, _commandSession.History);
-        HistoryOutput.CaretIndex = HistoryOutput.Text.Length;
+        _historyOutput.Text = string.Join(Environment.NewLine, _commandSession.History);
+        _historyOutput.CaretIndex = _historyOutput.Text.Length;
     }
 
     private async Task OpenLasAsync()
@@ -285,10 +287,7 @@ public sealed partial class MainWindow : Window
             AllowMultiple = false,
             FileTypeFilter =
             [
-                new FilePickerFileType("LAS point clouds")
-                {
-                    Patterns = ["*.las", "*.laz"]
-                },
+                new FilePickerFileType("LAS point clouds") { Patterns = ["*.las", "*.laz"] },
                 FilePickerFileTypes.All
             ]
         });
@@ -303,7 +302,7 @@ public sealed partial class MainWindow : Window
 
         try
         {
-            var progress = new Progress<int>(pct => Dispatcher.UIThread.Post(() => StatusBlock.Text = $"Loading {pct}%"));
+            var progress = new Progress<int>(pct => Dispatcher.UIThread.Post(() => _statusBlock.Text = $"Loading {pct}%"));
             LoadedPointCloud cloud = await Task.Run(() =>
             {
                 using var reader = new LasReader(path);

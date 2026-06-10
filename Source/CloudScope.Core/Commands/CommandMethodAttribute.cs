@@ -3,7 +3,7 @@ namespace CloudScope.Commands;
 [Flags]
 public enum CommandFlags
 {
-    Modal = 0,
+    None = 0,
     Transparent = 1,
     NoHistory = 2,
     NoUndoMarker = 4

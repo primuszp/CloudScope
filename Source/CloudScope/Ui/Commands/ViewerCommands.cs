@@ -6,37 +6,43 @@ namespace CloudScope.Ui.Commands;
 
 public sealed class ViewerCommands : ICommandCancellationHandler
 {
-    private bool _selectHasTool;
-    private bool _selectAwaitingShape;
+    // 0 = idle, 1 = awaiting shape prompt, 2 = tool active
+    private int _selectPhase;
 
     [CommandMethod("SELECT", "SEL")]
     public CommandResult Select(CommandContext context)
     {
+        var viewer = context.GetTarget<ViewerController>();
         string option = context.Input.ToUpperInvariant();
+
+        // Sync phase with authoritative controller state: if tool was cancelled externally
+        // (e.g. UNDO, Escape key) while we thought we were in phase 2, reset.
+        if (_selectPhase == 2 && !viewer.HasActiveSelection)
+            _selectPhase = 0;
+
         if (option.Length == 0)
         {
-            if (context.GetTarget<ViewerController>().HasActiveSelection)
+            if (viewer.HasActiveSelection)
             {
-                context.GetTarget<ViewerController>().ConfirmActiveSelection();
-                _selectHasTool = false;
-                _selectAwaitingShape = false;
+                viewer.ConfirmActiveSelection();
+                _selectPhase = 0;
                 return CommandResult.End("Selection applied.");
             }
 
-            if (_selectHasTool)
+            if (_selectPhase == 2)
                 return CommandResult.Continue("Adjust selection using grips or [Confirm/Undo/Cancel]:");
 
-            if (_selectAwaitingShape)
+            if (_selectPhase == 1)
             {
-                _selectAwaitingShape = false;
+                _selectPhase = 0;
                 return StartTool(context, SelectionToolType.Box);
             }
 
-            _selectAwaitingShape = true;
+            _selectPhase = 1;
             return CommandResult.Continue("Specify selection shape [Box/Sphere/Cylinder/Undo] <Box>:");
         }
 
-        _selectAwaitingShape = false;
+        _selectPhase = 0;
         switch (option)
         {
             case "B":
@@ -54,21 +60,18 @@ public sealed class ViewerCommands : ICommandCancellationHandler
             case "UNDO":
                 return CommandResult.Continue(
                     "Adjust selection using grips or [Confirm/Undo/Cancel]:",
-                    context.GetTarget<ViewerController>().UndoSelectionCommand() ? "Last selection change undone." : "Nothing to undo.");
+                    viewer.UndoSelectionCommand() ? "Last selection change undone." : "Nothing to undo.");
             case "CONFIRM":
-                if (!context.GetTarget<ViewerController>().HasActiveSelection)
+                if (!viewer.HasActiveSelection)
                     return CommandResult.Continue("Adjust selection using grips or [Confirm/Undo/Cancel]:", "No active selection.");
-                context.GetTarget<ViewerController>().ConfirmActiveSelection();
-                _selectHasTool = false;
-                _selectAwaitingShape = false;
+                viewer.ConfirmActiveSelection();
                 return CommandResult.End("Selection applied.");
             case "CANCEL":
             case "ESC":
-                context.GetTarget<ViewerController>().CancelOrExitLabelMode();
-                _selectHasTool = false;
-                _selectAwaitingShape = false;
+                viewer.CancelOrExitLabelMode();
                 return CommandResult.Cancel();
             default:
+                _selectPhase = 1;
                 return CommandResult.Continue(
                     "Specify selection shape [Box/Sphere/Cylinder/Undo] <Box>:",
                     $"Invalid option keyword: {context.Input}");
@@ -113,19 +116,20 @@ public sealed class ViewerCommands : ICommandCancellationHandler
             return CommandResult.Continue(
                 "Specify corner of window, enter a scale factor (nX or nXP), or [All/Center/Extents/Object] <real time>:");
 
+        var viewer = context.GetTarget<ViewerController>();
         switch (option.ToUpperInvariant())
         {
             case "A":
             case "ALL":
             case "E":
             case "EXTENTS":
-                context.GetTarget<ViewerController>().ZoomExtents();
+                viewer.ZoomExtents();
                 return CommandResult.End("Zoom extents.");
             case "C":
             case "CENTER":
             case "O":
             case "OBJECT":
-                context.GetTarget<ViewerController>().ZoomCenter();
+                viewer.ZoomCenter();
                 return CommandResult.End("Zoomed to object at viewport center.");
             case "W":
             case "WINDOW":
@@ -137,7 +141,7 @@ public sealed class ViewerCommands : ICommandCancellationHandler
                 "Specify corner of window, enter a scale factor (nX or nXP), or [All/Center/Extents/Object] <real time>:",
                 error);
 
-        context.GetTarget<ViewerController>().ZoomByFactor(factor);
+        viewer.ZoomByFactor(factor);
         return CommandResult.End($"Zoom scale factor: {factor.ToString("0.###", CultureInfo.InvariantCulture)}x");
     }
 
@@ -149,18 +153,17 @@ public sealed class ViewerCommands : ICommandCancellationHandler
 
         string view = context.Input.ToUpperInvariant() switch
         {
-            "F" => "FRONT",
-            "B" => "BACK",
-            "L" => "LEFT",
-            "R" => "RIGHT",
-            "T" => "TOP",
-            "BOT" => "BOTTOM",
+            "F"        => "FRONT",
+            "B"        => "BACK",
+            "L"        => "LEFT",
+            "R"        => "RIGHT",
+            "T"        => "TOP",
+            "BOT"      => "BOTTOM",
             "I" or "ISO" => "ISOMETRIC",
-            var value => value
+            var v      => v
         };
 
-        string[] views = ["FRONT", "BACK", "LEFT", "RIGHT", "TOP", "BOTTOM", "ISOMETRIC"];
-        if (!views.Contains(view))
+        if (!ValidViews.Contains(view))
             return CommandResult.Continue(
                 "Enter view [Front/Back/Left/Right/Top/Bottom/Isometric]:",
                 $"Invalid view keyword: {context.Input}");
@@ -179,20 +182,21 @@ public sealed class ViewerCommands : ICommandCancellationHandler
     [CommandMethod("POINTSIZE", "PSIZE", Flags = CommandFlags.NoUndoMarker)]
     public CommandResult PointSize(CommandContext context)
     {
+        var viewer = context.GetTarget<ViewerController>();
         string input = context.Input.Trim();
         if (input.Length == 0)
-            return CommandResult.Continue($"Enter point size <{context.GetTarget<ViewerController>().PointSize:0.0}>:");
+            return CommandResult.Continue($"Enter point size <{viewer.PointSize:0.0}>:");
 
         float size;
         if (input == "+")
-            size = context.GetTarget<ViewerController>().PointSize + 0.5f;
+            size = viewer.PointSize + 0.5f;
         else if (input == "-")
-            size = context.GetTarget<ViewerController>().PointSize - 0.5f;
+            size = viewer.PointSize - 0.5f;
         else if (!float.TryParse(input, NumberStyles.Float, CultureInfo.InvariantCulture, out size))
             return CommandResult.Continue("Enter point size:", $"Invalid point size: {input}");
 
-        context.GetTarget<ViewerController>().SetPointSize(size);
-        return CommandResult.End($"Point size: {context.GetTarget<ViewerController>().PointSize:0.0}");
+        viewer.SetPointSize(size);
+        return CommandResult.End($"Point size: {viewer.PointSize:0.0}");
     }
 
     [CommandMethod("SAVELABELS", "QLSAVE", Flags = CommandFlags.NoUndoMarker)]
@@ -213,9 +217,10 @@ public sealed class ViewerCommands : ICommandCancellationHandler
     [CommandMethod("CONFIRM", "ENTER", Flags = CommandFlags.NoHistory)]
     public CommandResult Confirm(CommandContext context)
     {
-        if (!context.GetTarget<ViewerController>().HasActiveSelection)
+        var viewer = context.GetTarget<ViewerController>();
+        if (!viewer.HasActiveSelection)
             return CommandResult.End("No active selection.");
-        context.GetTarget<ViewerController>().ConfirmActiveSelection();
+        viewer.ConfirmActiveSelection();
         return CommandResult.End("Selection applied.");
     }
 
@@ -226,15 +231,23 @@ public sealed class ViewerCommands : ICommandCancellationHandler
         return CommandResult.Cancel();
     }
 
-    [CommandMethod("HELP", "?", Flags = CommandFlags.NoUndoMarker)]
+    [CommandMethod("HELP", "?", Flags = CommandFlags.NoUndoMarker | CommandFlags.Transparent)]
     public CommandResult Help(CommandContext context) => CommandResult.End(
         "Commands: SELECT, ZOOM, VIEW, PROJECTION, POINTSIZE, LABEL, SAVELABELS, LOADLABELS, CLEARLABELS, NAVIGATE, UNDO, HELP.");
+
+    public void CancelCommand(CommandContext context, string globalCommandName)
+    {
+        if (globalCommandName != "SELECT")
+            return;
+
+        context.GetTarget<ViewerController>().CancelOrExitLabelMode();
+        _selectPhase = 0;
+    }
 
     private CommandResult StartTool(CommandContext context, SelectionToolType tool)
     {
         context.GetTarget<ViewerController>().SetTool(tool);
-        _selectHasTool = true;
-        _selectAwaitingShape = false;
+        _selectPhase = 2;
         return CommandResult.Continue(
             "Adjust selection using grips or [Confirm/Undo/Cancel]:",
             $"{tool} selection started. Draw the selection volume.");
@@ -258,14 +271,6 @@ public sealed class ViewerCommands : ICommandCancellationHandler
         return true;
     }
 
-    public void CancelCommand(CommandContext context, string globalCommandName)
-    {
-        if (globalCommandName != "SELECT")
-            return;
-
-        context.GetTarget<ViewerController>().CancelOrExitLabelMode();
-        _selectHasTool = false;
-        _selectAwaitingShape = false;
-    }
+    private static readonly HashSet<string> ValidViews =
+        new(["FRONT", "BACK", "LEFT", "RIGHT", "TOP", "BOTTOM", "ISOMETRIC"], StringComparer.Ordinal);
 }
-

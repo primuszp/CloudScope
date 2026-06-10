@@ -1,4 +1,5 @@
 using System;
+using CloudScope.Commands;
 using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
@@ -72,6 +73,7 @@ namespace CloudScope
 
         public void SetLasFilePath(string path) => _controller.SetLasFilePath(path);
 
+        public CommandResult ExecuteCommandResult(string commandText) => _commandDispatcher.ExecuteResult(commandText);
         public string ExecuteCommand(string commandText) => _commandDispatcher.Execute(commandText);
         public string CommandPrompt => _commandDispatcher.CurrentPrompt;
 
@@ -230,16 +232,22 @@ namespace CloudScope
             _ => ViewerMouseButton.Left
         };
 
-        protected static ViewerKey ToViewerKey(Keys key)
-        {
-            foreach (ViewerKey viewerKey in Enum.GetValues<ViewerKey>())
-            {
-                if (OpenTkKeyboardAdapter.ToOpenTkKey(viewerKey) == key)
-                    return viewerKey;
-            }
+        private static readonly Dictionary<Keys, ViewerKey> KeyLookup = BuildKeyLookup();
 
-            return ViewerKey.Unknown;
+        private static Dictionary<Keys, ViewerKey> BuildKeyLookup()
+        {
+            var map = new Dictionary<Keys, ViewerKey>();
+            foreach (ViewerKey vk in Enum.GetValues<ViewerKey>())
+            {
+                Keys k = OpenTkKeyboardAdapter.ToOpenTkKey(vk);
+                if (k != Keys.Unknown)
+                    map.TryAdd(k, vk);
+            }
+            return map;
         }
+
+        protected static ViewerKey ToViewerKey(Keys key) =>
+            KeyLookup.TryGetValue(key, out ViewerKey vk) ? vk : ViewerKey.Unknown;
 
     }
 }

@@ -1,6 +1,6 @@
 using System.Numerics;
-using CloudScope.Selection;
 using CloudScope.Commands;
+using CloudScope.Selection;
 using ImGuiNET;
 
 namespace CloudScope.Ui
@@ -56,20 +56,20 @@ namespace CloudScope.Ui
 
             if (ImGui.BeginMenu("Label"))
             {
-                if (ImGui.MenuItem("Box")) Stage("SELECT B");
-                if (ImGui.MenuItem("Sphere")) Stage("SELECT S");
+                if (ImGui.MenuItem("Box"))      Stage("SELECT B");
+                if (ImGui.MenuItem("Sphere"))   Stage("SELECT S");
                 if (ImGui.MenuItem("Cylinder")) Stage("SELECT C");
                 ImGui.Separator();
                 if (ImGui.MenuItem("Confirm")) Stage("CONFIRM");
-                if (ImGui.MenuItem("Undo")) Stage("UNDO");
-                if (ImGui.MenuItem("Cancel")) Stage("CANCEL");
+                if (ImGui.MenuItem("Undo"))    Stage("UNDO");
+                if (ImGui.MenuItem("Cancel"))  Stage("CANCEL");
                 ImGui.EndMenu();
             }
 
             if (ImGui.BeginMenu("Mode"))
             {
                 if (ImGui.MenuItem("Navigate", null, _viewer.Mode == InteractionMode.Navigate)) Stage("NAVIGATE");
-                if (ImGui.MenuItem("Label", null, _viewer.Mode == InteractionMode.Label)) Stage("LABELMODE");
+                if (ImGui.MenuItem("Label",    null, _viewer.Mode == InteractionMode.Label))    Stage("LABELMODE");
                 ImGui.EndMenu();
             }
 
@@ -109,11 +109,20 @@ namespace CloudScope.Ui
                 _focusCommandLine = false;
             }
 
+            bool upPressed   = ImGui.IsKeyPressed(ImGuiKey.UpArrow,   false);
+            bool downPressed = ImGui.IsKeyPressed(ImGuiKey.DownArrow, false);
+
             bool submitted = ImGui.InputText(
                 "##CommandInput",
                 ref _commandText,
                 256,
                 ImGuiInputTextFlags.EnterReturnsTrue);
+
+            if (ImGui.IsItemActive())
+            {
+                if (upPressed)   _commandText = _session.Recall(-1);
+                if (downPressed) _commandText = _session.Recall(1);
+            }
 
             if (submitted || _submitRequested)
             {
@@ -128,10 +137,7 @@ namespace CloudScope.Ui
             ImGui.PopStyleVar();
         }
 
-        private void Execute(string command)
-        {
-            _session.Submit(command);
-        }
+        private void Execute(string command) => _session.Submit(command);
 
         private void Stage(string command)
         {

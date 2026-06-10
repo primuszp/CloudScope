@@ -49,26 +49,31 @@ public sealed class CommandRuntime
     public string CurrentPrompt { get; private set; } = "Command:";
     public string? LastCompletedCommand { get; private set; }
 
+    public bool IsKnownCommand(string name) => _commands.ContainsKey(name);
+
     public CommandResult Execute(string input)
     {
         string trimmed = input.Trim();
+
         if (_active != null)
         {
-            if (trimmed.Equals("CANCEL", StringComparison.OrdinalIgnoreCase) ||
-                trimmed.Equals("ESC", StringComparison.OrdinalIgnoreCase) ||
-                trimmed.Equals("ESCAPE", StringComparison.OrdinalIgnoreCase))
+            if (IsCancel(trimmed))
                 return CancelActive();
 
-            string[] activeParts = trimmed.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-            bool isActiveOption = trimmed.Equals("U", StringComparison.OrdinalIgnoreCase) ||
-                                  trimmed.Equals("UNDO", StringComparison.OrdinalIgnoreCase) ||
-                                  trimmed.Equals("CONFIRM", StringComparison.OrdinalIgnoreCase);
-            if (activeParts.Length > 0 && _commands.ContainsKey(activeParts[0]) &&
-                (activeParts.Length == 2 || !isActiveOption))
+            string[] parts = trimmed.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length > 0 && _commands.TryGetValue(parts[0], out Descriptor? incoming))
             {
-                CancelActive();
-                return Execute(trimmed);
+                bool isOption = IsActiveOption(trimmed);
+                if (parts.Length == 2 || !isOption)
+                {
+                    string incomingInput = parts.Length > 1 ? parts[1] : "";
+                    if (incoming.Flags.HasFlag(CommandFlags.Transparent))
+                        return RunTransparent(incoming, incomingInput);
+                    CancelActive();
+                    return ActivateAndRun(incoming, incomingInput);
+                }
             }
+
             return InvokeActive(trimmed);
         }
 
@@ -78,14 +83,11 @@ public sealed class CommandRuntime
             trimmed = LastCompletedCommand;
         }
 
-        string[] parts = trimmed.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (!_commands.TryGetValue(parts[0], out Descriptor? descriptor))
-            return CommandResult.End($"Unknown command \"{parts[0]}\". Press F1 or type HELP.");
+        string[] cmdParts = trimmed.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (!_commands.TryGetValue(cmdParts[0], out Descriptor? descriptor))
+            return CommandResult.End($"Unknown command \"{cmdParts[0]}\". Press F1 or type HELP.");
 
-        _active = descriptor;
-        _context.Input = parts.Length > 1 ? parts[1] : "";
-        CommandStarted?.Invoke(this, new CommandEventArgs(descriptor.Name));
-        return InvokeActive(_context.Input);
+        return ActivateAndRun(descriptor, cmdParts.Length > 1 ? cmdParts[1] : "");
     }
 
     public CommandResult CancelActive()
@@ -98,6 +100,33 @@ public sealed class CommandRuntime
         CurrentPrompt = "Command:";
         CommandCancelled?.Invoke(this, new CommandEventArgs(descriptor.Name));
         return CommandResult.Cancel();
+    }
+
+    private CommandResult ActivateAndRun(Descriptor descriptor, string input)
+    {
+        _active = descriptor;
+        _context.Input = input;
+        CommandStarted?.Invoke(this, new CommandEventArgs(descriptor.Name));
+        return InvokeActive(input);
+    }
+
+    private CommandResult RunTransparent(Descriptor descriptor, string input)
+    {
+        _context.Input = input;
+        CommandStarted?.Invoke(this, new CommandEventArgs(descriptor.Name));
+        try
+        {
+            var result = (CommandResult?)descriptor.Method.Invoke(descriptor.Target, [_context]) ?? CommandResult.End();
+            if (!descriptor.Flags.HasFlag(CommandFlags.NoHistory))
+                LastCompletedCommand = descriptor.Name;
+            CommandEnded?.Invoke(this, new CommandEventArgs(descriptor.Name));
+            return result;
+        }
+        catch (Exception ex)
+        {
+            CommandFailed?.Invoke(this, new CommandEventArgs(descriptor.Name));
+            return new CommandResult(CommandStatus.Failed, $"Command failed: {ex.InnerException?.Message ?? ex.Message}");
+        }
     }
 
     private CommandResult InvokeActive(string input)
@@ -137,7 +166,7 @@ public sealed class CommandRuntime
             ValidateSignature(method);
             var descriptor = new Descriptor(attribute.GlobalName.ToUpperInvariant(), attribute.Flags, target, method);
             AddName(descriptor.Name, descriptor);
-            foreach (string alias in attribute.Aliases) AddName(alias, descriptor);
+            foreach (string alias in attribute.Aliases) AddName(alias.ToUpperInvariant(), descriptor);
         }
     }
 
@@ -154,6 +183,16 @@ public sealed class CommandRuntime
             parameters[0].ParameterType != typeof(CommandContext))
             throw new InvalidOperationException($"{method.DeclaringType?.Name}.{method.Name} must return CommandResult and accept one CommandContext.");
     }
+
+    private static bool IsCancel(string s) =>
+        s.Equals("CANCEL", StringComparison.OrdinalIgnoreCase) ||
+        s.Equals("ESC",    StringComparison.OrdinalIgnoreCase) ||
+        s.Equals("ESCAPE", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsActiveOption(string s) =>
+        s.Equals("U",       StringComparison.OrdinalIgnoreCase) ||
+        s.Equals("UNDO",    StringComparison.OrdinalIgnoreCase) ||
+        s.Equals("CONFIRM", StringComparison.OrdinalIgnoreCase);
 
     private sealed record Descriptor(string Name, CommandFlags Flags, object Target, MethodInfo Method);
 }
