@@ -55,9 +55,53 @@ namespace CloudScope.Platform.Metal.Rendering
         protected static (float x, float y) ScreenToNdc(float sx, float sy, float width, float height)
             => (sx / width * 2f - 1f, 1f - sy / height * 2f);
 
+        // ── Screen-space draw helpers (shared by all gizmo renderers) ─────────
+
+        private readonly float[] _lineBuf    = new float[6];
+        private readonly float[] _arrowBuf   = new float[9];
+        private readonly float[] _diamondBuf = new float[18];
+        private MTLBuffer _dynamicBuffer;
+
+        protected void DrawLine(float x0, float y0, float x1, float y1, Vector4 color)
+        {
+            _lineBuf[0] = x0; _lineBuf[1] = y0; _lineBuf[2] = 0f;
+            _lineBuf[3] = x1; _lineBuf[4] = y1; _lineBuf[5] = 0f;
+            DrawDynamic(_lineBuf, 2, MTLPrimitiveType.Line, color);
+        }
+
+        protected void DrawArrowHead(float tipX, float tipY, float fromX, float fromY, float size, Vector4 color)
+        {
+            float dx = tipX - fromX, dy = tipY - fromY;
+            float len = MathF.Sqrt(dx * dx + dy * dy);
+            if (len < 1e-4f) return;
+            float nx = dx / len, ny = dy / len, px = -ny, py = nx;
+            _arrowBuf[0] = tipX;                            _arrowBuf[1] = tipY;                            _arrowBuf[2] = 0f;
+            _arrowBuf[3] = tipX - nx * size * 2f + px * size; _arrowBuf[4] = tipY - ny * size * 2f + py * size; _arrowBuf[5] = 0f;
+            _arrowBuf[6] = tipX - nx * size * 2f - px * size; _arrowBuf[7] = tipY - ny * size * 2f - py * size; _arrowBuf[8] = 0f;
+            DrawDynamic(_arrowBuf, 3, MTLPrimitiveType.Triangle, color);
+        }
+
+        protected void DrawDiamond(float x, float y, float sx, float sy, Vector4 color)
+        {
+            _diamondBuf[0]  = x;       _diamondBuf[1]  = y + sy; _diamondBuf[2]  = 0f;
+            _diamondBuf[3]  = x + sx;  _diamondBuf[4]  = y;      _diamondBuf[5]  = 0f;
+            _diamondBuf[6]  = x;       _diamondBuf[7]  = y - sy; _diamondBuf[8]  = 0f;
+            _diamondBuf[9]  = x;       _diamondBuf[10] = y + sy; _diamondBuf[11] = 0f;
+            _diamondBuf[12] = x;       _diamondBuf[13] = y - sy; _diamondBuf[14] = 0f;
+            _diamondBuf[15] = x - sx;  _diamondBuf[16] = y;      _diamondBuf[17] = 0f;
+            DrawDynamic(_diamondBuf, 6, MTLPrimitiveType.Triangle, color);
+        }
+
+        protected void DrawDynamic(float[] vertices, int vertexCount, MTLPrimitiveType primitive, Vector4 color)
+        {
+            Renderer.UpdateBuffer(ref _dynamicBuffer, vertices);
+            Renderer.Draw(_dynamicBuffer, vertexCount, primitive, Matrix4.Identity, color, depthTest: false);
+        }
+
         public virtual void Dispose()
         {
             MetalPrimitiveRenderer.Release(ref _axisBuffer);
+            MetalPrimitiveRenderer.Release(ref _dynamicBuffer);
             Renderer.Dispose();
         }
     }
@@ -89,10 +133,6 @@ namespace CloudScope.Platform.Metal.Rendering
         private MTLBuffer _faceBuffer;
         private MTLBuffer _placementFillBuffer;
         private MTLBuffer _placementLineBuffer;
-        private MTLBuffer _dynamicBuffer;
-        private readonly float[] _lineBuf = new float[6];
-        private readonly float[] _arrowBuf = new float[9];
-        private readonly float[] _diamondBuf = new float[18];
         private readonly float[] _ringBuf = new float[64 * 6];
 
         public override void Render(IRenderFrameData frameData, ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera camera)
@@ -142,7 +182,6 @@ namespace CloudScope.Platform.Metal.Rendering
             MetalPrimitiveRenderer.Release(ref _faceBuffer);
             MetalPrimitiveRenderer.Release(ref _placementFillBuffer);
             MetalPrimitiveRenderer.Release(ref _placementLineBuffer);
-            MetalPrimitiveRenderer.Release(ref _dynamicBuffer);
             base.Dispose();
         }
 
@@ -268,47 +307,6 @@ namespace CloudScope.Platform.Metal.Rendering
             DrawArrowHead(tnx, tny, fnx, fny, 0.02f, style.Color with { W = 1f });
         }
 
-        private void DrawLine(float x0, float y0, float x1, float y1, Vector4 color)
-        {
-            _lineBuf[0] = x0; _lineBuf[1] = y0; _lineBuf[2] = 0f;
-            _lineBuf[3] = x1; _lineBuf[4] = y1; _lineBuf[5] = 0f;
-            DrawDynamic(_lineBuf, 2, MTLPrimitiveType.Line, color);
-        }
-
-        private void DrawArrowHead(float tipX, float tipY, float fromX, float fromY, float size, Vector4 color)
-        {
-            float dx = tipX - fromX;
-            float dy = tipY - fromY;
-            float len = MathF.Sqrt(dx * dx + dy * dy);
-            if (len < 1e-4f) return;
-            float nx = dx / len;
-            float ny = dy / len;
-            float px = -ny;
-            float py = nx;
-
-            _arrowBuf[0] = tipX; _arrowBuf[1] = tipY; _arrowBuf[2] = 0f;
-            _arrowBuf[3] = tipX - nx * size * 2f + px * size; _arrowBuf[4] = tipY - ny * size * 2f + py * size; _arrowBuf[5] = 0f;
-            _arrowBuf[6] = tipX - nx * size * 2f - px * size; _arrowBuf[7] = tipY - ny * size * 2f - py * size; _arrowBuf[8] = 0f;
-            DrawDynamic(_arrowBuf, 3, MTLPrimitiveType.Triangle, color);
-        }
-
-        private void DrawDiamond(float x, float y, float sx, float sy, Vector4 color)
-        {
-            _diamondBuf[0] = x; _diamondBuf[1] = y + sy; _diamondBuf[2] = 0f;
-            _diamondBuf[3] = x + sx; _diamondBuf[4] = y; _diamondBuf[5] = 0f;
-            _diamondBuf[6] = x; _diamondBuf[7] = y - sy; _diamondBuf[8] = 0f;
-            _diamondBuf[9] = x; _diamondBuf[10] = y + sy; _diamondBuf[11] = 0f;
-            _diamondBuf[12] = x; _diamondBuf[13] = y - sy; _diamondBuf[14] = 0f;
-            _diamondBuf[15] = x - sx; _diamondBuf[16] = y; _diamondBuf[17] = 0f;
-            DrawDynamic(_diamondBuf, 6, MTLPrimitiveType.Triangle, color);
-        }
-
-        private void DrawDynamic(float[] vertices, int vertexCount, MTLPrimitiveType primitive, Vector4 color)
-        {
-            Renderer.UpdateBuffer(ref _dynamicBuffer, vertices);
-            Renderer.Draw(_dynamicBuffer, vertexCount, primitive, Matrix4.Identity, color, depthTest: false);
-        }
-
     }
 
     [SupportedOSPlatform("macos")]
@@ -320,8 +318,6 @@ namespace CloudScope.Platform.Metal.Rendering
 
         private MTLBuffer _fillBuffer;
         private MTLBuffer _circleBuffer;
-        private MTLBuffer _dynamicBuffer;
-        private readonly float[] _diamondBuf = new float[18];
         private int _fillVertexCount;
         private int _circleVertexCount;
 
@@ -401,18 +397,6 @@ namespace CloudScope.Platform.Metal.Rendering
             }
         }
 
-        private void DrawDiamond(float x, float y, float sx, float sy, Vector4 color)
-        {
-            _diamondBuf[0] = x; _diamondBuf[1] = y + sy; _diamondBuf[2] = 0f;
-            _diamondBuf[3] = x + sx; _diamondBuf[4] = y; _diamondBuf[5] = 0f;
-            _diamondBuf[6] = x; _diamondBuf[7] = y - sy; _diamondBuf[8] = 0f;
-            _diamondBuf[9] = x; _diamondBuf[10] = y + sy; _diamondBuf[11] = 0f;
-            _diamondBuf[12] = x; _diamondBuf[13] = y - sy; _diamondBuf[14] = 0f;
-            _diamondBuf[15] = x - sx; _diamondBuf[16] = y; _diamondBuf[17] = 0f;
-            Renderer.UpdateBuffer(ref _dynamicBuffer, _diamondBuf);
-            Renderer.Draw(_dynamicBuffer, 6, MTLPrimitiveType.Triangle, Matrix4.Identity, color, depthTest: false);
-        }
-
         private static void AddSpherePoint(float[] data, ref int i, float cp, float sp, float ct, float st)
         {
             data[i++] = cp * ct;
@@ -442,7 +426,6 @@ namespace CloudScope.Platform.Metal.Rendering
         {
             MetalPrimitiveRenderer.Release(ref _fillBuffer);
             MetalPrimitiveRenderer.Release(ref _circleBuffer);
-            MetalPrimitiveRenderer.Release(ref _dynamicBuffer);
             base.Dispose();
         }
     }
@@ -455,10 +438,6 @@ namespace CloudScope.Platform.Metal.Rendering
 
         private MTLBuffer _fillBuffer;
         private MTLBuffer _wireBuffer;
-        private MTLBuffer _dynamicBuffer;
-        private readonly float[] _lineBuf = new float[6];
-        private readonly float[] _arrowBuf = new float[9];
-        private readonly float[] _diamondBuf = new float[18];
         private float[] _ringBuf = new float[64 * 6];
         private int _fillVertexCount;
         private int _wireVertexCount;
@@ -658,42 +637,6 @@ namespace CloudScope.Platform.Metal.Rendering
             }
         }
 
-        private void DrawLine(float x0, float y0, float x1, float y1, Vector4 color)
-        {
-            _lineBuf[0] = x0; _lineBuf[1] = y0; _lineBuf[2] = 0f;
-            _lineBuf[3] = x1; _lineBuf[4] = y1; _lineBuf[5] = 0f;
-            DrawDynamic(_lineBuf, 2, MTLPrimitiveType.Line, color);
-        }
-
-        private void DrawArrowHead(float tipX, float tipY, float fromX, float fromY, float size, Vector4 color)
-        {
-            float dx = tipX - fromX, dy = tipY - fromY;
-            float len = MathF.Sqrt(dx * dx + dy * dy);
-            if (len < 1e-4f) return;
-            float nx = dx / len, ny = dy / len, px = -ny, py = nx;
-            _arrowBuf[0] = tipX; _arrowBuf[1] = tipY; _arrowBuf[2] = 0f;
-            _arrowBuf[3] = tipX - nx * size * 2f + px * size; _arrowBuf[4] = tipY - ny * size * 2f + py * size; _arrowBuf[5] = 0f;
-            _arrowBuf[6] = tipX - nx * size * 2f - px * size; _arrowBuf[7] = tipY - ny * size * 2f - py * size; _arrowBuf[8] = 0f;
-            DrawDynamic(_arrowBuf, 3, MTLPrimitiveType.Triangle, color);
-        }
-
-        private void DrawDiamond(float x, float y, float sx, float sy, Vector4 color)
-        {
-            _diamondBuf[0] = x; _diamondBuf[1] = y + sy; _diamondBuf[2] = 0f;
-            _diamondBuf[3] = x + sx; _diamondBuf[4] = y; _diamondBuf[5] = 0f;
-            _diamondBuf[6] = x; _diamondBuf[7] = y - sy; _diamondBuf[8] = 0f;
-            _diamondBuf[9] = x; _diamondBuf[10] = y + sy; _diamondBuf[11] = 0f;
-            _diamondBuf[12] = x; _diamondBuf[13] = y - sy; _diamondBuf[14] = 0f;
-            _diamondBuf[15] = x - sx; _diamondBuf[16] = y; _diamondBuf[17] = 0f;
-            DrawDynamic(_diamondBuf, 6, MTLPrimitiveType.Triangle, color);
-        }
-
-        private void DrawDynamic(float[] vertices, int vertexCount, MTLPrimitiveType primitive, Vector4 color)
-        {
-            Renderer.UpdateBuffer(ref _dynamicBuffer, vertices);
-            Renderer.Draw(_dynamicBuffer, vertexCount, primitive, Matrix4.Identity, color, depthTest: false);
-        }
-
         private void EnsureRingCapacity(int requested)
         {
             if (requested <= _ringBuf.Length) return;
@@ -707,7 +650,6 @@ namespace CloudScope.Platform.Metal.Rendering
         {
             MetalPrimitiveRenderer.Release(ref _fillBuffer);
             MetalPrimitiveRenderer.Release(ref _wireBuffer);
-            MetalPrimitiveRenderer.Release(ref _dynamicBuffer);
             base.Dispose();
         }
     }

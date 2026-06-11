@@ -13,13 +13,6 @@ namespace CloudScope.Platform.Metal
     {
         public RenderBackendKind Kind => RenderBackendKind.Metal;
 
-        // ── Diagnostic triangle ─────────────────────────────────────────────────────
-        // Draws a solid red triangle via the same encoder CloudScope uses.
-        // If the triangle appears → encoder works, bug is in the renderers.
-        // If NOT → encoder itself broken (descriptor/format issue).
-        private MTLRenderPipelineState _diagPipeline;
-        private int _frameCount;
-
         public IPointCloudRenderer  CreatePointCloudRenderer()  => new MetalPointCloudRenderer();
         public IHighlightRenderer   CreateHighlightRenderer()   => new MetalHighlightRenderer();
         public IOverlayRenderer     CreateOverlayRenderer()     => new MetalOverlayRenderer();
@@ -49,7 +42,6 @@ namespace CloudScope.Platform.Metal
             if (encoder.NativePtr == IntPtr.Zero) return MetalFrameSession.Empty;
 
             MetalFrameContext.SetRenderCommandEncoder(encoder);
-            _frameCount++;
             return new MetalFrameSession(frame);
         }
 

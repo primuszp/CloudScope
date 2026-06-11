@@ -21,8 +21,8 @@ namespace CloudScope.Platform.Metal.ObjC
 
         private static readonly ConcurrentDictionary<IntPtr, NSApplicationDelegate> s_instances = new();
 
-        public Action<NSNotification>? OnWillFinishLaunching;
-        public Action<NSNotification>? OnDidFinishLaunching;
+        public Action<NSNotification>? OnWillFinishLaunching { get; set; }
+        public Action<NSNotification>? OnDidFinishLaunching  { get; set; }
 
         public IntPtr NativePtr;
 
