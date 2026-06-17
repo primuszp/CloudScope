@@ -8,7 +8,7 @@ using ObjectiveCGeometryMessaging = CloudScope.Platform.MacOS.ObjC.ObjectiveCGeo
 namespace CloudScope.Platform.Metal.ObjC
 {
     [SupportedOSPlatform("macos")]
-    internal class MTKView
+    public class MTKView
     {
         public IntPtr NativePtr;
         public static implicit operator IntPtr(MTKView v) => v.NativePtr;

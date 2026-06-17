@@ -13,7 +13,7 @@ using ObjectiveCGeometryMessaging = CloudScope.Platform.MacOS.ObjC.ObjectiveCGeo
 namespace CloudScope.Platform.Metal.ObjC
 {
     [SupportedOSPlatform("macos")]
-    internal sealed class MTKEventView : IDisposable
+    public sealed class MTKEventView : IDisposable
     {
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate void MouseDelegate(IntPtr self, IntPtr cmd, IntPtr evt);

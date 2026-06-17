@@ -15,16 +15,9 @@
     <PackageReference Include="SharpMetal" Version="1.1.0" />
   </ItemGroup>
 
-  <!-- Share the ObjC wrappers from CloudScope directly -->
   <ItemGroup>
-    <Compile Include="..\CloudScope\Platform\Metal\ObjC\NSApplication.cs" />
-    <Compile Include="..\CloudScope\Platform\Metal\ObjC\NSApplicationDelegate.cs" />
-    <Compile Include="..\CloudScope\Platform\Metal\ObjC\NSWindow.cs" />
-    <Compile Include="..\CloudScope\Platform\MacOS\ObjC\NSGeometry.cs" />
-    <Compile Include="..\CloudScope\Platform\MacOS\ObjC\ObjectiveCGeometryMessaging.cs" />
-    <Compile Include="..\CloudScope\Platform\Metal\ObjC\MTKView.cs" />
-    <Compile Include="..\CloudScope\Platform\Metal\ObjC\MTKViewDelegate.cs" />
-    <Compile Include="..\CloudScope\Platform\Metal\ObjC\MTKEventView.cs" />
+    <ProjectReference Include="..\CloudScope.Core\CloudScope.Core.csproj" />
+    <ProjectReference Include="..\CloudScope.MacOS\CloudScope.MacOS.csproj" />
   </ItemGroup>
 
 </Project>

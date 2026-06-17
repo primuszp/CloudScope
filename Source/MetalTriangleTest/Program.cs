@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using CloudScope.Platform.MacOS.ObjC;
 using CloudScope.Platform.Metal.ObjC;
 using SharpMetal.Foundation;
 using SharpMetal.Metal;
