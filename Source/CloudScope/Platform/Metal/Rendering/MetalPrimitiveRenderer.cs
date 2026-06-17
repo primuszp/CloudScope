@@ -110,6 +110,13 @@ namespace CloudScope.Platform.Metal.Rendering
         public void Dispose()
         {
             Release(ref _uniformsBuffer);
+            Release(_pipeline.NativePtr);
+            Release(_depthOn.NativePtr);
+            Release(_depthOff.NativePtr);
+            _pipeline = default;
+            _depthOn = default;
+            _depthOff = default;
+            _initialized = false;
         }
 
         private static MTLDepthStencilState CreateDepthAlwaysState(MTLDevice device)
@@ -128,8 +135,14 @@ namespace CloudScope.Platform.Metal.Rendering
             if (buffer.NativePtr == IntPtr.Zero)
                 return;
 
-            NativeRelease(buffer.NativePtr);
+            Release(buffer.NativePtr);
             buffer = default;
+        }
+
+        private static void Release(IntPtr nativePtr)
+        {
+            if (nativePtr != IntPtr.Zero)
+                NativeRelease(nativePtr);
         }
     }
 }

@@ -12,14 +12,16 @@ namespace CloudScope.Platform.Metal.Rendering
     {
         private const int PointStride = 24; // 6 floats
         private const int PointsPerChunk = 1_000_000;
+        private const int DefaultMaxResidentPoints = 5_000_000;
+        private const int DefaultMaxDrawPointsPerFrame = 5_000_000;
         private static readonly int MaxDrawPointsPerFrame =
             int.TryParse(Environment.GetEnvironmentVariable("CLOUDSCOPE_METAL_MAX_DRAW_POINTS"), out int maxDrawPoints) && maxDrawPoints > 0
                 ? maxDrawPoints
-                : 1_000_000;
+                : DefaultMaxDrawPointsPerFrame;
         private static readonly int MaxResidentPoints =
             int.TryParse(Environment.GetEnvironmentVariable("CLOUDSCOPE_METAL_MAX_RESIDENT_POINTS"), out int maxResidentPoints) && maxResidentPoints > 0
                 ? maxResidentPoints
-                : 1_000_000;
+                : DefaultMaxResidentPoints;
 
         // Triple-buffered uniforms — CPU never blocks waiting for GPU to finish.
         private const int UniformBufferCount = 3;
@@ -73,12 +75,8 @@ namespace CloudScope.Platform.Metal.Rendering
             UploadToGpu(points, _pointCount);
         }
 
-        private int _renderCallCount;
-
         public int Render(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 projection, float pointSize, double halfViewSize, float cloudRadius)
         {
-            _renderCallCount++;
-
             if (_pointCount <= 0 || _pointChunks.Length == 0 || _pipeline.NativePtr == IntPtr.Zero)
                 return 0;
 
@@ -129,6 +127,11 @@ namespace CloudScope.Platform.Metal.Rendering
                     NativeRelease(_uniformBuffers[i].NativePtr);
                 _uniformBuffers[i] = default;
             }
+            Release(_pipeline.NativePtr);
+            Release(_depthState.NativePtr);
+            _pipeline = default;
+            _depthState = default;
+            _pendingPoints = null;
         }
 
         // ── Private ───────────────────────────────────────────────────────────────
@@ -173,5 +176,11 @@ namespace CloudScope.Platform.Metal.Rendering
 
         [System.Runtime.InteropServices.DllImport("libobjc.dylib", EntryPoint = "objc_release")]
         private static extern void NativeRelease(IntPtr obj);
+
+        private static void Release(IntPtr nativePtr)
+        {
+            if (nativePtr != IntPtr.Zero)
+                NativeRelease(nativePtr);
+        }
     }
 }
