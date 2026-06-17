@@ -4,7 +4,7 @@ using SharpMetal.ObjectiveCCore;
 using NSRect = CloudScope.Platform.MacOS.ObjC.NSRect;
 using ObjectiveCGeometryMessaging = CloudScope.Platform.MacOS.ObjC.ObjectiveCGeometryMessaging;
 
-namespace CloudScope.Platform.Metal.ObjC
+namespace CloudScope.Platform.MacOS.ObjC
 {
     [SupportedOSPlatform("macos")]
     internal class NSWindow

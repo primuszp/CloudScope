@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using CloudScope.Platform.MacOS.ObjC;
 using CloudScope.Platform.Metal.ObjC;
 using CloudScope.Rendering;
 using CloudScope.Ui;

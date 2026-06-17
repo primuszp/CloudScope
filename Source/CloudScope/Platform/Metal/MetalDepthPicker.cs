@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using CloudScope.Rendering;
 using SharpMetal.Metal;
@@ -36,9 +37,9 @@ namespace CloudScope.Platform.Metal
             int texW = checked((int)texture.Width);
             int texH = checked((int)texture.Height);
             
-            // OrbitCamera passes glY (bottom-up), but Metal textures are top-down.
-            // We flip it back to get the correct texture row.
-            int correctedY = texH - 1 - y;
+            // OrbitCamera passes a bottom-up GL-style window. Metal textures are top-down,
+            // so the top row of the Metal readback starts at texH - y - height.
+            int correctedY = texH - y - height;
 
             int startX = Math.Clamp(x, 0, texW);
             int startY = Math.Clamp(correctedY, 0, texH);
@@ -79,35 +80,45 @@ namespace CloudScope.Platform.Metal
             if (readback.NativePtr == IntPtr.Zero)
                 return;
 
-            var commandBuffer = queue.CommandBuffer();
-            var blit = commandBuffer.BlitCommandEncoder();
-            blit.CopyFromTexture(
-                texture,
-                0,
-                0,
-                new MTLOrigin { x = (ulong)startX, y = (ulong)startY, z = 0 },
-                new MTLSize { width = (ulong)readW, height = (ulong)readH, depth = 1 },
-                readback,
-                0,
-                bytesPerRow,
-                bytesPerRow * (ulong)readH);
-            blit.EndEncoding();
-            commandBuffer.Commit();
-            commandBuffer.WaitUntilCompleted();
-
-            byte* srcBase = (byte*)readback.Contents.ToPointer();
-            fixed (float* dstBase = destination)
+            try
             {
-                for (int row = 0; row < readH; row++)
+                var commandBuffer = queue.CommandBuffer();
+                var blit = commandBuffer.BlitCommandEncoder();
+                blit.CopyFromTexture(
+                    texture,
+                    0,
+                    0,
+                    new MTLOrigin { x = (ulong)startX, y = (ulong)startY, z = 0 },
+                    new MTLSize { width = (ulong)readW, height = (ulong)readH, depth = 1 },
+                    readback,
+                    0,
+                    bytesPerRow,
+                    bytesPerRow * (ulong)readH);
+                blit.EndEncoding();
+                commandBuffer.Commit();
+                commandBuffer.WaitUntilCompleted();
+
+                byte* srcBase = (byte*)readback.Contents.ToPointer();
+                fixed (float* dstBase = destination)
                 {
-                    float* src = (float*)(srcBase + (ulong)row * bytesPerRow);
-                    float* dst = dstBase + row * readW;
-                    for (int col = 0; col < readW; col++)
-                        dst[col] = src[col];
+                    for (int row = 0; row < readH; row++)
+                    {
+                        float* src = (float*)(srcBase + (ulong)row * bytesPerRow);
+                        float* dst = dstBase + row * readW;
+                        for (int col = 0; col < readW; col++)
+                            dst[col] = src[col];
+                    }
                 }
+            }
+            finally
+            {
+                NativeRelease(readback.NativePtr);
             }
         }
 
         private static ulong Align256(ulong value) => (value + 255UL) & ~255UL;
+
+        [DllImport("libobjc.dylib", EntryPoint = "objc_release")]
+        private static extern void NativeRelease(IntPtr obj);
     }
 }
