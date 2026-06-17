@@ -64,7 +64,20 @@ namespace CloudScope.Platform.Metal.Rendering
             RenderBuffer(frameData, _highlightBuffer, _highlightCount, ref view, ref proj, pointSize + 2f);
         }
 
-        public void Dispose() { }
+        public void Dispose()
+        {
+            Release(ref _uniformsBuffer);
+            Release(ref _highlightBuffer);
+            Release(ref _previewBuffer);
+            Release(_pipeline.NativePtr);
+            Release(_depthState.NativePtr);
+            _pipeline = default;
+            _depthState = default;
+            _scratch = Array.Empty<PointData>();
+            _highlightCount = 0;
+            _previewCount = 0;
+            _dirty = true;
+        }
 
         // ── Private ───────────────────────────────────────────────────────────────
 
@@ -145,7 +158,22 @@ namespace CloudScope.Platform.Metal.Rendering
             return _scratch;
         }
 
-[System.Runtime.InteropServices.DllImport("libobjc.dylib", EntryPoint = "objc_release")]
+        private static void Release(ref MTLBuffer buffer)
+        {
+            if (buffer.NativePtr == IntPtr.Zero)
+                return;
+
+            Release(buffer.NativePtr);
+            buffer = default;
+        }
+
+        private static void Release(IntPtr nativePtr)
+        {
+            if (nativePtr != IntPtr.Zero)
+                NativeRelease(nativePtr);
+        }
+
+        [System.Runtime.InteropServices.DllImport("libobjc.dylib", EntryPoint = "objc_release")]
         private static extern void NativeRelease(IntPtr obj);
     }
 }
