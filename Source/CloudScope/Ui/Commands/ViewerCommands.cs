@@ -110,6 +110,15 @@ public sealed class ViewerCommands : ICommandCancellationHandler
     public CommandResult Undo(CommandContext context) =>
         CommandResult.End(context.GetTarget<ViewerController>().UndoSelectionCommand() ? "Undo complete." : "Nothing to undo.");
 
+    [CommandMethod("OPEN", Flags = CommandFlags.NoUndoMarker)]
+    public CommandResult Open(CommandContext context)
+    {
+        if (!TryParseOpenArguments(context.Input, out string path, out long maxPoints, out string error))
+            return CommandResult.Continue("Enter LAS file path:", error);
+
+        return CommandResult.End(context.GetTarget<ViewerController>().OpenPointCloud(path, maxPoints));
+    }
+
     [CommandMethod("ZOOM", "Z", Flags = CommandFlags.NoUndoMarker)]
     public CommandResult Zoom(CommandContext context)
     {
@@ -281,7 +290,7 @@ public sealed class ViewerCommands : ICommandCancellationHandler
 
     [CommandMethod("HELP", "?", Flags = CommandFlags.NoUndoMarker | CommandFlags.Transparent)]
     public CommandResult Help(CommandContext context) => CommandResult.End(
-        "Commands: SELECT, ZOOM, VIEW, PROJECTION, POINTSIZE, LABEL, SAVELABELS, LOADLABELS, CLEARLABELS, NAVIGATE, RESET, UNDO, HELP.");
+        "Commands: OPEN, SELECT, ZOOM, VIEW, PROJECTION, POINTSIZE, LABEL, SAVELABELS, LOADLABELS, CLEARLABELS, NAVIGATE, RESET, UNDO, HELP.");
 
     public void CancelCommand(CommandContext context, string globalCommandName)
     {
@@ -322,6 +331,51 @@ public sealed class ViewerCommands : ICommandCancellationHandler
         }
 
         error = "";
+        return true;
+    }
+
+    private static bool TryParseOpenArguments(string input, out string path, out long maxPoints, out string error)
+    {
+        path = "";
+        maxPoints = 50_000_000;
+        error = "";
+
+        string trimmed = input.Trim();
+        if (trimmed.Length == 0)
+            return false;
+
+        string remaining;
+        if (trimmed[0] == '"')
+        {
+            int endQuote = trimmed.IndexOf('"', 1);
+            if (endQuote < 0)
+            {
+                error = "Missing closing quote in file path.";
+                return false;
+            }
+
+            path = trimmed[1..endQuote];
+            remaining = trimmed[(endQuote + 1)..].Trim();
+        }
+        else
+        {
+            string[] parts = trimmed.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            path = parts[0];
+            remaining = parts.Length == 2 ? parts[1] : "";
+        }
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            error = "OPEN requires a file path.";
+            return false;
+        }
+
+        if (remaining.Length > 0 && (!long.TryParse(remaining, NumberStyles.Integer, CultureInfo.InvariantCulture, out maxPoints) || maxPoints <= 0))
+        {
+            error = $"Invalid max point count: {remaining}";
+            return false;
+        }
+
         return true;
     }
 

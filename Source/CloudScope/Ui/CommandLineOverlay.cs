@@ -1,5 +1,6 @@
 using System.Numerics;
 using CloudScope.Commands;
+using CloudScope.Platform.Windows;
 using CloudScope.Selection;
 using ImGuiNET;
 
@@ -48,28 +49,28 @@ namespace CloudScope.Ui
 
             if (ImGui.BeginMenu("File"))
             {
-                ImGui.MenuItem("Open LAS", null, false, false);
-                if (ImGui.MenuItem("Save Labels")) Stage("SAVELABELS");
-                if (ImGui.MenuItem("Load Labels")) Stage("LOADLABELS");
+                if (ImGui.MenuItem("Open LAS"))    OpenLas();
+                if (ImGui.MenuItem("Save Labels")) Run("SAVELABELS");
+                if (ImGui.MenuItem("Load Labels")) Run("LOADLABELS");
                 ImGui.EndMenu();
             }
 
             if (ImGui.BeginMenu("Label"))
             {
-                if (ImGui.MenuItem("Box"))      Stage("SELECT B");
-                if (ImGui.MenuItem("Sphere"))   Stage("SELECT S");
-                if (ImGui.MenuItem("Cylinder")) Stage("SELECT C");
+                if (ImGui.MenuItem("Box"))      Run("SELECT B");
+                if (ImGui.MenuItem("Sphere"))   Run("SELECT S");
+                if (ImGui.MenuItem("Cylinder")) Run("SELECT C");
                 ImGui.Separator();
-                if (ImGui.MenuItem("Confirm")) Stage("CONFIRM");
-                if (ImGui.MenuItem("Undo"))    Stage("UNDO");
-                if (ImGui.MenuItem("Cancel"))  Stage("CANCEL");
+                if (ImGui.MenuItem("Confirm")) Run("CONFIRM");
+                if (ImGui.MenuItem("Undo"))    Run("UNDO");
+                if (ImGui.MenuItem("Cancel"))  Run("CANCEL");
                 ImGui.EndMenu();
             }
 
             if (ImGui.BeginMenu("Mode"))
             {
-                if (ImGui.MenuItem("Navigate", null, _viewer.Mode == InteractionMode.Navigate)) Stage("NAVIGATE");
-                if (ImGui.MenuItem("Label",    null, _viewer.Mode == InteractionMode.Label))    Stage("LABELMODE");
+                if (ImGui.MenuItem("Navigate", null, _viewer.Mode == InteractionMode.Navigate)) Run("NAVIGATE");
+                if (ImGui.MenuItem("Label",    null, _viewer.Mode == InteractionMode.Label))    Run("LABELMODE");
                 ImGui.EndMenu();
             }
 
@@ -138,6 +139,31 @@ namespace CloudScope.Ui
         }
 
         private void Execute(string command) => _session.Submit(command);
+
+        private void OpenLas()
+        {
+            if (!WindowsOpenFileDialog.IsAvailable)
+            {
+                Run("OPEN");
+                return;
+            }
+
+            Stage("OPEN");
+            Execute("OPEN");
+
+            string? path = WindowsOpenFileDialog.PickLasFile();
+            Execute(path != null ? $"\"{path}\"" : "CANCEL");
+            _commandText = "";
+            _focusCommandLine = true;
+        }
+
+        private void Run(string command)
+        {
+            Stage(command);
+            Execute(command);
+            _commandText = "";
+            _focusCommandLine = true;
+        }
 
         private void Stage(string command)
         {
