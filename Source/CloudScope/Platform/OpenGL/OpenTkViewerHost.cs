@@ -71,10 +71,13 @@ namespace CloudScope
         public void LoadPointCloud(PointData[] points, float cloudRadius = 50f) =>
             _controller.LoadPointCloud(points, cloudRadius);
 
+        public void Reset() => _controller.Reset();
+
         public void SetLasFilePath(string path) => _controller.SetLasFilePath(path);
 
         public CommandResult ExecuteCommandResult(string commandText) => _commandDispatcher.ExecuteResult(commandText);
-        public string ExecuteCommand(string commandText) => _commandDispatcher.Execute(commandText);
+        public string ExecuteCommand(string commandText) => _commandDispatcher.ExecuteCommand(commandText);
+        public bool IsKnownCommand(string name) => _commandDispatcher.IsKnownCommand(name);
         public string CommandPrompt => _commandDispatcher.CurrentPrompt;
 
         public void ForwardKeyDown(ViewerKey key, bool ctrl, int mouseX, int mouseY)

@@ -27,8 +27,19 @@ public abstract class EmbeddedOpenTkNativeHostBase : NativeControlHost, IEmbedde
         viewer.Enqueue(v => v.LoadPointCloud(points, radius));
     }
 
+    public void ResetViewer()
+    {
+        EmbeddedOpenTkViewerHost? viewer = Viewer;
+        if (viewer == null)
+            return;
+
+        viewer.Enqueue(v => v.Reset());
+    }
+
     public CommandResult ExecuteViewerCommandResult(string commandText) =>
         Viewer?.ExecuteCommandResult(commandText) ?? CommandResult.End("Embedded OpenTK host is not ready.");
+
+    public bool IsKnownCommand(string name) => Viewer?.IsKnownCommand(name) == true;
 
     public string ExecuteViewerCommand(string commandText) =>
         ExecuteViewerCommandResult(commandText).Message;

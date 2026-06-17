@@ -55,6 +55,14 @@ namespace CloudScope
 
         public void SetLasFilePath(string path) => _selection.SetLasFilePath(path);
 
+        public void Reset()
+        {
+            _cloudRadius = 50f;
+            _selection.Reset();
+            _cam.FitToCloud(_cloudRadius);
+            _pointRenderer.Upload(Array.Empty<PointData>());
+        }
+
         public bool NeedsContinuousFrames => _cameraInput.NeedsContinuousFrames;
 
         public InteractionMode Mode => _selection.Mode;
@@ -83,6 +91,8 @@ namespace CloudScope
             _cam.PickDepthWindow(_width / 2, _height / 2, 11);
             _cam.Zoom(_width / 2, _height / 2, factor);
         }
+
+        public void ZoomWindow(int x0, int y0, int x1, int y1) => _cam.ZoomWindow(x0, y0, x1, y1);
 
         public void ZoomCenter() => _cam.FocusOnCursor(_width / 2, _height / 2);
 

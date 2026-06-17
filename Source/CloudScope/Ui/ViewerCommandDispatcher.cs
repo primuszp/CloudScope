@@ -3,7 +3,7 @@ using CloudScope.Commands;
 
 namespace CloudScope.Ui;
 
-public sealed class ViewerCommandDispatcher
+public sealed class ViewerCommandDispatcher : ICommandExecutor
 {
     private readonly CommandRuntime _runtime;
     public CommandLineSession Session { get; }
@@ -24,9 +24,11 @@ public sealed class ViewerCommandDispatcher
         CommandFailed { add => _runtime.CommandFailed += value; remove => _runtime.CommandFailed -= value; }
 
     public string CurrentPrompt => _runtime.CurrentPrompt;
+    public bool IsKnownCommand(string name) => _runtime.IsKnownCommand(name);
     public CommandResult ExecuteResult(string commandText) => _runtime.Execute(commandText);
+    public CommandResult Execute(string input) => ExecuteResult(input);
     public CommandResult CancelActive() => _runtime.CancelActive();
-    public string Execute(string commandText) => ExecuteResult(commandText).Message;
+    public string ExecuteCommand(string commandText) => ExecuteResult(commandText).Message;
 
     public bool TryExecuteShortcut(ViewerKey key, bool ctrl)
     {

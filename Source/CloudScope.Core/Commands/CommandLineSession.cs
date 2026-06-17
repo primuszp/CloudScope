@@ -23,12 +23,14 @@ public sealed class CommandLineSession
 
     public void Stage(string command) => StagedText = command;
 
-    public CommandResult Submit(string? text = null)
+    public CommandResult Submit(string? text = null) => Submit(text, _execute);
+
+    public CommandResult Submit(string? text, Func<string, CommandResult> execute)
     {
         string command = text ?? StagedText;
         AddHistory(command.Length == 0 ? "Command: <repeat>" : $"Command: {command.Trim()}");
         Remember(command);
-        CommandResult result = _execute(command);
+        CommandResult result = execute(command);
         if (!string.IsNullOrWhiteSpace(result.Message)) AddHistory(result.Message);
         StagedText = "";
         return result;
