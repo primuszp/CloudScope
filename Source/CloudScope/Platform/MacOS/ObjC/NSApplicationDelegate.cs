@@ -6,7 +6,7 @@ using System.Text;
 using SharpMetal.Foundation;
 using SharpMetal.ObjectiveCCore;
 
-namespace CloudScope.Platform.Metal.ObjC
+namespace CloudScope.Platform.MacOS.ObjC
 {
     [SupportedOSPlatform("macos")]
     internal sealed class NSApplicationDelegate

@@ -1,7 +1,7 @@
 using System.Runtime.Versioning;
 using SharpMetal.ObjectiveCCore;
 
-namespace CloudScope.Platform.Metal.ObjC
+namespace CloudScope.Platform.MacOS.ObjC
 {
     [SupportedOSPlatform("macos")]
     internal class NSApplication
