@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\CloudScope.Core\CloudScope.Core.csproj" />
+    <ProjectReference Include="..\CloudScope.MacOS\CloudScope.MacOS.csproj" Condition="'$(EnableSharpMetal)' == 'true'" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(EnableSharpMetal)' != 'true'">

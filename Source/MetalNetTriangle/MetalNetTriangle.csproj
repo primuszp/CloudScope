@@ -13,6 +13,6 @@
     <PackageReference Include="Metal.NET" Version="2.3.0" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\CloudScope\Platform\MacOS\ObjC\NSGeometry.cs" />
+    <ProjectReference Include="..\CloudScope.MacOS\CloudScope.MacOS.csproj" />
   </ItemGroup>
 </Project>

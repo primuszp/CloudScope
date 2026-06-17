@@ -9,7 +9,7 @@ using SharpMetal.ObjectiveCCore;
 namespace CloudScope.Platform.MacOS.ObjC
 {
     [SupportedOSPlatform("macos")]
-    internal sealed class NSApplicationDelegate
+    public sealed class NSApplicationDelegate
     {
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate void NotifDelegate(IntPtr id, IntPtr cmd, IntPtr notif);

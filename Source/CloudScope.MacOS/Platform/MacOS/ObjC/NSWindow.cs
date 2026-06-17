@@ -7,7 +7,7 @@ using ObjectiveCGeometryMessaging = CloudScope.Platform.MacOS.ObjC.ObjectiveCGeo
 namespace CloudScope.Platform.MacOS.ObjC
 {
     [SupportedOSPlatform("macos")]
-    internal class NSWindow
+    public class NSWindow
     {
         public IntPtr NativePtr;
 
@@ -37,7 +37,7 @@ namespace CloudScope.Platform.MacOS.ObjC
     }
 
     [Flags]
-    internal enum NSStyleMask : ulong
+    public enum NSStyleMask : ulong
     {
         Titled = 1 << 0,
         Closable = 1 << 1,

@@ -9,7 +9,7 @@ using NSSize = CloudScope.Platform.MacOS.ObjC.NSSize;
 namespace CloudScope.Platform.Metal.ObjC
 {
     [SupportedOSPlatform("macos")]
-    internal sealed class MTKViewDelegate : IDisposable
+    public sealed class MTKViewDelegate : IDisposable
     {
         // ── Static callbacks — stored as static fields so the GC never collects them ──
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]

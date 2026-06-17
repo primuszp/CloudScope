@@ -4,7 +4,7 @@ using SharpMetal.ObjectiveCCore;
 namespace CloudScope.Platform.MacOS.ObjC
 {
     [SupportedOSPlatform("macos")]
-    internal class NSApplication
+    public class NSApplication
     {
         public IntPtr NativePtr;
 
@@ -21,7 +21,7 @@ namespace CloudScope.Platform.MacOS.ObjC
         public void SetDelegate(NSApplicationDelegate d) => ObjectiveC.objc_msgSend(NativePtr, "setDelegate:", d.NativePtr);
     }
 
-    internal enum NSApplicationActivationPolicy : long
+    public enum NSApplicationActivationPolicy : long
     {
         Regular = 0,
         Accessory = 1,
