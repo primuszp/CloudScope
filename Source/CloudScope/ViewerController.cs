@@ -1,4 +1,7 @@
 using System;
+using System.Diagnostics;
+using CloudScope.Library;
+using CloudScope.Loading;
 using OpenTK.Mathematics;
 using CloudScope.Selection;
 using CloudScope.Rendering;
@@ -51,6 +54,25 @@ namespace CloudScope
             _selection.LoadPointCloud(pts);
             _cam.FitToCloud(cloudRadius);
             _pointRenderer.Upload(pts);
+        }
+
+        public string OpenPointCloud(string path, long maxPoints = 50_000_000)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return "OPEN requires a file path.";
+
+            if (!File.Exists(path))
+                return $"File not found: {path}";
+
+            var sw = Stopwatch.StartNew();
+            using var reader = new LasReader(path);
+            LoadedPointCloud cloud = PointCloudLoader.Load(reader, maxPoints);
+            PointCloudLoader.PrepareProgressiveSubsample(cloud.Points, cloud.LoadedCount);
+            LoadPointCloud(cloud.Points, cloud.Radius);
+            SetLasFilePath(path);
+            sw.Stop();
+
+            return $"Loaded {cloud.LoadedCount:N0} points from {Path.GetFileName(path)} ({sw.Elapsed.TotalSeconds:0.0}s).";
         }
 
         public void SetLasFilePath(string path) => _selection.SetLasFilePath(path);
