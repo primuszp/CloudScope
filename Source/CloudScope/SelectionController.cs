@@ -46,6 +46,18 @@ namespace CloudScope
 
         public void SetLasFilePath(string path) => _lasFilePath = path;
 
+        public void Reset()
+        {
+            foreach (ISelectionTool tool in _tools.Values)
+                tool.Cancel();
+            _labelManager.ClearAll();
+            _points = null;
+            _lasFilePath = "";
+            _pendingAction = EditAction.None;
+            Mode = InteractionMode.Navigate;
+            SetRestingInteractionState();
+        }
+
         public void SetMode(InteractionMode mode)
         {
             if (Mode == mode)

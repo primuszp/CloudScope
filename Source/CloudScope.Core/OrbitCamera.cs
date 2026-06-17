@@ -276,6 +276,32 @@ namespace CloudScope
             _picked = ScreenToView(mouseX, mouseY, viewZ);
         }
 
+        public void ZoomWindow(int x0, int y0, int x1, int y1)
+        {
+            int left = Math.Clamp(Math.Min(x0, x1), 0, Math.Max(0, _vpW - 1));
+            int right = Math.Clamp(Math.Max(x0, x1), 0, Math.Max(0, _vpW - 1));
+            int top = Math.Clamp(Math.Min(y0, y1), 0, Math.Max(0, _vpH - 1));
+            int bottom = Math.Clamp(Math.Max(y0, y1), 0, Math.Max(0, _vpH - 1));
+
+            int windowWidth = right - left;
+            int windowHeight = bottom - top;
+            if (windowWidth < 4 || windowHeight < 4)
+                return;
+
+            float factor = MathF.Min((float)_vpW / windowWidth, (float)_vpH / windowHeight);
+            if (factor <= 0f || float.IsNaN(factor) || float.IsInfinity(factor))
+                return;
+
+            int centerX = (left + right) / 2;
+            int centerY = (top + bottom) / 2;
+            int viewportCenterX = _vpW / 2;
+            int viewportCenterY = _vpH / 2;
+
+            PickDepthWindow(centerX, centerY, 21);
+            Zoom(centerX, centerY, factor);
+            Pan(centerX, centerY, viewportCenterX, viewportCenterY);
+        }
+
         /// <summary>
         /// Toggle ortho / perspective, preserving the point under the mouse.
         /// Uses pickedPointView.Z (= _picked.Z) exactly as in AdvancedZPR.

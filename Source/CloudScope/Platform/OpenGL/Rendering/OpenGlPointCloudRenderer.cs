@@ -57,7 +57,11 @@ void main()
 
         public void Upload(PointData[] points)
         {
+            ReleasePointBuffers();
             _pointCount = points.Length;
+
+            if (points.Length == 0)
+                return;
 
             _vao = GL.GenVertexArray();
             GL.BindVertexArray(_vao);
@@ -93,9 +97,23 @@ void main()
 
         public void Dispose()
         {
-            if (_vbo != -1) GL.DeleteBuffer(_vbo);
-            if (_vao != -1) GL.DeleteVertexArray(_vao);
+            ReleasePointBuffers();
             if (_shader != -1) GL.DeleteProgram(_shader);
+        }
+
+        private void ReleasePointBuffers()
+        {
+            if (_vbo != -1)
+            {
+                GL.DeleteBuffer(_vbo);
+                _vbo = -1;
+            }
+
+            if (_vao != -1)
+            {
+                GL.DeleteVertexArray(_vao);
+                _vao = -1;
+            }
         }
 
         private static int BuildShader(string vertSrc, string fragSrc)

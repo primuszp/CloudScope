@@ -8,6 +8,8 @@ public sealed class ViewerCommands : ICommandCancellationHandler
 {
     // 0 = idle, 1 = awaiting shape prompt, 2 = tool active
     private int _selectPhase;
+    private ZoomPhase _zoomPhase;
+    private ScreenPoint _zoomFirstCorner;
 
     [CommandMethod("SELECT", "SEL")]
     public CommandResult Select(CommandContext context)
@@ -112,12 +114,44 @@ public sealed class ViewerCommands : ICommandCancellationHandler
     public CommandResult Zoom(CommandContext context)
     {
         string option = context.Input.Trim();
+        var viewer = context.GetTarget<ViewerController>();
+
+        if (_zoomPhase == ZoomPhase.FirstCorner)
+        {
+            if (TryParseScreenPoint(option, out _zoomFirstCorner))
+            {
+                _zoomPhase = ZoomPhase.OppositeCorner;
+                return CommandResult.Continue("Specify opposite corner:");
+            }
+
+            return CommandResult.Continue("Specify first corner:", $"Invalid point: {context.Input}. Use x,y.");
+        }
+
+        if (_zoomPhase == ZoomPhase.OppositeCorner)
+        {
+            if (TryParseScreenPoint(option, out ScreenPoint oppositeCorner))
+            {
+                viewer.ZoomWindow(_zoomFirstCorner.X, _zoomFirstCorner.Y, oppositeCorner.X, oppositeCorner.Y);
+                _zoomPhase = ZoomPhase.None;
+                return CommandResult.End("Zoom window.");
+            }
+
+            return CommandResult.Continue("Specify opposite corner:", $"Invalid point: {context.Input}. Use x,y.");
+        }
+
         if (option.Length == 0)
             return CommandResult.Continue(
                 "Specify corner of window, enter a scale factor (nX or nXP), or [All/Center/Extents/Object] <real time>:");
 
-        var viewer = context.GetTarget<ViewerController>();
-        switch (option.ToUpperInvariant())
+        if (TryParseWindowArguments(option, out ScreenPoint firstCorner, out ScreenPoint secondCorner))
+        {
+            viewer.ZoomWindow(firstCorner.X, firstCorner.Y, secondCorner.X, secondCorner.Y);
+            return CommandResult.End("Zoom window.");
+        }
+
+        string[] parts = option.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        string keyword = parts[0].ToUpperInvariant();
+        switch (keyword)
         {
             case "A":
             case "ALL":
@@ -133,7 +167,14 @@ public sealed class ViewerCommands : ICommandCancellationHandler
                 return CommandResult.End("Zoomed to object at viewport center.");
             case "W":
             case "WINDOW":
-                return CommandResult.End("ZOOM Window requires interactive point input, which is not available yet.");
+                if (parts.Length == 2 && TryParseWindowArguments(parts[1], out firstCorner, out secondCorner))
+                {
+                    viewer.ZoomWindow(firstCorner.X, firstCorner.Y, secondCorner.X, secondCorner.Y);
+                    return CommandResult.End("Zoom window.");
+                }
+
+                _zoomPhase = ZoomPhase.FirstCorner;
+                return CommandResult.Continue("Specify first corner:");
         }
 
         if (!TryParseZoomFactor(option, out float factor, out string error))
@@ -177,6 +218,13 @@ public sealed class ViewerCommands : ICommandCancellationHandler
     {
         context.GetTarget<ViewerController>().ToggleProjection();
         return CommandResult.End("Projection toggled.");
+    }
+
+    [CommandMethod("RESET", Flags = CommandFlags.NoUndoMarker)]
+    public CommandResult Reset(CommandContext context)
+    {
+        context.GetTarget<ViewerController>().Reset();
+        return CommandResult.End("Viewer reset.");
     }
 
     [CommandMethod("POINTSIZE", "PSIZE", Flags = CommandFlags.NoUndoMarker)]
@@ -233,10 +281,16 @@ public sealed class ViewerCommands : ICommandCancellationHandler
 
     [CommandMethod("HELP", "?", Flags = CommandFlags.NoUndoMarker | CommandFlags.Transparent)]
     public CommandResult Help(CommandContext context) => CommandResult.End(
-        "Commands: SELECT, ZOOM, VIEW, PROJECTION, POINTSIZE, LABEL, SAVELABELS, LOADLABELS, CLEARLABELS, NAVIGATE, UNDO, HELP.");
+        "Commands: SELECT, ZOOM, VIEW, PROJECTION, POINTSIZE, LABEL, SAVELABELS, LOADLABELS, CLEARLABELS, NAVIGATE, RESET, UNDO, HELP.");
 
     public void CancelCommand(CommandContext context, string globalCommandName)
     {
+        if (globalCommandName == "ZOOM")
+        {
+            _zoomPhase = ZoomPhase.None;
+            return;
+        }
+
         if (globalCommandName != "SELECT")
             return;
 
@@ -270,6 +324,35 @@ public sealed class ViewerCommands : ICommandCancellationHandler
         error = "";
         return true;
     }
+
+    private static bool TryParseWindowArguments(string input, out ScreenPoint first, out ScreenPoint second)
+    {
+        first = default;
+        second = default;
+        string[] parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return parts.Length == 2 &&
+            TryParseScreenPoint(parts[0], out first) &&
+            TryParseScreenPoint(parts[1], out second);
+    }
+
+    private static bool TryParseScreenPoint(string input, out ScreenPoint point)
+    {
+        point = default;
+        string[] parts = input.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length != 2)
+            return false;
+
+        if (!float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out float x) ||
+            !float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float y))
+            return false;
+
+        point = new ScreenPoint((int)MathF.Round(x), (int)MathF.Round(y));
+        return true;
+    }
+
+    private enum ZoomPhase { None, FirstCorner, OppositeCorner }
+
+    private readonly record struct ScreenPoint(int X, int Y);
 
     private static readonly HashSet<string> ValidViews =
         new(["FRONT", "BACK", "LEFT", "RIGHT", "TOP", "BOTTOM", "ISOMETRIC"], StringComparer.Ordinal);

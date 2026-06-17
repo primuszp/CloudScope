@@ -75,17 +75,17 @@ public sealed partial class MainWindow : Window
 
     private void WireMenu()
     {
-        MenuItem("OpenLasMenuItem").Click     += async (_, _) => await OpenLasAsync();
-        MenuItem("StatusMenuItem").Click      += (_, _) => StageCommand("STATUS");
-        MenuItem("ResetMenuItem").Click       += (_, _) => StageCommand("RESET");
+        MenuItem("OpenLasMenuItem").Click     += (_, _) => RunCommandFromUi("OPEN");
+        MenuItem("StatusMenuItem").Click      += (_, _) => RunCommandFromUi("STATUS");
+        MenuItem("ResetMenuItem").Click       += (_, _) => RunCommandFromUi("RESET");
         MenuItem("ExitMenuItem").Click        += (_, _) => Close();
-        MenuItem("NavigateMenuItem").Click    += (_, _) => StageCommand("NAVIGATE");
-        MenuItem("LabelModeMenuItem").Click   += (_, _) => StageCommand("LABELMODE");
-        MenuItem("BoxMenuItem").Click         += (_, _) => StageCommand("SELECT B");
-        MenuItem("SphereMenuItem").Click      += (_, _) => StageCommand("SELECT S");
-        MenuItem("CylinderMenuItem").Click    += (_, _) => StageCommand("SELECT C");
-        MenuItem("ConfirmMenuItem").Click     += (_, _) => StageCommand("CONFIRM");
-        MenuItem("CancelMenuItem").Click      += (_, _) => StageCommand("CANCEL");
+        MenuItem("NavigateMenuItem").Click    += (_, _) => RunCommandFromUi("NAVIGATE");
+        MenuItem("LabelModeMenuItem").Click   += (_, _) => RunCommandFromUi("LABELMODE");
+        MenuItem("BoxMenuItem").Click         += (_, _) => RunCommandFromUi("SELECT B");
+        MenuItem("SphereMenuItem").Click      += (_, _) => RunCommandFromUi("SELECT S");
+        MenuItem("CylinderMenuItem").Click    += (_, _) => RunCommandFromUi("SELECT C");
+        MenuItem("ConfirmMenuItem").Click     += (_, _) => RunCommandFromUi("CONFIRM");
+        MenuItem("CancelMenuItem").Click      += (_, _) => RunCommandFromUi("CANCEL");
     }
 
     private void WireCommandBox()
@@ -94,7 +94,7 @@ public sealed partial class MainWindow : Window
         {
             if (e.Key == Key.Escape)
             {
-                ExecuteCommand("CANCEL");
+                _ = ExecuteCommandAsync("CANCEL");
                 _commandInput.Text = "";
                 e.Handled = true;
                 return;
@@ -120,7 +120,7 @@ public sealed partial class MainWindow : Window
                 return;
 
             string command = _commandInput.Text ?? "";
-            ExecuteCommand(command);
+            _ = ExecuteCommandAsync(command);
             _commandInput.Text = "";
             _commandInput.Focus();
             e.Handled = true;
@@ -129,7 +129,7 @@ public sealed partial class MainWindow : Window
 
     private void WireToolbar()
     {
-        Button("OpenToolbarButton").Click += async (_, _) => await OpenLasAsync();
+        Button("OpenToolbarButton").Click += (_, _) => RunCommandFromUi("OPEN");
         WireCommandButton("NavigateToolbarButton", "NAVIGATE");
         WireCommandButton("BoxToolbarButton",      "SELECT B");
         WireCommandButton("SphereToolbarButton",   "SELECT S");
@@ -139,13 +139,26 @@ public sealed partial class MainWindow : Window
     }
 
     private void WireCommandButton(string name, string command) =>
-        Button(name).Click += (_, _) => StageCommand(command);
+        Button(name).Click += (_, _) => RunCommandFromUi(command);
 
     private void StageCommand(string command)
     {
         _commandSession.Stage(command);
         _commandInput.Text = command;
         _commandInput.CaretIndex = command.Length;
+        _commandInput.Focus();
+    }
+
+    private void RunCommandFromUi(string command)
+    {
+        StageCommand(command);
+        _ = SubmitStagedCommandAsync(command);
+    }
+
+    private async Task SubmitStagedCommandAsync(string command)
+    {
+        await ExecuteCommandAsync(command);
+        _commandInput.Text = "";
         _commandInput.Focus();
     }
 
@@ -163,24 +176,24 @@ public sealed partial class MainWindow : Window
 
         menu.Items.Add(CreateNativeGroup("Host",
         [
-            NativeAction("Open LAS...", async (_, _) => await OpenLasAsync(), "Meta+O"),
-            NativeAction("Status",      (_, _) => StageCommand("STATUS")),
-            NativeAction("Reset Host",  (_, _) => StageCommand("RESET")),
+            NativeAction("Open LAS...", (_, _) => RunCommandFromUi("OPEN"), "Meta+O"),
+            NativeAction("Status",      (_, _) => RunCommandFromUi("STATUS")),
+            NativeAction("Reset Host",  (_, _) => RunCommandFromUi("RESET")),
             new NativeMenuItemSeparator(),
             NativeAction("Exit",        (_, _) => Close(), "Meta+Q")
         ]));
 
         menu.Items.Add(CreateNativeGroup("Viewer",
         [
-            NativeAction("Navigate",   (_, _) => StageCommand("NAVIGATE")),
-            NativeAction("Label Mode", (_, _) => StageCommand("LABELMODE")),
+            NativeAction("Navigate",   (_, _) => RunCommandFromUi("NAVIGATE")),
+            NativeAction("Label Mode", (_, _) => RunCommandFromUi("LABELMODE")),
             new NativeMenuItemSeparator(),
-            NativeAction("Box",      (_, _) => StageCommand("SELECT B")),
-            NativeAction("Sphere",   (_, _) => StageCommand("SELECT S")),
-            NativeAction("Cylinder", (_, _) => StageCommand("SELECT C")),
+            NativeAction("Box",      (_, _) => RunCommandFromUi("SELECT B")),
+            NativeAction("Sphere",   (_, _) => RunCommandFromUi("SELECT S")),
+            NativeAction("Cylinder", (_, _) => RunCommandFromUi("SELECT C")),
             new NativeMenuItemSeparator(),
-            NativeAction("Confirm", (_, _) => StageCommand("CONFIRM"), "Meta+Enter"),
-            NativeAction("Cancel",  (_, _) => StageCommand("CANCEL"),  "Escape")
+            NativeAction("Confirm", (_, _) => RunCommandFromUi("CONFIRM"), "Meta+Enter"),
+            NativeAction("Cancel",  (_, _) => RunCommandFromUi("CANCEL"),  "Escape")
         ]));
 
         return menu;
@@ -203,8 +216,17 @@ public sealed partial class MainWindow : Window
         return item;
     }
 
-    private void ExecuteCommand(string command)
+    private async Task ExecuteCommandAsync(string command)
     {
+        if (TryGetOpenPath(command, out string? path))
+        {
+            _commandSession.Submit(command, _ => CommandResult.End("Loading point cloud..."));
+            RefreshHistory();
+            _commandPrompt.Text = _hostController.CommandPrompt;
+            await OpenLasAsync(path);
+            return;
+        }
+
         _commandSession.Submit(command);
         RefreshHistory();
         _commandPrompt.Text = _hostController.CommandPrompt;
@@ -217,7 +239,7 @@ public sealed partial class MainWindow : Window
 
         if (e.Key is Key.Enter or Key.Space)
         {
-            ExecuteCommand("");
+            _ = ExecuteCommandAsync("");
             e.Handled = true;
             return;
         }
@@ -275,30 +297,14 @@ public sealed partial class MainWindow : Window
         _historyOutput.CaretIndex = _historyOutput.Text.Length;
     }
 
-    private async Task OpenLasAsync()
+    private async Task OpenLasAsync(string? path)
     {
-        TopLevel? topLevel = TopLevel.GetTopLevel(this);
-        if (topLevel == null)
-            return;
-
-        IReadOnlyList<IStorageFile> files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-        {
-            Title = "Open LAS point cloud",
-            AllowMultiple = false,
-            FileTypeFilter =
-            [
-                new FilePickerFileType("LAS point clouds") { Patterns = ["*.las", "*.laz"] },
-                FilePickerFileTypes.All
-            ]
-        });
-
-        IStorageFile? file = files.FirstOrDefault();
-        string? path = file?.Path.LocalPath;
+        path ??= await PickLasPathAsync();
         if (string.IsNullOrWhiteSpace(path))
+        {
+            AddHistory("Open cancelled.");
             return;
-
-        AddHistory($"Command: OPEN \"{path}\"");
-        AddHistory("Loading point cloud...");
+        }
 
         try
         {
@@ -316,5 +322,36 @@ public sealed partial class MainWindow : Window
         {
             AddHistory($"Load failed: {ex.Message}");
         }
+    }
+
+    private async Task<string?> PickLasPathAsync()
+    {
+        TopLevel? topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel == null)
+            return null;
+
+        IReadOnlyList<IStorageFile> files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Open LAS point cloud",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("LAS point clouds") { Patterns = ["*.las", "*.laz"] },
+                FilePickerFileTypes.All
+            ]
+        });
+
+        return files.FirstOrDefault()?.Path.LocalPath;
+    }
+
+    private static bool TryGetOpenPath(string command, out string? path)
+    {
+        path = null;
+        if (!CommandText.TryMatch(command, "OPEN", out string argument))
+            return false;
+
+        if (!string.IsNullOrWhiteSpace(argument))
+            path = argument;
+        return true;
     }
 }

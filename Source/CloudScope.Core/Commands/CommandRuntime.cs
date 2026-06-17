@@ -29,7 +29,7 @@ public interface ICommandCancellationHandler
     void CancelCommand(CommandContext context, string globalCommandName);
 }
 
-public sealed class CommandRuntime
+public sealed class CommandRuntime : ICommandExecutor
 {
     private readonly CommandContext _context;
     private readonly Dictionary<string, Descriptor> _commands = new(StringComparer.OrdinalIgnoreCase);
