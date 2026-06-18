@@ -330,13 +330,41 @@ namespace CloudScope
 
         // ── Standard views and reset ──────────────────────────────────────────
 
-        public void SetFrontView()    => ApplyView(0f,    0f);
-        public void SetBackView()     => ApplyView(180f,  0f);
-        public void SetRightView()    => ApplyView(90f,   0f);
-        public void SetLeftView()     => ApplyView(-90f,  0f);
-        public void SetTopView()      => ApplyView(0f,    89f);
-        public void SetBottomView()   => ApplyView(0f,   -89f);
+        public void SetFrontView()    => ApplyView(0f,    90f, constrainElevation: false);
+        public void SetBackView()     => ApplyView(180f,  90f, constrainElevation: false);
+        public void SetRightView()    => ApplyView(90f,   90f, constrainElevation: false);
+        public void SetLeftView()     => ApplyView(-90f,  90f, constrainElevation: false);
+        public void SetTopView()      => ApplyView(0f,     0f, constrainElevation: false);
+        public void SetBottomView()   => ApplyView(0f,   180f, constrainElevation: false);
         public void SetIsometric()    => ApplyView(45f,   35.264f);
+
+        public void SetTopPlanView(float cloudRadius = 50f)
+        {
+            SetOrthographicStandardView("TOP", cloudRadius);
+        }
+
+        public void SetOrthographicStandardView(string view, float cloudRadius = 50f)
+        {
+            _sceneRadius = cloudRadius > 0 ? cloudRadius : 50f;
+            _vang = 0.0;
+            (_az, _el) = view.ToUpperInvariant() switch
+            {
+                "FRONT" => (0f, 90f),
+                "BACK" => (180f, 90f),
+                "LEFT" => (-90f, 90f),
+                "RIGHT" => (90f, 90f),
+                "BOTTOM" => (0f, 180f),
+                "ISOMETRIC" => (45f, 35.264f),
+                _ => (0f, 0f)
+            };
+
+            _hvs = _sceneRadius;
+            _trn = Vector3.Zero;
+            _orbitPivot = Vector3.Zero;
+            _txActive = false;
+            RebuildRot();
+            CalcViewVolume();
+        }
 
         public void ResetView(float cloudRadius = 50f)
         {
@@ -349,11 +377,17 @@ namespace CloudScope
         // ── Smooth animated transitions ───────────────────────────────────────
 
         /// <summary>Queues a smooth fly-to transition. Any existing transition is replaced.</summary>
-        public void BeginTransition(float targetAz, float targetEl, double targetHvs,
-                                    Vector3 targetTrn, Vector3 targetPivot, float dur = 0.32f)
+        public void BeginTransition(
+            float targetAz,
+            float targetEl,
+            double targetHvs,
+            Vector3 targetTrn,
+            Vector3 targetPivot,
+            float dur = 0.32f,
+            bool constrainTargetElevation = true)
         {
             _txStartAz    = _az;          _txTargetAz    = targetAz;
-            _txStartEl    = _el;          _txTargetEl    = ConstrainElev ? Math.Clamp(targetEl, -89f, 89f) : targetEl;
+            _txStartEl    = _el;          _txTargetEl    = ConstrainElev && constrainTargetElevation ? Math.Clamp(targetEl, -89f, 89f) : targetEl;
             _txStartHvs   = _hvs;         _txTargetHvs   = Math.Max(targetHvs, 0.001);
             _txStartTrn   = _trn;         _txTargetTrn   = targetTrn;
             _txStartPivot = _orbitPivot;  _txTargetPivot = targetPivot;
@@ -608,13 +642,13 @@ namespace CloudScope
 
         private void RebuildRot() => _vtw = BuildRot(_az, _el);
 
-        private void ApplyView(float az, float el)
+        private void ApplyView(float az, float el, bool constrainElevation = true)
         {
-            el = ConstrainElev ? Math.Clamp(el, -89f, 89f) : el;
+            el = ConstrainElev && constrainElevation ? Math.Clamp(el, -89f, 89f) : el;
             float   pivotZ    = WorldToView(_orbitPivot, _vtw).Z;
             Matrix4 targetVtw = BuildRot(az, el);
             Vector3 targetTrn = _orbitPivot - MulDir(new Vector3(0f, 0f, pivotZ), targetVtw);
-            BeginTransition(az, el, _hvs, targetTrn, _orbitPivot);
+            BeginTransition(az, el, _hvs, targetTrn, _orbitPivot, constrainTargetElevation: constrainElevation);
         }
 
         private float ReadClosestDepthWindow(int mouseX, int mouseY, int windowSize)
@@ -677,11 +711,11 @@ namespace CloudScope
         public void SetOrbitPivot(Vector3 worldPos) => _orbitPivot = worldPos;
 
         /// <summary>Camera right axis in world space.</summary>
-        public Vector3 CameraRight   => new(_vtw.M11, _vtw.M21, _vtw.M31);
+        public Vector3 CameraRight   => new(_vtw.M11, _vtw.M12, _vtw.M13);
         /// <summary>Camera up axis in world space.</summary>
-        public Vector3 CameraUp      => new(_vtw.M12, _vtw.M22, _vtw.M32);
+        public Vector3 CameraUp      => new(_vtw.M21, _vtw.M22, _vtw.M23);
         /// <summary>Camera forward direction in world space (into the scene).</summary>
-        public Vector3 CameraForward => new(-_vtw.M13, -_vtw.M23, -_vtw.M33);
+        public Vector3 CameraForward => new(-_vtw.M31, -_vtw.M32, -_vtw.M33);
 
         /// <summary>
         /// Picks the closest world-space point under a screen pixel using depth buffer.

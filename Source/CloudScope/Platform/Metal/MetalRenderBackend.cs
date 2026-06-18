@@ -47,6 +47,8 @@ namespace CloudScope.Platform.Metal
 
         public void Resize(int width, int height) { }
 
+        public void SetViewport(int x, int y, int width, int height) { }
+
         private sealed class MetalFrameSession : IRenderFrameSession
         {
             public static readonly MetalFrameSession Empty = new(default);
