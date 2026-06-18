@@ -18,6 +18,10 @@ namespace CloudScope.Loading
 
             int total = (int)requested;
             var points = new PointData[total];
+            var classes = new byte[total];
+            var intensity = new ushort[total];
+            var returnNumber = new byte[total];
+            var z = new double[total];
 
             double cx = (hdr.MinX + hdr.MaxX) * 0.5;
             double cy = (hdr.MinY + hdr.MaxY) * 0.5;
@@ -40,7 +44,15 @@ namespace CloudScope.Loading
                     colorScale = DetectColorScale(batch, Math.Min(read, ColorSampleSize));
 
                 for (int i = 0; i < read; i++)
-                    WritePoint(ref points[loaded + i], batch[i], cx, cy, cz, spanZ, hasColor, colorScale, hdr.MinZ);
+                {
+                    int target = loaded + i;
+                    LasPoint source = batch[i];
+                    WritePoint(ref points[target], source, cx, cy, cz, spanZ, hasColor, colorScale, hdr.MinZ);
+                    classes[target] = (byte)source.Classification;
+                    intensity[target] = source.Intensity;
+                    returnNumber[target] = source.ReturnNumber;
+                    z[target] = source.Z;
+                }
 
                 loaded += read;
                 ReportProgress(loaded, total, progress, ref lastPct);
@@ -51,7 +63,8 @@ namespace CloudScope.Loading
             float rangeZ = (float)(hdr.MaxZ - hdr.MinZ) * 0.5f;
             float radius = MathF.Sqrt(rangeX * rangeX + rangeY * rangeY + rangeZ * rangeZ);
 
-            return new LoadedPointCloud(points, loaded, radius, hasColor, colorScale, cx, cy, cz);
+            var attributes = new PointCloudAttributes(classes, intensity, returnNumber, z, hdr.MinZ, hdr.MaxZ);
+            return new LoadedPointCloud(points, loaded, radius, hasColor, colorScale, cx, cy, cz, attributes);
         }
 
         public static int PrepareProgressiveSubsample(PointData[] points, long count, int seed = 42)

@@ -1,5 +1,6 @@
 using CloudScope.Selection;
 using CloudScope.Commands;
+using CloudScope.Loading;
 using System.Globalization;
 
 namespace CloudScope.Ui.Commands;
@@ -10,6 +11,9 @@ public sealed class ViewerCommands : ICommandCancellationHandler
     private int _selectPhase;
     private ZoomPhase _zoomPhase;
     private ScreenPoint _zoomFirstCorner;
+    private FilterPhase _filterPhase;
+    private FilterAttribute _pendingFilterAttribute;
+    private bool _colorPromptActive;
 
     [CommandMethod("SELECT", "SEL")]
     public CommandResult Select(CommandContext context)
@@ -256,6 +260,81 @@ public sealed class ViewerCommands : ICommandCancellationHandler
         return CommandResult.End($"Point size: {viewer.PointSize:0.0}");
     }
 
+    [CommandMethod("ATTRIBUTES", "ATTRS", Flags = CommandFlags.NoUndoMarker)]
+    public CommandResult Attributes(CommandContext context)
+    {
+        string input = context.Input.Trim();
+        if (input.Length == 0)
+            return CommandResult.End(context.GetTarget<ViewerController>().DescribeAttributes("ALL"));
+
+        string[] parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return CommandResult.End(context.GetTarget<ViewerController>().DescribeAttributes(parts[0]));
+    }
+
+    [CommandMethod("FILTER", "FI", Flags = CommandFlags.NoUndoMarker)]
+    public CommandResult Filter(CommandContext context)
+    {
+        var viewer = context.GetTarget<ViewerController>();
+        string input = context.Input.Trim();
+
+        if (_filterPhase == FilterPhase.Values)
+            return CompleteFilterValuePrompt(viewer, input);
+
+        if (_filterPhase == FilterPhase.Attribute && input.Length == 0)
+        {
+            _filterPhase = FilterPhase.Values;
+            _pendingFilterAttribute = FilterAttribute.Class;
+            return CommandResult.Continue(GetFilterValuePrompt(FilterAttribute.Class));
+        }
+
+        if (input.Length == 0)
+        {
+            _filterPhase = FilterPhase.Attribute;
+            return CommandResult.Continue("Select filter attribute [Class/Intensity/Return/Z/Clear] <Class>:");
+        }
+
+        string[] parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (!TryParseFilterAttribute(parts[0], out FilterAttribute attribute, out string attributeError))
+            return CommandResult.Continue("Select filter attribute [Class/Intensity/Return/Z/Clear] <Class>:", attributeError);
+
+        if (attribute == FilterAttribute.Clear)
+        {
+            _filterPhase = FilterPhase.None;
+            return CommandResult.End(viewer.ApplyPointFilter(null));
+        }
+
+        if (parts.Length == 1)
+        {
+            _filterPhase = FilterPhase.Values;
+            _pendingFilterAttribute = attribute;
+            return CommandResult.Continue(GetFilterValuePrompt(attribute));
+        }
+
+        return ApplyParsedFilter(viewer, attribute, parts[1..]);
+    }
+
+    [CommandMethod("COLORBY", "COLOR", "CB", Flags = CommandFlags.NoUndoMarker)]
+    public CommandResult ColorBy(CommandContext context)
+    {
+        var viewer = context.GetTarget<ViewerController>();
+        string input = context.Input.Trim();
+        if (input.Length == 0 && !_colorPromptActive)
+        {
+            _colorPromptActive = true;
+            return CommandResult.Continue("Select color source [Rgb/Height/Class/Intensity/Return/Clear] <Rgb>:");
+        }
+
+        if (input.Length == 0)
+            input = "RGB";
+
+        string[] parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (!TryParseColorSource(parts[0], out ColorSource source, out bool clear, out string error))
+            return CommandResult.Continue("Select color source [Rgb/Height/Class/Intensity/Return/Clear] <Rgb>:", error);
+
+        _colorPromptActive = false;
+        return CommandResult.End(clear ? viewer.ClearColorSource() : viewer.SetColorSource(source));
+    }
+
     [CommandMethod("SAVELABELS", "QLSAVE", Flags = CommandFlags.NoUndoMarker)]
     public CommandResult SaveLabels(CommandContext context) =>
         CommandResult.End(context.GetTarget<ViewerController>().SaveLabels() ? "Labels saved." : "No source file is associated with the viewer.");
@@ -290,13 +369,25 @@ public sealed class ViewerCommands : ICommandCancellationHandler
 
     [CommandMethod("HELP", "?", Flags = CommandFlags.NoUndoMarker | CommandFlags.Transparent)]
     public CommandResult Help(CommandContext context) => CommandResult.End(
-        "Commands: OPEN, SELECT, ZOOM, VIEW, PROJECTION, POINTSIZE, LABEL, SAVELABELS, LOADLABELS, CLEARLABELS, NAVIGATE, RESET, UNDO, HELP.");
+        "Commands: OPEN, SELECT, FILTER, COLORBY, ATTRS, ZOOM, VIEW, PROJECTION, POINTSIZE, LABEL, SAVELABELS, LOADLABELS, CLEARLABELS, NAVIGATE, RESET, UNDO, HELP.");
 
     public void CancelCommand(CommandContext context, string globalCommandName)
     {
         if (globalCommandName == "ZOOM")
         {
             _zoomPhase = ZoomPhase.None;
+            return;
+        }
+
+        if (globalCommandName == "FILTER")
+        {
+            _filterPhase = FilterPhase.None;
+            return;
+        }
+
+        if (globalCommandName is "COLORBY" or "COLOR")
+        {
+            _colorPromptActive = false;
             return;
         }
 
@@ -379,6 +470,163 @@ public sealed class ViewerCommands : ICommandCancellationHandler
         return true;
     }
 
+    private CommandResult CompleteFilterValuePrompt(ViewerController viewer, string input)
+    {
+        if (input.Length == 0 && _pendingFilterAttribute == FilterAttribute.Class)
+            input = "L";
+
+        if (IsBack(input))
+        {
+            _filterPhase = FilterPhase.Attribute;
+            return CommandResult.Continue("Select filter attribute [Class/Intensity/Return/Z/Clear] <Class>:");
+        }
+
+        if (IsList(input))
+            return CommandResult.Continue(GetFilterValuePrompt(_pendingFilterAttribute), viewer.DescribeAttributes(FilterAttributeToCommandName(_pendingFilterAttribute)));
+
+        _filterPhase = FilterPhase.None;
+        return ApplyParsedFilter(viewer, _pendingFilterAttribute, input.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+    }
+
+    private static CommandResult ApplyParsedFilter(ViewerController viewer, FilterAttribute attribute, string[] values)
+    {
+        if (!TryCreateFilter(attribute, values, out PointFilter? filter, out string error))
+            return CommandResult.Continue(GetFilterValuePrompt(attribute), error);
+
+        return CommandResult.End(viewer.ApplyPointFilter(filter));
+    }
+
+    private static bool TryCreateFilter(FilterAttribute attribute, string[] values, out PointFilter? filter, out string error)
+    {
+        filter = null;
+        error = "";
+
+        string joined = string.Join(",", values).Replace(";", ",", StringComparison.Ordinal);
+        string[] tokens = joined.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        switch (attribute)
+        {
+            case FilterAttribute.Class:
+                if (!TryParseByteList(tokens, out byte[] classes))
+                {
+                    error = "Enter class values like 3 or 2,3,5.";
+                    return false;
+                }
+                filter = new ClassFilter(classes);
+                return true;
+            case FilterAttribute.Return:
+                if (!TryParseByteList(tokens, out byte[] returns))
+                {
+                    error = "Enter return values like 1 or 1,2.";
+                    return false;
+                }
+                filter = new ReturnFilter(returns);
+                return true;
+            case FilterAttribute.Intensity:
+                if (values.Length != 2 ||
+                    !ushort.TryParse(values[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out ushort minIntensity) ||
+                    !ushort.TryParse(values[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out ushort maxIntensity))
+                {
+                    error = "Enter intensity range as: min max.";
+                    return false;
+                }
+                if (minIntensity > maxIntensity)
+                    (minIntensity, maxIntensity) = (maxIntensity, minIntensity);
+                filter = new IntensityFilter(minIntensity, maxIntensity);
+                return true;
+            case FilterAttribute.Z:
+                if (values.Length != 2 ||
+                    !double.TryParse(values[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double minZ) ||
+                    !double.TryParse(values[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double maxZ))
+                {
+                    error = "Enter Z range as: min max.";
+                    return false;
+                }
+                if (minZ > maxZ)
+                    (minZ, maxZ) = (maxZ, minZ);
+                filter = new ZFilter(minZ, maxZ);
+                return true;
+            default:
+                error = "Unsupported filter attribute.";
+                return false;
+        }
+    }
+
+    private static bool TryParseByteList(string[] tokens, out byte[] values)
+    {
+        values = [];
+        var parsed = new List<byte>();
+        foreach (string token in tokens)
+        {
+            if (!byte.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out byte value))
+                return false;
+            parsed.Add(value);
+        }
+
+        values = parsed.Distinct().ToArray();
+        return values.Length > 0;
+    }
+
+    private static bool TryParseFilterAttribute(string input, out FilterAttribute attribute, out string error)
+    {
+        attribute = input.ToUpperInvariant() switch
+        {
+            "" or "C" or "CLASS" => FilterAttribute.Class,
+            "I" or "INTENSITY" => FilterAttribute.Intensity,
+            "R" or "RETURN" => FilterAttribute.Return,
+            "Z" or "HEIGHT" => FilterAttribute.Z,
+            "CL" or "CLEAR" => FilterAttribute.Clear,
+            _ => FilterAttribute.Unknown
+        };
+
+        error = attribute == FilterAttribute.Unknown ? $"Invalid filter attribute: {input}" : "";
+        return attribute != FilterAttribute.Unknown;
+    }
+
+    private static bool TryParseColorSource(string input, out ColorSource source, out bool clear, out string error)
+    {
+        clear = false;
+        source = input.ToUpperInvariant() switch
+        {
+            "" or "R" or "RGB" => ColorSource.Rgb,
+            "H" or "HEIGHT" or "Z" => ColorSource.Height,
+            "C" or "CLASS" => ColorSource.Class,
+            "I" or "INTENSITY" => ColorSource.Intensity,
+            "RT" or "RETURN" => ColorSource.Return,
+            "CL" or "CLEAR" => ColorSource.Rgb,
+            _ => ColorSource.Rgb
+        };
+
+        clear = input.Equals("CL", StringComparison.OrdinalIgnoreCase) || input.Equals("CLEAR", StringComparison.OrdinalIgnoreCase);
+        error = source == ColorSource.Rgb && !clear && !input.Equals("", StringComparison.Ordinal) &&
+            !input.Equals("R", StringComparison.OrdinalIgnoreCase) &&
+            !input.Equals("RGB", StringComparison.OrdinalIgnoreCase)
+            ? $"Invalid color source: {input}"
+            : "";
+        return error.Length == 0;
+    }
+
+    private static string GetFilterValuePrompt(FilterAttribute attribute) => attribute switch
+    {
+        FilterAttribute.Class => "Enter class values or [List/Back] <List>:",
+        FilterAttribute.Intensity => "Enter intensity range min max or [List/Back]:",
+        FilterAttribute.Return => "Enter return values or [List/Back]:",
+        FilterAttribute.Z => "Enter Z range min max or [List/Back]:",
+        _ => "Enter filter value:"
+    };
+
+    private static bool IsList(string input) => input.Equals("L", StringComparison.OrdinalIgnoreCase) || input.Equals("LIST", StringComparison.OrdinalIgnoreCase);
+    private static bool IsBack(string input) => input.Equals("B", StringComparison.OrdinalIgnoreCase) || input.Equals("BACK", StringComparison.OrdinalIgnoreCase);
+
+    private static string FilterAttributeToCommandName(FilterAttribute attribute) => attribute switch
+    {
+        FilterAttribute.Class => "Class",
+        FilterAttribute.Intensity => "Intensity",
+        FilterAttribute.Return => "Return",
+        FilterAttribute.Z => "Z",
+        _ => "All"
+    };
+
     private static bool TryParseWindowArguments(string input, out ScreenPoint first, out ScreenPoint second)
     {
         first = default;
@@ -405,6 +653,8 @@ public sealed class ViewerCommands : ICommandCancellationHandler
     }
 
     private enum ZoomPhase { None, FirstCorner, OppositeCorner }
+    private enum FilterPhase { None, Attribute, Values }
+    private enum FilterAttribute { Unknown, Class, Intensity, Return, Z, Clear }
 
     private readonly record struct ScreenPoint(int X, int Y);
 

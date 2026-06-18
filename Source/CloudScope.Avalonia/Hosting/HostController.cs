@@ -1,4 +1,5 @@
 using CloudScope.Commands;
+using CloudScope.Loading;
 
 namespace CloudScope.Avalonia.Hosting;
 
@@ -38,6 +39,15 @@ public sealed class HostController
         _renderedPointCount = count;
         _viewerState = $"Embedded OpenTK viewer: {sourceName}";
         StatusChanged?.Invoke($"Loaded into OpenTK viewer: {sourceName} ({count:N0} points)");
+        PublishStatus();
+    }
+
+    public void SetPendingCloud(PointCloudDataset dataset, string sourceName)
+    {
+        _embeddedHost?.LoadPointCloud(dataset);
+        _renderedPointCount = dataset.LoadedCount;
+        _viewerState = $"Embedded OpenTK viewer: {sourceName}";
+        StatusChanged?.Invoke($"Loaded into OpenTK viewer: {sourceName} ({dataset.LoadedCount:N0} points)");
         PublishStatus();
     }
 
