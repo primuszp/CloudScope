@@ -20,6 +20,7 @@ namespace CloudScope
 
         private readonly OrbitCamera _cam = new();
         private float _cloudRadius = 50f;
+        private PointCloudDataset? _dataset;
 
         private readonly CameraInputController _cameraInput = new();
         private bool _suppressEscapeClose;
@@ -50,10 +51,20 @@ namespace CloudScope
 
         public void LoadPointCloud(PointData[] pts, float cloudRadius = 50f)
         {
+            _dataset = null;
             _cloudRadius = cloudRadius;
             _selection.LoadPointCloud(pts);
             _cam.FitToCloud(cloudRadius);
             _pointRenderer.Upload(pts);
+        }
+
+        public void LoadPointCloud(PointCloudDataset dataset)
+        {
+            _dataset = dataset;
+            _cloudRadius = dataset.Radius;
+            _selection.LoadPointCloud(dataset.ViewPoints);
+            _cam.FitToCloud(dataset.Radius);
+            _pointRenderer.Upload(dataset.ViewPoints);
         }
 
         public string OpenPointCloud(string path, long maxPoints = 50_000_000)
@@ -67,8 +78,7 @@ namespace CloudScope
             var sw = Stopwatch.StartNew();
             using var reader = new LasReader(path);
             LoadedPointCloud cloud = PointCloudLoader.Load(reader, maxPoints);
-            PointCloudLoader.PrepareProgressiveSubsample(cloud.Points, cloud.LoadedCount);
-            LoadPointCloud(cloud.Points, cloud.Radius);
+            LoadPointCloud(cloud.ToDataset());
             SetLasFilePath(path);
             sw.Stop();
 
@@ -80,6 +90,7 @@ namespace CloudScope
         public void Reset()
         {
             _cloudRadius = 50f;
+            _dataset = null;
             _selection.Reset();
             _cam.FitToCloud(_cloudRadius);
             _pointRenderer.Upload(Array.Empty<PointData>());
@@ -119,6 +130,57 @@ namespace CloudScope
         public void ZoomCenter() => _cam.FocusOnCursor(_width / 2, _height / 2);
 
         public void SetPointSize(float size) => _cameraInput.SetPointSize(size);
+
+        public string DescribeAttributes(string attribute)
+        {
+            if (_dataset == null)
+                return "No point cloud is loaded.";
+
+            return NormalizeAttribute(attribute) switch
+            {
+                "" or "A" or "ALL" => _dataset.Attributes.DescribeAll(),
+                "C" or "CLASS" => _dataset.Attributes.DescribeClass(),
+                "I" or "INTENSITY" => _dataset.Attributes.DescribeIntensity(),
+                "R" or "RETURN" => _dataset.Attributes.DescribeReturn(),
+                "Z" or "HEIGHT" => _dataset.Attributes.DescribeZ(),
+                _ => $"Unknown attribute: {attribute}"
+            };
+        }
+
+        public string ApplyPointFilter(PointFilter? filter)
+        {
+            if (_dataset == null)
+                return "No point cloud is loaded.";
+
+            string result = _dataset.ApplyFilter(filter);
+            _selection.LoadPointCloud(_dataset.ViewPoints);
+            _pointRenderer.Upload(_dataset.ViewPoints);
+            return result;
+        }
+
+        public string SetColorSource(ColorSource source)
+        {
+            if (_dataset == null)
+                return "No point cloud is loaded.";
+
+            string result = _dataset.SetColorSource(source);
+            _selection.LoadPointCloud(_dataset.ViewPoints);
+            _pointRenderer.Upload(_dataset.ViewPoints);
+            return result;
+        }
+
+        public string ClearColorSource()
+        {
+            if (_dataset == null)
+                return "No point cloud is loaded.";
+
+            string result = _dataset.ClearColorSource();
+            _selection.LoadPointCloud(_dataset.ViewPoints);
+            _pointRenderer.Upload(_dataset.ViewPoints);
+            return result;
+        }
+
+        private static string NormalizeAttribute(string attribute) => attribute.Trim().ToUpperInvariant();
 
         public void SetView(string view)
         {

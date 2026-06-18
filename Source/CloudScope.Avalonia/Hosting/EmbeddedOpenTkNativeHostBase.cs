@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Threading;
 using CloudScope.Commands;
+using CloudScope.Loading;
 using CloudScope.Platform.OpenGL;
 using OpenTK.Mathematics;
 
@@ -25,6 +26,15 @@ public abstract class EmbeddedOpenTkNativeHostBase : NativeControlHost, IEmbedde
             return;
 
         viewer.Enqueue(v => v.LoadPointCloud(points, radius));
+    }
+
+    public void LoadPointCloud(PointCloudDataset dataset)
+    {
+        EmbeddedOpenTkViewerHost? viewer = Viewer;
+        if (viewer == null)
+            return;
+
+        viewer.Enqueue(v => v.LoadPointCloud(dataset));
     }
 
     public void ResetViewer()

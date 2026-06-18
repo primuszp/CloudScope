@@ -315,8 +315,7 @@ public sealed partial class MainWindow : Window
                 return PointCloudLoader.Load(reader, 5_000_000, progress);
             });
 
-            PointCloudLoader.PrepareProgressiveSubsample(cloud.Points, cloud.LoadedCount);
-            _hostController.SetPendingCloud(cloud.Points, (int)cloud.LoadedCount, cloud.Radius, Path.GetFileName(path));
+            _hostController.SetPendingCloud(cloud.ToDataset(), Path.GetFileName(path));
         }
         catch (Exception ex)
         {

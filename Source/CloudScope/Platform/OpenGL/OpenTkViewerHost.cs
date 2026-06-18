@@ -7,6 +7,7 @@ using OpenTK.Windowing.GraphicsLibraryFramework;
 using CloudScope.Platform.OpenGL;
 using CloudScope.Rendering;
 using CloudScope.Ui;
+using CloudScope.Loading;
 
 namespace CloudScope
 {
@@ -70,6 +71,9 @@ namespace CloudScope
 
         public void LoadPointCloud(PointData[] points, float cloudRadius = 50f) =>
             _controller.LoadPointCloud(points, cloudRadius);
+
+        public void LoadPointCloud(PointCloudDataset dataset) =>
+            _controller.LoadPointCloud(dataset);
 
         public void Reset() => _controller.Reset();
 
