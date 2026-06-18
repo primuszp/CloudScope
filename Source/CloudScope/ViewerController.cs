@@ -18,11 +18,15 @@ namespace CloudScope
         private readonly FrameTimingDiagnostics _frameTiming = new();
         private readonly SelectionController _selection;
 
-        private readonly OrbitCamera _cam = new();
+        private readonly ViewportState[] _viewports;
+        private int _activeViewportIndex;
+        private ViewportLayoutKind _viewportLayout = ViewportLayoutKind.SinglePerspective;
+        private ViewportLayoutKind _previousViewportLayout = ViewportLayoutKind.SinglePerspective;
+        private ViewportViewKind _auxiliaryViewportView = ViewportViewKind.Top;
+        private bool _forceAuxiliaryViewRefresh;
         private float _cloudRadius = 50f;
         private PointCloudDataset? _dataset;
 
-        private readonly CameraInputController _cameraInput = new();
         private bool _suppressEscapeClose;
 
         private int _width;
@@ -38,7 +42,14 @@ namespace CloudScope
             _highlightRenderer = renderBackend.CreateHighlightRenderer();
             _selectionGizmoRenderers = renderBackend.CreateSelectionGizmoRenderers();
             _selection = new SelectionController(_highlightRenderer.MarkDirty);
-            _cam.SetDepthPicker(renderBackend.CreateDepthPicker());
+            _viewports =
+            [
+                new ViewportState(ViewportKind.Perspective3D, new OrbitCamera(), new CameraInputController()),
+                new ViewportState(ViewportKind.Top2D, new OrbitCamera(), new CameraInputController())
+            ];
+
+            foreach (ViewportState viewport in _viewports)
+                viewport.Camera.SetDepthPicker(new ViewportDepthPicker(renderBackend.CreateDepthPicker(), () => viewport.Bounds, () => _height));
         }
 
         public void Load()
@@ -46,7 +57,7 @@ namespace CloudScope
             _frameLifecycle.InitializeFrameState();
             _pointRenderer.Initialize();
             _overlayRenderer.Initialize();
-            _cam.SetViewportSize(_width, _height);
+            UpdateViewportLayout();
         }
 
         public void LoadPointCloud(PointData[] pts, float cloudRadius = 50f)
@@ -54,7 +65,8 @@ namespace CloudScope
             _dataset = null;
             _cloudRadius = cloudRadius;
             _selection.LoadPointCloud(pts);
-            _cam.FitToCloud(cloudRadius);
+            foreach (ViewportState viewport in _viewports)
+                FitViewport(viewport);
             _pointRenderer.Upload(pts);
         }
 
@@ -63,7 +75,8 @@ namespace CloudScope
             _dataset = dataset;
             _cloudRadius = dataset.Radius;
             _selection.LoadPointCloud(dataset.ViewPoints);
-            _cam.FitToCloud(dataset.Radius);
+            foreach (ViewportState viewport in _viewports)
+                FitViewport(viewport);
             _pointRenderer.Upload(dataset.ViewPoints);
         }
 
@@ -92,18 +105,19 @@ namespace CloudScope
             _cloudRadius = 50f;
             _dataset = null;
             _selection.Reset();
-            _cam.FitToCloud(_cloudRadius);
+            foreach (ViewportState viewport in _viewports)
+                FitViewport(viewport);
             _pointRenderer.Upload(Array.Empty<PointData>());
         }
 
-        public bool NeedsContinuousFrames => _cameraInput.NeedsContinuousFrames;
+        public bool NeedsContinuousFrames => _viewports.Any(v => v.Input.NeedsContinuousFrames);
 
         public InteractionMode Mode => _selection.Mode;
         public SelectionInteractionState SelectionInteractionState => _selection.InteractionState;
         public SelectionToolType ActiveToolType => _selection.ActiveTool.ToolType;
         public bool HasActiveSelection => _selection.HasActiveSelection;
-        public double ZoomScale => _cam.Hvs;
-        public float PointSize => _cameraInput.PointSize;
+        public double ZoomScale => ActiveViewport.Camera.Hvs;
+        public float PointSize => ActiveViewport.Input.PointSize;
 
         public void SetMode(InteractionMode mode) => _selection.SetMode(mode);
 
@@ -117,19 +131,30 @@ namespace CloudScope
 
         public bool UndoSelectionCommand() => _selection.UndoSelectionCommand();
 
-        public void ZoomExtents() => _cam.ResetView(_cloudRadius);
+        public void ZoomExtents() => FitViewport(ActiveViewport);
 
         public void ZoomByFactor(float factor)
         {
-            _cam.PickDepthWindow(_width / 2, _height / 2, 11);
-            _cam.Zoom(_width / 2, _height / 2, factor);
+            ViewportState viewport = ActiveViewport;
+            int cx = viewport.Bounds.Width / 2;
+            int cy = viewport.Bounds.Height / 2;
+            viewport.Camera.PickDepthWindow(cx, cy, 11);
+            viewport.Camera.Zoom(cx, cy, factor);
         }
 
-        public void ZoomWindow(int x0, int y0, int x1, int y1) => _cam.ZoomWindow(x0, y0, x1, y1);
+        public void ZoomWindow(int x0, int y0, int x1, int y1) => ActiveViewport.Camera.ZoomWindow(x0, y0, x1, y1);
 
-        public void ZoomCenter() => _cam.FocusOnCursor(_width / 2, _height / 2);
+        public void ZoomCenter()
+        {
+            ViewportState viewport = ActiveViewport;
+            viewport.Camera.FocusOnCursor(viewport.Bounds.Width / 2, viewport.Bounds.Height / 2);
+        }
 
-        public void SetPointSize(float size) => _cameraInput.SetPointSize(size);
+        public void SetPointSize(float size)
+        {
+            foreach (ViewportState viewport in _viewports)
+                viewport.Input.SetPointSize(size);
+        }
 
         public string DescribeAttributes(string attribute)
         {
@@ -184,20 +209,45 @@ namespace CloudScope
 
         public void SetView(string view)
         {
+            OrbitCamera camera = ActiveViewport.Camera;
             switch (view.ToUpperInvariant())
             {
-                case "FRONT": _cam.SetFrontView(); break;
-                case "BACK": _cam.SetBackView(); break;
-                case "LEFT": _cam.SetLeftView(); break;
-                case "RIGHT": _cam.SetRightView(); break;
-                case "TOP": _cam.SetTopView(); break;
-                case "BOTTOM": _cam.SetBottomView(); break;
-                case "ISOMETRIC": _cam.SetIsometric(); break;
+                case "FRONT": camera.SetFrontView(); break;
+                case "BACK": camera.SetBackView(); break;
+                case "LEFT": camera.SetLeftView(); break;
+                case "RIGHT": camera.SetRightView(); break;
+                case "TOP": camera.SetTopView(); break;
+                case "BOTTOM": camera.SetBottomView(); break;
+                case "ISOMETRIC": camera.SetIsometric(); break;
                 default: throw new ArgumentOutOfRangeException(nameof(view), view, "Unknown standard view.");
             }
         }
 
-        public void ToggleProjection() => _cam.ToggleProjection(_width / 2, _height / 2);
+        public void ToggleProjection()
+        {
+            ViewportState viewport = ActiveViewport;
+            viewport.Camera.ToggleProjection(viewport.Bounds.Width / 2, viewport.Bounds.Height / 2);
+        }
+
+        public string SetViewportLayout(ViewportLayoutKind layout)
+            => SetViewportLayout(layout, _auxiliaryViewportView);
+
+        public string SetViewportLayout(ViewportLayoutKind layout, ViewportViewKind view)
+        {
+            if (layout == ViewportLayoutKind.Previous)
+                layout = _previousViewportLayout;
+
+            _auxiliaryViewportView = view;
+            _forceAuxiliaryViewRefresh = true;
+            if (layout != _viewportLayout)
+            {
+                _previousViewportLayout = _viewportLayout;
+                _viewportLayout = layout;
+            }
+
+            UpdateViewportLayout();
+            return $"Viewport layout: {DescribeViewportLayout(_viewportLayout)}. View: {DescribeViewportView(_auxiliaryViewportView)}.";
+        }
 
         public bool SaveLabels() => _selection.SaveLabels();
 
@@ -210,49 +260,76 @@ namespace CloudScope
             if (_suppressEscapeClose && !keyboard.IsKeyDown(ViewerKey.Escape))
                 _suppressEscapeClose = false;
 
-            bool shouldClose = _cameraInput.UpdateFrame(
-                dt,
-                keyboard,
-                _cam,
-                _cloudRadius,
-                _selection.Mode == InteractionMode.Label && _selection.ActiveTool.HasVolume,
-                _width,
-                _height,
-                !_suppressEscapeClose);
+            bool shouldClose = false;
+            foreach (ViewportState viewport in ActiveViewports())
+            {
+                bool viewportShouldClose = viewport.Input.UpdateFrame(
+                    dt,
+                    keyboard,
+                    viewport.Camera,
+                    _cloudRadius,
+                    _selection.Mode == InteractionMode.Label && _selection.ActiveTool.HasVolume,
+                    viewport.Bounds.Width,
+                    viewport.Bounds.Height,
+                    !_suppressEscapeClose);
+                shouldClose |= viewportShouldClose;
+            }
+
             _selection.UpdatePreview(dt);
             return shouldClose;
         }
 
         public void MouseDown(ViewerMouseButton button, int mx, int my)
         {
-            _cam.CancelTransition();
+            if (!TryActivateViewport(mx, my, out ViewportState viewport, out int localX, out int localY))
+                return;
+
+            OrbitCamera camera = viewport.Camera;
+            camera.CancelTransition();
             if (button == ViewerMouseButton.Left)
             {
-                bool toolConsumed = _selection.MouseDownLeft(mx, my, _cam);
-                _cameraInput.MouseDown(button, mx, my, _cam, toolConsumed, _selection.Mode == InteractionMode.Label && _selection.ActiveTool.HasVolume, _selection.ActiveTool.Center);
+                bool toolConsumed = _selection.MouseDownLeft(localX, localY, camera);
+                viewport.Input.MouseDown(
+                    button,
+                    localX,
+                    localY,
+                    camera,
+                    toolConsumed,
+                    _selection.Mode == InteractionMode.Label && _selection.ActiveTool.HasVolume,
+                    _selection.ActiveTool.Center,
+                    viewport.Kind == ViewportKind.Perspective3D);
             }
             if (button != ViewerMouseButton.Left)
-                _cameraInput.MouseDown(button, mx, my, _cam, false, false, Vector3.Zero);
+                viewport.Input.MouseDown(button, localX, localY, camera, false, false, Vector3.Zero);
         }
 
         public void MouseUp(ViewerMouseButton button, int mx, int my)
         {
-            if (button == ViewerMouseButton.Left) _selection.MouseUpLeft(mx, my, _cam);
-            _cameraInput.MouseUp(button);
+            if (!TryGetViewportLocal(mx, my, out ViewportState viewport, out int localX, out int localY))
+                viewport = ActiveViewport;
+
+            if (button == ViewerMouseButton.Left) _selection.MouseUpLeft(localX, localY, viewport.Camera);
+            viewport.Input.MouseUp(button);
         }
 
         public void MouseMove(int mx, int my)
         {
-            _selection.MouseMove(mx, my, _cam);
-            _cameraInput.MouseMove(mx, my, _cam);
+            if (!TryGetViewportLocal(mx, my, out ViewportState viewport, out int localX, out int localY))
+                viewport = ActiveViewport;
+
+            _selection.MouseMove(localX, localY, viewport.Camera);
+            viewport.Input.MouseMove(localX, localY, viewport.Camera);
         }
 
         public void MouseWheel(int mx, int my, float offsetY)
         {
+            if (!TryActivateViewport(mx, my, out ViewportState viewport, out int localX, out int localY))
+                return;
+
             if (_selection.MouseWheel(offsetY))
                 return;
 
-            _cameraInput.MouseWheel(mx, my, offsetY, _cam, _cloudRadius);
+            viewport.Input.MouseWheel(localX, localY, offsetY, viewport.Camera, _cloudRadius);
         }
 
         public void KeyDown(ViewerKey key, bool ctrl, int mouseX, int mouseY)
@@ -267,46 +344,53 @@ namespace CloudScope
             using var frame = _frameLifecycle.BeginFrame();
             var frameData = frame.FrameData;
 
-            var view = _cam.GetViewMatrix();
-            var proj = _cam.GetProjectionMatrix();
-
-            Breadcrumb("point-render");
-            int drawCount = _pointRenderer.Render(frameData, ref view, ref proj, _cameraInput.PointSize, _cam.Hvs, _cloudRadius);
-            _frameTiming.MarkMainDraw(drawCount);
-
-            Breadcrumb("highlight");
-            if (_selection.Points != null && _selection.Labels.Count > 0)
-                _highlightRenderer.Render(frameData, _selection.Points, _selection.Labels, ref view, ref proj, _cameraInput.PointSize);
-            _frameTiming.MarkHighlight();
-
-            Breadcrumb("preview");
-            if (_selection.TryTakePreview(out var previewIndices))
-                _highlightRenderer.UpdatePreview(_selection.Points, previewIndices);
-            _highlightRenderer.RenderPreview(frameData, ref view, ref proj, _cameraInput.PointSize);
-            _frameTiming.MarkPreview();
-
-            if (_selection.Mode == InteractionMode.Label)
+            int totalDrawCount = 0;
+            foreach (ViewportState viewport in ActiveViewports())
             {
-                var tool = _selection.ActiveTool;
-                Breadcrumb($"gizmo {tool.ToolType} phase={tool.Phase} vol={tool.HasVolume}");
-                if (!_selectionGizmoRenderers.TryRenderPlacement(frameData, tool, _width, _height)
-                    && (tool.HasVolume || tool.Phase == ToolPhase.Drawing))
+                ApplyRenderViewport(viewport);
+                var view = viewport.Camera.GetViewMatrix();
+                var proj = viewport.Camera.GetProjectionMatrix();
+
+                Breadcrumb("point-render");
+                int drawCount = _pointRenderer.Render(frameData, ref view, ref proj, viewport.Input.PointSize, viewport.Camera.Hvs, _cloudRadius);
+                totalDrawCount += drawCount;
+
+                Breadcrumb("highlight");
+                if (_selection.Points != null && _selection.Labels.Count > 0)
+                    _highlightRenderer.Render(frameData, _selection.Points, _selection.Labels, ref view, ref proj, viewport.Input.PointSize);
+
+                Breadcrumb("preview");
+                if (_selection.TryTakePreview(out var previewIndices))
+                    _highlightRenderer.UpdatePreview(_selection.Points, previewIndices);
+                _highlightRenderer.RenderPreview(frameData, ref view, ref proj, viewport.Input.PointSize);
+
+                if (_selection.Mode == InteractionMode.Label)
                 {
-                    _selectionGizmoRenderers.Render(frameData, tool, view, proj, _cam);
+                    var tool = _selection.ActiveTool;
+                    Breadcrumb($"gizmo {tool.ToolType} phase={tool.Phase} vol={tool.HasVolume}");
+                    if (!_selectionGizmoRenderers.TryRenderPlacement(frameData, tool, viewport.Bounds.Width, viewport.Bounds.Height)
+                        && (tool.HasVolume || tool.Phase == ToolPhase.Drawing))
+                    {
+                        _selectionGizmoRenderers.Render(frameData, tool, view, proj, viewport.Camera);
+                    }
                 }
+
+                bool anyToolActive = _selection.Mode == InteractionMode.Label && _selection.ActiveTool.HasVolume;
+                if (!anyToolActive && (viewport.Input.PivotFade > 0.01f || viewport.Input.PivotFlash > 0.01f))
+                    _overlayRenderer.RenderPivotIndicator(frameData, ref view, ref proj, viewport.Camera, viewport.Input.DisplayPivot, viewport.Input.PivotFade, viewport.Input.PivotFlash);
+
+                float crossAlpha = 1f - viewport.Input.PivotFade;
+                if (crossAlpha > 0.01f)
+                    _overlayRenderer.RenderCenterCrosshair(frameData, viewport.Bounds.Width, viewport.Bounds.Height, crossAlpha);
+
+                if (_selection.Mode == InteractionMode.Label)
+                    _overlayRenderer.RenderModeIndicator(frameData, viewport.Bounds.Width, viewport.Bounds.Height, _selection.ActiveTool.ToolType);
             }
+
+            _frameTiming.MarkMainDraw(totalDrawCount);
+            _frameTiming.MarkHighlight();
+            _frameTiming.MarkPreview();
             _frameTiming.MarkGizmo();
-
-            bool anyToolActive = _selection.Mode == InteractionMode.Label && _selection.ActiveTool.HasVolume;
-            if (!anyToolActive && (_cameraInput.PivotFade > 0.01f || _cameraInput.PivotFlash > 0.01f))
-                _overlayRenderer.RenderPivotIndicator(frameData, ref view, ref proj, _cam, _cameraInput.DisplayPivot, _cameraInput.PivotFade, _cameraInput.PivotFlash);
-
-            float crossAlpha = 1f - _cameraInput.PivotFade;
-            if (crossAlpha > 0.01f)
-                _overlayRenderer.RenderCenterCrosshair(frameData, _width, _height, crossAlpha);
-
-            if (_selection.Mode == InteractionMode.Label)
-                _overlayRenderer.RenderModeIndicator(frameData, _width, _height, _selection.ActiveTool.ToolType);
 
             Breadcrumb("overlay-done");
             _frameTiming.MarkSwapAndLog(frameTime);
@@ -336,7 +420,7 @@ namespace CloudScope
             _width = width;
             _height = height;
             _frameLifecycle.Resize(width, height);
-            _cam.SetViewportSize(width, height);
+            UpdateViewportLayout();
         }
 
         public void Dispose()
@@ -349,5 +433,193 @@ namespace CloudScope
             _highlightRenderer.Dispose();
             _selection.Dispose();
         }
+
+        private ViewportState ActiveViewport => _viewports[_activeViewportIndex];
+
+        private IEnumerable<ViewportState> ActiveViewports()
+        {
+            return _viewportLayout switch
+            {
+                ViewportLayoutKind.TwoVertical or ViewportLayoutKind.TwoHorizontal => _viewports,
+                ViewportLayoutKind.SingleTop => [_viewports[1]],
+                _ => [_viewports[0]]
+            };
+        }
+
+        private void UpdateViewportLayout()
+        {
+            int safeWidth = Math.Max(1, _width);
+            int safeHeight = Math.Max(1, _height);
+
+            switch (_viewportLayout)
+            {
+                case ViewportLayoutKind.SingleTop:
+                    SetViewportBounds(_viewports[1], new ViewportBounds(0, 0, safeWidth, safeHeight));
+                    _activeViewportIndex = 1;
+                    break;
+                case ViewportLayoutKind.TwoVertical:
+                    int halfWidth = Math.Max(1, safeWidth / 2);
+                    SetViewportBounds(_viewports[0], new ViewportBounds(0, 0, halfWidth, safeHeight));
+                    SetViewportBounds(_viewports[1], new ViewportBounds(halfWidth, 0, safeWidth - halfWidth, safeHeight));
+                    _activeViewportIndex = Math.Clamp(_activeViewportIndex, 0, 1);
+                    break;
+                case ViewportLayoutKind.TwoHorizontal:
+                    int halfHeight = Math.Max(1, safeHeight / 2);
+                    SetViewportBounds(_viewports[0], new ViewportBounds(0, 0, safeWidth, halfHeight));
+                    SetViewportBounds(_viewports[1], new ViewportBounds(0, halfHeight, safeWidth, safeHeight - halfHeight));
+                    _activeViewportIndex = Math.Clamp(_activeViewportIndex, 0, 1);
+                    break;
+                default:
+                    SetViewportBounds(_viewports[0], new ViewportBounds(0, 0, safeWidth, safeHeight));
+                    _activeViewportIndex = 0;
+                    break;
+            }
+
+            foreach (ViewportState viewport in ActiveViewports())
+            {
+                if (viewport.Kind == ViewportKind.Top2D && (!viewport.IsInitialized || _forceAuxiliaryViewRefresh))
+                    FitViewport(viewport);
+                else
+                    FitViewport(viewport, preserveZoom: true);
+
+                viewport.IsInitialized = true;
+            }
+
+            _forceAuxiliaryViewRefresh = false;
+        }
+
+        private static void SetViewportBounds(ViewportState viewport, ViewportBounds bounds)
+        {
+            viewport.Bounds = bounds;
+            viewport.Camera.SetViewportSize(bounds.Width, bounds.Height);
+        }
+
+        private void FitViewport(ViewportState viewport, bool preserveZoom = false)
+        {
+            if (preserveZoom)
+                return;
+
+            if (viewport.Kind == ViewportKind.Top2D)
+            {
+                viewport.Camera.SetOrthographicStandardView(DescribeViewportView(_auxiliaryViewportView), _cloudRadius);
+                return;
+            }
+
+            viewport.Camera.FitToCloud(_cloudRadius);
+        }
+
+        private void ApplyRenderViewport(ViewportState viewport)
+        {
+            int y = Math.Max(0, _height - viewport.Bounds.Y - viewport.Bounds.Height);
+            _frameLifecycle.SetViewport(viewport.Bounds.X, y, viewport.Bounds.Width, viewport.Bounds.Height);
+        }
+
+        private bool TryActivateViewport(int x, int y, out ViewportState viewport, out int localX, out int localY)
+        {
+            if (!TryGetViewportLocal(x, y, out viewport, out localX, out localY))
+                return false;
+
+            _activeViewportIndex = Array.IndexOf(_viewports, viewport);
+            return true;
+        }
+
+        private bool TryGetViewportLocal(int x, int y, out ViewportState viewport, out int localX, out int localY)
+        {
+            foreach (ViewportState candidate in ActiveViewports())
+            {
+                if (!candidate.Bounds.Contains(x, y))
+                    continue;
+
+                viewport = candidate;
+                localX = x - candidate.Bounds.X;
+                localY = y - candidate.Bounds.Y;
+                return true;
+            }
+
+            viewport = ActiveViewport;
+            localX = Math.Clamp(x - viewport.Bounds.X, 0, Math.Max(0, viewport.Bounds.Width - 1));
+            localY = Math.Clamp(y - viewport.Bounds.Y, 0, Math.Max(0, viewport.Bounds.Height - 1));
+            return false;
+        }
+
+        private static string DescribeViewportLayout(ViewportLayoutKind layout) => layout switch
+        {
+            ViewportLayoutKind.SingleTop => "Single auxiliary",
+            ViewportLayoutKind.TwoVertical => "Two vertical, Perspective + auxiliary",
+            ViewportLayoutKind.TwoHorizontal => "Two horizontal, Perspective + auxiliary",
+            _ => "Single perspective"
+        };
+
+        public static string DescribeViewportView(ViewportViewKind view) => view switch
+        {
+            ViewportViewKind.Front => "Front",
+            ViewportViewKind.Back => "Back",
+            ViewportViewKind.Left => "Left",
+            ViewportViewKind.Right => "Right",
+            ViewportViewKind.Bottom => "Bottom",
+            ViewportViewKind.Isometric => "Isometric",
+            _ => "Top"
+        };
+
+        private sealed class ViewportState(ViewportKind kind, OrbitCamera camera, CameraInputController input)
+        {
+            public ViewportKind Kind { get; } = kind;
+            public OrbitCamera Camera { get; } = camera;
+            public CameraInputController Input { get; } = input;
+            public ViewportBounds Bounds { get; set; } = new(0, 0, 1, 1);
+            public bool IsInitialized { get; set; }
+        }
+
+        private readonly record struct ViewportBounds(int X, int Y, int Width, int Height)
+        {
+            public bool Contains(int x, int y) =>
+                x >= X && y >= Y && x < X + Width && y < Y + Height;
+        }
+
+        private sealed class ViewportDepthPicker(
+            IDepthPicker inner,
+            Func<ViewportBounds> getBounds,
+            Func<int> getFramebufferHeight) : IDepthPicker
+        {
+            public float ReadDepth(int x, int y)
+            {
+                ViewportBounds bounds = getBounds();
+                int globalY = getFramebufferHeight() - bounds.Y - bounds.Height + y;
+                return inner.ReadDepth(bounds.X + x, globalY);
+            }
+
+            public int ReadDepthWindow(int x, int y, int width, int height, float[] destination)
+            {
+                ViewportBounds bounds = getBounds();
+                int globalY = getFramebufferHeight() - bounds.Y - bounds.Height + y;
+                return inner.ReadDepthWindow(bounds.X + x, globalY, width, height, destination);
+            }
+        }
+    }
+
+    public enum ViewportLayoutKind
+    {
+        SinglePerspective,
+        SingleTop,
+        TwoVertical,
+        TwoHorizontal,
+        Previous
+    }
+
+    public enum ViewportKind
+    {
+        Perspective3D,
+        Top2D
+    }
+
+    public enum ViewportViewKind
+    {
+        Top,
+        Bottom,
+        Left,
+        Right,
+        Front,
+        Back,
+        Isometric
     }
 }

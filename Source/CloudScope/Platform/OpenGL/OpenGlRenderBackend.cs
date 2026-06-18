@@ -39,6 +39,11 @@ namespace CloudScope.Platform.OpenGL
             GL.Viewport(0, 0, width, height);
         }
 
+        public void SetViewport(int x, int y, int width, int height)
+        {
+            GL.Viewport(x, y, width, height);
+        }
+
         private sealed class OpenGlFrameSession : IRenderFrameSession
         {
             public static readonly OpenGlFrameSession Instance = new();

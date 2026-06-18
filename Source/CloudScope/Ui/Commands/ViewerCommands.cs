@@ -5,7 +5,7 @@ using System.Globalization;
 
 namespace CloudScope.Ui.Commands;
 
-public sealed class ViewerCommands : ICommandCancellationHandler
+public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOptionProvider
 {
     // 0 = idle, 1 = awaiting shape prompt, 2 = tool active
     private int _selectPhase;
@@ -14,6 +14,13 @@ public sealed class ViewerCommands : ICommandCancellationHandler
     private FilterPhase _filterPhase;
     private FilterAttribute _pendingFilterAttribute;
     private bool _colorPromptActive;
+    private bool _vportsLayoutPrompt;
+    private bool _vportsArrangementPrompt;
+    private bool _vportsViewPrompt;
+    private ViewportLayoutKind _pendingViewportLayout;
+    private ViewportLayoutKind _lastViewportLayout = ViewportLayoutKind.SinglePerspective;
+    private ViewportLayoutKind _lastViewportArrangement = ViewportLayoutKind.TwoVertical;
+    private ViewportViewKind _lastViewportView = ViewportViewKind.Top;
 
     [CommandMethod("SELECT", "SEL")]
     public CommandResult Select(CommandContext context)
@@ -36,7 +43,7 @@ public sealed class ViewerCommands : ICommandCancellationHandler
             }
 
             if (_selectPhase == 2)
-                return CommandResult.Continue("Adjust selection using grips or [Confirm/Undo/Cancel]:");
+                return CommandResult.Continue("Adjust selection using grips or [CONFirm/Undo/CANcel]:");
 
             if (_selectPhase == 1)
             {
@@ -65,13 +72,15 @@ public sealed class ViewerCommands : ICommandCancellationHandler
             case "U":
             case "UNDO":
                 return CommandResult.Continue(
-                    "Adjust selection using grips or [Confirm/Undo/Cancel]:",
+                    "Adjust selection using grips or [CONFirm/Undo/CANcel]:",
                     viewer.UndoSelectionCommand() ? "Last selection change undone." : "Nothing to undo.");
+            case "CONF":
             case "CONFIRM":
                 if (!viewer.HasActiveSelection)
-                    return CommandResult.Continue("Adjust selection using grips or [Confirm/Undo/Cancel]:", "No active selection.");
+                    return CommandResult.Continue("Adjust selection using grips or [CONFirm/Undo/CANcel]:", "No active selection.");
                 viewer.ConfirmActiveSelection();
                 return CommandResult.End("Selection applied.");
+            case "CAN":
             case "CANCEL":
             case "ESC":
                 viewer.CancelOrExitLabelMode();
@@ -203,12 +212,13 @@ public sealed class ViewerCommands : ICommandCancellationHandler
     public CommandResult View(CommandContext context)
     {
         if (context.Input.Length == 0)
-            return CommandResult.Continue("Enter view [Front/Back/Left/Right/Top/Bottom/Isometric]:");
+            return CommandResult.Continue("Enter view [Front/BAck/Left/Right/Top/Bottom/Isometric]:");
 
         string view = context.Input.ToUpperInvariant() switch
         {
             "F"        => "FRONT",
-            "B"        => "BACK",
+            "B" or "BO" => "BOTTOM",
+            "BA"       => "BACK",
             "L"        => "LEFT",
             "R"        => "RIGHT",
             "T"        => "TOP",
@@ -219,11 +229,42 @@ public sealed class ViewerCommands : ICommandCancellationHandler
 
         if (!ValidViews.Contains(view))
             return CommandResult.Continue(
-                "Enter view [Front/Back/Left/Right/Top/Bottom/Isometric]:",
+                "Enter view [Front/BAck/Left/Right/Top/Bottom/Isometric]:",
                 $"Invalid view keyword: {context.Input}");
 
         context.GetTarget<ViewerController>().SetView(view);
         return CommandResult.End($"View: {view}");
+    }
+
+    public bool IsCommandOption(string globalCommandName, string input)
+    {
+        string option = input.Trim().ToUpperInvariant();
+        if (option.Length == 0)
+            return true;
+
+        return globalCommandName switch
+        {
+            "SELECT" => IsOneOf(option,
+                "B", "BOX", "S", "SPH", "SPHERE", "C", "CYL", "CYLINDER",
+                "U", "UNDO", "CONF", "CONFIRM", "CAN", "CANCEL", "ESC"),
+            "ZOOM" => IsOneOf(option,
+                "A", "ALL", "C", "CENTER", "E", "EXTENTS", "O", "OBJECT", "W", "WINDOW"),
+            "VIEW" => IsOneOf(option,
+                "F", "FRONT", "BA", "BACK", "L", "LEFT", "R", "RIGHT",
+                "T", "TOP", "B", "BO", "BOT", "BOTTOM", "I", "ISO", "ISOMETRIC"),
+            "FILTER" => IsOneOf(option,
+                "C", "CLASS", "I", "INTENSITY", "R", "RETURN", "Z", "HEIGHT",
+                "CL", "CLEAR", "L", "LIST", "B", "BACK"),
+            "COLORBY" => IsOneOf(option,
+                "R", "RGB", "H", "HEIGHT", "Z", "C", "CLASS", "I", "INTENSITY",
+                "RT", "RETURN", "CL", "CLEAR"),
+            "VPORTS" => IsOneOf(option,
+                "S", "SINGLE", "T", "TWO", "2", "P", "PLAN", "TOP", "PR", "PREVIOUS",
+                "V", "VERTICAL", "H", "HORIZONTAL",
+                "B", "BO", "BOT", "BOTTOM", "BA", "BACK", "L", "LEFT", "R", "RIGHT",
+                "F", "FRONT", "I", "ISO", "ISOMETRIC"),
+            _ => false
+        };
     }
 
     [CommandMethod("PROJECTION", "PROJ", Flags = CommandFlags.NoUndoMarker)]
@@ -290,12 +331,12 @@ public sealed class ViewerCommands : ICommandCancellationHandler
         if (input.Length == 0)
         {
             _filterPhase = FilterPhase.Attribute;
-            return CommandResult.Continue("Select filter attribute [Class/Intensity/Return/Z/Clear] <Class>:");
+            return CommandResult.Continue("Select filter attribute [Class/Intensity/Return/Z/CLear] <Class>:");
         }
 
         string[] parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (!TryParseFilterAttribute(parts[0], out FilterAttribute attribute, out string attributeError))
-            return CommandResult.Continue("Select filter attribute [Class/Intensity/Return/Z/Clear] <Class>:", attributeError);
+            return CommandResult.Continue("Select filter attribute [Class/Intensity/Return/Z/CLear] <Class>:", attributeError);
 
         if (attribute == FilterAttribute.Clear)
         {
@@ -321,7 +362,7 @@ public sealed class ViewerCommands : ICommandCancellationHandler
         if (input.Length == 0 && !_colorPromptActive)
         {
             _colorPromptActive = true;
-            return CommandResult.Continue("Select color source [Rgb/Height/Class/Intensity/Return/Clear] <Rgb>:");
+            return CommandResult.Continue("Select color source [Rgb/Height/Class/Intensity/ReTurn/CLear] <Rgb>:");
         }
 
         if (input.Length == 0)
@@ -329,10 +370,97 @@ public sealed class ViewerCommands : ICommandCancellationHandler
 
         string[] parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (!TryParseColorSource(parts[0], out ColorSource source, out bool clear, out string error))
-            return CommandResult.Continue("Select color source [Rgb/Height/Class/Intensity/Return/Clear] <Rgb>:", error);
+            return CommandResult.Continue("Select color source [Rgb/Height/Class/Intensity/ReTurn/CLear] <Rgb>:", error);
 
         _colorPromptActive = false;
         return CommandResult.End(clear ? viewer.ClearColorSource() : viewer.SetColorSource(source));
+    }
+
+    [CommandMethod("VPORTS", "VP", Flags = CommandFlags.NoUndoMarker)]
+    public CommandResult Viewports(CommandContext context)
+    {
+        var viewer = context.GetTarget<ViewerController>();
+        string input = context.Input.Trim();
+
+        if (_vportsViewPrompt)
+        {
+            if (input.Length == 0)
+                input = ViewerController.DescribeViewportView(_lastViewportView);
+
+            if (!TryParseViewportView(input, out ViewportViewKind view, out string viewError))
+                return CommandResult.Continue(GetViewportViewPrompt(), viewError);
+
+            _vportsViewPrompt = false;
+            _lastViewportView = view;
+            if (_pendingViewportLayout != ViewportLayoutKind.Previous)
+                _lastViewportLayout = _pendingViewportLayout;
+            return CommandResult.End(viewer.SetViewportLayout(_pendingViewportLayout, view));
+        }
+
+        if (_vportsLayoutPrompt && input.Length == 0)
+        {
+            _vportsLayoutPrompt = false;
+            _pendingViewportLayout = _lastViewportLayout;
+            if (RequiresViewportArrangement(_pendingViewportLayout))
+            {
+                _vportsArrangementPrompt = true;
+                return CommandResult.Continue(GetViewportArrangementPrompt());
+            }
+
+            return PromptForViewportView();
+        }
+
+        if (_vportsArrangementPrompt)
+        {
+            if (input.Length == 0)
+                input = _lastViewportArrangement == ViewportLayoutKind.TwoHorizontal ? "H" : "V";
+
+            _vportsArrangementPrompt = false;
+            _vportsLayoutPrompt = false;
+            if (!TryParseViewportArrangement(input, out ViewportLayoutKind arrangement, out string arrangementError))
+                return CommandResult.Continue(GetViewportArrangementPrompt(), arrangementError);
+
+            _pendingViewportLayout = arrangement;
+            _lastViewportArrangement = arrangement;
+            return PromptForViewportView();
+        }
+
+        if (input.Length == 0)
+        {
+            _vportsLayoutPrompt = true;
+            return CommandResult.Continue(GetViewportLayoutPrompt());
+        }
+
+        string[] parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        bool wasLayoutPrompt = _vportsLayoutPrompt;
+        if (!TryParseViewportLayout(parts[0], out ViewportLayoutKind layout, out bool requiresArrangement, out string error))
+            return CommandResult.Continue(GetViewportLayoutPrompt(), error);
+
+        _vportsLayoutPrompt = false;
+        if (requiresArrangement)
+        {
+            if (parts.Length > 1)
+            {
+                if (!TryParseViewportArrangement(parts[1], out layout, out string arrangementError))
+                    return CommandResult.Continue(GetViewportArrangementPrompt(), arrangementError);
+
+                _pendingViewportLayout = layout;
+                _lastViewportArrangement = layout;
+                return PromptForViewportView();
+            }
+
+            if (!wasLayoutPrompt)
+            {
+                _pendingViewportLayout = _lastViewportArrangement;
+                return PromptForViewportView();
+            }
+
+            _vportsArrangementPrompt = true;
+            return CommandResult.Continue(GetViewportArrangementPrompt());
+        }
+
+        _pendingViewportLayout = layout;
+        return PromptForViewportView();
     }
 
     [CommandMethod("SAVELABELS", "QLSAVE", Flags = CommandFlags.NoUndoMarker)]
@@ -369,7 +497,7 @@ public sealed class ViewerCommands : ICommandCancellationHandler
 
     [CommandMethod("HELP", "?", Flags = CommandFlags.NoUndoMarker | CommandFlags.Transparent)]
     public CommandResult Help(CommandContext context) => CommandResult.End(
-        "Commands: OPEN, SELECT, FILTER, COLORBY, ATTRS, ZOOM, VIEW, PROJECTION, POINTSIZE, LABEL, SAVELABELS, LOADLABELS, CLEARLABELS, NAVIGATE, RESET, UNDO, HELP.");
+        "Commands: OPEN, SELECT, FILTER, COLORBY, ATTRS, VPORTS, ZOOM, VIEW, PROJECTION, POINTSIZE, LABEL, SAVELABELS, LOADLABELS, CLEARLABELS, NAVIGATE, RESET, UNDO, HELP.");
 
     public void CancelCommand(CommandContext context, string globalCommandName)
     {
@@ -391,6 +519,14 @@ public sealed class ViewerCommands : ICommandCancellationHandler
             return;
         }
 
+        if (globalCommandName == "VPORTS")
+        {
+            _vportsLayoutPrompt = false;
+            _vportsArrangementPrompt = false;
+            _vportsViewPrompt = false;
+            return;
+        }
+
         if (globalCommandName != "SELECT")
             return;
 
@@ -403,7 +539,7 @@ public sealed class ViewerCommands : ICommandCancellationHandler
         context.GetTarget<ViewerController>().SetTool(tool);
         _selectPhase = 2;
         return CommandResult.Continue(
-            "Adjust selection using grips or [Confirm/Undo/Cancel]:",
+            "Adjust selection using grips or [CONFirm/Undo/CANcel]:",
             $"{tool} selection started. Draw the selection volume.");
     }
 
@@ -478,7 +614,7 @@ public sealed class ViewerCommands : ICommandCancellationHandler
         if (IsBack(input))
         {
             _filterPhase = FilterPhase.Attribute;
-            return CommandResult.Continue("Select filter attribute [Class/Intensity/Return/Z/Clear] <Class>:");
+            return CommandResult.Continue("Select filter attribute [Class/Intensity/Return/Z/CLear] <Class>:");
         }
 
         if (IsList(input))
@@ -618,6 +754,9 @@ public sealed class ViewerCommands : ICommandCancellationHandler
     private static bool IsList(string input) => input.Equals("L", StringComparison.OrdinalIgnoreCase) || input.Equals("LIST", StringComparison.OrdinalIgnoreCase);
     private static bool IsBack(string input) => input.Equals("B", StringComparison.OrdinalIgnoreCase) || input.Equals("BACK", StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsOneOf(string input, params string[] options) =>
+        options.Any(option => input.Equals(option, StringComparison.OrdinalIgnoreCase));
+
     private static string FilterAttributeToCommandName(FilterAttribute attribute) => attribute switch
     {
         FilterAttribute.Class => "Class",
@@ -626,6 +765,98 @@ public sealed class ViewerCommands : ICommandCancellationHandler
         FilterAttribute.Z => "Z",
         _ => "All"
     };
+
+    private static bool TryParseViewportLayout(string input, out ViewportLayoutKind layout, out bool requiresArrangement, out string error)
+    {
+        requiresArrangement = false;
+        layout = input.ToUpperInvariant() switch
+        {
+            "" or "S" or "SINGLE" => ViewportLayoutKind.SinglePerspective,
+            "T" or "TWO" or "2" => ViewportLayoutKind.TwoVertical,
+            "V" or "VERTICAL" => ViewportLayoutKind.TwoVertical,
+            "H" or "HORIZONTAL" => ViewportLayoutKind.TwoHorizontal,
+            "TOP" or "P" or "PLAN" => ViewportLayoutKind.SingleTop,
+            "PR" or "PREVIOUS" => ViewportLayoutKind.Previous,
+            _ => ViewportLayoutKind.SinglePerspective
+        };
+
+        requiresArrangement = input.Equals("T", StringComparison.OrdinalIgnoreCase) ||
+            input.Equals("TWO", StringComparison.OrdinalIgnoreCase) ||
+            input.Equals("2", StringComparison.OrdinalIgnoreCase);
+
+        error = layout == ViewportLayoutKind.SinglePerspective &&
+            !input.Equals("", StringComparison.Ordinal) &&
+            !input.Equals("S", StringComparison.OrdinalIgnoreCase) &&
+            !input.Equals("SINGLE", StringComparison.OrdinalIgnoreCase)
+            ? $"Invalid viewport layout: {input}"
+            : "";
+        return error.Length == 0;
+    }
+
+    private static bool TryParseViewportArrangement(string input, out ViewportLayoutKind layout, out string error)
+    {
+        layout = input.ToUpperInvariant() switch
+        {
+            "" or "V" or "VERTICAL" => ViewportLayoutKind.TwoVertical,
+            "H" or "HORIZONTAL" => ViewportLayoutKind.TwoHorizontal,
+            _ => ViewportLayoutKind.SinglePerspective
+        };
+
+        error = layout == ViewportLayoutKind.SinglePerspective ? $"Invalid viewport arrangement: {input}" : "";
+        return error.Length == 0;
+    }
+
+    private string GetViewportViewPrompt() =>
+        $"Enter view [Top/Bottom/Left/Right/Front/BAck/Isometric] <{ViewerController.DescribeViewportView(_lastViewportView)}>:";
+
+    private CommandResult PromptForViewportView()
+    {
+        _vportsViewPrompt = true;
+        return CommandResult.Continue(GetViewportViewPrompt());
+    }
+
+    private string GetViewportLayoutPrompt() =>
+        $"Enter viewport layout [Single/Two/Plan/Previous] <{DescribeViewportLayoutOption(_lastViewportLayout)}>:";
+
+    private string GetViewportArrangementPrompt() =>
+        $"Enter two viewport arrangement [Vertical/Horizontal] <{DescribeViewportArrangementOption(_lastViewportArrangement)}>:";
+
+    private static bool RequiresViewportArrangement(ViewportLayoutKind layout) =>
+        layout is ViewportLayoutKind.TwoVertical or ViewportLayoutKind.TwoHorizontal;
+
+    private static string DescribeViewportLayoutOption(ViewportLayoutKind layout) => layout switch
+    {
+        ViewportLayoutKind.SingleTop => "Plan",
+        ViewportLayoutKind.TwoVertical or ViewportLayoutKind.TwoHorizontal => "Two",
+        ViewportLayoutKind.Previous => "Previous",
+        _ => "Single"
+    };
+
+    private static string DescribeViewportArrangementOption(ViewportLayoutKind layout) =>
+        layout == ViewportLayoutKind.TwoHorizontal ? "Horizontal" : "Vertical";
+
+    private static bool TryParseViewportView(string input, out ViewportViewKind view, out string error)
+    {
+        view = input.ToUpperInvariant() switch
+        {
+            "" or "T" or "TOP" => ViewportViewKind.Top,
+            "B" or "BO" or "BOT" or "BOTTOM" => ViewportViewKind.Bottom,
+            "L" or "LEFT" => ViewportViewKind.Left,
+            "R" or "RIGHT" => ViewportViewKind.Right,
+            "F" or "FRONT" => ViewportViewKind.Front,
+            "BA" or "BACK" => ViewportViewKind.Back,
+            "I" or "ISO" or "ISOMETRIC" => ViewportViewKind.Isometric,
+            _ => ViewportViewKind.Top
+        };
+
+        error = view == ViewportViewKind.Top &&
+            !input.Equals("", StringComparison.Ordinal) &&
+            !input.Equals("T", StringComparison.OrdinalIgnoreCase) &&
+            !input.Equals("TOP", StringComparison.OrdinalIgnoreCase)
+            ? $"Invalid viewport view: {input}"
+            : "";
+        return error.Length == 0;
+    }
 
     private static bool TryParseWindowArguments(string input, out ScreenPoint first, out ScreenPoint second)
     {

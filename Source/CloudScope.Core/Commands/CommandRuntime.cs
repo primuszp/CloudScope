@@ -29,6 +29,11 @@ public interface ICommandCancellationHandler
     void CancelCommand(CommandContext context, string globalCommandName);
 }
 
+public interface ICommandOptionProvider
+{
+    bool IsCommandOption(string globalCommandName, string input);
+}
+
 public sealed class CommandRuntime : ICommandExecutor
 {
     private readonly CommandContext _context;
@@ -63,7 +68,7 @@ public sealed class CommandRuntime : ICommandExecutor
             string[] parts = trimmed.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length > 0 && _commands.TryGetValue(parts[0], out Descriptor? incoming))
             {
-                bool isOption = IsActiveOption(trimmed);
+                bool isOption = IsActiveOption(_active, trimmed);
                 if (parts.Length == 2 || !isOption)
                 {
                     string incomingInput = parts.Length > 1 ? parts[1] : "";
@@ -189,10 +194,9 @@ public sealed class CommandRuntime : ICommandExecutor
         s.Equals("ESC",    StringComparison.OrdinalIgnoreCase) ||
         s.Equals("ESCAPE", StringComparison.OrdinalIgnoreCase);
 
-    private static bool IsActiveOption(string s) =>
-        s.Equals("U",       StringComparison.OrdinalIgnoreCase) ||
-        s.Equals("UNDO",    StringComparison.OrdinalIgnoreCase) ||
-        s.Equals("CONFIRM", StringComparison.OrdinalIgnoreCase);
+    private static bool IsActiveOption(Descriptor descriptor, string input) =>
+        descriptor.Target is ICommandOptionProvider provider &&
+        provider.IsCommandOption(descriptor.Name, input);
 
     private sealed record Descriptor(string Name, CommandFlags Flags, object Target, MethodInfo Method);
 }

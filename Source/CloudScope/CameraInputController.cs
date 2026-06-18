@@ -69,9 +69,10 @@ namespace CloudScope
             OrbitCamera camera,
             bool leftButtonConsumed,
             bool activeSelectionVolume,
-            Vector3 activeSelectionCenter)
+            Vector3 activeSelectionCenter,
+            bool allowRotate = true)
         {
-            if (button == ViewerMouseButton.Left && !leftButtonConsumed)
+            if (button == ViewerMouseButton.Left && !leftButtonConsumed && allowRotate)
             {
                 if (activeSelectionVolume)
                 {
