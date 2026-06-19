@@ -199,6 +199,8 @@ namespace CloudScope.Platform.Metal.Rendering
 
             for (int i = 0; i < 6; i++)
             {
+                if (!box.IsGripVisible(i)) continue;
+
                 Vector3 face = box.HandleWorldPosition(i);
                 Vector3 dir = invRot * BoxSelectionTool.HandleLocalPos[i];
                 Vector3 tip = face + dir * arrowLength;
@@ -229,6 +231,8 @@ namespace CloudScope.Platform.Metal.Rendering
         {
             for (int i = 6; i <= 14; i++)
             {
+                if (!box.IsGripVisible(i)) continue;
+
                 var (sx, sy, behind) = camera.WorldToScreen(box.HandleWorldPosition(i));
                 if (behind) continue;
 
@@ -251,6 +255,8 @@ namespace CloudScope.Platform.Metal.Rendering
 
             for (int axis = 0; axis < 3; axis++)
             {
+                if (!box.IsGripVisible(15 + axis)) continue;
+
                 int write = 0;
                 float prevX = 0f, prevY = 0f;
                 bool prevOk = false;
@@ -288,6 +294,8 @@ namespace CloudScope.Platform.Metal.Rendering
 
         private void RenderExtrudeArrow(BoxSelectionTool box, OrbitCamera camera)
         {
+            if (!box.IsGripVisible(BoxSelectionTool.ExtrudeHandle)) return;
+
             Matrix3 invRot = Matrix3.Transpose(Matrix3.CreateFromQuaternion(box.Rotation));
             Vector3 worldZ = invRot * Vector3.UnitZ;
             Vector3 face = box.HandleWorldPosition(BoxSelectionTool.ExtrudeHandle);
@@ -385,6 +393,7 @@ namespace CloudScope.Platform.Metal.Rendering
             foreach (GripDescriptor grip in sphere.Grips)
             {
                 int i = grip.Index;
+                if (!sphere.IsGripVisible(i)) continue;
                 var (sx, sy, behind) = camera.WorldToScreen(sphere.HandleWorldPosition(i));
                 if (behind) continue;
 
@@ -565,6 +574,8 @@ namespace CloudScope.Platform.Metal.Rendering
 
         private void RenderExtrudeArrow(CylinderSelectionTool cyl, OrbitCamera camera)
         {
+            if (!cyl.IsGripVisible(1)) return;
+
             Vector3 top = cyl.HandleWorldPosition(1);
             Vector3 tip = top + cyl.Axis * MathF.Max(cyl.Radius * 0.55f, 0.05f);
             var (fx, fy, fb) = camera.WorldToScreen(top);
@@ -587,6 +598,8 @@ namespace CloudScope.Platform.Metal.Rendering
             Matrix3 invRot = Matrix3.Transpose(Matrix3.CreateFromQuaternion(cyl.Rotation));
             for (int axis = 0; axis < 3; axis++)
             {
+                if (!cyl.IsGripVisible(7 + axis)) continue;
+
                 int write = 0;
                 float prevX = 0f, prevY = 0f;
                 bool prevOk = false;
@@ -629,6 +642,7 @@ namespace CloudScope.Platform.Metal.Rendering
             {
                 if (grip.Kind == GripKind.RotationRing) continue;
                 int i = grip.Index;
+                if (!cyl.IsGripVisible(i)) continue;
                 var (sx, sy, behind) = camera.WorldToScreen(cyl.HandleWorldPosition(i));
                 if (behind) continue;
                 var (nx, ny) = ScreenToNdc(sx, sy, camera.ViewportWidth, camera.ViewportHeight);

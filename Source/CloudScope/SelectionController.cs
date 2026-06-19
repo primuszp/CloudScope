@@ -58,6 +58,8 @@ namespace CloudScope
             SetRestingInteractionState();
         }
 
+        public void SetViewConstraint(GripViewConstraint constraint) => ActiveTool.ViewConstraint = constraint;
+
         public void SetMode(InteractionMode mode)
         {
             if (Mode == mode)
@@ -316,6 +318,18 @@ namespace CloudScope
                 if (tool.IsHandleDragging)
                     SetInteractionState(SelectionInteractionState.DraggingGrip);
                 return true;
+            }
+
+            // In a view-constrained (orthographic) viewport, dragging anywhere on the volume
+            // body translates it in the view plane — reusing the center grip's drag math.
+            if (tool.ViewConstraint.IsConstrained && tool.HitTestBody(x, y, camera))
+            {
+                tool.BeginHandleDrag(tool.CenterGripIndex, x, y, camera);
+                if (tool.IsHandleDragging)
+                {
+                    SetInteractionState(SelectionInteractionState.DraggingGrip);
+                    return true;
+                }
             }
 
             if (_pendingAction == EditAction.None)

@@ -25,6 +25,9 @@ public sealed class ViewerCommandDispatcher : ICommandExecutor
 
     public string CurrentPrompt => _runtime.CurrentPrompt;
     public bool IsKnownCommand(string name) => _runtime.IsKnownCommand(name);
+    public IReadOnlyCollection<string> KnownCommandNames => _runtime.KnownCommandNames;
+    public bool HasActiveCommand => _runtime.HasActiveCommand;
+    public bool IsTransparentCommand(string name) => _runtime.IsTransparentCommand(name);
     public CommandResult ExecuteResult(string commandText) => _runtime.Execute(commandText);
     public CommandResult Execute(string input) => ExecuteResult(input);
     public CommandResult CancelActive() => _runtime.CancelActive();

@@ -78,6 +78,23 @@ namespace CloudScope.Selection
 
         public bool IsFlat => HalfExtents.Z < Math.Max(HalfExtents.X, HalfExtents.Y) * 0.05f;
 
+        public override int CenterGripIndex => 14;
+
+        public override bool HitTestBody(int mx, int my, OrbitCamera cam)
+        {
+            if (!HasVolume) return false;
+
+            Vector3 p = cam.ScreenToWorldAtDepth(mx, my, cam.WorldToViewZ(Center));
+            Matrix3 r = Matrix3.CreateFromQuaternion(Rotation);
+            Vector3 d = p - Center;
+            float lx = r.M11 * d.X + r.M12 * d.Y + r.M13 * d.Z;
+            float ly = r.M21 * d.X + r.M22 * d.Y + r.M23 * d.Z;
+            float lz = r.M31 * d.X + r.M32 * d.Y + r.M33 * d.Z;
+            return MathF.Abs(lx) <= HalfExtents.X
+                && MathF.Abs(ly) <= HalfExtents.Y
+                && MathF.Abs(lz) <= HalfExtents.Z;
+        }
+
         // ── Box-specific edit state ───────────────────────────────────────────
         private Vector3 _editStartExtents;
 

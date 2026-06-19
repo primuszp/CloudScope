@@ -104,6 +104,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
             foreach (GripDescriptor grip in sphere.Grips)
             {
                 if (grip.Kind != GripKind.RadiusResize) continue;
+                if (!sphere.IsGripVisible(grip.Index)) continue;
 
                 int         i        = grip.Index;
                 float       arrowLen = sphere.AdaptiveArrowLength(grip, cam);

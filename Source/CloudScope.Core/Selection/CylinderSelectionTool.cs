@@ -65,6 +65,19 @@ namespace CloudScope.Selection
         public static bool IsRingHandle(int i) => i is >= 7 and <= 9;
         public static int  RingAxis(int i)     => i - 7;
 
+        public override int CenterGripIndex => 0;
+
+        public override bool HitTestBody(int mx, int my, OrbitCamera cam)
+        {
+            if (!HasVolume) return false;
+
+            Vector3 p = cam.ScreenToWorldAtDepth(mx, my, cam.WorldToViewZ(Center));
+            Vector3 d = p - Center;
+            float along = Vector3.Dot(d, Axis);
+            Vector3 radial = d - along * Axis;
+            return MathF.Abs(along) <= HalfHeight && radial.Length <= Radius;
+        }
+
         // ── Drag/edit state ───────────────────────────────────────────────────
         private float      _editStartRadius;
         private float      _editStartHalfHeight;

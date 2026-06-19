@@ -82,6 +82,10 @@ namespace CloudScope
         public CommandResult ExecuteCommandResult(string commandText) => _commandDispatcher.ExecuteResult(commandText);
         public string ExecuteCommand(string commandText) => _commandDispatcher.ExecuteCommand(commandText);
         public bool IsKnownCommand(string name) => _commandDispatcher.IsKnownCommand(name);
+        public IReadOnlyCollection<string> KnownCommandNames => _commandDispatcher.KnownCommandNames;
+        public bool HasActiveCommand => _commandDispatcher.HasActiveCommand;
+        public bool IsTransparentCommand(string name) => _commandDispatcher.IsTransparentCommand(name);
+        public CommandResult CancelActiveCommand() => _commandDispatcher.CancelActive();
         public string CommandPrompt => _commandDispatcher.CurrentPrompt;
 
         public void ForwardKeyDown(ViewerKey key, bool ctrl, int mouseX, int mouseY)

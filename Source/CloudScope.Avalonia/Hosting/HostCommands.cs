@@ -11,7 +11,7 @@ internal sealed class HostCommands
     [CommandMethod("STATUS", Flags = CommandFlags.NoHistory | CommandFlags.NoUndoMarker | CommandFlags.Transparent)]
     public CommandResult Status(CommandContext context) => CommandResult.End(_host.Status);
 
-    [CommandMethod("RESET", Flags = CommandFlags.NoUndoMarker)]
+    [CommandMethod("HOSTRESET", Flags = CommandFlags.NoUndoMarker)]
     public CommandResult Reset(CommandContext context)
     {
         _host.PerformReset();
@@ -20,5 +20,5 @@ internal sealed class HostCommands
 
     [CommandMethod("HOSTHELP", Flags = CommandFlags.NoHistory | CommandFlags.NoUndoMarker | CommandFlags.Transparent)]
     public CommandResult HostHelp(CommandContext context) =>
-        CommandResult.End("Host commands: STATUS, RESET, HOSTHELP. Type HELP for viewer commands.");
+        CommandResult.End("Host commands: STATUS, HOSTRESET, HOSTHELP. Type HELP for viewer commands.");
 }

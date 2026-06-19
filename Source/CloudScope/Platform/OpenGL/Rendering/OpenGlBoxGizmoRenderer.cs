@@ -164,6 +164,8 @@ namespace CloudScope.Platform.OpenGL.Rendering
             {
                 if (grip.Kind != GripKind.AxisResize || grip.Axis is < 0 or > 2)
                     continue;
+                if (!box.IsGripVisible(grip.Index))
+                    continue;
 
                 int         i        = grip.Index;
                 float       arrowLen = box.AdaptiveArrowLength(grip, cam);
@@ -195,6 +197,8 @@ namespace CloudScope.Platform.OpenGL.Rendering
             {
                 if (grip.Kind != GripKind.CornerResize && grip.Kind != GripKind.Center)
                     continue;
+                if (!box.IsGripVisible(grip.Index))
+                    continue;
 
                 int i = grip.Index;
                 var (sx, sy, behind) = cam.WorldToScreen(grip.Position);
@@ -225,6 +229,8 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
             for (int axis = 0; axis < 3; axis++)
             {
+                if (!box.IsGripVisible(15 + axis)) continue;
+
                 bool hov = box.TryGetGrip(box.HoveredHandle, out GripDescriptor hoveredGrip)
                     && hoveredGrip.Kind == GripKind.RotationRing
                     && hoveredGrip.Axis == axis;

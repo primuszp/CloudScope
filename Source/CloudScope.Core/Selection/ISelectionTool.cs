@@ -20,6 +20,16 @@ namespace CloudScope.Selection
         Vector3 Center { get; }
         IReadOnlyList<GripDescriptor> Grips { get; }
 
+        // ── View-constrained grips ────────────────────────────────────────────
+        /// <summary>Active per-viewport grip view constraint (set before render/hit-test).</summary>
+        GripViewConstraint ViewConstraint { get; set; }
+        /// <summary>True when grip <paramref name="index"/> is shown/interactive under the current constraint.</summary>
+        bool IsGripVisible(int index);
+        /// <summary>Handle index of the center grip used for in-plane body translation.</summary>
+        int CenterGripIndex { get; }
+        /// <summary>True when the screen point lies within the volume's body (for click-drag translation).</summary>
+        bool HitTestBody(int mx, int my, OrbitCamera cam);
+
         // ── Handle interaction ────────────────────────────────────────────────
         int  HoveredHandle    { get; set; }
         int  ActiveHandle     { get; }
