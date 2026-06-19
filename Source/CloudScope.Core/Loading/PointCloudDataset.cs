@@ -30,6 +30,7 @@ namespace CloudScope.Loading
             _colorSource = hasColor ? ColorSource.Rgb : ColorSource.Height;
             ViewPoints = sourcePoints;
             VisibleCount = loadedCount;
+            ViewToSource = IdentityMap(loadedCount);
         }
 
         public int LoadedCount { get; }
@@ -37,6 +38,13 @@ namespace CloudScope.Loading
         public float Radius { get; }
         public PointCloudAttributes Attributes { get; }
         public PointData[] ViewPoints { get; private set; }
+
+        /// <summary>The full point array in source (LAS record) order. Highlights and label
+        /// storage are keyed by source index so they stay valid across filter/color changes.</summary>
+        public PointData[] SourcePoints => _sourcePoints;
+
+        /// <summary>Maps a visible (ViewPoints) index to its source index. Identity when unfiltered.</summary>
+        public int[] ViewToSource { get; private set; }
         public string FilterDescription => _filter?.Description ?? "None";
         public string ColorDescription => _colorSource.ToDisplayName();
 
@@ -70,21 +78,32 @@ namespace CloudScope.Loading
                 Array.Copy(_sourcePoints, ViewPoints, LoadedCount);
                 ApplyColors(ViewPoints, null);
                 VisibleCount = ViewPoints.Length;
+                ViewToSource = IdentityMap(LoadedCount);
                 return;
             }
 
             var points = new List<PointData>(Math.Min(LoadedCount, 1_000_000));
+            var map = new List<int>(points.Capacity);
             for (int i = 0; i < LoadedCount; i++)
             {
                 if (!_filter.Matches(Attributes, i))
                     continue;
 
                 points.Add(_sourcePoints[i]);
+                map.Add(i);
             }
 
             ViewPoints = points.ToArray();
+            ViewToSource = map.ToArray();
             ApplyColors(ViewPoints, _filter);
             VisibleCount = ViewPoints.Length;
+        }
+
+        private static int[] IdentityMap(int count)
+        {
+            var map = new int[count];
+            for (int i = 0; i < count; i++) map[i] = i;
+            return map;
         }
 
         private void ApplyColors(PointData[] points, PointFilter? filter)
@@ -140,18 +159,10 @@ namespace CloudScope.Loading
 
         private static void SetClassColor(ref PointData point, byte value)
         {
-            ReadOnlySpan<uint> colors =
-            [
-                0x808080, 0xD0D0D0, 0x8B5A2B, 0x7CFC00,
-                0x32CD32, 0x006400, 0xB22222, 0xFF00FF,
-                0xA9A9A9, 0x1E90FF, 0x696969, 0x303030,
-                0x808000, 0xFFD700, 0xFFA500, 0xFF4500
-            ];
-
-            uint color = colors[value % colors.Length];
-            point.R = ((color >> 16) & 0xFF) / 255f;
-            point.G = ((color >> 8) & 0xFF) / 255f;
-            point.B = (color & 0xFF) / 255f;
+            var c = ClassColorPalette.GetColor(value);
+            point.R = c.X;
+            point.G = c.Y;
+            point.B = c.Z;
         }
     }
 

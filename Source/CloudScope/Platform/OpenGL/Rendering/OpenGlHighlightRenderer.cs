@@ -102,6 +102,7 @@ void main()
         /// Rebuild the highlight buffer from the current label state, then render.
         /// </summary>
         public void Render(IRenderFrameData frameData, PointData[] points, LabelManager labels,
+                           Func<string, Vector3> labelColor,
                            ref Matrix4 view, ref Matrix4 proj, float pointSize)
         {
             if (labels.Count == 0 && !_dirty) return;
@@ -110,7 +111,7 @@ void main()
 
             if (_dirty)
             {
-                RebuildBuffer(points, labels);
+                RebuildBuffer(points, labels, labelColor);
                 _dirty = false;
             }
 
@@ -137,7 +138,7 @@ void main()
 
         // ── Internals ─────────────────────────────────────────────────────────
 
-        private void RebuildBuffer(PointData[] points, LabelManager labels)
+        private void RebuildBuffer(PointData[] points, LabelManager labels, Func<string, Vector3> labelColor)
         {
             var allLabels = labels.AllLabels;
             _highlightCount = allLabels.Count;
@@ -152,7 +153,7 @@ void main()
             {
                 if (ptIdx < 0 || ptIdx >= points.Length) continue;
                 ref readonly PointData pt = ref points[ptIdx];
-                var col = LabelColorPalette.GetColor(labelName);
+                var col = labelColor(labelName);
                 data[idx++] = pt.X; data[idx++] = pt.Y; data[idx++] = pt.Z;
                 data[idx++] = col.X; data[idx++] = col.Y; data[idx++] = col.Z;
             }

@@ -18,6 +18,8 @@ public abstract class EmbeddedOpenTkNativeHostBase : NativeControlHost, IEmbedde
 
     protected EmbeddedOpenTkViewerHost? Viewer { get; private set; }
     public string CommandPrompt => Viewer?.CommandPrompt ?? "Command:";
+    public IReadOnlyCollection<CloudScope.Labeling.LabelDefinition> LabelDefinitions => Viewer?.LabelDefinitions ?? System.Array.Empty<CloudScope.Labeling.LabelDefinition>();
+    public string ActiveLabel => Viewer?.ActiveLabel ?? "";
 
     public void LoadPointCloud(PointData[] points, float radius)
     {

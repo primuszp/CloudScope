@@ -76,6 +76,7 @@ public sealed partial class MainWindow : Window
     private void WireMenu()
     {
         MenuItem("OpenLasMenuItem").Click     += (_, _) => RunCommandFromUi("OPEN");
+        MenuItem("ProjectionMenuItem").Click  += (_, _) => RunCommandFromUi("PROJECTION");
         MenuItem("StatusMenuItem").Click      += (_, _) => RunCommandFromUi("STATUS");
         MenuItem("ResetMenuItem").Click       += (_, _) => RunCommandFromUi("RESET");
         MenuItem("ExitMenuItem").Click        += (_, _) => Close();
@@ -86,6 +87,25 @@ public sealed partial class MainWindow : Window
         MenuItem("CylinderMenuItem").Click    += (_, _) => RunCommandFromUi("SELECT C");
         MenuItem("ConfirmMenuItem").Click     += (_, _) => RunCommandFromUi("CONFIRM");
         MenuItem("CancelMenuItem").Click      += (_, _) => RunCommandFromUi("CANCEL");
+        MenuItem("FitMenuItem").Click         += (_, _) => RunCommandFromUi("FIT");
+        MenuItem("FitGroundMenuItem").Click   += (_, _) => RunCommandFromUi("FITGROUND");
+        MenuItem("LabelRegistryMenuItem").Click += (_, _) => OpenLabelRegistry();
+    }
+
+    private LabelRegistryWindow? _labelRegistryWindow;
+
+    private void OpenLabelRegistry()
+    {
+        if (_labelRegistryWindow is { } existing)
+        {
+            existing.Activate();
+            existing.Refresh();
+            return;
+        }
+
+        _labelRegistryWindow = new LabelRegistryWindow(_hostController, RunCommandFromUi);
+        _labelRegistryWindow.Closed += (_, _) => _labelRegistryWindow = null;
+        _labelRegistryWindow.Show(this);
     }
 
     private void WireCommandBox()

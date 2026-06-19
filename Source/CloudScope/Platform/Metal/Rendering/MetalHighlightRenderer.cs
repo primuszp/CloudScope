@@ -53,12 +53,12 @@ namespace CloudScope.Platform.Metal.Rendering
         public void RenderPreview(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj, float pointSize)
             => RenderBuffer(frameData, _previewBuffer, _previewCount, ref view, ref proj, pointSize + 2f);
 
-        public void Render(IRenderFrameData frameData, PointData[] points, LabelManager labels, ref Matrix4 view, ref Matrix4 proj, float pointSize)
+        public void Render(IRenderFrameData frameData, PointData[] points, LabelManager labels, Func<string, Vector3> labelColor, ref Matrix4 view, ref Matrix4 proj, float pointSize)
         {
             EnsureResources();
             if (_dirty)
             {
-                RebuildHighlightBuffer(points, labels);
+                RebuildHighlightBuffer(points, labels, labelColor);
                 _dirty = false;
             }
             RenderBuffer(frameData, _highlightBuffer, _highlightCount, ref view, ref proj, pointSize + 2f);
@@ -94,7 +94,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 MTLResourceOptions.ResourceStorageModeShared);
         }
 
-        private void RebuildHighlightBuffer(PointData[] points, LabelManager labels)
+        private void RebuildHighlightBuffer(PointData[] points, LabelManager labels, Func<string, Vector3> labelColor)
         {
             var allLabels = labels.AllLabels;
             var data  = RentScratch(allLabels.Count);
@@ -103,7 +103,7 @@ namespace CloudScope.Platform.Metal.Rendering
             {
                 if ((uint)ptIdx >= (uint)points.Length) continue;
                 data[count] = points[ptIdx];
-                var c = LabelColorPalette.GetColor(labelName);
+                var c = labelColor(labelName);
                 data[count].R = c.X;
                 data[count].G = c.Y;
                 data[count].B = c.Z;
