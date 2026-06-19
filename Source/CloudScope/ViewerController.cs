@@ -286,6 +286,7 @@ namespace CloudScope
 
             OrbitCamera camera = viewport.Camera;
             camera.CancelTransition();
+            _selection.SetViewConstraint(ConstraintFor(viewport));
             if (button == ViewerMouseButton.Left)
             {
                 bool toolConsumed = _selection.MouseDownLeft(localX, localY, camera);
@@ -308,6 +309,7 @@ namespace CloudScope
             if (!TryGetViewportLocal(mx, my, out ViewportState viewport, out int localX, out int localY))
                 viewport = ActiveViewport;
 
+            _selection.SetViewConstraint(ConstraintFor(viewport));
             if (button == ViewerMouseButton.Left) _selection.MouseUpLeft(localX, localY, viewport.Camera);
             viewport.Input.MouseUp(button);
         }
@@ -317,6 +319,7 @@ namespace CloudScope
             if (!TryGetViewportLocal(mx, my, out ViewportState viewport, out int localX, out int localY))
                 viewport = ActiveViewport;
 
+            _selection.SetViewConstraint(ConstraintFor(viewport));
             _selection.MouseMove(localX, localY, viewport.Camera);
             viewport.Input.MouseMove(localX, localY, viewport.Camera);
         }
@@ -367,6 +370,7 @@ namespace CloudScope
                 if (_selection.Mode == InteractionMode.Label)
                 {
                     var tool = _selection.ActiveTool;
+                    tool.ViewConstraint = ConstraintFor(viewport);
                     Breadcrumb($"gizmo {tool.ToolType} phase={tool.Phase} vol={tool.HasVolume}");
                     if (!_selectionGizmoRenderers.TryRenderPlacement(frameData, tool, viewport.Bounds.Width, viewport.Bounds.Height)
                         && (tool.HasVolume || tool.Phase == ToolPhase.Drawing))
@@ -435,6 +439,22 @@ namespace CloudScope
         }
 
         private ViewportState ActiveViewport => _viewports[_activeViewportIndex];
+
+        // Grip view constraint for a viewport: only the orthographic auxiliary viewport
+        // looking along a world axis (Top/Bottom, Left/Right, Front/Back) constrains grips.
+        private GripViewConstraint ConstraintFor(ViewportState viewport)
+        {
+            if (viewport.Kind != ViewportKind.Top2D)
+                return GripViewConstraint.None;
+
+            return _auxiliaryViewportView switch
+            {
+                ViewportViewKind.Left or ViewportViewKind.Right => GripViewConstraint.AlongWorldAxis(0),
+                ViewportViewKind.Front or ViewportViewKind.Back => GripViewConstraint.AlongWorldAxis(1),
+                ViewportViewKind.Top or ViewportViewKind.Bottom => GripViewConstraint.AlongWorldAxis(2),
+                _ => GripViewConstraint.None
+            };
+        }
 
         private IEnumerable<ViewportState> ActiveViewports()
         {

@@ -51,6 +51,14 @@ public abstract class EmbeddedOpenTkNativeHostBase : NativeControlHost, IEmbedde
 
     public bool IsKnownCommand(string name) => Viewer?.IsKnownCommand(name) == true;
 
+    public IReadOnlyCollection<string> KnownCommandNames => Viewer?.KnownCommandNames ?? [];
+
+    public bool HasActiveCommand => Viewer?.HasActiveCommand == true;
+
+    public bool IsTransparentCommand(string name) => Viewer?.IsTransparentCommand(name) == true;
+
+    public CommandResult CancelActiveCommand() => Viewer?.CancelActiveCommand() ?? CommandResult.Cancel();
+
     public string ExecuteViewerCommand(string commandText) =>
         ExecuteViewerCommandResult(commandText).Message;
 

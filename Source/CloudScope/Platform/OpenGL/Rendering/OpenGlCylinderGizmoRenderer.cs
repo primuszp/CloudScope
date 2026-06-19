@@ -154,6 +154,8 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
             for (int gripIdx = 1; gripIdx <= 2; gripIdx++)
             {
+                if (!cyl.IsGripVisible(gripIdx)) continue;
+
                 GripDescriptor grip     = cyl.GetGrip(gripIdx);
                 float          arrowLen = cyl.AdaptiveArrowLength(grip, cam);
                 float          coneLen  = arrowLen * GripArrowSupport.ConeToArrowRatio;
@@ -182,6 +184,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
             foreach (GripDescriptor grip in cyl.Grips)
             {
                 if (grip.Kind != GripKind.RadiusResize) continue;
+                if (!cyl.IsGripVisible(grip.Index)) continue;
 
                 int         i        = grip.Index;
                 float       arrowLen = cyl.AdaptiveArrowLength(grip, cam);
@@ -215,6 +218,8 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
             for (int axis = 0; axis < 3; axis++)
             {
+                if (!cyl.IsGripVisible(7 + axis)) continue;
+
                 bool hov = cyl.TryGetGrip(cyl.HoveredHandle, out GripDescriptor hoveredGrip)
                     && hoveredGrip.Kind == GripKind.RotationRing
                     && hoveredGrip.Axis == axis;

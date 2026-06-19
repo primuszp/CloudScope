@@ -11,6 +11,10 @@ public interface IEmbeddedOpenTkNativeHost
     void ResetViewer();
 
     bool IsKnownCommand(string name);
+    IReadOnlyCollection<string> KnownCommandNames { get; }
+    bool HasActiveCommand { get; }
+    bool IsTransparentCommand(string name);
+    CommandResult CancelActiveCommand();
     CommandResult ExecuteViewerCommandResult(string commandText);
     string ExecuteViewerCommand(string commandText);
 

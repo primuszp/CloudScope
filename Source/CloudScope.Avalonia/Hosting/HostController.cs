@@ -92,6 +92,14 @@ public sealed class HostController
 
         public bool IsKnownCommand(string name) => host._embeddedHost?.IsKnownCommand(name) == true;
 
+        public IReadOnlyCollection<string> KnownCommandNames => host._embeddedHost?.KnownCommandNames ?? [];
+
+        public bool HasActiveCommand => host._embeddedHost?.HasActiveCommand == true;
+
+        public bool IsTransparentCommand(string name) => host._embeddedHost?.IsTransparentCommand(name) == true;
+
+        public CommandResult CancelActive() => host._embeddedHost?.CancelActiveCommand() ?? CommandResult.Cancel();
+
         public CommandResult Execute(string input) => host.EmbeddedExecuteResult(input);
     }
 }

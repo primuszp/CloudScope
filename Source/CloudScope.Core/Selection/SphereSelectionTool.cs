@@ -30,6 +30,16 @@ namespace CloudScope.Selection
         public float Radius { get; set; }
         private readonly GripDescriptor[] _grips = new GripDescriptor[7];
 
+        public override int CenterGripIndex => 0;
+
+        public override bool HitTestBody(int mx, int my, OrbitCamera cam)
+        {
+            if (!HasVolume) return false;
+
+            Vector3 p = cam.ScreenToWorldAtDepth(mx, my, cam.WorldToViewZ(Center));
+            return (p - Center).Length <= Radius;
+        }
+
         private IReadOnlyList<GripDescriptor> BuildGrips()
         {
             _grips[0] = GripDescriptor.Center(0, Center);

@@ -25,6 +25,19 @@ namespace CloudScope.Selection
         public virtual Vector3 Center { get; set; }
         public abstract IReadOnlyList<GripDescriptor> Grips { get; }
 
+        // ── View-constrained grips ────────────────────────────────────────────
+        public GripViewConstraint ViewConstraint { get; set; } = GripViewConstraint.None;
+        public abstract int CenterGripIndex { get; }
+        public abstract bool HitTestBody(int mx, int my, OrbitCamera cam);
+
+        public bool IsGripVisible(int index)
+        {
+            if (!ViewConstraint.IsConstrained)
+                return true;
+
+            return TryGetGrip(index, out GripDescriptor grip) && ViewConstraint.IsVisible(grip);
+        }
+
         // ── Handle state ──────────────────────────────────────────────────────
         public int  HoveredHandle    { get; set; } = HoverNone;
         public int  ActiveHandle     => _activeHandle;
@@ -95,6 +108,9 @@ namespace CloudScope.Selection
             float bestDist = threshold;
             foreach (GripDescriptor grip in Grips)
             {
+                if (ViewConstraint.IsConstrained && !ViewConstraint.IsVisible(grip))
+                    continue;
+
                 float d = GetGripHitDistance(grip, mx, my, cam);
                 if (d < bestDist) { bestDist = d; best = grip.Index; }
             }

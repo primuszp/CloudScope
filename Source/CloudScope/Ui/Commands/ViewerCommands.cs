@@ -5,7 +5,7 @@ using System.Globalization;
 
 namespace CloudScope.Ui.Commands;
 
-public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOptionProvider
+public sealed class ViewerCommands : ICommandCancellationHandler
 {
     // 0 = idle, 1 = awaiting shape prompt, 2 = tool active
     private int _selectPhase;
@@ -13,7 +13,6 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
     private ScreenPoint _zoomFirstCorner;
     private FilterPhase _filterPhase;
     private FilterAttribute _pendingFilterAttribute;
-    private bool _colorPromptActive;
     private bool _vportsLayoutPrompt;
     private bool _vportsArrangementPrompt;
     private bool _vportsViewPrompt;
@@ -22,18 +21,53 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
     private ViewportLayoutKind _lastViewportArrangement = ViewportLayoutKind.TwoVertical;
     private ViewportViewKind _lastViewportView = ViewportViewKind.Top;
 
+    // ----- Keyword sets (AutoCAD-style: capitalised letters define the abbreviation) -----
+
+    private static readonly Keyword[] SelectKeywords =
+    [
+        new("BOX", "Box"),
+        new("SPHERE", "Sphere", "SPH"),
+        new("CYLINDER", "Cylinder", "CYL"),
+        new("UNDO", "Undo"),
+        new("CONFIRM", "CONFirm"),
+        new("CANCEL", "CANcel")
+    ];
+
+    private static readonly Keyword[] ViewKeywords =
+    [
+        new("FRONT", "Front"),
+        new("BACK", "BAck"),
+        new("LEFT", "Left"),
+        new("RIGHT", "Right"),
+        new("TOP", "Top"),
+        new("BOTTOM", "Bottom", "BO", "BOT"),
+        new("ISOMETRIC", "Isometric", "ISO")
+    ];
+
+    private static readonly Keyword[] ColorKeywords =
+    [
+        new("RGB", "Rgb"),
+        new("HEIGHT", "Height", "Z"),
+        new("CLASS", "Class"),
+        new("INTENSITY", "Intensity"),
+        new("RETURN", "ReTurn"),
+        new("CLEAR", "CLear")
+    ];
+
     [CommandMethod("SELECT", "SEL")]
     public CommandResult Select(CommandContext context)
     {
         var viewer = context.GetTarget<ViewerController>();
-        string option = context.Input.ToUpperInvariant();
 
         // Sync phase with authoritative controller state: if tool was cancelled externally
         // (e.g. UNDO, Escape key) while we thought we were in phase 2, reset.
         if (_selectPhase == 2 && !viewer.HasActiveSelection)
             _selectPhase = 0;
 
-        if (option.Length == 0)
+        string token = Token(context, SelectKeywords);
+        bool empty = context.Keyword.Length == 0 && context.Input.Trim().Length == 0;
+
+        if (empty)
         {
             if (viewer.HasActiveSelection)
             {
@@ -43,7 +77,7 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
             }
 
             if (_selectPhase == 2)
-                return CommandResult.Continue("Adjust selection using grips or [CONFirm/Undo/CANcel]:");
+                return CommandResult.Continue(SelectAdjustPrompt());
 
             if (_selectPhase == 1)
             {
@@ -52,44 +86,33 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
             }
 
             _selectPhase = 1;
-            return CommandResult.Continue("Specify selection shape [Box/Sphere/Cylinder/Undo] <Box>:");
+            return CommandResult.Continue(SelectShapePrompt());
         }
 
         _selectPhase = 0;
-        switch (option)
+        switch (token)
         {
-            case "B":
             case "BOX":
                 return StartTool(context, SelectionToolType.Box);
-            case "S":
-            case "SPH":
             case "SPHERE":
                 return StartTool(context, SelectionToolType.Sphere);
-            case "C":
-            case "CYL":
             case "CYLINDER":
                 return StartTool(context, SelectionToolType.Cylinder);
-            case "U":
             case "UNDO":
                 return CommandResult.Continue(
-                    "Adjust selection using grips or [CONFirm/Undo/CANcel]:",
+                    SelectAdjustPrompt(),
                     viewer.UndoSelectionCommand() ? "Last selection change undone." : "Nothing to undo.");
-            case "CONF":
             case "CONFIRM":
                 if (!viewer.HasActiveSelection)
-                    return CommandResult.Continue("Adjust selection using grips or [CONFirm/Undo/CANcel]:", "No active selection.");
+                    return CommandResult.Continue(SelectAdjustPrompt(), "No active selection.");
                 viewer.ConfirmActiveSelection();
                 return CommandResult.End("Selection applied.");
-            case "CAN":
             case "CANCEL":
-            case "ESC":
                 viewer.CancelOrExitLabelMode();
                 return CommandResult.Cancel();
             default:
                 _selectPhase = 1;
-                return CommandResult.Continue(
-                    "Specify selection shape [Box/Sphere/Cylinder/Undo] <Box>:",
-                    $"Invalid option keyword: {context.Input}");
+                return CommandResult.Continue(SelectShapePrompt(), $"Invalid option keyword: {context.Input}");
         }
     }
 
@@ -114,7 +137,7 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
     public CommandResult Label(CommandContext context)
     {
         if (context.Input.Length == 0)
-            return CommandResult.Continue("Enter label name:");
+            return CommandResult.Continue(Value("Enter label name:"));
         context.GetTarget<ViewerController>().SetLabel(context.Input);
         return CommandResult.End($"Label: {context.Input}");
     }
@@ -127,7 +150,7 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
     public CommandResult Open(CommandContext context)
     {
         if (!TryParseOpenArguments(context.Input, out string path, out long maxPoints, out string error))
-            return CommandResult.Continue("Enter LAS file path:", error);
+            return CommandResult.Continue(Value("Enter LAS file path:"), error);
 
         return CommandResult.End(context.GetTarget<ViewerController>().OpenPointCloud(path, maxPoints));
     }
@@ -143,10 +166,10 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
             if (TryParseScreenPoint(option, out _zoomFirstCorner))
             {
                 _zoomPhase = ZoomPhase.OppositeCorner;
-                return CommandResult.Continue("Specify opposite corner:");
+                return CommandResult.Continue(Value("Specify opposite corner:"));
             }
 
-            return CommandResult.Continue("Specify first corner:", $"Invalid point: {context.Input}. Use x,y.");
+            return CommandResult.Continue(Value("Specify first corner:"), $"Invalid point: {context.Input}. Use x,y.");
         }
 
         if (_zoomPhase == ZoomPhase.OppositeCorner)
@@ -158,12 +181,11 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
                 return CommandResult.End("Zoom window.");
             }
 
-            return CommandResult.Continue("Specify opposite corner:", $"Invalid point: {context.Input}. Use x,y.");
+            return CommandResult.Continue(Value("Specify opposite corner:"), $"Invalid point: {context.Input}. Use x,y.");
         }
 
         if (option.Length == 0)
-            return CommandResult.Continue(
-                "Specify corner of window, enter a scale factor (nX or nXP), or [All/Center/Extents/Object] <real time>:");
+            return CommandResult.Continue(ZoomMainPrompt());
 
         if (TryParseWindowArguments(option, out ScreenPoint firstCorner, out ScreenPoint secondCorner))
         {
@@ -196,13 +218,11 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
                 }
 
                 _zoomPhase = ZoomPhase.FirstCorner;
-                return CommandResult.Continue("Specify first corner:");
+                return CommandResult.Continue(Value("Specify first corner:"));
         }
 
-        if (!TryParseZoomFactor(option, out float factor, out string error))
-            return CommandResult.Continue(
-                "Specify corner of window, enter a scale factor (nX or nXP), or [All/Center/Extents/Object] <real time>:",
-                error);
+        if (!TryParseZoomFactor(option, out float factor, out string factorError))
+            return CommandResult.Continue(ZoomMainPrompt(), factorError);
 
         viewer.ZoomByFactor(factor);
         return CommandResult.End($"Zoom scale factor: {factor.ToString("0.###", CultureInfo.InvariantCulture)}x");
@@ -211,60 +231,16 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
     [CommandMethod("VIEW", "V", Flags = CommandFlags.NoUndoMarker)]
     public CommandResult View(CommandContext context)
     {
-        if (context.Input.Length == 0)
-            return CommandResult.Continue("Enter view [Front/BAck/Left/Right/Top/Bottom/Isometric]:");
-
-        string view = context.Input.ToUpperInvariant() switch
+        string token = Token(context, ViewKeywords);
+        if (token.Length == 0)
         {
-            "F"        => "FRONT",
-            "B" or "BO" => "BOTTOM",
-            "BA"       => "BACK",
-            "L"        => "LEFT",
-            "R"        => "RIGHT",
-            "T"        => "TOP",
-            "BOT"      => "BOTTOM",
-            "I" or "ISO" => "ISOMETRIC",
-            var v      => v
-        };
+            if (context.Input.Trim().Length == 0)
+                return CommandResult.Continue(ViewPrompt());
+            return CommandResult.Continue(ViewPrompt(), $"Invalid view keyword: {context.Input}");
+        }
 
-        if (!ValidViews.Contains(view))
-            return CommandResult.Continue(
-                "Enter view [Front/BAck/Left/Right/Top/Bottom/Isometric]:",
-                $"Invalid view keyword: {context.Input}");
-
-        context.GetTarget<ViewerController>().SetView(view);
-        return CommandResult.End($"View: {view}");
-    }
-
-    public bool IsCommandOption(string globalCommandName, string input)
-    {
-        string option = input.Trim().ToUpperInvariant();
-        if (option.Length == 0)
-            return true;
-
-        return globalCommandName switch
-        {
-            "SELECT" => IsOneOf(option,
-                "B", "BOX", "S", "SPH", "SPHERE", "C", "CYL", "CYLINDER",
-                "U", "UNDO", "CONF", "CONFIRM", "CAN", "CANCEL", "ESC"),
-            "ZOOM" => IsOneOf(option,
-                "A", "ALL", "C", "CENTER", "E", "EXTENTS", "O", "OBJECT", "W", "WINDOW"),
-            "VIEW" => IsOneOf(option,
-                "F", "FRONT", "BA", "BACK", "L", "LEFT", "R", "RIGHT",
-                "T", "TOP", "B", "BO", "BOT", "BOTTOM", "I", "ISO", "ISOMETRIC"),
-            "FILTER" => IsOneOf(option,
-                "C", "CLASS", "I", "INTENSITY", "R", "RETURN", "Z", "HEIGHT",
-                "CL", "CLEAR", "L", "LIST", "B", "BACK"),
-            "COLORBY" => IsOneOf(option,
-                "R", "RGB", "H", "HEIGHT", "Z", "C", "CLASS", "I", "INTENSITY",
-                "RT", "RETURN", "CL", "CLEAR"),
-            "VPORTS" => IsOneOf(option,
-                "S", "SINGLE", "T", "TWO", "2", "P", "PLAN", "TOP", "PR", "PREVIOUS",
-                "V", "VERTICAL", "H", "HORIZONTAL",
-                "B", "BO", "BOT", "BOTTOM", "BA", "BACK", "L", "LEFT", "R", "RIGHT",
-                "F", "FRONT", "I", "ISO", "ISOMETRIC"),
-            _ => false
-        };
+        context.GetTarget<ViewerController>().SetView(token);
+        return CommandResult.End($"View: {token}");
     }
 
     [CommandMethod("PROJECTION", "PROJ", Flags = CommandFlags.NoUndoMarker)]
@@ -287,7 +263,7 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
         var viewer = context.GetTarget<ViewerController>();
         string input = context.Input.Trim();
         if (input.Length == 0)
-            return CommandResult.Continue($"Enter point size <{viewer.PointSize:0.0}>:");
+            return CommandResult.Continue(Value($"Enter point size <{viewer.PointSize:0.0}>:"));
 
         float size;
         if (input == "+")
@@ -295,7 +271,7 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
         else if (input == "-")
             size = viewer.PointSize - 0.5f;
         else if (!float.TryParse(input, NumberStyles.Float, CultureInfo.InvariantCulture, out size))
-            return CommandResult.Continue("Enter point size:", $"Invalid point size: {input}");
+            return CommandResult.Continue(Value("Enter point size:"), $"Invalid point size: {input}");
 
         viewer.SetPointSize(size);
         return CommandResult.End($"Point size: {viewer.PointSize:0.0}");
@@ -325,18 +301,18 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
         {
             _filterPhase = FilterPhase.Values;
             _pendingFilterAttribute = FilterAttribute.Class;
-            return CommandResult.Continue(GetFilterValuePrompt(FilterAttribute.Class));
+            return CommandResult.Continue(Value(GetFilterValuePrompt(FilterAttribute.Class)));
         }
 
         if (input.Length == 0)
         {
             _filterPhase = FilterPhase.Attribute;
-            return CommandResult.Continue("Select filter attribute [Class/Intensity/Return/Z/CLear] <Class>:");
+            return CommandResult.Continue(Value("Select filter attribute [Class/Intensity/Return/Z/CLear] <Class>:"));
         }
 
         string[] parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (!TryParseFilterAttribute(parts[0], out FilterAttribute attribute, out string attributeError))
-            return CommandResult.Continue("Select filter attribute [Class/Intensity/Return/Z/CLear] <Class>:", attributeError);
+            return CommandResult.Continue(Value("Select filter attribute [Class/Intensity/Return/Z/CLear] <Class>:"), attributeError);
 
         if (attribute == FilterAttribute.Clear)
         {
@@ -348,7 +324,7 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
         {
             _filterPhase = FilterPhase.Values;
             _pendingFilterAttribute = attribute;
-            return CommandResult.Continue(GetFilterValuePrompt(attribute));
+            return CommandResult.Continue(Value(GetFilterValuePrompt(attribute)));
         }
 
         return ApplyParsedFilter(viewer, attribute, parts[1..]);
@@ -358,22 +334,18 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
     public CommandResult ColorBy(CommandContext context)
     {
         var viewer = context.GetTarget<ViewerController>();
-        string input = context.Input.Trim();
-        if (input.Length == 0 && !_colorPromptActive)
+        string token = Token(context, ColorKeywords);
+        if (token.Length == 0)
         {
-            _colorPromptActive = true;
-            return CommandResult.Continue("Select color source [Rgb/Height/Class/Intensity/ReTurn/CLear] <Rgb>:");
+            if (context.Input.Trim().Length == 0)
+                return CommandResult.Continue(ColorPrompt());
+            return CommandResult.Continue(ColorPrompt(), $"Invalid color source: {context.Input}");
         }
 
-        if (input.Length == 0)
-            input = "RGB";
+        if (token == "CLEAR")
+            return CommandResult.End(viewer.ClearColorSource());
 
-        string[] parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (!TryParseColorSource(parts[0], out ColorSource source, out bool clear, out string error))
-            return CommandResult.Continue("Select color source [Rgb/Height/Class/Intensity/ReTurn/CLear] <Rgb>:", error);
-
-        _colorPromptActive = false;
-        return CommandResult.End(clear ? viewer.ClearColorSource() : viewer.SetColorSource(source));
+        return CommandResult.End(viewer.SetColorSource(MapColorSource(token)));
     }
 
     [CommandMethod("VPORTS", "VP", Flags = CommandFlags.NoUndoMarker)]
@@ -388,7 +360,7 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
                 input = ViewerController.DescribeViewportView(_lastViewportView);
 
             if (!TryParseViewportView(input, out ViewportViewKind view, out string viewError))
-                return CommandResult.Continue(GetViewportViewPrompt(), viewError);
+                return CommandResult.Continue(Value(GetViewportViewPrompt()), viewError);
 
             _vportsViewPrompt = false;
             _lastViewportView = view;
@@ -404,7 +376,7 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
             if (RequiresViewportArrangement(_pendingViewportLayout))
             {
                 _vportsArrangementPrompt = true;
-                return CommandResult.Continue(GetViewportArrangementPrompt());
+                return CommandResult.Continue(Value(GetViewportArrangementPrompt()));
             }
 
             return PromptForViewportView();
@@ -418,7 +390,7 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
             _vportsArrangementPrompt = false;
             _vportsLayoutPrompt = false;
             if (!TryParseViewportArrangement(input, out ViewportLayoutKind arrangement, out string arrangementError))
-                return CommandResult.Continue(GetViewportArrangementPrompt(), arrangementError);
+                return CommandResult.Continue(Value(GetViewportArrangementPrompt()), arrangementError);
 
             _pendingViewportLayout = arrangement;
             _lastViewportArrangement = arrangement;
@@ -428,13 +400,13 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
         if (input.Length == 0)
         {
             _vportsLayoutPrompt = true;
-            return CommandResult.Continue(GetViewportLayoutPrompt());
+            return CommandResult.Continue(Value(GetViewportLayoutPrompt()));
         }
 
         string[] parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         bool wasLayoutPrompt = _vportsLayoutPrompt;
         if (!TryParseViewportLayout(parts[0], out ViewportLayoutKind layout, out bool requiresArrangement, out string error))
-            return CommandResult.Continue(GetViewportLayoutPrompt(), error);
+            return CommandResult.Continue(Value(GetViewportLayoutPrompt()), error);
 
         _vportsLayoutPrompt = false;
         if (requiresArrangement)
@@ -442,7 +414,7 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
             if (parts.Length > 1)
             {
                 if (!TryParseViewportArrangement(parts[1], out layout, out string arrangementError))
-                    return CommandResult.Continue(GetViewportArrangementPrompt(), arrangementError);
+                    return CommandResult.Continue(Value(GetViewportArrangementPrompt()), arrangementError);
 
                 _pendingViewportLayout = layout;
                 _lastViewportArrangement = layout;
@@ -456,7 +428,7 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
             }
 
             _vportsArrangementPrompt = true;
-            return CommandResult.Continue(GetViewportArrangementPrompt());
+            return CommandResult.Continue(Value(GetViewportArrangementPrompt()));
         }
 
         _pendingViewportLayout = layout;
@@ -495,51 +467,84 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
         return CommandResult.Cancel();
     }
 
-    [CommandMethod("HELP", "?", Flags = CommandFlags.NoUndoMarker | CommandFlags.Transparent)]
+    [CommandMethod("HELP", "?", Flags = CommandFlags.NoUndoMarker | CommandFlags.NoHistory | CommandFlags.Transparent)]
     public CommandResult Help(CommandContext context) => CommandResult.End(
         "Commands: OPEN, SELECT, FILTER, COLORBY, ATTRS, VPORTS, ZOOM, VIEW, PROJECTION, POINTSIZE, LABEL, SAVELABELS, LOADLABELS, CLEARLABELS, NAVIGATE, RESET, UNDO, HELP.");
 
     public void CancelCommand(CommandContext context, string globalCommandName)
     {
-        if (globalCommandName == "ZOOM")
+        switch (globalCommandName)
         {
-            _zoomPhase = ZoomPhase.None;
-            return;
+            case "ZOOM":
+                _zoomPhase = ZoomPhase.None;
+                return;
+            case "FILTER":
+                _filterPhase = FilterPhase.None;
+                return;
+            case "VPORTS":
+                _vportsLayoutPrompt = false;
+                _vportsArrangementPrompt = false;
+                _vportsViewPrompt = false;
+                return;
+            case "SELECT":
+                context.GetTarget<ViewerController>().CancelOrExitLabelMode();
+                _selectPhase = 0;
+                return;
         }
-
-        if (globalCommandName == "FILTER")
-        {
-            _filterPhase = FilterPhase.None;
-            return;
-        }
-
-        if (globalCommandName is "COLORBY" or "COLOR")
-        {
-            _colorPromptActive = false;
-            return;
-        }
-
-        if (globalCommandName == "VPORTS")
-        {
-            _vportsLayoutPrompt = false;
-            _vportsArrangementPrompt = false;
-            _vportsViewPrompt = false;
-            return;
-        }
-
-        if (globalCommandName != "SELECT")
-            return;
-
-        context.GetTarget<ViewerController>().CancelOrExitLabelMode();
-        _selectPhase = 0;
     }
+
+    // ----- Prompt builders -----
+
+    private static PromptOptions Value(string message) => new(message) { AllowArbitraryInput = true };
+
+    private static PromptOptions SelectShapePrompt() =>
+        new("Specify selection shape [Box/Sphere/Cylinder/Undo] <Box>:", SelectKeywords) { DefaultKeyword = "BOX" };
+
+    private static PromptOptions SelectAdjustPrompt() =>
+        new("Adjust selection using grips or [CONFirm/Undo/CANcel]:", SelectKeywords);
+
+    private static PromptOptions ViewPrompt() =>
+        new("Enter view [Front/BAck/Left/Right/Top/Bottom/Isometric]:", ViewKeywords);
+
+    private static PromptOptions ColorPrompt() =>
+        new("Select color source [Rgb/Height/Class/Intensity/ReTurn/CLear] <Rgb>:", ColorKeywords) { DefaultKeyword = "RGB" };
+
+    private static PromptOptions ZoomMainPrompt() => Value(
+        "Specify corner of window, enter a scale factor (nX or nXP), or [All/Center/Extents/Object] <real time>:");
+
+    // Resolves the effective keyword: the runtime-resolved keyword for a prompt response,
+    // or the first word of the inline argument on the initial command invocation.
+    private static string Token(CommandContext context, Keyword[] keywords)
+    {
+        if (context.Keyword.Length > 0)
+            return context.Keyword;
+
+        string first = CommandText.FirstWord(context.Input);
+        if (first.Length == 0)
+            return "";
+
+        foreach (Keyword keyword in keywords)
+            if (keyword.Matches(first))
+                return keyword.GlobalName;
+
+        return "";
+    }
+
+    private static ColorSource MapColorSource(string globalKeyword) => globalKeyword switch
+    {
+        "HEIGHT" => ColorSource.Height,
+        "CLASS" => ColorSource.Class,
+        "INTENSITY" => ColorSource.Intensity,
+        "RETURN" => ColorSource.Return,
+        _ => ColorSource.Rgb
+    };
 
     private CommandResult StartTool(CommandContext context, SelectionToolType tool)
     {
         context.GetTarget<ViewerController>().SetTool(tool);
         _selectPhase = 2;
         return CommandResult.Continue(
-            "Adjust selection using grips or [CONFirm/Undo/CANcel]:",
+            SelectAdjustPrompt(),
             $"{tool} selection started. Draw the selection volume.");
     }
 
@@ -614,20 +619,24 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
         if (IsBack(input))
         {
             _filterPhase = FilterPhase.Attribute;
-            return CommandResult.Continue("Select filter attribute [Class/Intensity/Return/Z/CLear] <Class>:");
+            return CommandResult.Continue(Value("Select filter attribute [Class/Intensity/Return/Z/CLear] <Class>:"));
         }
 
         if (IsList(input))
-            return CommandResult.Continue(GetFilterValuePrompt(_pendingFilterAttribute), viewer.DescribeAttributes(FilterAttributeToCommandName(_pendingFilterAttribute)));
+            return CommandResult.Continue(Value(GetFilterValuePrompt(_pendingFilterAttribute)), viewer.DescribeAttributes(FilterAttributeToCommandName(_pendingFilterAttribute)));
 
         _filterPhase = FilterPhase.None;
         return ApplyParsedFilter(viewer, _pendingFilterAttribute, input.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     }
 
-    private static CommandResult ApplyParsedFilter(ViewerController viewer, FilterAttribute attribute, string[] values)
+    private CommandResult ApplyParsedFilter(ViewerController viewer, FilterAttribute attribute, string[] values)
     {
         if (!TryCreateFilter(attribute, values, out PointFilter? filter, out string error))
-            return CommandResult.Continue(GetFilterValuePrompt(attribute), error);
+        {
+            _filterPhase = FilterPhase.Values;
+            _pendingFilterAttribute = attribute;
+            return CommandResult.Continue(Value(GetFilterValuePrompt(attribute)), error);
+        }
 
         return CommandResult.End(viewer.ApplyPointFilter(filter));
     }
@@ -719,29 +728,6 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
         return attribute != FilterAttribute.Unknown;
     }
 
-    private static bool TryParseColorSource(string input, out ColorSource source, out bool clear, out string error)
-    {
-        clear = false;
-        source = input.ToUpperInvariant() switch
-        {
-            "" or "R" or "RGB" => ColorSource.Rgb,
-            "H" or "HEIGHT" or "Z" => ColorSource.Height,
-            "C" or "CLASS" => ColorSource.Class,
-            "I" or "INTENSITY" => ColorSource.Intensity,
-            "RT" or "RETURN" => ColorSource.Return,
-            "CL" or "CLEAR" => ColorSource.Rgb,
-            _ => ColorSource.Rgb
-        };
-
-        clear = input.Equals("CL", StringComparison.OrdinalIgnoreCase) || input.Equals("CLEAR", StringComparison.OrdinalIgnoreCase);
-        error = source == ColorSource.Rgb && !clear && !input.Equals("", StringComparison.Ordinal) &&
-            !input.Equals("R", StringComparison.OrdinalIgnoreCase) &&
-            !input.Equals("RGB", StringComparison.OrdinalIgnoreCase)
-            ? $"Invalid color source: {input}"
-            : "";
-        return error.Length == 0;
-    }
-
     private static string GetFilterValuePrompt(FilterAttribute attribute) => attribute switch
     {
         FilterAttribute.Class => "Enter class values or [List/Back] <List>:",
@@ -753,9 +739,6 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
 
     private static bool IsList(string input) => input.Equals("L", StringComparison.OrdinalIgnoreCase) || input.Equals("LIST", StringComparison.OrdinalIgnoreCase);
     private static bool IsBack(string input) => input.Equals("B", StringComparison.OrdinalIgnoreCase) || input.Equals("BACK", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsOneOf(string input, params string[] options) =>
-        options.Any(option => input.Equals(option, StringComparison.OrdinalIgnoreCase));
 
     private static string FilterAttributeToCommandName(FilterAttribute attribute) => attribute switch
     {
@@ -812,7 +795,7 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
     private CommandResult PromptForViewportView()
     {
         _vportsViewPrompt = true;
-        return CommandResult.Continue(GetViewportViewPrompt());
+        return CommandResult.Continue(Value(GetViewportViewPrompt()));
     }
 
     private string GetViewportLayoutPrompt() =>
@@ -888,7 +871,4 @@ public sealed class ViewerCommands : ICommandCancellationHandler, ICommandOption
     private enum FilterAttribute { Unknown, Class, Intensity, Return, Z, Clear }
 
     private readonly record struct ScreenPoint(int X, int Y);
-
-    private static readonly HashSet<string> ValidViews =
-        new(["FRONT", "BACK", "LEFT", "RIGHT", "TOP", "BOTTOM", "ISOMETRIC"], StringComparer.Ordinal);
 }
