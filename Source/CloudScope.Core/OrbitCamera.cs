@@ -306,6 +306,9 @@ namespace CloudScope
         /// Toggle ortho / perspective, preserving the point under the mouse.
         /// Uses pickedPointView.Z (= _picked.Z) exactly as in AdvancedZPR.
         /// </summary>
+        /// <summary>True when the camera uses a perspective frustum; false for parallel/orthographic.</summary>
+        public bool IsPerspective => _vang != 0.0;
+
         public void ToggleProjection(int mouseX, int mouseY)
         {
             float viewZ = _picked.Z;

@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using CloudScope.Labeling;
 using CloudScope.Library;
 using CloudScope.Loading;
 using OpenTK.Mathematics;
@@ -74,10 +75,18 @@ namespace CloudScope
         {
             _dataset = dataset;
             _cloudRadius = dataset.Radius;
-            _selection.LoadPointCloud(dataset.ViewPoints);
+            LoadDatasetIntoSelection();
             foreach (ViewportState viewport in _viewports)
                 FitViewport(viewport);
             _pointRenderer.Upload(dataset.ViewPoints);
+        }
+
+        // Feed the current dataset view into the selection controller, preserving the
+        // visible→source index map so labels stay keyed by stable source indices.
+        private void LoadDatasetIntoSelection()
+        {
+            if (_dataset == null) return;
+            _selection.LoadPointCloud(_dataset.ViewPoints, _dataset.ViewToSource, _dataset.SourcePoints, _dataset.Attributes);
         }
 
         public string OpenPointCloud(string path, long maxPoints = 50_000_000)
@@ -125,7 +134,31 @@ namespace CloudScope
 
         public void SetLabel(string label) => _selection.SetLabel(label);
 
+        // ── Label registry (name → ASPRS class code + color) ──────────────────
+        public LabelRegistry LabelRegistry => _selection.Registry;
+        public string CurrentLabel => _selection.CurrentLabel;
+        public bool LabelWindowVisible { get; set; }
+        public void ToggleLabelWindow() => LabelWindowVisible = !LabelWindowVisible;
+
+        public string DefineLabel(string name, byte code)
+        {
+            LabelDefinition def = _selection.Registry.Define(name, code);
+            _highlightRenderer.MarkDirty();
+            return $"Label '{def.Name}' = class {def.Code} ({PointCloudAttributes.FormatClassName(def.Code)}).";
+        }
+
+        public string SetActiveLabel(string name)
+        {
+            _selection.SetLabel(name);
+            byte? code = _selection.Registry.CodeFor(name);
+            return code is { } c
+                ? $"Active label: '{name}' (class {c})."
+                : $"Active label: '{name}' (no class code — define it with LABELDEF).";
+        }
+
         public void ConfirmActiveSelection() => _selection.ConfirmActiveSelection();
+
+        public string FitActiveSelection(bool useGround) => _selection.FitActiveToolToSelection(useGround);
 
         public void CancelOrExitLabelMode() => _selection.CancelOrExitLabelMode();
 
@@ -178,7 +211,7 @@ namespace CloudScope
                 return "No point cloud is loaded.";
 
             string result = _dataset.ApplyFilter(filter);
-            _selection.LoadPointCloud(_dataset.ViewPoints);
+            LoadDatasetIntoSelection();
             _pointRenderer.Upload(_dataset.ViewPoints);
             return result;
         }
@@ -189,7 +222,7 @@ namespace CloudScope
                 return "No point cloud is loaded.";
 
             string result = _dataset.SetColorSource(source);
-            _selection.LoadPointCloud(_dataset.ViewPoints);
+            LoadDatasetIntoSelection();
             _pointRenderer.Upload(_dataset.ViewPoints);
             return result;
         }
@@ -200,7 +233,7 @@ namespace CloudScope
                 return "No point cloud is loaded.";
 
             string result = _dataset.ClearColorSource();
-            _selection.LoadPointCloud(_dataset.ViewPoints);
+            LoadDatasetIntoSelection();
             _pointRenderer.Upload(_dataset.ViewPoints);
             return result;
         }
@@ -223,10 +256,22 @@ namespace CloudScope
             }
         }
 
-        public void ToggleProjection()
+        public bool IsPerspective => ActiveViewport.Camera.IsPerspective;
+
+        public string ToggleProjection()
         {
             ViewportState viewport = ActiveViewport;
             viewport.Camera.ToggleProjection(viewport.Bounds.Width / 2, viewport.Bounds.Height / 2);
+            return $"Projection: {(viewport.Camera.IsPerspective ? "Perspective" : "Parallel")}.";
+        }
+
+        /// <summary>Set the active viewport's projection explicitly (AutoCAD PERSPECTIVE 1/0).</summary>
+        public string SetProjection(bool perspective)
+        {
+            ViewportState viewport = ActiveViewport;
+            if (viewport.Camera.IsPerspective != perspective)
+                viewport.Camera.ToggleProjection(viewport.Bounds.Width / 2, viewport.Bounds.Height / 2);
+            return $"Projection: {(perspective ? "Perspective" : "Parallel")}.";
         }
 
         public string SetViewportLayout(ViewportLayoutKind layout)
@@ -250,6 +295,8 @@ namespace CloudScope
         }
 
         public bool SaveLabels() => _selection.SaveLabels();
+
+        public string SaveLabelsToLas() => _selection.SaveLabelsToLas();
 
         public bool LoadLabels() => _selection.LoadLabels();
 
@@ -359,8 +406,8 @@ namespace CloudScope
                 totalDrawCount += drawCount;
 
                 Breadcrumb("highlight");
-                if (_selection.Points != null && _selection.Labels.Count > 0)
-                    _highlightRenderer.Render(frameData, _selection.Points, _selection.Labels, ref view, ref proj, viewport.Input.PointSize);
+                if (_selection.SourcePoints != null && _selection.Labels.Count > 0)
+                    _highlightRenderer.Render(frameData, _selection.SourcePoints, _selection.Labels, _selection.ResolveLabelColor, ref view, ref proj, viewport.Input.PointSize);
 
                 Breadcrumb("preview");
                 if (_selection.TryTakePreview(out var previewIndices))

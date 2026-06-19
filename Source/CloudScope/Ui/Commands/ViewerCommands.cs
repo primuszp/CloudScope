@@ -30,7 +30,9 @@ public sealed class ViewerCommands : ICommandCancellationHandler
         new("CYLINDER", "Cylinder", "CYL"),
         new("UNDO", "Undo"),
         new("CONFIRM", "CONFirm"),
-        new("CANCEL", "CANcel")
+        new("CANCEL", "CANcel"),
+        new("FIT", "Fit"),
+        new("FITGROUND", "GroundFit", "GF", "FITG")
     ];
 
     private static readonly Keyword[] ViewKeywords =
@@ -42,6 +44,12 @@ public sealed class ViewerCommands : ICommandCancellationHandler
         new("TOP", "Top"),
         new("BOTTOM", "Bottom", "BO", "BOT"),
         new("ISOMETRIC", "Isometric", "ISO")
+    ];
+
+    private static readonly Keyword[] ProjectionKeywords =
+    [
+        new("PERSPECTIVE", "Perspective"),
+        new("PARALLEL", "PArallel", "ORTHO", "ORTHOGRAPHIC")
     ];
 
     private static readonly Keyword[] ColorKeywords =
@@ -110,6 +118,12 @@ public sealed class ViewerCommands : ICommandCancellationHandler
             case "CANCEL":
                 viewer.CancelOrExitLabelMode();
                 return CommandResult.Cancel();
+            case "FIT":
+                _selectPhase = 2;
+                return CommandResult.Continue(SelectAdjustPrompt(), viewer.FitActiveSelection(useGround: false));
+            case "FITGROUND":
+                _selectPhase = 2;
+                return CommandResult.Continue(SelectAdjustPrompt(), viewer.FitActiveSelection(useGround: true));
             default:
                 _selectPhase = 1;
                 return CommandResult.Continue(SelectShapePrompt(), $"Invalid option keyword: {context.Input}");
@@ -136,10 +150,37 @@ public sealed class ViewerCommands : ICommandCancellationHandler
     [CommandMethod("LABEL", Flags = CommandFlags.NoUndoMarker)]
     public CommandResult Label(CommandContext context)
     {
-        if (context.Input.Length == 0)
+        string name = CommandText.Unquote(context.Input.Trim());
+        if (name.Length == 0)
             return CommandResult.Continue(Value("Enter label name:"));
-        context.GetTarget<ViewerController>().SetLabel(context.Input);
-        return CommandResult.End($"Label: {context.Input}");
+        return CommandResult.End(context.GetTarget<ViewerController>().SetActiveLabel(name));
+    }
+
+    [CommandMethod("LABELDEF", Flags = CommandFlags.NoUndoMarker)]
+    public CommandResult LabelDef(CommandContext context)
+    {
+        string input = context.Input.Trim();
+        if (input.Length == 0)
+            return CommandResult.Continue(Value("Enter label definition: <name> <class code 0-255>:"));
+
+        int split = input.LastIndexOf(' ');
+        if (split <= 0 ||
+            !byte.TryParse(input[(split + 1)..].Trim(), out byte code))
+            return CommandResult.Continue(Value("Enter label definition: <name> <class code 0-255>:"),
+                $"Expected '<name> <class code>'. Got: {context.Input}");
+
+        string name = CommandText.Unquote(input[..split].Trim());
+        if (name.Length == 0)
+            return CommandResult.Continue(Value("Enter label definition: <name> <class code 0-255>:"), "Label name must not be empty.");
+
+        return CommandResult.End(context.GetTarget<ViewerController>().DefineLabel(name, code));
+    }
+
+    [CommandMethod("LABELS", Flags = CommandFlags.NoUndoMarker)]
+    public CommandResult LabelsWindow(CommandContext context)
+    {
+        context.GetTarget<ViewerController>().ToggleLabelWindow();
+        return CommandResult.End("Label registry window toggled.");
     }
 
     [CommandMethod("UNDO", "U", Flags = CommandFlags.NoUndoMarker)]
@@ -243,11 +284,25 @@ public sealed class ViewerCommands : ICommandCancellationHandler
         return CommandResult.End($"View: {token}");
     }
 
-    [CommandMethod("PROJECTION", "PROJ", Flags = CommandFlags.NoUndoMarker)]
+    [CommandMethod("PROJECTION", "PROJ", "PERSPECTIVE", Flags = CommandFlags.NoUndoMarker)]
     public CommandResult Projection(CommandContext context)
     {
-        context.GetTarget<ViewerController>().ToggleProjection();
-        return CommandResult.End("Projection toggled.");
+        var viewer = context.GetTarget<ViewerController>();
+        string token = Token(context, ProjectionKeywords);
+
+        switch (token)
+        {
+            case "PERSPECTIVE":
+                return CommandResult.End(viewer.SetProjection(perspective: true));
+            case "PARALLEL":
+                return CommandResult.End(viewer.SetProjection(perspective: false));
+        }
+
+        // No keyword: empty input toggles; anything else is an invalid option.
+        if (context.Input.Trim().Length == 0)
+            return CommandResult.End(viewer.ToggleProjection());
+
+        return CommandResult.Continue(ProjectionPrompt(), $"Invalid option keyword: {context.Input}");
     }
 
     [CommandMethod("RESET", Flags = CommandFlags.NoUndoMarker)]
@@ -436,8 +491,15 @@ public sealed class ViewerCommands : ICommandCancellationHandler
     }
 
     [CommandMethod("SAVELABELS", "QLSAVE", Flags = CommandFlags.NoUndoMarker)]
-    public CommandResult SaveLabels(CommandContext context) =>
-        CommandResult.End(context.GetTarget<ViewerController>().SaveLabels() ? "Labels saved." : "No source file is associated with the viewer.");
+    public CommandResult SaveLabels(CommandContext context)
+    {
+        var viewer = context.GetTarget<ViewerController>();
+        string option = context.Input.Trim().ToUpperInvariant();
+        if (option is "LAS" or "L")
+            return CommandResult.End(viewer.SaveLabelsToLas());
+
+        return CommandResult.End(viewer.SaveLabels() ? "Labels saved." : "No source file is associated with the viewer.");
+    }
 
     [CommandMethod("LOADLABELS", "QLLOAD")]
     public CommandResult LoadLabels(CommandContext context) =>
@@ -466,6 +528,17 @@ public sealed class ViewerCommands : ICommandCancellationHandler
         context.GetTarget<ViewerController>().CancelOrExitLabelMode();
         return CommandResult.Cancel();
     }
+
+    [CommandMethod("FIT", Flags = CommandFlags.NoUndoMarker)]
+    public CommandResult Fit(CommandContext context)
+    {
+        bool ground = context.Input.Trim().ToUpperInvariant() is "G" or "GROUND";
+        return CommandResult.End(context.GetTarget<ViewerController>().FitActiveSelection(ground));
+    }
+
+    [CommandMethod("FITGROUND", Flags = CommandFlags.NoUndoMarker)]
+    public CommandResult FitGround(CommandContext context) =>
+        CommandResult.End(context.GetTarget<ViewerController>().FitActiveSelection(useGround: true));
 
     [CommandMethod("HELP", "?", Flags = CommandFlags.NoUndoMarker | CommandFlags.NoHistory | CommandFlags.Transparent)]
     public CommandResult Help(CommandContext context) => CommandResult.End(
@@ -508,6 +581,9 @@ public sealed class ViewerCommands : ICommandCancellationHandler
 
     private static PromptOptions ColorPrompt() =>
         new("Select color source [Rgb/Height/Class/Intensity/ReTurn/CLear] <Rgb>:", ColorKeywords) { DefaultKeyword = "RGB" };
+
+    private static PromptOptions ProjectionPrompt() =>
+        new("Enter projection [Perspective/PArallel] <toggle>:", ProjectionKeywords);
 
     private static PromptOptions ZoomMainPrompt() => Value(
         "Specify corner of window, enter a scale factor (nX or nXP), or [All/Center/Extents/Object] <real time>:");

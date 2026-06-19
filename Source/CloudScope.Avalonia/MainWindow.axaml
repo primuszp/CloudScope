@@ -66,12 +66,19 @@
         <MenuItem x:Name="BoxMenuItem" Header="_Box selection" />
         <MenuItem x:Name="SphereMenuItem" Header="_Sphere selection" />
         <MenuItem x:Name="CylinderMenuItem" Header="_Cylinder selection" />
+        <Separator />
+        <MenuItem x:Name="LabelRegistryMenuItem" Header="Label _registry..." />
       </MenuItem>
       <MenuItem Header="_Edit">
+        <MenuItem x:Name="FitMenuItem" Header="_Fit to points" />
+        <MenuItem x:Name="FitGroundMenuItem" Header="Fit to _ground" />
+        <Separator />
         <MenuItem x:Name="ConfirmMenuItem" Header="_Confirm" />
         <MenuItem x:Name="CancelMenuItem" Header="_Cancel" />
       </MenuItem>
       <MenuItem Header="_View">
+        <MenuItem x:Name="ProjectionMenuItem" Header="Toggle _projection (persp/parallel)" />
+        <Separator />
         <MenuItem x:Name="StatusMenuItem" Header="_Status" />
         <MenuItem x:Name="ResetMenuItem" Header="_Reset host" />
       </MenuItem>

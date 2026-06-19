@@ -15,6 +15,9 @@ public sealed class HostController
 
     public string Status => $"Points: {_renderedPointCount:N0} | {_viewerState}";
     public string CommandPrompt => _commands.CurrentPrompt;
+    public IReadOnlyCollection<CloudScope.Labeling.LabelDefinition> LabelDefinitions =>
+        _embeddedHost?.LabelDefinitions ?? System.Array.Empty<CloudScope.Labeling.LabelDefinition>();
+    public string ActiveLabel => _embeddedHost?.ActiveLabel ?? "";
 
     public HostController()
     {
