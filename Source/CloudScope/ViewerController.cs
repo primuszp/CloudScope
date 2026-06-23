@@ -68,7 +68,7 @@ namespace CloudScope
             _selection.LoadPointCloud(pts);
             foreach (ViewportState viewport in _viewports)
                 FitViewport(viewport);
-            _pointRenderer.Upload(pts);
+            _pointRenderer.Upload(new PointCloudRenderData(pts));
         }
 
         public void LoadPointCloud(PointCloudDataset dataset)
@@ -78,7 +78,7 @@ namespace CloudScope
             LoadDatasetIntoSelection();
             foreach (ViewportState viewport in _viewports)
                 FitViewport(viewport);
-            _pointRenderer.Upload(dataset.ViewPoints);
+            UploadDatasetView();
         }
 
         // Feed the current dataset view into the selection controller, preserving the
@@ -116,7 +116,7 @@ namespace CloudScope
             _selection.Reset();
             foreach (ViewportState viewport in _viewports)
                 FitViewport(viewport);
-            _pointRenderer.Upload(Array.Empty<PointData>());
+            _pointRenderer.Upload(PointCloudRenderData.Empty);
         }
 
         public bool NeedsContinuousFrames => _viewports.Any(v => v.Input.NeedsContinuousFrames);
@@ -137,6 +137,7 @@ namespace CloudScope
         // ── Label registry (name → ASPRS class code + color) ──────────────────
         public LabelRegistry LabelRegistry => _selection.Registry;
         public string CurrentLabel => _selection.CurrentLabel;
+        public int? CurrentInstanceId => _selection.CurrentInstanceId;
         public bool LabelWindowVisible { get; set; }
         public void ToggleLabelWindow() => LabelWindowVisible = !LabelWindowVisible;
 
@@ -150,10 +151,32 @@ namespace CloudScope
         public string SetActiveLabel(string name)
         {
             _selection.SetLabel(name);
+            return DescribeActiveLabel(name);
+        }
+
+        public string SetActiveAnnotation(string name, int? instanceId)
+        {
+            _selection.SetLabel(name);
+            _selection.SetInstanceId(instanceId);
+            string labelText = DescribeActiveLabel(name);
+            return instanceId is int id ? $"{labelText} Instance: {id}." : $"{labelText} Instance: none.";
+        }
+
+        public string SetActiveInstance(int? instanceId)
+        {
+            _selection.SetInstanceId(instanceId);
+            return instanceId is int id ? $"Active instance: {id}." : "Active instance cleared.";
+        }
+
+        private string DescribeActiveLabel(string name)
+        {
             byte? code = _selection.Registry.CodeFor(name);
-            return code is { } c
+            string labelText = code is { } c
                 ? $"Active label: '{name}' (class {c})."
                 : $"Active label: '{name}' (no class code — define it with LABELDEF).";
+            return _selection.CurrentInstanceId is int instanceId
+                ? $"{labelText} Instance: {instanceId}."
+                : labelText;
         }
 
         public void ConfirmActiveSelection() => _selection.ConfirmActiveSelection();
@@ -212,7 +235,7 @@ namespace CloudScope
 
             string result = _dataset.ApplyFilter(filter);
             LoadDatasetIntoSelection();
-            _pointRenderer.Upload(_dataset.ViewPoints);
+            UploadDatasetView();
             return result;
         }
 
@@ -221,9 +244,13 @@ namespace CloudScope
             if (_dataset == null)
                 return "No point cloud is loaded.";
 
+            ColorSource target = _dataset.NormalizeColorSource(source);
+            if (_dataset.CurrentColorSource == target)
+                return $"Color: {target.ToDisplayName()}.";
+
             string result = _dataset.SetColorSource(source);
             LoadDatasetIntoSelection();
-            _pointRenderer.Upload(_dataset.ViewPoints);
+            UploadDatasetView();
             return result;
         }
 
@@ -232,10 +259,26 @@ namespace CloudScope
             if (_dataset == null)
                 return "No point cloud is loaded.";
 
+            if (_dataset.CurrentColorSource == _dataset.DefaultColorSource)
+                return $"Color: {_dataset.DefaultColorSource.ToDisplayName()}.";
+
             string result = _dataset.ClearColorSource();
             LoadDatasetIntoSelection();
-            _pointRenderer.Upload(_dataset.ViewPoints);
+            UploadDatasetView();
             return result;
+        }
+
+        private void UploadDatasetView()
+        {
+            if (_dataset == null)
+                return;
+
+            _pointRenderer.Upload(new PointCloudRenderData(
+                _dataset.ViewPoints,
+                _dataset.RenderOrder,
+                _dataset.Attributes,
+                _dataset.ViewToSource,
+                _dataset.CurrentColorSource));
         }
 
         private static string NormalizeAttribute(string attribute) => attribute.Trim().ToUpperInvariant();
@@ -407,7 +450,7 @@ namespace CloudScope
 
                 Breadcrumb("highlight");
                 if (_selection.SourcePoints != null && _selection.Labels.Count > 0)
-                    _highlightRenderer.Render(frameData, _selection.SourcePoints, _selection.Labels, _selection.ResolveLabelColor, ref view, ref proj, viewport.Input.PointSize);
+                    _highlightRenderer.Render(frameData, _selection.SourcePoints, _selection.Labels, _selection.ResolveAnnotationColor, ref view, ref proj, viewport.Input.PointSize);
 
                 Breadcrumb("preview");
                 if (_selection.TryTakePreview(out var previewIndices))
@@ -438,7 +481,9 @@ namespace CloudScope
                     _overlayRenderer.RenderModeIndicator(frameData, viewport.Bounds.Width, viewport.Bounds.Height, _selection.ActiveTool.ToolType);
             }
 
-            _frameTiming.MarkMainDraw(totalDrawCount);
+            int loadedCount = _dataset?.LoadedCount ?? _pointRenderer.PointCount;
+            int visibleCount = _dataset?.VisibleCount ?? _pointRenderer.PointCount;
+            _frameTiming.MarkMainDraw(totalDrawCount, loadedCount, visibleCount, _pointRenderer.PointCount);
             _frameTiming.MarkHighlight();
             _frameTiming.MarkPreview();
             _frameTiming.MarkGizmo();

@@ -53,12 +53,12 @@ namespace CloudScope.Platform.Metal.Rendering
         public void RenderPreview(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj, float pointSize)
             => RenderBuffer(frameData, _previewBuffer, _previewCount, ref view, ref proj, pointSize + 2f);
 
-        public void Render(IRenderFrameData frameData, PointData[] points, LabelManager labels, Func<string, Vector3> labelColor, ref Matrix4 view, ref Matrix4 proj, float pointSize)
+        public void Render(IRenderFrameData frameData, PointData[] points, LabelManager labels, Func<PointAnnotation, Vector3> annotationColor, ref Matrix4 view, ref Matrix4 proj, float pointSize)
         {
             EnsureResources();
             if (_dirty)
             {
-                RebuildHighlightBuffer(points, labels, labelColor);
+                RebuildHighlightBuffer(points, labels, annotationColor);
                 _dirty = false;
             }
             RenderBuffer(frameData, _highlightBuffer, _highlightCount, ref view, ref proj, pointSize + 2f);
@@ -94,16 +94,16 @@ namespace CloudScope.Platform.Metal.Rendering
                 MTLResourceOptions.ResourceStorageModeShared);
         }
 
-        private void RebuildHighlightBuffer(PointData[] points, LabelManager labels, Func<string, Vector3> labelColor)
+        private void RebuildHighlightBuffer(PointData[] points, LabelManager labels, Func<PointAnnotation, Vector3> annotationColor)
         {
-            var allLabels = labels.AllLabels;
-            var data  = RentScratch(allLabels.Count);
+            var allAnnotations = labels.AllAnnotations;
+            var data  = RentScratch(allAnnotations.Count);
             int count = 0;
-            foreach (var (ptIdx, labelName) in allLabels)
+            foreach (var (ptIdx, annotation) in allAnnotations)
             {
                 if ((uint)ptIdx >= (uint)points.Length) continue;
                 data[count] = points[ptIdx];
-                var c = labelColor(labelName);
+                var c = annotationColor(annotation);
                 data[count].R = c.X;
                 data[count].G = c.Y;
                 data[count].B = c.Z;

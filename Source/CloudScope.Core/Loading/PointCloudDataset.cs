@@ -12,6 +12,7 @@ namespace CloudScope.Loading
         private readonly float _colorScale;
         private PointFilter? _filter;
         private ColorSource _colorSource;
+        private const int RenderOrderSeed = 42;
 
         public PointCloudDataset(
             PointData[] sourcePoints,
@@ -31,6 +32,7 @@ namespace CloudScope.Loading
             ViewPoints = sourcePoints;
             VisibleCount = loadedCount;
             ViewToSource = IdentityMap(loadedCount);
+            RenderOrder = BuildProgressiveRenderOrder(loadedCount, RenderOrderSeed);
         }
 
         public int LoadedCount { get; }
@@ -45,7 +47,11 @@ namespace CloudScope.Loading
 
         /// <summary>Maps a visible (ViewPoints) index to its source index. Identity when unfiltered.</summary>
         public int[] ViewToSource { get; private set; }
+        /// <summary>Visible-point draw order. The prefix is an unbiased overview sample for budgeted rendering.</summary>
+        public int[]? RenderOrder { get; private set; }
         public string FilterDescription => _filter?.Description ?? "None";
+        public ColorSource CurrentColorSource => _colorSource;
+        public ColorSource DefaultColorSource => _hasColor ? ColorSource.Rgb : ColorSource.Height;
         public string ColorDescription => _colorSource.ToDisplayName();
 
         public string ApplyFilter(PointFilter? filter)
@@ -58,17 +64,20 @@ namespace CloudScope.Loading
 
         public string SetColorSource(ColorSource source)
         {
-            _colorSource = source == ColorSource.Rgb && !_hasColor ? ColorSource.Height : source;
-            RebuildView();
+            _colorSource = NormalizeColorSource(source);
+            RecolorView();
             return $"Color: {_colorSource.ToDisplayName()}.";
         }
 
         public string ClearColorSource()
         {
-            _colorSource = _hasColor ? ColorSource.Rgb : ColorSource.Height;
-            RebuildView();
+            _colorSource = DefaultColorSource;
+            RecolorView();
             return $"Color: {_colorSource.ToDisplayName()}.";
         }
+
+        public ColorSource NormalizeColorSource(ColorSource source) =>
+            source == ColorSource.Rgb && !_hasColor ? ColorSource.Height : source;
 
         private void RebuildView()
         {
@@ -79,6 +88,7 @@ namespace CloudScope.Loading
                 ApplyColors(ViewPoints, null);
                 VisibleCount = ViewPoints.Length;
                 ViewToSource = IdentityMap(LoadedCount);
+                RenderOrder = BuildProgressiveRenderOrder(VisibleCount, RenderOrderSeed);
                 return;
             }
 
@@ -97,6 +107,7 @@ namespace CloudScope.Loading
             ViewToSource = map.ToArray();
             ApplyColors(ViewPoints, _filter);
             VisibleCount = ViewPoints.Length;
+            RenderOrder = BuildProgressiveRenderOrder(VisibleCount, RenderOrderSeed);
         }
 
         private static int[] IdentityMap(int count)
@@ -104,6 +115,32 @@ namespace CloudScope.Loading
             var map = new int[count];
             for (int i = 0; i < count; i++) map[i] = i;
             return map;
+        }
+
+        private static int[]? BuildProgressiveRenderOrder(int count, int seed)
+        {
+            if (count <= 1)
+                return null;
+
+            var order = IdentityMap(count);
+            int samplePrefix = ComputeProgressiveSamplePrefix(count);
+            var rng = new Random(seed);
+
+            for (int i = 0; i < samplePrefix; i++)
+            {
+                int j = rng.Next(i, count);
+                (order[i], order[j]) = (order[j], order[i]);
+            }
+
+            return order;
+        }
+
+        private static int ComputeProgressiveSamplePrefix(int count)
+        {
+            const int MinimumPrefix = 1_000_000;
+            const int MaximumPrefix = 5_000_000;
+            int ratioPrefix = count / 10;
+            return Math.Min(count, Math.Clamp(ratioPrefix, MinimumPrefix, MaximumPrefix));
         }
 
         private void ApplyColors(PointData[] points, PointFilter? filter)
@@ -123,6 +160,7 @@ namespace CloudScope.Loading
             switch (_colorSource)
             {
                 case ColorSource.Rgb:
+                    CopyRgb(ref point, _sourcePoints[index]);
                     return;
                 case ColorSource.Height:
                     SetHeightColor(ref point, Attributes.Z[index]);
@@ -137,6 +175,27 @@ namespace CloudScope.Loading
                     SetClassColor(ref point, Attributes.ReturnNumber[index]);
                     return;
             }
+        }
+
+        private void RecolorView()
+        {
+            if (ReferenceEquals(ViewPoints, _sourcePoints))
+            {
+                if (_colorSource == ColorSource.Rgb)
+                    return;
+
+                ViewPoints = new PointData[LoadedCount];
+                Array.Copy(_sourcePoints, ViewPoints, LoadedCount);
+            }
+
+            ApplyColors(ViewPoints, _filter);
+        }
+
+        private static void CopyRgb(ref PointData point, PointData source)
+        {
+            point.R = source.R;
+            point.G = source.G;
+            point.B = source.B;
         }
 
         private void SetHeightColor(ref PointData point, double z)

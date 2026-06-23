@@ -18,6 +18,7 @@ public sealed class HostController
     public IReadOnlyCollection<CloudScope.Labeling.LabelDefinition> LabelDefinitions =>
         _embeddedHost?.LabelDefinitions ?? System.Array.Empty<CloudScope.Labeling.LabelDefinition>();
     public string ActiveLabel => _embeddedHost?.ActiveLabel ?? "";
+    public int? ActiveInstanceId => _embeddedHost?.ActiveInstanceId;
 
     public HostController()
     {

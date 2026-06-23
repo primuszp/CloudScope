@@ -18,6 +18,7 @@ namespace CloudScope.Ui
         private bool _submitRequested;
         private string _labelNameInput = "";
         private int _labelCodeInput = 6;
+        private int _instanceIdInput = 1;
 
         public CommandLineOverlay(ViewerController viewer, ViewerCommandDispatcher dispatcher)
         {
@@ -91,7 +92,8 @@ namespace CloudScope.Ui
                 ImGui.EndMenu();
             }
 
-            ImGui.TextDisabled($"Mode: {_viewer.Mode}  Tool: {_viewer.ActiveToolType}");
+            string instance = _viewer.CurrentInstanceId is int id ? id.ToString() : "none";
+            ImGui.TextDisabled($"Mode: {_viewer.Mode}  Tool: {_viewer.ActiveToolType}  Label: {_viewer.CurrentLabel}  Instance: {instance}");
             ImGui.EndMainMenuBar();
         }
 
@@ -178,6 +180,18 @@ namespace CloudScope.Ui
                         _viewer.SetActiveLabel(def.Name);
                     ImGui.PopID();
                 }
+
+                ImGui.Separator();
+                string instance = _viewer.CurrentInstanceId is int id ? id.ToString() : "none";
+                ImGui.TextDisabled($"Active instance: {instance}");
+                ImGui.SetNextItemWidth(120f);
+                ImGui.InputInt("Instance id", ref _instanceIdInput);
+                _instanceIdInput = Math.Max(0, _instanceIdInput);
+                if (ImGui.Button("Clear instance"))
+                    _viewer.SetActiveInstance(null);
+                ImGui.SameLine();
+                if (ImGui.Button("Set instance"))
+                    _viewer.SetActiveInstance(_instanceIdInput);
 
                 ImGui.Separator();
                 ImGui.TextUnformatted("Add / update");

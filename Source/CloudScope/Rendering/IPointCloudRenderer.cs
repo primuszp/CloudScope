@@ -7,7 +7,7 @@ namespace CloudScope.Rendering
     {
         int PointCount { get; }
         void Initialize();
-        void Upload(PointData[] points);
+        void Upload(PointCloudRenderData data);
         int Render(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 projection, float pointSize, double halfViewSize, float cloudRadius);
     }
 }

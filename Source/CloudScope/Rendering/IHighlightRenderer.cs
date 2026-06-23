@@ -10,6 +10,6 @@ namespace CloudScope.Rendering
         void MarkDirty();
         void UpdatePreview(PointData[]? points, IReadOnlyList<int>? indices);
         void RenderPreview(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj, float pointSize);
-        void Render(IRenderFrameData frameData, PointData[] points, LabelManager labels, Func<string, Vector3> labelColor, ref Matrix4 view, ref Matrix4 proj, float pointSize);
+        void Render(IRenderFrameData frameData, PointData[] points, LabelManager labels, Func<PointAnnotation, Vector3> annotationColor, ref Matrix4 view, ref Matrix4 proj, float pointSize);
     }
 }

@@ -39,7 +39,7 @@ public sealed class LabelRegistryWindow : Window
         var root = new StackPanel { Margin = new global::Avalonia.Thickness(12), Spacing = 10 };
         root.Children.Add(new TextBlock
         {
-            Text = "Map label names to LAS classification codes.",
+            Text = "Map label names to LAS classification codes. Set instances with INSTANCE <id> or LABEL \"name\" <id>.",
             Foreground = new SolidColorBrush(Color.FromRgb(0xAA, 0xB6, 0xC2))
         });
         root.Children.Add(new ScrollViewer

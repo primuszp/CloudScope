@@ -150,10 +150,34 @@ public sealed class ViewerCommands : ICommandCancellationHandler
     [CommandMethod("LABEL", Flags = CommandFlags.NoUndoMarker)]
     public CommandResult Label(CommandContext context)
     {
-        string name = CommandText.Unquote(context.Input.Trim());
-        if (name.Length == 0)
-            return CommandResult.Continue(Value("Enter label name:"));
-        return CommandResult.End(context.GetTarget<ViewerController>().SetActiveLabel(name));
+        if (!TryParseLabelAnnotation(context.Input, out string name, out int? instanceId, out bool instanceSpecified, out string error))
+        {
+            string prompt = "Enter label name or <name> <instance id>:";
+            return CommandResult.Continue(Value(prompt), error);
+        }
+
+        var viewer = context.GetTarget<ViewerController>();
+        return CommandResult.End(instanceSpecified
+            ? viewer.SetActiveAnnotation(name, instanceId)
+            : viewer.SetActiveLabel(name));
+    }
+
+    [CommandMethod("INSTANCE", "INST", Flags = CommandFlags.NoUndoMarker)]
+    public CommandResult Instance(CommandContext context)
+    {
+        string input = context.Input.Trim();
+        if (input.Length == 0)
+            return CommandResult.Continue(Value("Enter instance id or CLear:"));
+
+        if (input.Equals("CLEAR", StringComparison.OrdinalIgnoreCase) ||
+            input.Equals("CL", StringComparison.OrdinalIgnoreCase) ||
+            input.Equals("NONE", StringComparison.OrdinalIgnoreCase))
+            return CommandResult.End(context.GetTarget<ViewerController>().SetActiveInstance(null));
+
+        if (!int.TryParse(input, NumberStyles.Integer, CultureInfo.InvariantCulture, out int instanceId) || instanceId < 0)
+            return CommandResult.Continue(Value("Enter instance id or CLear:"), $"Invalid instance id: {context.Input}");
+
+        return CommandResult.End(context.GetTarget<ViewerController>().SetActiveInstance(instanceId));
     }
 
     [CommandMethod("LABELDEF", Flags = CommandFlags.NoUndoMarker)]
@@ -542,7 +566,7 @@ public sealed class ViewerCommands : ICommandCancellationHandler
 
     [CommandMethod("HELP", "?", Flags = CommandFlags.NoUndoMarker | CommandFlags.NoHistory | CommandFlags.Transparent)]
     public CommandResult Help(CommandContext context) => CommandResult.End(
-        "Commands: OPEN, SELECT, FILTER, COLORBY, ATTRS, VPORTS, ZOOM, VIEW, PROJECTION, POINTSIZE, LABEL, SAVELABELS, LOADLABELS, CLEARLABELS, NAVIGATE, RESET, UNDO, HELP.");
+        "Commands: OPEN, SELECT, FILTER, COLORBY, ATTRS, VPORTS, ZOOM, VIEW, PROJECTION, POINTSIZE, LABEL, INSTANCE, SAVELABELS, LOADLABELS, CLEARLABELS, NAVIGATE, RESET, UNDO, HELP.");
 
     public void CancelCommand(CommandContext context, string globalCommandName)
     {
@@ -815,6 +839,72 @@ public sealed class ViewerCommands : ICommandCancellationHandler
 
     private static bool IsList(string input) => input.Equals("L", StringComparison.OrdinalIgnoreCase) || input.Equals("LIST", StringComparison.OrdinalIgnoreCase);
     private static bool IsBack(string input) => input.Equals("B", StringComparison.OrdinalIgnoreCase) || input.Equals("BACK", StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryParseLabelAnnotation(string input, out string name, out int? instanceId, out bool instanceSpecified, out string error)
+    {
+        name = "";
+        instanceId = null;
+        instanceSpecified = false;
+        error = "";
+
+        string trimmed = input.Trim();
+        if (trimmed.Length == 0)
+            return false;
+
+        if (trimmed[0] == '"')
+        {
+            int endQuote = trimmed.IndexOf('"', 1);
+            if (endQuote < 0)
+            {
+                error = "Missing closing quote in label name.";
+                return false;
+            }
+
+            name = trimmed[1..endQuote].Trim();
+            string rest = trimmed[(endQuote + 1)..].Trim();
+            if (rest.Length > 0)
+            {
+                instanceSpecified = true;
+                if (!TryParseInstanceToken(rest, out instanceId))
+                {
+                    error = $"Invalid instance id: {rest}";
+                    return false;
+                }
+            }
+        }
+        else
+        {
+            int split = trimmed.LastIndexOf(' ');
+            if (split > 0 && TryParseInstanceToken(trimmed[(split + 1)..].Trim(), out instanceId))
+            {
+                instanceSpecified = true;
+                name = trimmed[..split].Trim();
+            }
+            else
+                name = trimmed;
+        }
+
+        name = CommandText.Unquote(name);
+        if (name.Length > 0)
+            return true;
+
+        error = "Label name must not be empty.";
+        return false;
+    }
+
+    private static bool TryParseInstanceToken(string token, out int? instanceId)
+    {
+        instanceId = null;
+        if (token.Equals("NONE", StringComparison.OrdinalIgnoreCase) ||
+            token.Equals("CLEAR", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (!int.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) || parsed < 0)
+            return false;
+
+        instanceId = parsed;
+        return true;
+    }
 
     private static string FilterAttributeToCommandName(FilterAttribute attribute) => attribute switch
     {

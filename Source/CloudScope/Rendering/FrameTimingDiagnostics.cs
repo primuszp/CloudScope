@@ -9,6 +9,9 @@ namespace CloudScope.Rendering
         private double _accumulatedSeconds;
         private int _frameCount;
         private int _drawCount;
+        private int _loadedCount;
+        private int _visibleCount;
+        private int _residentCount;
         private double _mainDrawMs, _highlightMs, _previewMs, _gizmoMs, _swapMs;
 
         public bool Enabled { get; } =
@@ -20,9 +23,12 @@ namespace CloudScope.Rendering
                 _stopwatch.Restart();
         }
 
-        public void MarkMainDraw(int drawCount)
+        public void MarkMainDraw(int drawCount, int loadedCount, int visibleCount, int residentCount)
         {
             _drawCount = drawCount;
+            _loadedCount = loadedCount;
+            _visibleCount = visibleCount;
+            _residentCount = residentCount;
             Mark(ref _mainDrawMs);
         }
 
@@ -55,7 +61,7 @@ namespace CloudScope.Rendering
             double inv = 1.0 / Math.Max(_frameCount, 1);
             Console.WriteLine(
                 $"Frame avg {(_accumulatedSeconds * 1000.0 * inv):F2} ms | " +
-                $"draw {_drawCount:N0} | main {_mainDrawMs * inv:F2} | " +
+                $"loaded {_loadedCount:N0} | visible {_visibleCount:N0} | resident {_residentCount:N0} | draw {_drawCount:N0} | main {_mainDrawMs * inv:F2} | " +
                 $"hl {_highlightMs * inv:F2} | prev {_previewMs * inv:F2} | " +
                 $"gizmo {_gizmoMs * inv:F2} | swap {_swapMs * inv:F2}");
 

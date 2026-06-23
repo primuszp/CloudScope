@@ -24,6 +24,7 @@ namespace CloudScope
         private float  _previewTimer    = 999f;
         private bool   _previewWasActive;
         private string _currentLabel   = "Ground";
+        private int?   _currentInstanceId;
         private PointData[]? _points;            // visible (ViewPoints) — selection geometry + preview
         private PointData[]? _sourcePoints;      // full source-order array — highlight + fitting
         private int[]? _viewToSource;            // visible index → source index
@@ -49,9 +50,20 @@ namespace CloudScope
         public LabelManager Labels => _labelManager;
         public LabelRegistry Registry => _registry;
         public string CurrentLabel => _currentLabel;
+        public int? CurrentInstanceId => _currentInstanceId;
 
         /// <summary>Display color for a label: the registry's code color, or a hashed fallback.</summary>
         public Vector3 ResolveLabelColor(string name) => _registry.ColorFor(name) ?? LabelColorPalette.GetColor(name);
+
+        public Vector3 ResolveAnnotationColor(PointAnnotation annotation)
+        {
+            if (annotation.InstanceId is not int instanceId)
+                return ResolveLabelColor(annotation.LabelName);
+
+            Vector3 semantic = ResolveLabelColor(annotation.LabelName);
+            Vector3 instance = LabelColorPalette.GetColor($"{annotation.LabelName}#{instanceId}");
+            return (semantic * 0.35f) + (instance * 0.65f);
+        }
 
         public PointData[]? Points => _points;
         /// <summary>Full source-order points; highlights are keyed by source index.</summary>
@@ -86,6 +98,7 @@ namespace CloudScope
             _viewToSource = null;
             _attributes = null;
             _lasFilePath = "";
+            _currentInstanceId = null;
             _pendingAction = EditAction.None;
             Mode = InteractionMode.Navigate;
             SetRestingInteractionState();
@@ -204,7 +217,7 @@ namespace CloudScope
             ActiveTool.Cancel();
             _pendingAction = EditAction.None;
             SetRestingInteractionState();
-            _log($"Mode: {Mode}  (tool: {ActiveTool.ToolType}, label: '{_currentLabel}')");
+            _log($"Mode: {Mode}  (tool: {ActiveTool.ToolType}, annotation: {DescribeCurrentAnnotation()})");
         }
 
         public void SetTool(SelectionToolType toolType)
@@ -230,6 +243,15 @@ namespace CloudScope
 
             _currentLabel = label.Trim();
             _log($"Label: '{_currentLabel}'");
+        }
+
+        public void SetInstanceId(int? instanceId)
+        {
+            if (instanceId is < 0)
+                return;
+
+            _currentInstanceId = instanceId;
+            _log(instanceId is int id ? $"Instance: {id}" : "Instance: none");
         }
 
         public bool MouseDownLeft(int x, int y, OrbitCamera camera)
@@ -394,8 +416,9 @@ namespace CloudScope
                 var selected = MapToSource(ActiveTool.CreateQuery().Resolve(_points));
                 if (selected.Count > 0)
                 {
-                    _labelManager.ApplyLabel(selected, _currentLabel);
-                    _log($"Labeled {selected.Count} points as '{_currentLabel}'  (total: {_labelManager.Count})");
+                    var annotation = new PointAnnotation(_currentLabel, _currentInstanceId);
+                    _labelManager.ApplyAnnotation(selected, annotation);
+                    _log($"Annotated {selected.Count} points as {annotation.DisplayName}  (total: {_labelManager.Count})");
                 }
                 else
                 {
@@ -502,8 +525,8 @@ namespace CloudScope
                 return "No source file is associated with the viewer.";
 
             var map = new Dictionary<int, byte>();
-            foreach (var (idx, name) in _labelManager.AllLabels)
-                if (_registry.CodeFor(name) is byte code)
+            foreach (var (idx, annotation) in _labelManager.AllAnnotations)
+                if (_registry.CodeFor(annotation.LabelName) is byte code)
                     map[idx] = code;
 
             if (map.Count == 0)
@@ -523,5 +546,9 @@ namespace CloudScope
             LabelFileIO.Save(_lasFilePath, _labelManager);
             return true;
         }
+
+        private string DescribeCurrentAnnotation() => _currentInstanceId is int id
+            ? $"'{_currentLabel}' instance {id}"
+            : $"'{_currentLabel}'";
     }
 }

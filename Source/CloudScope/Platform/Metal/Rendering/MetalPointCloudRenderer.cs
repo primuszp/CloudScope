@@ -60,19 +60,27 @@ namespace CloudScope.Platform.Metal.Rendering
             }
         }
 
-        public void Upload(PointData[] points)
+        public void Upload(PointCloudRenderData data)
         {
-            _pointCount = Math.Min(points.Length, MaxResidentPoints);
+            PointData[] points = data.Points;
+            int[]? renderOrder = data.RenderOrder;
+            int requestedCount = data.Count;
+            _pointCount = Math.Min(requestedCount, MaxResidentPoints);
             ReleasePointChunks();
 
             // Device not ready yet (called before Initialize / app.Run) — defer.
             if (MetalFrameContext.Device.NativePtr == IntPtr.Zero)
             {
-                _pendingPoints = points;
+                _pendingPoints = renderOrder is { Length: > 0 }
+                    ? BuildOrderedPointBuffer(points, renderOrder, _pointCount)
+                    : points;
                 return;
             }
 
-            UploadToGpu(points, _pointCount);
+            if (renderOrder is { Length: > 0 })
+                UploadToGpu(points, _pointCount, renderOrder);
+            else
+                UploadToGpu(points, _pointCount);
         }
 
         public int Render(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 projection, float pointSize, double halfViewSize, float cloudRadius)
@@ -136,7 +144,7 @@ namespace CloudScope.Platform.Metal.Rendering
 
         // ── Private ───────────────────────────────────────────────────────────────
 
-        private unsafe void UploadToGpu(PointData[] points, int residentCount)
+        private unsafe void UploadToGpu(PointData[] points, int residentCount, int[]? renderOrder = null)
         {
             if (residentCount <= 0) return;
 
@@ -154,13 +162,30 @@ namespace CloudScope.Platform.Metal.Rendering
                     ulong byteSize = (ulong)(count * PointStride);
 
                     var buffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
-                    Buffer.MemoryCopy(srcBase + pointOffset, buffer.Contents.ToPointer(), byteSize, byteSize);
+                    if (renderOrder is null)
+                    {
+                        Buffer.MemoryCopy(srcBase + pointOffset, buffer.Contents.ToPointer(), byteSize, byteSize);
+                    }
+                    else
+                    {
+                        var dst = (PointData*)buffer.Contents.ToPointer();
+                        for (int i = 0; i < count; i++)
+                            dst[i] = srcBase[renderOrder[pointOffset + i]];
+                    }
                     buffer.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
 
                     _pointChunks[chunk] = buffer;
                     _chunkCounts[chunk] = count;
                 }
             }
+        }
+
+        private static PointData[] BuildOrderedPointBuffer(PointData[] points, int[] renderOrder, int count)
+        {
+            var ordered = new PointData[count];
+            for (int i = 0; i < count; i++)
+                ordered[i] = points[renderOrder[i]];
+            return ordered;
         }
 
         private void ReleasePointChunks()

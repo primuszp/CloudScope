@@ -8,7 +8,8 @@ namespace CloudScope.Labeling
 {
     /// <summary>
     /// Reads and writes label data as JSON.
-    /// Format: { "sourceFile": "...", "labels": { "Ground": [0,1,2], "Building": [100,101] } }
+    /// Version 2 keeps the old semantic labels map and adds optional instance groups:
+    /// { "sourceFile": "...", "formatVersion": 2, "labels": { "Ground": [0,1] }, "instances": { "Tree": { "7": [2,3] } } }
     /// </summary>
     public static class LabelFileIO
     {
@@ -17,26 +18,50 @@ namespace CloudScope.Labeling
         /// </summary>
         public static void Save(string lasFilePath, LabelManager manager)
         {
-            // Invert: point→label  →  label→points[]
+            // Invert: point→annotation  →  label→points[] and label→instance→points[].
             var grouped = new Dictionary<string, List<int>>();
-            foreach (var (idx, lbl) in manager.AllLabels)
+            var instances = new Dictionary<string, Dictionary<string, List<int>>>();
+            foreach (var (idx, annotation) in manager.AllAnnotations)
             {
-                if (!grouped.TryGetValue(lbl, out var list))
+                string labelName = annotation.LabelName;
+                if (!grouped.TryGetValue(labelName, out var list))
                 {
                     list = new List<int>();
-                    grouped[lbl] = list;
+                    grouped[labelName] = list;
                 }
                 list.Add(idx);
+
+                if (annotation.InstanceId is not int instanceId)
+                    continue;
+
+                if (!instances.TryGetValue(labelName, out var labelInstances))
+                {
+                    labelInstances = new Dictionary<string, List<int>>();
+                    instances[labelName] = labelInstances;
+                }
+
+                string instanceKey = instanceId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                if (!labelInstances.TryGetValue(instanceKey, out var instanceList))
+                {
+                    instanceList = new List<int>();
+                    labelInstances[instanceKey] = instanceList;
+                }
+                instanceList.Add(idx);
             }
 
             // Sort indices for deterministic output
             foreach (var list in grouped.Values)
                 list.Sort();
+            foreach (var labelInstances in instances.Values)
+                foreach (var list in labelInstances.Values)
+                    list.Sort();
 
             var doc = new Dictionary<string, object>
             {
                 ["sourceFile"] = Path.GetFileName(lasFilePath),
-                ["labels"] = grouped
+                ["formatVersion"] = 2,
+                ["labels"] = grouped,
+                ["instances"] = instances
             };
 
             string json = JsonSerializer.Serialize(doc, new JsonSerializerOptions
@@ -67,7 +92,7 @@ namespace CloudScope.Labeling
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
 
-                var labels = new Dictionary<int, string>();
+                var annotations = new Dictionary<int, PointAnnotation>();
                 if (root.TryGetProperty("labels", out var labelsObj))
                 {
                     foreach (var prop in labelsObj.EnumerateObject())
@@ -75,13 +100,29 @@ namespace CloudScope.Labeling
                         string labelName = prop.Name;
                         foreach (var idx in prop.Value.EnumerateArray())
                         {
-                            labels[idx.GetInt32()] = labelName;
+                            annotations[idx.GetInt32()] = new PointAnnotation(labelName, null);
                         }
                     }
                 }
 
-                manager.LoadFrom(labels);
-                Console.WriteLine($"Labels loaded: {inPath}  ({labels.Count} points)");
+                if (root.TryGetProperty("instances", out var instancesObj))
+                {
+                    foreach (var labelProp in instancesObj.EnumerateObject())
+                    {
+                        string labelName = labelProp.Name;
+                        foreach (var instanceProp in labelProp.Value.EnumerateObject())
+                        {
+                            if (!int.TryParse(instanceProp.Name, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int instanceId))
+                                continue;
+
+                            foreach (var idx in instanceProp.Value.EnumerateArray())
+                                annotations[idx.GetInt32()] = new PointAnnotation(labelName, instanceId);
+                        }
+                    }
+                }
+
+                manager.LoadFromAnnotations(annotations);
+                Console.WriteLine($"Labels loaded: {inPath}  ({annotations.Count} points)");
                 return true;
             }
             catch (Exception ex)
