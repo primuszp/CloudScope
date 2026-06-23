@@ -248,7 +248,7 @@ namespace CloudScope
             if (_dataset.CurrentColorSource == target)
                 return $"Color: {target.ToDisplayName()}.";
 
-            if (_pointRenderer.CanUpdateColorSourceWithoutUpload && target != ColorSource.Rgb)
+            if (_pointRenderer.CanUpdateColorSourceWithoutUpload)
             {
                 string shaderResult = _dataset.SetColorSource(source, recolor: false);
                 _pointRenderer.UpdateColorSource(_dataset.CurrentColorSource);
@@ -269,7 +269,7 @@ namespace CloudScope
             if (_dataset.CurrentColorSource == _dataset.DefaultColorSource)
                 return $"Color: {_dataset.DefaultColorSource.ToDisplayName()}.";
 
-            if (_pointRenderer.CanUpdateColorSourceWithoutUpload && _dataset.DefaultColorSource != ColorSource.Rgb)
+            if (_pointRenderer.CanUpdateColorSourceWithoutUpload)
             {
                 string shaderResult = _dataset.ClearColorSource(recolor: false);
                 _pointRenderer.UpdateColorSource(_dataset.CurrentColorSource);
@@ -292,6 +292,7 @@ namespace CloudScope
                 _dataset.RenderOrder,
                 _dataset.Attributes,
                 _dataset.ViewToSource,
+                _dataset.SourcePoints,
                 _dataset.CurrentColorSource));
         }
 

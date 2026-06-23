@@ -9,7 +9,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
     public sealed class OpenGlPointCloudRenderer : IPointCloudRenderer
     {
         private const int PointStride = 24; // 6 floats
-        private const int AttributeStride = 16; // 4 floats
+        private const int AttributeStride = 28; // 7 floats
         private const int DefaultMaxResidentPoints = 5_000_000;
         private const int DefaultMaxDrawPointsPerFrame = 5_000_000;
         private static readonly int MaxDrawPointsPerFrame =
@@ -26,6 +26,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private int _uView, _uProj, _uPointSize, _uColorSource, _uHasAttributes;
         private int _pointCount;
         private bool _hasAttributes;
+        private bool _hasSourceColors;
         private ColorSource _colorSource = ColorSource.Rgb;
 
         private const string VertSrc = @"
@@ -36,6 +37,7 @@ layout(location = 2) in float aZ;
 layout(location = 3) in float aIntensity;
 layout(location = 4) in float aClass;
 layout(location = 5) in float aReturn;
+layout(location = 6) in vec3 aRgb;
 
 out vec3 vColor;
 
@@ -62,8 +64,10 @@ void main()
 {
     gl_Position  = projection * view * vec4(aPos, 1.0);
     gl_PointSize = pointSize;
-    if (!hasAttributes || colorSource == 0)
+    if (!hasAttributes)
         vColor = aCol;
+    else if (colorSource == 0)
+        vColor = aRgb;
     else if (colorSource == 1)
         vColor = heightColor(aZ);
     else if (colorSource == 2)
@@ -92,7 +96,7 @@ void main()
 ";
 
         public int PointCount => _pointCount;
-        public bool CanUpdateColorSourceWithoutUpload => _hasAttributes;
+        public bool CanUpdateColorSourceWithoutUpload => _hasAttributes && _hasSourceColors;
 
         public void Initialize()
         {
@@ -113,6 +117,7 @@ void main()
             int requestedCount = data.Count;
             _pointCount = Math.Min(requestedCount, MaxResidentPoints);
             _hasAttributes = data.HasAttributes;
+            _hasSourceColors = data.HasSourceColors;
             _colorSource = data.ColorSource;
 
             if (_pointCount == 0)
@@ -155,6 +160,8 @@ void main()
                 GL.EnableVertexAttribArray(4);
                 GL.VertexAttribPointer(5, 1, VertexAttribPointerType.Float, false, AttributeStride, 12);
                 GL.EnableVertexAttribArray(5);
+                GL.VertexAttribPointer(6, 3, VertexAttribPointerType.Float, false, AttributeStride, 16);
+                GL.EnableVertexAttribArray(6);
             }
 
             GL.BindVertexArray(0);
@@ -238,11 +245,17 @@ void main()
                     : 0.5f;
                 zNormalized = Math.Clamp(zNormalized, 0f, 1f);
                 float intensityNormalized = attributes.Intensity[sourceIndex] / 65535f;
+                PointData rgbSource = data.SourcePoints is { } sourcePoints
+                    ? sourcePoints[sourceIndex]
+                    : data.Points[viewIndex];
                 ordered[i] = new PointRenderAttributeData(
                     zNormalized,
                     intensityNormalized,
                     attributes.Class[sourceIndex],
-                    attributes.ReturnNumber[sourceIndex]);
+                    attributes.ReturnNumber[sourceIndex],
+                    rgbSource.R,
+                    rgbSource.G,
+                    rgbSource.B);
             }
 
             return ordered;

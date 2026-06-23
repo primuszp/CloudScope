@@ -23,9 +23,9 @@
 ## Phase 2: Stop Reuploading For Color Changes
 
 0. Started: avoid rebuilding filter maps and render order on pure color-source changes.
-   No-op color-source requests now skip recolor and upload. OpenGL attribute-backed views now switch Height/Class/Intensity/Return through a shader uniform without CPU recolor or GPU point-buffer reupload. RGB still falls back to CPU recolor/upload until original RGB is split into an immutable attribute stream.
+   No-op color-source requests now skip recolor and upload. OpenGL attribute-backed views now switch RGB/Height/Class/Intensity/Return through a shader uniform without CPU recolor or GPU point-buffer reupload.
 1. Started: split point storage into mostly immutable geometry plus mutable/lightweight attributes.
-   OpenGL now uploads a separate per-point attribute buffer for Z, intensity, class, and return. The shader still renders the CPU-colored point buffer until the color shader path is enabled.
+   OpenGL now uploads a separate per-point attribute buffer for Z, intensity, class, return, and original RGB.
 2. Started: move color-source switching into shaders.
    OpenGL can shade RGB, height, class, intensity, and return from the uploaded attribute buffer. Metal still uses the CPU-colored fallback.
 3. Update annotation rendering incrementally.
