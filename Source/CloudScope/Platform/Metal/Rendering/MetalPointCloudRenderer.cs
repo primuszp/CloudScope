@@ -38,6 +38,7 @@ namespace CloudScope.Platform.Metal.Rendering
         private PointData[]? _pendingPoints;
 
         public int PointCount => _pointCount;
+        public bool SupportsAttributeColoring => false;
         public bool CanUpdateColorSourceWithoutUpload => false;
 
         public void Initialize()

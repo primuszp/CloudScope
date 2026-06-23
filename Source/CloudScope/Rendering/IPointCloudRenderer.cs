@@ -7,6 +7,7 @@ namespace CloudScope.Rendering
     public interface IPointCloudRenderer : IDisposable
     {
         int PointCount { get; }
+        bool SupportsAttributeColoring { get; }
         bool CanUpdateColorSourceWithoutUpload { get; }
         void Initialize();
         void Upload(PointCloudRenderData data);

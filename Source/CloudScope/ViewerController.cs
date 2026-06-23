@@ -233,7 +233,7 @@ namespace CloudScope
             if (_dataset == null)
                 return "No point cloud is loaded.";
 
-            string result = _dataset.ApplyFilter(filter);
+            string result = _dataset.ApplyFilter(filter, recolor: !_pointRenderer.SupportsAttributeColoring);
             LoadDatasetIntoSelection();
             UploadDatasetView();
             return result;

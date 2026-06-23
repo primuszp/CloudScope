@@ -96,6 +96,7 @@ void main()
 ";
 
         public int PointCount => _pointCount;
+        public bool SupportsAttributeColoring => true;
         public bool CanUpdateColorSourceWithoutUpload => _hasAttributes && _hasSourceColors;
 
         public void Initialize()
