@@ -22,6 +22,36 @@ namespace CloudScope.Platform.Metal
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    internal readonly struct MetalAttributePointUniforms
+    {
+        private readonly Matrix4 view;
+        private readonly Matrix4 projection;
+        private readonly Vector4 point;
+
+        public MetalAttributePointUniforms(Matrix4 view, Matrix4 projection, float pointSize, int colorSource)
+        {
+            this.view = view;
+            this.projection = projection;
+            point = new Vector4(pointSize, colorSource, 0f, 0f);
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal readonly struct MetalPaletteColor
+    {
+        private readonly float r;
+        private readonly float g;
+        private readonly float b;
+
+        public MetalPaletteColor(float r, float g, float b)
+        {
+            this.r = r;
+            this.g = g;
+            this.b = b;
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     internal readonly struct MetalColorUniforms
     {
         private readonly Matrix4 mvp;
@@ -73,6 +103,77 @@ fragment float4 point_fragment(VertexOut in [[stage_in]])
     return float4(in.color, 1.0);
 }";
 
+        private const string AttributePointShaderSource =
+@"#include <metal_stdlib>
+using namespace metal;
+
+struct PointVertex { packed_float3 position; packed_float3 color; };
+struct PointAttributes
+{
+    float zNormalized;
+    float intensityNormalized;
+    float classCode;
+    float returnNumber;
+    float red;
+    float green;
+    float blue;
+};
+struct PaletteColor { float r; float g; float b; };
+struct AttributePointUniforms { float4x4 view; float4x4 projection; float4 point; };
+struct VertexOut { float4 position [[position]]; float point_size [[point_size]]; float3 color; };
+
+float3 paletteColor(const device PaletteColor* palette, uint index)
+{
+    PaletteColor c = palette[index];
+    return float3(c.r, c.g, c.b);
+}
+
+float3 gradientColor(float t)
+{
+    t = clamp(t, 0.0f, 1.0f);
+    return float3(t, min(1.0f, 2.0f * min(t, 1.0f - t)), 1.0f - t);
+}
+
+float3 heightColor(float z)
+{
+    z = clamp(z, 0.0f, 1.0f);
+    return float3(z, 1.0f - abs(2.0f * z - 1.0f), 1.0f - z);
+}
+
+vertex VertexOut attribute_point_vertex(
+    uint vertexId [[vertex_id]],
+    const device PointVertex* points [[buffer(0)]],
+    constant AttributePointUniforms& uniforms [[buffer(1)]],
+    const device PointAttributes* attributes [[buffer(2)]],
+    const device PaletteColor* classPalette [[buffer(3)]])
+{
+    PointVertex p = points[vertexId];
+    PointAttributes a = attributes[vertexId];
+    int colorSource = int(uniforms.point.y);
+
+    VertexOut out;
+    out.position = uniforms.projection * uniforms.view * float4(p.position, 1.0);
+    out.point_size = uniforms.point.x;
+    if (colorSource == 0)
+        out.color = float3(a.red, a.green, a.blue);
+    else if (colorSource == 1)
+        out.color = heightColor(a.zNormalized);
+    else if (colorSource == 2)
+        out.color = paletteColor(classPalette, uint(clamp(a.classCode, 0.0f, 255.0f)));
+    else if (colorSource == 3)
+        out.color = gradientColor(a.intensityNormalized);
+    else if (colorSource == 4)
+        out.color = paletteColor(classPalette, uint(clamp(a.returnNumber, 0.0f, 255.0f)));
+    else
+        out.color = p.color;
+    return out;
+}
+
+fragment float4 attribute_point_fragment(VertexOut in [[stage_in]])
+{
+    return float4(in.color, 1.0);
+}";
+
         private const string ColorShaderSource =
 @"#include <metal_stdlib>
 using namespace metal;
@@ -98,6 +199,11 @@ fragment float4 color_fragment(ColorVertexOut in [[stage_in]], constant ColorUni
         public static MTLRenderPipelineState CreatePointPipeline(
             MTLDevice device, MTLPixelFormat colorFormat, MTLPixelFormat depthFormat)
             => CreatePipeline(device, PointShaderSource, "point_vertex", "point_fragment",
+                colorFormat, depthFormat, blend: false);
+
+        public static MTLRenderPipelineState CreateAttributePointPipeline(
+            MTLDevice device, MTLPixelFormat colorFormat, MTLPixelFormat depthFormat)
+            => CreatePipeline(device, AttributePointShaderSource, "attribute_point_vertex", "attribute_point_fragment",
                 colorFormat, depthFormat, blend: false);
 
         public static MTLRenderPipelineState CreateColorPipeline(
