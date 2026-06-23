@@ -51,8 +51,8 @@
 
 1. Reuse the spatial hierarchy for selection queries.
    Reject whole nodes by selection-volume bounds, and only test points inside intersecting leaves.
-2. Make preview resolution budgeted.
-   Preview should update progressively and abort stale jobs when the selection volume moves.
+2. Started: make preview resolution budgeted.
+   Preview now aborts stale jobs when the selection volume moves and runs only the latest pending query. Progressive/chunked preview still depends on spatial indexing.
 3. Store annotations by source index in a sparse structure.
    Render per-instance colors from annotation buffers; export semantic class codes to LAS from the same source-index map.
 4. Add an instance-aware color mode.
