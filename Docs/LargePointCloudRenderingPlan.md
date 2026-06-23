@@ -28,9 +28,11 @@
    OpenGL now uploads a separate per-point attribute buffer for Z, intensity, class, return, and original RGB.
 2. Started: move color-source switching into shaders.
    OpenGL can shade RGB, height, class, intensity, and return from the uploaded attribute buffer. Metal still uses the CPU-colored fallback.
-3. Update annotation rendering incrementally.
+3. Started: reduce CPU recolor work while filtering.
+   OpenGL skips CPU recolor during filter rebuilds because the shader derives colors from attributes. Metal still recolors on CPU.
+4. Update annotation rendering incrementally.
    Selections should update sparse annotation buffers or dirty ranges instead of rebuilding a full highlight point buffer.
-4. Keep the old CPU-colored path only as a fallback for backends that do not support the attribute shader path.
+5. Keep the old CPU-colored path only as a fallback for backends that do not support the attribute shader path.
 
 ## Phase 3: Spatial LOD And Culling
 

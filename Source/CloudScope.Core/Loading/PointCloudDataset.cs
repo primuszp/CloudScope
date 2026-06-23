@@ -54,10 +54,10 @@ namespace CloudScope.Loading
         public ColorSource DefaultColorSource => _hasColor ? ColorSource.Rgb : ColorSource.Height;
         public string ColorDescription => _colorSource.ToDisplayName();
 
-        public string ApplyFilter(PointFilter? filter)
+        public string ApplyFilter(PointFilter? filter, bool recolor = true)
         {
             _filter = filter;
-            RebuildView();
+            RebuildView(recolor);
             string filterText = filter?.Description ?? "None";
             return $"Filter: {filterText}. Visible points: {VisibleCount:N0} / {LoadedCount:N0}.";
         }
@@ -81,13 +81,20 @@ namespace CloudScope.Loading
         public ColorSource NormalizeColorSource(ColorSource source) =>
             source == ColorSource.Rgb && !_hasColor ? ColorSource.Height : source;
 
-        private void RebuildView()
+        private void RebuildView(bool recolor = true)
         {
             if (_filter == null)
             {
-                ViewPoints = new PointData[LoadedCount];
-                Array.Copy(_sourcePoints, ViewPoints, LoadedCount);
-                ApplyColors(ViewPoints, null);
+                if (recolor)
+                {
+                    ViewPoints = new PointData[LoadedCount];
+                    Array.Copy(_sourcePoints, ViewPoints, LoadedCount);
+                    ApplyColors(ViewPoints, null);
+                }
+                else
+                {
+                    ViewPoints = _sourcePoints;
+                }
                 VisibleCount = ViewPoints.Length;
                 ViewToSource = IdentityMap(LoadedCount);
                 RenderOrder = BuildProgressiveRenderOrder(VisibleCount, RenderOrderSeed);
@@ -107,7 +114,8 @@ namespace CloudScope.Loading
 
             ViewPoints = points.ToArray();
             ViewToSource = map.ToArray();
-            ApplyColors(ViewPoints, _filter);
+            if (recolor)
+                ApplyColors(ViewPoints, _filter);
             VisibleCount = ViewPoints.Length;
             RenderOrder = BuildProgressiveRenderOrder(VisibleCount, RenderOrderSeed);
         }
