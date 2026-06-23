@@ -38,6 +38,7 @@ namespace CloudScope.Platform.Metal.Rendering
         private PointData[]? _pendingPoints;
 
         public int PointCount => _pointCount;
+        public bool CanUpdateColorSourceWithoutUpload => false;
 
         public void Initialize()
         {
@@ -81,6 +82,10 @@ namespace CloudScope.Platform.Metal.Rendering
                 UploadToGpu(points, _pointCount, renderOrder);
             else
                 UploadToGpu(points, _pointCount);
+        }
+
+        public void UpdateColorSource(CloudScope.Loading.ColorSource source)
+        {
         }
 
         public int Render(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 projection, float pointSize, double halfViewSize, float cloudRadius)
