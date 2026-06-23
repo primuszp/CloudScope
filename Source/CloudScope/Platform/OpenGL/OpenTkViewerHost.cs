@@ -84,6 +84,7 @@ namespace CloudScope
         public bool IsKnownCommand(string name) => _commandDispatcher.IsKnownCommand(name);
         public System.Collections.Generic.IReadOnlyCollection<CloudScope.Labeling.LabelDefinition> LabelDefinitions => _controller.LabelRegistry.Definitions;
         public string ActiveLabel => _controller.CurrentLabel;
+        public int? ActiveInstanceId => _controller.CurrentInstanceId;
         public IReadOnlyCollection<string> KnownCommandNames => _commandDispatcher.KnownCommandNames;
         public bool HasActiveCommand => _commandDispatcher.HasActiveCommand;
         public bool IsTransparentCommand(string name) => _commandDispatcher.IsTransparentCommand(name);

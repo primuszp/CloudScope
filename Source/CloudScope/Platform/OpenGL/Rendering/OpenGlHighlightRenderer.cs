@@ -102,7 +102,7 @@ void main()
         /// Rebuild the highlight buffer from the current label state, then render.
         /// </summary>
         public void Render(IRenderFrameData frameData, PointData[] points, LabelManager labels,
-                           Func<string, Vector3> labelColor,
+                           Func<PointAnnotation, Vector3> annotationColor,
                            ref Matrix4 view, ref Matrix4 proj, float pointSize)
         {
             if (labels.Count == 0 && !_dirty) return;
@@ -111,7 +111,7 @@ void main()
 
             if (_dirty)
             {
-                RebuildBuffer(points, labels, labelColor);
+                RebuildBuffer(points, labels, annotationColor);
                 _dirty = false;
             }
 
@@ -138,10 +138,10 @@ void main()
 
         // ── Internals ─────────────────────────────────────────────────────────
 
-        private void RebuildBuffer(PointData[] points, LabelManager labels, Func<string, Vector3> labelColor)
+        private void RebuildBuffer(PointData[] points, LabelManager labels, Func<PointAnnotation, Vector3> annotationColor)
         {
-            var allLabels = labels.AllLabels;
-            _highlightCount = allLabels.Count;
+            var allAnnotations = labels.AllAnnotations;
+            _highlightCount = allAnnotations.Count;
 
             if (_highlightCount == 0) return;
 
@@ -149,11 +149,11 @@ void main()
             float[] data = RentVertexScratch(_highlightCount);
             int idx = 0;
 
-            foreach (var (ptIdx, labelName) in allLabels)
+            foreach (var (ptIdx, annotation) in allAnnotations)
             {
                 if (ptIdx < 0 || ptIdx >= points.Length) continue;
                 ref readonly PointData pt = ref points[ptIdx];
-                var col = labelColor(labelName);
+                var col = annotationColor(annotation);
                 data[idx++] = pt.X; data[idx++] = pt.Y; data[idx++] = pt.Z;
                 data[idx++] = col.X; data[idx++] = col.Y; data[idx++] = col.Z;
             }

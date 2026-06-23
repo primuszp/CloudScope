@@ -9,6 +9,7 @@ public interface IEmbeddedOpenTkNativeHost
     string CommandPrompt { get; }
     IReadOnlyCollection<LabelDefinition> LabelDefinitions { get; }
     string ActiveLabel { get; }
+    int? ActiveInstanceId { get; }
     void LoadPointCloud(PointData[] points, float radius);
     void LoadPointCloud(PointCloudDataset dataset);
     void ResetViewer();
