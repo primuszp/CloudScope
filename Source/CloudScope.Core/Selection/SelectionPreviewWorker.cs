@@ -30,6 +30,7 @@ namespace CloudScope.Selection
                 {
                     _pendingQuery = query;
                     _pendingPoints = points;
+                    _cts?.Cancel();
                     return;
                 }
 
@@ -97,19 +98,40 @@ namespace CloudScope.Selection
                 catch (OperationCanceledException)
                 {
                     bool shouldDispose = true;
+                    IPointSelectionQuery? nextQuery = null;
+                    PointData[]? nextPoints = null;
+                    CancellationTokenSource? nextCts = null;
+                    int nextVersion = 0;
+
                     lock (_gate)
                     {
-                        if (version == _version && ReferenceEquals(_cts, cts))
+                        if (ReferenceEquals(_cts, cts))
                         {
                             _cts.Dispose();
                             _cts = null;
-                            _running = false;
                             shouldDispose = false;
+                        }
+
+                        if (version == _version)
+                        {
+                            _running = false;
+
+                            if (!_disposed && _pendingQuery != null && _pendingPoints != null)
+                            {
+                                nextQuery = _pendingQuery;
+                                nextPoints = _pendingPoints;
+                                _pendingQuery = null;
+                                _pendingPoints = null;
+                                (nextVersion, nextCts) = BeginRunLocked();
+                            }
                         }
                     }
 
                     if (shouldDispose)
                         cts.Dispose();
+
+                    if (nextQuery != null && nextPoints != null && nextCts != null)
+                        RunAsync(nextQuery, nextPoints, nextVersion, nextCts);
                 }
             }, CancellationToken.None);
         }
