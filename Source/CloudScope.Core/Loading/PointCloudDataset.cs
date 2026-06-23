@@ -62,17 +62,19 @@ namespace CloudScope.Loading
             return $"Filter: {filterText}. Visible points: {VisibleCount:N0} / {LoadedCount:N0}.";
         }
 
-        public string SetColorSource(ColorSource source)
+        public string SetColorSource(ColorSource source, bool recolor = true)
         {
             _colorSource = NormalizeColorSource(source);
-            RecolorView();
+            if (recolor)
+                RecolorView();
             return $"Color: {_colorSource.ToDisplayName()}.";
         }
 
-        public string ClearColorSource()
+        public string ClearColorSource(bool recolor = true)
         {
             _colorSource = DefaultColorSource;
-            RecolorView();
+            if (recolor)
+                RecolorView();
             return $"Color: {_colorSource.ToDisplayName()}.";
         }
 
