@@ -133,8 +133,9 @@ void main()
         {
             EnsureCrosshairResources();
 
-            float sX = 15f / width;
-            float sY = 15f / height;
+            Vector2 extent = OverlayLayout.CrosshairExtent(width, height);
+            float sX = extent.X;
+            float sY = extent.Y;
             const float g = 0.5f;
 
             _crossData[0] = -sX; _crossData[1] = 0f;  _crossData[2] = 0f; _crossData[3] = g; _crossData[4] = g; _crossData[5] = g;
@@ -171,14 +172,11 @@ void main()
         {
             EnsureCrosshairResources();
 
-            float dotX = -1f + 30f / width;
-            float dotY = 1f - 30f / height;
-            float r = 0f, g = 0.8f, b = 1f;
-
-            if (toolType == SelectionToolType.Sphere)
-            { r = 1f; g = 0.6f; b = 0.15f; }
-            else if (toolType == SelectionToolType.Cylinder)
-            { r = 0.60f; g = 0.25f; b = 1f; }
+            (Vector2 center, Vector2 extent) = OverlayLayout.ModeIndicator(width, height);
+            Vector3 color = OverlayLayout.ModeColor(toolType);
+            float dotX = center.X;
+            float dotY = center.Y;
+            float r = color.X, g = color.Y, b = color.Z;
 
             GL.UseProgram(_lineShader);
             GL.Uniform1(_uAlphaLine, 0.9f);
@@ -187,8 +185,8 @@ void main()
             GL.UniformMatrix4(_uProjLine, false, ref ident);
             GL.Disable(EnableCap.DepthTest);
 
-            float sz = 8f / width;
-            float szy = 8f / height;
+            float sz = extent.X;
+            float szy = extent.Y;
             _indData[0] = dotX - sz; _indData[1] = dotY;       _indData[2] = 0f; _indData[3] = r; _indData[4] = g; _indData[5] = b;
             _indData[6] = dotX + sz; _indData[7] = dotY;       _indData[8] = 0f; _indData[9] = r; _indData[10] = g; _indData[11] = b;
             _indData[12] = dotX;     _indData[13] = dotY - szy; _indData[14] = 0f; _indData[15] = r; _indData[16] = g; _indData[17] = b;
