@@ -332,7 +332,7 @@ public sealed partial class MainWindow : Window
             LoadedPointCloud cloud = await Task.Run(() =>
             {
                 using var reader = new LasReader(path);
-                return PointCloudLoader.Load(reader, 5_000_000, progress);
+                return PointCloudLoader.Load(reader, maxPoints: 0, progress: progress);
             });
 
             _hostController.SetPendingCloud(cloud.ToDataset(), Path.GetFileName(path));

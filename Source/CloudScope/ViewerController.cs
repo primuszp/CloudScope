@@ -89,7 +89,7 @@ namespace CloudScope
             _selection.LoadPointCloud(_dataset.ViewPoints, _dataset.ViewToSource, _dataset.SourcePoints, _dataset.Attributes);
         }
 
-        public string OpenPointCloud(string path, long maxPoints = 50_000_000)
+        public string OpenPointCloud(string path, long maxPoints = 0)
         {
             if (string.IsNullOrWhiteSpace(path))
                 return "OPEN requires a file path.";
