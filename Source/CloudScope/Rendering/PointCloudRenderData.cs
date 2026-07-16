@@ -13,7 +13,7 @@ namespace CloudScope.Rendering
         public static PointCloudRenderData Empty { get; } = new(Array.Empty<PointData>());
 
         public int Count => RenderOrder?.Length ?? Points.Length;
-        public bool HasAttributes => Attributes != null && ViewToSource != null;
-        public bool HasSourceColors => SourcePoints != null && ViewToSource != null;
+        public bool HasAttributes => Attributes != null;
+        public bool HasSourceColors => SourcePoints != null;
     }
 }

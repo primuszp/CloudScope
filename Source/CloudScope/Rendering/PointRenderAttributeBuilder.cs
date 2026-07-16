@@ -8,8 +8,7 @@ internal static class PointRenderAttributeBuilder
     {
         var attributes = data.Attributes
             ?? throw new InvalidOperationException("Point render attributes are missing.");
-        int[] viewToSource = data.ViewToSource
-            ?? throw new InvalidOperationException("Point render source map is missing.");
+        int[]? viewToSource = data.ViewToSource;
 
         double zSpan = attributes.MaxZ - attributes.MinZ;
         for (int i = 0; i < destination.Length; i++)
@@ -18,7 +17,7 @@ internal static class PointRenderAttributeBuilder
             int viewIndex = data.RenderOrder is { Length: > 0 } renderOrder
                 ? renderOrder[orderedIndex]
                 : orderedIndex;
-            int sourceIndex = viewToSource[viewIndex];
+            int sourceIndex = viewToSource is null ? viewIndex : viewToSource[viewIndex];
             float zNormalized = zSpan > 0
                 ? (float)((attributes.Z[sourceIndex] - attributes.MinZ) / zSpan)
                 : 0.5f;

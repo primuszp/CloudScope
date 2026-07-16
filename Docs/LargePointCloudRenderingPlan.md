@@ -2,18 +2,19 @@
 
 ## Current Constraints
 
-- The renderer uploads one flat `PointData[]` buffer per visible view.
+- OpenGL uploads one flat resident `PointData[]` buffer; Metal splits the resident set into one-million-point GPU buffers.
 - Frame-time reduction is currently a prefix draw budget over a progressive render-order GPU buffer: OpenGL and Metal draw points from index `0` to `drawCount`, but the buffer prefix is now sampled instead of source-record ordered.
-- `PointCloudLoader.PrepareProgressiveSubsample` exists, but the loaded source array now also anchors labels, instances, LAS class export, and attribute arrays. Reordering source points directly would break stable source-index semantics unless every dependent array and map is updated together.
+- The source array anchors labels, instances, LAS class export, and attribute arrays, so it is never reordered.
 - Filters rebuild `ViewPoints`, rebuild `ViewToSource`, recolor on CPU, and reupload the whole visible point buffer. Color-source changes now keep the current view/map/render order and only recolor the visible point buffer before reupload.
-- Metal and OpenGL cap resident/drawn points by environment-tunable constants. This is still a coarse whole-buffer cap, not chunked GPU residency.
+- Metal and OpenGL cap resident/drawn points through shared, environment-tunable limits. The progressive render order stores at most five million indices instead of allocating an entry for every loaded point. This is still a coarse resident cap, not spatial GPU residency.
+- An absent `ViewToSource` map means identity for an unfiltered cloud. The explicit map is allocated only for filtered views, avoiding another four bytes per loaded point in the common path.
 
 ## Phase 1: Make Existing Budget Correct
 
 1. Done: add a render-order indirection to `PointCloudDataset`.
    Keep `SourcePoints` in LAS/source order, and create a separate progressive `int[] RenderOrder` or GPU index buffer for overview rendering.
-2. Done: build the first render-order prefix as a deterministic uniform sample of source indices.
-   This replaces the biased "first N records" overview while preserving stable source indices for labels and LAS export.
+2. Done: build a compact deterministic permutation prefix of source indices.
+   A coprime modular stride visits source indices without repetition and distributes the overview across the input while preserving stable source indices. Only the GPU-resident prefix is stored, reducing render-order memory from four bytes per loaded point to at most about 20 MB.
 3. Done: teach `IPointCloudRenderer.Upload` to accept a render descriptor.
    The current implementation uploads GPU point buffers in render order. The descriptor already carries attributes and source maps for the shader-color path.
 4. Done: apply the same render-order path after filters.
@@ -26,10 +27,10 @@
    No-op color-source requests now skip recolor and upload. OpenGL attribute-backed views now switch RGB/Height/Class/Intensity/Return through a shader uniform without CPU recolor or GPU point-buffer reupload.
 1. Started: split point storage into mostly immutable geometry plus mutable/lightweight attributes.
    OpenGL now uploads a separate per-point attribute buffer for Z, intensity, class, return, and original RGB.
-2. Started: move color-source switching into shaders.
-   OpenGL can shade RGB, height, class, intensity, and return from the uploaded attribute buffer. Metal still uses the CPU-colored fallback.
-3. Started: reduce CPU recolor work while filtering.
-   OpenGL skips CPU recolor during filter rebuilds because the shader derives colors from attributes. Metal still recolors on CPU.
+2. Done: move color-source switching into shaders.
+   OpenGL and Metal shade RGB, height, class, intensity, and return from uploaded attribute buffers.
+3. Done: reduce CPU recolor work while filtering.
+   Attribute-capable renderers switch color source without rebuilding the filtered view or reuploading point geometry.
 4. Update annotation rendering incrementally.
    Selections should update sparse annotation buffers or dirty ranges instead of rebuilding a full highlight point buffer.
 5. Keep the old CPU-colored path only as a fallback for backends that do not support the attribute shader path.

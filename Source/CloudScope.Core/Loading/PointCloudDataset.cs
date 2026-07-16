@@ -31,7 +31,7 @@ namespace CloudScope.Loading
             _colorSource = hasColor ? ColorSource.Rgb : ColorSource.Height;
             ViewPoints = sourcePoints;
             VisibleCount = loadedCount;
-            ViewToSource = IdentityMap(loadedCount);
+            ViewToSource = null;
             RenderOrder = BuildProgressiveRenderOrder(loadedCount, RenderOrderSeed);
         }
 
@@ -45,8 +45,8 @@ namespace CloudScope.Loading
         /// storage are keyed by source index so they stay valid across filter/color changes.</summary>
         public PointData[] SourcePoints => _sourcePoints;
 
-        /// <summary>Maps a visible (ViewPoints) index to its source index. Identity when unfiltered.</summary>
-        public int[] ViewToSource { get; private set; }
+        /// <summary>Maps a visible (ViewPoints) index to its source index. Null means identity.</summary>
+        public int[]? ViewToSource { get; private set; }
         /// <summary>Visible-point draw order. The prefix is an unbiased overview sample for budgeted rendering.</summary>
         public int[]? RenderOrder { get; private set; }
         public string FilterDescription => _filter?.Description ?? "None";
@@ -96,7 +96,7 @@ namespace CloudScope.Loading
                     ViewPoints = _sourcePoints;
                 }
                 VisibleCount = ViewPoints.Length;
-                ViewToSource = IdentityMap(LoadedCount);
+                ViewToSource = null;
                 RenderOrder = BuildProgressiveRenderOrder(VisibleCount, RenderOrderSeed);
                 return;
             }
@@ -121,29 +121,45 @@ namespace CloudScope.Loading
             RenderOrder = BuildProgressiveRenderOrder(VisibleCount, RenderOrderSeed);
         }
 
-        private static int[] IdentityMap(int count)
-        {
-            var map = new int[count];
-            for (int i = 0; i < count; i++) map[i] = i;
-            return map;
-        }
-
         private static int[]? BuildProgressiveRenderOrder(int count, int seed)
         {
             if (count <= 1)
                 return null;
 
-            var order = IdentityMap(count);
             int samplePrefix = ComputeProgressiveSamplePrefix(count);
+            var order = new int[samplePrefix];
             var rng = new Random(seed);
-
+            int offset = rng.Next(count);
+            int stride = FindCoprimeStride(count, rng);
             for (int i = 0; i < samplePrefix; i++)
-            {
-                int j = rng.Next(i, count);
-                (order[i], order[j]) = (order[j], order[i]);
-            }
+                order[i] = (int)((offset + (long)i * stride) % count);
 
             return order;
+        }
+
+        private static int FindCoprimeStride(int count, Random rng)
+        {
+            int stride = rng.Next(1, count);
+            while (GreatestCommonDivisor(stride, count) != 1)
+            {
+                stride++;
+                if (stride == count)
+                    stride = 1;
+            }
+
+            return stride;
+        }
+
+        private static int GreatestCommonDivisor(int left, int right)
+        {
+            while (right != 0)
+            {
+                int remainder = left % right;
+                left = right;
+                right = remainder;
+            }
+
+            return left;
         }
 
         private static int ComputeProgressiveSamplePrefix(int count)
