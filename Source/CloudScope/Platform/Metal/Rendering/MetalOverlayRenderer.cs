@@ -13,6 +13,8 @@ namespace CloudScope.Platform.Metal.Rendering
         private MTLBuffer _crosshairBuffer;
         private MTLBuffer _modeBuffer;
         private MTLBuffer _pivotBuffer;
+        private readonly float[] _crosshairVertices = new float[12];
+        private readonly float[] _modeVertices = new float[12];
 
         public void Initialize()
         {
@@ -41,13 +43,12 @@ namespace CloudScope.Platform.Metal.Rendering
         {
             if (frameData is not MetalFrameState frame) return;
             _renderer.SetFrame(frame);
-            float sx = 15f / width;
-            float sy = 15f / height;
-            _renderer.UpdateBuffer(ref _crosshairBuffer, new[]
-            {
-                -sx, 0f, 0f,  sx, 0f, 0f,
-                 0f, -sy, 0f, 0f, sy, 0f,
-            });
+            Vector2 extent = OverlayLayout.CrosshairExtent(width, height);
+            FillCrosshairVertices(_crosshairVertices, Vector2.Zero, extent);
+            _renderer.UpdateBuffer(ref _crosshairBuffer, _crosshairVertices);
+            Matrix4 shadow = Matrix4.CreateTranslation(1f / width, -1f / height, 0f);
+            _renderer.Draw(_crosshairBuffer, 4, MTLPrimitiveType.Line,
+                shadow, new Vector4(0f, 0f, 0f, alpha * 0.55f), depthTest: false);
             _renderer.Draw(_crosshairBuffer, 4, MTLPrimitiveType.Line,
                 Matrix4.Identity, new Vector4(0.55f, 0.55f, 0.55f, alpha), depthTest: false);
         }
@@ -56,21 +57,11 @@ namespace CloudScope.Platform.Metal.Rendering
         {
             if (frameData is not MetalFrameState frame) return;
             _renderer.SetFrame(frame);
-            float x  = -1f + 30f / width;
-            float y  =  1f - 30f / height;
-            float sx = 8f / width;
-            float sy = 8f / height;
-            _renderer.UpdateBuffer(ref _modeBuffer, new[]
-            {
-                x - sx, y, 0f,  x + sx, y, 0f,
-                x, y - sy, 0f,  x, y + sy, 0f,
-            });
-            Vector4 color = toolType switch
-            {
-                SelectionToolType.Sphere   => new Vector4(1f,    0.6f,  0.15f, 0.9f),
-                SelectionToolType.Cylinder => new Vector4(0.60f, 0.25f, 1f,    0.9f),
-                _                          => new Vector4(0f,    0.8f,  1f,    0.9f),
-            };
+            (Vector2 center, Vector2 extent) = OverlayLayout.ModeIndicator(width, height);
+            FillCrosshairVertices(_modeVertices, center, extent);
+            _renderer.UpdateBuffer(ref _modeBuffer, _modeVertices);
+            Vector3 rgb = OverlayLayout.ModeColor(toolType);
+            Vector4 color = new(rgb, 0.9f);
             _renderer.Draw(_modeBuffer, 4, MTLPrimitiveType.Line,
                 Matrix4.Identity, color, depthTest: false);
         }
@@ -89,5 +80,13 @@ namespace CloudScope.Platform.Metal.Rendering
              0f, -0.55f, 0f, 0f,  0.55f, 0f,
              0f, 0f, -0.55f, 0f,  0f,  0.55f,
         };
+
+        private static void FillCrosshairVertices(float[] vertices, Vector2 center, Vector2 extent)
+        {
+            vertices[0] = center.X - extent.X; vertices[1] = center.Y; vertices[2] = 0f;
+            vertices[3] = center.X + extent.X; vertices[4] = center.Y; vertices[5] = 0f;
+            vertices[6] = center.X; vertices[7] = center.Y - extent.Y; vertices[8] = 0f;
+            vertices[9] = center.X; vertices[10] = center.Y + extent.Y; vertices[11] = 0f;
+        }
     }
 }
