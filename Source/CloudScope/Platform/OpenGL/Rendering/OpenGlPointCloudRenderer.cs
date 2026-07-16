@@ -20,6 +20,8 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private bool _hasAttributes;
         private bool _hasSourceColors;
         private ColorSource _colorSource = ColorSource.Rgb;
+        private PointRenderChunk[] _chunks = Array.Empty<PointRenderChunk>();
+        private PointDrawRange[] _drawRanges = Array.Empty<PointDrawRange>();
 
         private const string VertSrc = @"
 #version 330 core
@@ -112,6 +114,8 @@ void main()
             _hasAttributes = data.HasAttributes;
             _hasSourceColors = data.HasSourceColors;
             _colorSource = data.ColorSource;
+            _chunks = PointRenderUploadBuilder.BuildChunks(data, _pointCount);
+            _drawRanges = new PointDrawRange[_chunks.Length];
 
             if (_pointCount == 0)
                 return;
@@ -198,9 +202,15 @@ void main()
             GL.Uniform1(_uColorSource, PointRenderAttributeBuilder.MapColorSource(_colorSource));
             GL.Uniform1(_uHasAttributes, _hasAttributes ? 1 : 0);
             GL.BindVertexArray(_vao);
-            GL.DrawArrays(PrimitiveType.Points, 0, drawCount);
+            int rangeCount = PointChunkDrawPlanner.FillDrawRanges(
+                _chunks, ref view, ref projection, drawCount, _drawRanges, out int drawnPointCount);
+            for (int i = 0; i < rangeCount; i++)
+            {
+                PointDrawRange range = _drawRanges[i];
+                GL.DrawArrays(PrimitiveType.Points, range.First, range.Count);
+            }
 
-            return drawCount;
+            return drawnPointCount;
         }
 
         public void Dispose()
@@ -228,6 +238,8 @@ void main()
                 GL.DeleteVertexArray(_vao);
                 _vao = -1;
             }
+            _chunks = Array.Empty<PointRenderChunk>();
+            _drawRanges = Array.Empty<PointDrawRange>();
         }
 
         private void UploadClassPalette()

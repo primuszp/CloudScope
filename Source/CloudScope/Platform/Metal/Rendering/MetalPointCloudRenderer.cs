@@ -33,6 +33,8 @@ namespace CloudScope.Platform.Metal.Rendering
         private bool _hasAttributes;
         private bool _hasSourceColors;
         private ColorSource _colorSource = ColorSource.Rgb;
+        private PointRenderChunk[] _chunks = Array.Empty<PointRenderChunk>();
+        private PointDrawRange[] _drawRanges = Array.Empty<PointDrawRange>();
 
         // Data uploaded before Initialize() — deferred to first Initialize() call.
         private PointCloudRenderData? _pendingData;
@@ -76,6 +78,8 @@ namespace CloudScope.Platform.Metal.Rendering
             _hasAttributes = data.HasAttributes;
             _hasSourceColors = data.HasSourceColors;
             _colorSource = data.ColorSource;
+            _chunks = PointRenderUploadBuilder.BuildChunks(data, _pointCount, PointsPerChunk);
+            _drawRanges = new PointDrawRange[_chunks.Length];
             ReleasePointChunks();
             ReleaseAttributeChunks();
 
@@ -145,20 +149,20 @@ namespace CloudScope.Platform.Metal.Rendering
                 encoder.SetVertexBuffer(uniformBuffer, 0, 1);
             }
 
-            int remaining = drawCount;
-            for (int i = 0; i < _pointChunks.Length && remaining > 0; i++)
+            int rangeCount = PointChunkDrawPlanner.FillDrawRanges(
+                _chunks, ref view, ref projection, drawCount, _drawRanges, out int drawnPointCount);
+            for (int i = 0; i < rangeCount; i++)
             {
-                int chunkDrawCount = Math.Min(_chunkCounts[i], remaining);
-                if (chunkDrawCount <= 0)
-                    break;
+                PointDrawRange range = _drawRanges[i];
+                int chunkIndex = range.First / PointsPerChunk;
+                int firstInChunk = range.First - chunkIndex * PointsPerChunk;
 
-                encoder.SetVertexBuffer(_pointChunks[i], 0, 0);
+                encoder.SetVertexBuffer(_pointChunks[chunkIndex], 0, 0);
                 if (useAttributePipeline)
-                    encoder.SetVertexBuffer(_attributeChunks[i], 0, 2);
-                encoder.DrawPrimitives(MTLPrimitiveType.Point, 0, (ulong)chunkDrawCount);
-                remaining -= chunkDrawCount;
+                    encoder.SetVertexBuffer(_attributeChunks[chunkIndex], 0, 2);
+                encoder.DrawPrimitives(MTLPrimitiveType.Point, (ulong)firstInChunk, (ulong)range.Count);
             }
-            return drawCount;
+            return drawnPointCount;
         }
 
         public void Dispose()
@@ -184,6 +188,8 @@ namespace CloudScope.Platform.Metal.Rendering
             _attributePipeline = default;
             _depthState = default;
             _pendingData = null;
+            _chunks = Array.Empty<PointRenderChunk>();
+            _drawRanges = Array.Empty<PointDrawRange>();
         }
 
         // ── Private ───────────────────────────────────────────────────────────────

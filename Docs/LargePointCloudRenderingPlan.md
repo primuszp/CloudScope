@@ -41,6 +41,8 @@
    Render-order resolution and chunk boundaries now have one shared implementation. Spatial ordering can be added here without creating separate backend algorithms.
 0a. Done: pool OpenGL upload scratch buffers.
    Ordered point and attribute uploads use `ArrayPool<T>` instead of allocating up to roughly 260 MB of short-lived managed arrays for a five-million-point resident set. Metal continues to write directly into managed GPU buffers.
+0b. Done: add a shared chunk draw planner.
+   Both backends build identical one-million-point chunk bounds, apply the same conservative viewport-frustum test, and distribute the frame budget over visible chunks without per-frame allocations. Chunk bounds become more selective once spatial ordering replaces the current progressive upload order.
 1. Build a chunked spatial hierarchy during/after load.
    A loose octree or fixed grid with Morton ordering is sufficient; each leaf owns a compact source-index span and a local bounding box.
 2. Store multiple LOD payloads per chunk.
