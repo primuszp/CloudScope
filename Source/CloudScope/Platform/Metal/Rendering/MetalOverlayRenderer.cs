@@ -1,4 +1,5 @@
 using System.Runtime.Versioning;
+using System.Runtime.CompilerServices;
 using CloudScope.Rendering;
 using CloudScope.Selection;
 using OpenTK.Mathematics;
@@ -16,6 +17,10 @@ namespace CloudScope.Platform.Metal.Rendering
         private PivotLineBatch[] _pivotBatches = Array.Empty<PivotLineBatch>();
         private readonly float[] _crosshairVertices = new float[12];
         private readonly float[] _modeVertices = new float[12];
+        private MTLRenderPipelineState _pivotPointPipeline;
+        private MTLDepthStencilState _pivotPointDepthState;
+        private MTLBuffer _pivotPointBuffer;
+        private MTLBuffer _pivotPointUniforms;
 
         public void Initialize()
         {
@@ -24,6 +29,13 @@ namespace CloudScope.Platform.Metal.Rendering
             _pivotBuffers = new MTLBuffer[_pivotBatches.Length];
             for (int i = 0; i < _pivotBatches.Length; i++)
                 _pivotBuffers[i] = _renderer.CreateStaticBuffer(_pivotBatches[i].Positions);
+            var device = MetalFrameContext.Device;
+            _pivotPointPipeline = MetalShaderLibrary.CreatePivotPointPipeline(
+                device, MTLPixelFormat.BGRA8Unorm, MTLPixelFormat.Depth32Float);
+            _pivotPointDepthState = MetalShaderLibrary.CreateDepthState(device, depthWrite: false);
+            _pivotPointBuffer = CreatePivotPointBuffer();
+            _pivotPointUniforms = device.NewBuffer(
+                (ulong)Unsafe.SizeOf<MetalPointUniforms>(), MTLResourceOptions.ResourceStorageModeShared);
         }
 
         public void RenderPivotIndicator(
@@ -47,6 +59,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 color.W = alpha * 0.20f;
                 _renderer.Draw(_pivotBuffers[i], batch.VertexCount, MTLPrimitiveType.Line, mvp, color, depthTest: false);
             }
+            RenderPivotPoint(frame, ref view, ref proj, pivot, 11f + 11f * fade + flash * 14f, alpha);
         }
 
         public void RenderCenterCrosshair(IRenderFrameData frameData, int width, int height, float alpha)
@@ -84,6 +97,12 @@ namespace CloudScope.Platform.Metal.Rendering
                 MetalPrimitiveRenderer.Release(ref _pivotBuffers[i]);
             _pivotBuffers = Array.Empty<MTLBuffer>();
             _pivotBatches = Array.Empty<PivotLineBatch>();
+            MetalPrimitiveRenderer.Release(ref _pivotPointBuffer);
+            MetalPrimitiveRenderer.Release(ref _pivotPointUniforms);
+            Release(_pivotPointPipeline.NativePtr);
+            Release(_pivotPointDepthState.NativePtr);
+            _pivotPointPipeline = default;
+            _pivotPointDepthState = default;
             _renderer.Dispose();
         }
 
@@ -94,5 +113,45 @@ namespace CloudScope.Platform.Metal.Rendering
             vertices[6] = center.X; vertices[7] = center.Y - extent.Y; vertices[8] = 0f;
             vertices[9] = center.X; vertices[10] = center.Y + extent.Y; vertices[11] = 0f;
         }
+
+        private unsafe MTLBuffer CreatePivotPointBuffer()
+        {
+            var point = new PointData { R = 1f, G = 0.92f, B = 0.2f };
+            ulong byteSize = (ulong)Unsafe.SizeOf<PointData>();
+            MTLBuffer buffer = MetalFrameContext.Device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
+            Buffer.MemoryCopy(&point, buffer.Contents.ToPointer(), byteSize, byteSize);
+            buffer.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
+            return buffer;
+        }
+
+        private void RenderPivotPoint(
+            MetalFrameState frame,
+            ref Matrix4 view,
+            ref Matrix4 projection,
+            Vector3 pivot,
+            float pointSize,
+            float alpha)
+        {
+            var encoder = frame.RenderCommandEncoder;
+            if (encoder.NativePtr == IntPtr.Zero || _pivotPointPipeline.NativePtr == IntPtr.Zero)
+                return;
+
+            Matrix4 pointView = Matrix4.CreateTranslation(pivot) * view;
+            MetalBufferWriter.Write(_pivotPointUniforms, new MetalPointUniforms(pointView, projection, pointSize, alpha));
+            encoder.SetRenderPipelineState(_pivotPointPipeline);
+            encoder.SetDepthStencilState(_pivotPointDepthState);
+            encoder.SetVertexBuffer(_pivotPointBuffer, 0, 0);
+            encoder.SetVertexBuffer(_pivotPointUniforms, 0, 1);
+            encoder.DrawPrimitives(MTLPrimitiveType.Point, 0, 1);
+        }
+
+        private static void Release(IntPtr nativePtr)
+        {
+            if (nativePtr != IntPtr.Zero)
+                NativeRelease(nativePtr);
+        }
+
+        [System.Runtime.InteropServices.DllImport("libobjc.dylib", EntryPoint = "objc_release")]
+        private static extern void NativeRelease(IntPtr obj);
     }
 }
