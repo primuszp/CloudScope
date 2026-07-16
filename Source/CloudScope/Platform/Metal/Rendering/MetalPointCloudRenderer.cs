@@ -149,7 +149,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 var attributeUniformBuffer = _attributeUniformBuffers[_uniformBufferIndex];
                 MetalBufferWriter.Write(
                     attributeUniformBuffer,
-                    new MetalAttributePointUniforms(view, projection, pointSize, MapColorSource(_colorSource)));
+                    new MetalAttributePointUniforms(view, projection, pointSize, PointRenderAttributeBuilder.MapColorSource(_colorSource)));
                 encoder.SetVertexBuffer(attributeUniformBuffer, 0, 1);
                 encoder.SetVertexBuffer(_classPaletteBuffer, 0, 3);
             }
@@ -243,16 +243,10 @@ namespace CloudScope.Platform.Metal.Rendering
             if (residentCount <= 0)
                 return;
 
-            var attributes = data.Attributes
-                ?? throw new InvalidOperationException("Point render attributes are missing.");
-            int[] viewToSource = data.ViewToSource
-                ?? throw new InvalidOperationException("Point render source map is missing.");
-
             var device = MetalFrameContext.Device;
             int chunkCount = (residentCount + PointsPerChunk - 1) / PointsPerChunk;
             _attributeChunks = new MTLBuffer[chunkCount];
 
-            double zSpan = attributes.MaxZ - attributes.MinZ;
             for (int chunk = 0; chunk < chunkCount; chunk++)
             {
                 int pointOffset = chunk * PointsPerChunk;
@@ -261,27 +255,7 @@ namespace CloudScope.Platform.Metal.Rendering
 
                 var buffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
                 var dst = (PointRenderAttributeData*)buffer.Contents.ToPointer();
-                for (int i = 0; i < count; i++)
-                {
-                    int viewIndex = data.RenderOrder is { Length: > 0 } renderOrder ? renderOrder[pointOffset + i] : pointOffset + i;
-                    int sourceIndex = viewToSource[viewIndex];
-                    float zNormalized = zSpan > 0
-                        ? (float)((attributes.Z[sourceIndex] - attributes.MinZ) / zSpan)
-                        : 0.5f;
-                    zNormalized = Math.Clamp(zNormalized, 0f, 1f);
-                    float intensityNormalized = attributes.Intensity[sourceIndex] / 65535f;
-                    PointData rgbSource = data.SourcePoints is { } sourcePoints
-                        ? sourcePoints[sourceIndex]
-                        : data.Points[viewIndex];
-                    dst[i] = new PointRenderAttributeData(
-                        zNormalized,
-                        intensityNormalized,
-                        attributes.Class[sourceIndex],
-                        attributes.ReturnNumber[sourceIndex],
-                        rgbSource.R,
-                        rgbSource.G,
-                        rgbSource.B);
-                }
+                PointRenderAttributeBuilder.Fill(data, new Span<PointRenderAttributeData>(dst, count), pointOffset);
 
                 buffer.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
                 _attributeChunks[chunk] = buffer;
@@ -323,15 +297,6 @@ namespace CloudScope.Platform.Metal.Rendering
             }
             _attributeChunks = Array.Empty<MTLBuffer>();
         }
-
-        private static int MapColorSource(ColorSource source) => source switch
-        {
-            ColorSource.Height => 1,
-            ColorSource.Class => 2,
-            ColorSource.Intensity => 3,
-            ColorSource.Return => 4,
-            _ => 0
-        };
 
         [System.Runtime.InteropServices.DllImport("libobjc.dylib", EntryPoint = "objc_release")]
         private static extern void NativeRelease(IntPtr obj);
