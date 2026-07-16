@@ -107,40 +107,33 @@ void main()
         public void Upload(PointCloudRenderData data)
         {
             ReleasePointBuffers();
-            PointData[] points = data.Points;
-            int[]? renderOrder = data.RenderOrder;
             int requestedCount = data.Count;
             _pointCount = Math.Min(requestedCount, Limits.MaxResidentPoints);
             _hasAttributes = data.HasAttributes;
             _hasSourceColors = data.HasSourceColors;
             _colorSource = data.ColorSource;
-            _chunks = PointRenderUploadBuilder.BuildChunks(data, _pointCount);
-            _drawRanges = new PointDrawRange[_chunks.Length];
 
             if (_pointCount == 0)
                 return;
+
+            using PointSpatialUploadLayout layout = PointRenderUploadBuilder.BuildSpatialLayout(data, _pointCount);
+            _chunks = layout.Chunks;
+            _drawRanges = new PointDrawRange[_chunks.Length];
 
             _vao = GL.GenVertexArray();
             GL.BindVertexArray(_vao);
 
             _vbo = GL.GenBuffer();
             GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
-            if (renderOrder is { Length: > 0 })
+            PointData[] uploadPoints = ArrayPool<PointData>.Shared.Rent(_pointCount);
+            try
             {
-                PointData[] uploadPoints = ArrayPool<PointData>.Shared.Rent(_pointCount);
-                try
-                {
-                    PointRenderUploadBuilder.FillPoints(data, uploadPoints.AsSpan(0, _pointCount));
-                    GL.BufferData(BufferTarget.ArrayBuffer, _pointCount * PointStride, uploadPoints, BufferUsageHint.StaticDraw);
-                }
-                finally
-                {
-                    ArrayPool<PointData>.Shared.Return(uploadPoints);
-                }
+                PointRenderUploadBuilder.FillPoints(data, uploadPoints.AsSpan(0, _pointCount), uploadOrder: layout.UploadOrder);
+                GL.BufferData(BufferTarget.ArrayBuffer, _pointCount * PointStride, uploadPoints, BufferUsageHint.StaticDraw);
             }
-            else
+            finally
             {
-                GL.BufferData(BufferTarget.ArrayBuffer, _pointCount * PointStride, points, BufferUsageHint.StaticDraw);
+                ArrayPool<PointData>.Shared.Return(uploadPoints);
             }
 
             GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, PointStride, 0);
@@ -155,7 +148,8 @@ void main()
                 PointRenderAttributeData[] uploadAttributes = ArrayPool<PointRenderAttributeData>.Shared.Rent(_pointCount);
                 try
                 {
-                    PointRenderAttributeBuilder.Fill(data, uploadAttributes.AsSpan(0, _pointCount));
+                    PointRenderAttributeBuilder.Fill(
+                        data, uploadAttributes.AsSpan(0, _pointCount), uploadOrder: layout.UploadOrder);
                     GL.BufferData(
                         BufferTarget.ArrayBuffer,
                         _pointCount * AttributeStride,

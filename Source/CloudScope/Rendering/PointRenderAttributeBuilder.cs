@@ -4,7 +4,11 @@ namespace CloudScope.Rendering;
 
 internal static class PointRenderAttributeBuilder
 {
-    public static void Fill(PointCloudRenderData data, Span<PointRenderAttributeData> destination, int pointOffset = 0)
+    public static void Fill(
+        PointCloudRenderData data,
+        Span<PointRenderAttributeData> destination,
+        int pointOffset = 0,
+        int[]? uploadOrder = null)
     {
         var attributes = data.Attributes
             ?? throw new InvalidOperationException("Point render attributes are missing.");
@@ -14,9 +18,11 @@ internal static class PointRenderAttributeBuilder
         for (int i = 0; i < destination.Length; i++)
         {
             int orderedIndex = pointOffset + i;
-            int viewIndex = data.RenderOrder is { Length: > 0 } renderOrder
-                ? renderOrder[orderedIndex]
-                : orderedIndex;
+            int viewIndex = uploadOrder is not null
+                ? uploadOrder[orderedIndex]
+                : data.RenderOrder is { Length: > 0 } renderOrder
+                    ? renderOrder[orderedIndex]
+                    : orderedIndex;
             int sourceIndex = viewToSource is null ? viewIndex : viewToSource[viewIndex];
             float zNormalized = zSpan > 0
                 ? (float)((attributes.Z[sourceIndex] - attributes.MinZ) / zSpan)

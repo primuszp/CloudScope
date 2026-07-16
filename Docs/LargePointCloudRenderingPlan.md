@@ -43,6 +43,8 @@
    Ordered point and attribute uploads use `ArrayPool<T>` instead of allocating up to roughly 260 MB of short-lived managed arrays for a five-million-point resident set. Metal continues to write directly into managed GPU buffers.
 0b. Done: add a shared chunk draw planner.
    Both backends build identical one-million-point chunk bounds, apply the same conservative viewport-frustum test, and distribute the frame budget over visible chunks without per-frame allocations. Chunk bounds become more selective once spatial ordering replaces the current progressive upload order.
+0c. Done: add a coarse spatial upload layout.
+   The resident sample is counting-sorted into a shared 4x4x4 grid. Up to 64 cells receive tight bounds, identical point/attribute ordering on both backends, and proportional draw budgets. The temporary upload order comes from `ArrayPool<int>` and is returned after GPU upload.
 1. Build a chunked spatial hierarchy during/after load.
    A loose octree or fixed grid with Morton ordering is sufficient; each leaf owns a compact source-index span and a local bounding box.
 2. Store multiple LOD payloads per chunk.

@@ -78,8 +78,6 @@ namespace CloudScope.Platform.Metal.Rendering
             _hasAttributes = data.HasAttributes;
             _hasSourceColors = data.HasSourceColors;
             _colorSource = data.ColorSource;
-            _chunks = PointRenderUploadBuilder.BuildChunks(data, _pointCount, PointsPerChunk);
-            _drawRanges = new PointDrawRange[_chunks.Length];
             ReleasePointChunks();
             ReleaseAttributeChunks();
 
@@ -93,10 +91,13 @@ namespace CloudScope.Platform.Metal.Rendering
             if (_pointCount == 0)
                 return;
 
-            UploadToGpu(data, _pointCount);
+            using PointSpatialUploadLayout layout = PointRenderUploadBuilder.BuildSpatialLayout(data, _pointCount);
+            _chunks = layout.Chunks;
+            _drawRanges = new PointDrawRange[_chunks.Length];
+            UploadToGpu(data, _pointCount, layout.UploadOrder);
 
             if (_hasAttributes)
-                UploadAttributesToGpu(data, _pointCount);
+                UploadAttributesToGpu(data, _pointCount, layout.UploadOrder);
         }
 
         public void UpdateColorSource(ColorSource source) => _colorSource = source;
@@ -154,13 +155,20 @@ namespace CloudScope.Platform.Metal.Rendering
             for (int i = 0; i < rangeCount; i++)
             {
                 PointDrawRange range = _drawRanges[i];
-                int chunkIndex = range.First / PointsPerChunk;
-                int firstInChunk = range.First - chunkIndex * PointsPerChunk;
-
-                encoder.SetVertexBuffer(_pointChunks[chunkIndex], 0, 0);
-                if (useAttributePipeline)
-                    encoder.SetVertexBuffer(_attributeChunks[chunkIndex], 0, 2);
-                encoder.DrawPrimitives(MTLPrimitiveType.Point, (ulong)firstInChunk, (ulong)range.Count);
+                int first = range.First;
+                int remaining = range.Count;
+                while (remaining > 0)
+                {
+                    int bufferIndex = first / PointsPerChunk;
+                    int firstInBuffer = first - bufferIndex * PointsPerChunk;
+                    int count = Math.Min(remaining, _chunkCounts[bufferIndex] - firstInBuffer);
+                    encoder.SetVertexBuffer(_pointChunks[bufferIndex], 0, 0);
+                    if (useAttributePipeline)
+                        encoder.SetVertexBuffer(_attributeChunks[bufferIndex], 0, 2);
+                    encoder.DrawPrimitives(MTLPrimitiveType.Point, (ulong)firstInBuffer, (ulong)count);
+                    first += count;
+                    remaining -= count;
+                }
             }
             return drawnPointCount;
         }
@@ -194,7 +202,7 @@ namespace CloudScope.Platform.Metal.Rendering
 
         // ── Private ───────────────────────────────────────────────────────────────
 
-        private unsafe void UploadToGpu(PointCloudRenderData data, int residentCount)
+        private unsafe void UploadToGpu(PointCloudRenderData data, int residentCount, int[]? uploadOrder)
         {
             if (residentCount <= 0) return;
 
@@ -211,7 +219,7 @@ namespace CloudScope.Platform.Metal.Rendering
 
                 var buffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
                 var destination = new Span<PointData>(buffer.Contents.ToPointer(), count);
-                PointRenderUploadBuilder.FillPoints(data, destination, pointOffset);
+                PointRenderUploadBuilder.FillPoints(data, destination, pointOffset, uploadOrder);
                 buffer.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
 
                 _pointChunks[chunk] = buffer;
@@ -219,7 +227,7 @@ namespace CloudScope.Platform.Metal.Rendering
             }
         }
 
-        private unsafe void UploadAttributesToGpu(PointCloudRenderData data, int residentCount)
+        private unsafe void UploadAttributesToGpu(PointCloudRenderData data, int residentCount, int[]? uploadOrder)
         {
             if (residentCount <= 0)
                 return;
@@ -236,7 +244,8 @@ namespace CloudScope.Platform.Metal.Rendering
 
                 var buffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
                 var dst = (PointRenderAttributeData*)buffer.Contents.ToPointer();
-                PointRenderAttributeBuilder.Fill(data, new Span<PointRenderAttributeData>(dst, count), pointOffset);
+                PointRenderAttributeBuilder.Fill(
+                    data, new Span<PointRenderAttributeData>(dst, count), pointOffset, uploadOrder);
 
                 buffer.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
                 _attributeChunks[chunk] = buffer;
