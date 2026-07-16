@@ -204,48 +204,14 @@ void main()
         {
             if (_pivotVao != -1) return;
 
-            const int segments = 96;
-            _pivotVertexCount = 6 + 3 * segments * 2;
-            float[] pivotData = new float[_pivotVertexCount * 6];
-            int idx = 0;
-
-            void AddV(float x, float y, float z, float r, float g, float b)
-            {
-                pivotData[idx++] = x; pivotData[idx++] = y; pivotData[idx++] = z;
-                pivotData[idx++] = r; pivotData[idx++] = g; pivotData[idx++] = b;
-            }
-
-            const float ax = 0.55f;
-            AddV(-ax, 0f, 0f, 1f, 0.3f, 0.3f); AddV(ax, 0f, 0f, 1f, 0.3f, 0.3f);
-            AddV(0f, -ax, 0f, 0.3f, 1f, 0.3f); AddV(0f, ax, 0f, 0.3f, 1f, 0.3f);
-            AddV(0f, 0f, -ax, 0.3f, 0.5f, 1f); AddV(0f, 0f, ax, 0.3f, 0.5f, 1f);
-
-            float step = MathF.PI * 2f / segments;
-            (float r, float g, float b)[] cols = {
-                (1f, 0.35f, 0.35f),
-                (0.35f, 1f, 0.35f),
-                (0.35f, 0.6f, 1f),
-            };
-
-            for (int c = 0; c < 3; c++)
-            {
-                var (cr, cg, cb) = cols[c];
-                for (int i = 0; i < segments; i++)
-                {
-                    float a1 = i * step, a2 = (i + 1) * step;
-                    float c1 = MathF.Cos(a1), s1 = MathF.Sin(a1);
-                    float c2 = MathF.Cos(a2), s2 = MathF.Sin(a2);
-                    if (c == 0) { AddV(0, c1, s1, cr, cg, cb); AddV(0, c2, s2, cr, cg, cb); }
-                    else if (c == 1) { AddV(c1, 0, s1, cr, cg, cb); AddV(c2, 0, s2, cr, cg, cb); }
-                    else { AddV(c1, s1, 0, cr, cg, cb); AddV(c2, s2, 0, cr, cg, cb); }
-                }
-            }
+            PointData[] pivotData = PivotIndicatorGeometry.BuildColoredVertices(PivotIndicatorGeometry.BuildBatches());
+            _pivotVertexCount = pivotData.Length;
 
             _pivotVao = GL.GenVertexArray();
             _pivotVbo = GL.GenBuffer();
             GL.BindVertexArray(_pivotVao);
             GL.BindBuffer(BufferTarget.ArrayBuffer, _pivotVbo);
-            GL.BufferData(BufferTarget.ArrayBuffer, pivotData.Length * sizeof(float), pivotData, BufferUsageHint.StaticDraw);
+            GL.BufferData(BufferTarget.ArrayBuffer, pivotData.Length * 24, pivotData, BufferUsageHint.StaticDraw);
             GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 24, 0);
             GL.EnableVertexAttribArray(0);
             GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, 24, 12);

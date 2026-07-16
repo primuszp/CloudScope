@@ -12,14 +12,18 @@ namespace CloudScope.Platform.Metal.Rendering
         private readonly MetalPrimitiveRenderer _renderer = new();
         private MTLBuffer _crosshairBuffer;
         private MTLBuffer _modeBuffer;
-        private MTLBuffer _pivotBuffer;
+        private MTLBuffer[] _pivotBuffers = Array.Empty<MTLBuffer>();
+        private PivotLineBatch[] _pivotBatches = Array.Empty<PivotLineBatch>();
         private readonly float[] _crosshairVertices = new float[12];
         private readonly float[] _modeVertices = new float[12];
 
         public void Initialize()
         {
             _renderer.EnsureResources();
-            _pivotBuffer = _renderer.CreateStaticBuffer(BuildPivotGeometry());
+            _pivotBatches = PivotIndicatorGeometry.BuildBatches();
+            _pivotBuffers = new MTLBuffer[_pivotBatches.Length];
+            for (int i = 0; i < _pivotBatches.Length; i++)
+                _pivotBuffers[i] = _renderer.CreateStaticBuffer(_pivotBatches[i].Positions);
         }
 
         public void RenderPivotIndicator(
@@ -35,8 +39,14 @@ namespace CloudScope.Platform.Metal.Rendering
             float  scale = camera.PivotIndicatorScaleAt(pivot);
             Matrix4 model = Matrix4.CreateScale(scale) * Matrix4.CreateTranslation(pivot);
             Matrix4 mvp   = model * view * proj;
-            _renderer.Draw(_pivotBuffer, 6, MTLPrimitiveType.Line, mvp,
-                new Vector4(1f, 0.85f, 0.15f, alpha), depthTest: false);
+            for (int i = 0; i < _pivotBatches.Length; i++)
+            {
+                PivotLineBatch batch = _pivotBatches[i];
+                Vector4 color = new(batch.Color, alpha);
+                _renderer.Draw(_pivotBuffers[i], batch.VertexCount, MTLPrimitiveType.Line, mvp, color, depthTest: true);
+                color.W = alpha * 0.20f;
+                _renderer.Draw(_pivotBuffers[i], batch.VertexCount, MTLPrimitiveType.Line, mvp, color, depthTest: false);
+            }
         }
 
         public void RenderCenterCrosshair(IRenderFrameData frameData, int width, int height, float alpha)
@@ -70,16 +80,12 @@ namespace CloudScope.Platform.Metal.Rendering
         {
             MetalPrimitiveRenderer.Release(ref _crosshairBuffer);
             MetalPrimitiveRenderer.Release(ref _modeBuffer);
-            MetalPrimitiveRenderer.Release(ref _pivotBuffer);
+            for (int i = 0; i < _pivotBuffers.Length; i++)
+                MetalPrimitiveRenderer.Release(ref _pivotBuffers[i]);
+            _pivotBuffers = Array.Empty<MTLBuffer>();
+            _pivotBatches = Array.Empty<PivotLineBatch>();
             _renderer.Dispose();
         }
-
-        private static float[] BuildPivotGeometry() => new[]
-        {
-            -0.55f, 0f, 0f,  0.55f, 0f, 0f,
-             0f, -0.55f, 0f, 0f,  0.55f, 0f,
-             0f, 0f, -0.55f, 0f,  0f,  0.55f,
-        };
 
         private static void FillCrosshairVertices(float[] vertices, Vector2 center, Vector2 extent)
         {
