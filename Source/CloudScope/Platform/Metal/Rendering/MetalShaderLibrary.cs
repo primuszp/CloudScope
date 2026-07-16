@@ -13,11 +13,11 @@ namespace CloudScope.Platform.Metal
         private readonly Matrix4 projection;
         private readonly Vector4 point;
 
-        public MetalPointUniforms(Matrix4 view, Matrix4 projection, float pointSize)
+        public MetalPointUniforms(Matrix4 view, Matrix4 projection, float pointSize, float alpha = 1f)
         {
             this.view = view;
             this.projection = projection;
-            point = new Vector4(pointSize, 0f, 0f, 0f);
+            point = new Vector4(pointSize, alpha, 0f, 0f);
         }
     }
 
@@ -77,6 +77,40 @@ namespace CloudScope.Platform.Metal
     [SupportedOSPlatform("macos")]
     internal static class MetalShaderLibrary
     {
+        private const string PivotPointShaderSource =
+@"#include <metal_stdlib>
+using namespace metal;
+
+struct PointVertex { packed_float3 position; packed_float3 color; };
+struct PointUniforms { float4x4 view; float4x4 projection; float4 point; };
+struct VertexOut { float4 position [[position]]; float point_size [[point_size]]; float alpha; };
+
+vertex VertexOut pivot_point_vertex(
+    uint vertexId [[vertex_id]],
+    const device PointVertex* points [[buffer(0)]],
+    constant PointUniforms& uniforms [[buffer(1)]])
+{
+    VertexOut out;
+    out.position = uniforms.projection * uniforms.view * float4(points[vertexId].position, 1.0);
+    out.point_size = uniforms.point.x;
+    out.alpha = uniforms.point.y;
+    return out;
+}
+
+fragment float4 pivot_point_fragment(VertexOut in [[stage_in]], float2 pointCoord [[point_coord]])
+{
+    float2 p = pointCoord * 2.0 - 1.0;
+    float radiusSquared = dot(p, p);
+    if (radiusSquared > 1.0) discard_fragment();
+    float edge = smoothstep(0.85, 1.0, sqrt(radiusSquared));
+    float z = sqrt(1.0 - radiusSquared);
+    float3 normal = float3(p.x, -p.y, z);
+    float diffuse = max(dot(normal, normalize(float3(1.0, 1.5, 1.0))), 0.25);
+    float3 core = float3(1.0, 0.92, 0.2) * diffuse;
+    float3 glow = float3(1.0, 0.7, 0.0);
+    return float4(mix(core, glow, edge), in.alpha);
+}";
+
         private const string PointShaderSource =
 @"#include <metal_stdlib>
 using namespace metal;
@@ -209,6 +243,11 @@ fragment float4 color_fragment(ColorVertexOut in [[stage_in]], constant ColorUni
         public static MTLRenderPipelineState CreateColorPipeline(
             MTLDevice device, MTLPixelFormat colorFormat, MTLPixelFormat depthFormat)
             => CreatePipeline(device, ColorShaderSource, "color_vertex", "color_fragment",
+                colorFormat, depthFormat, blend: true);
+
+        public static MTLRenderPipelineState CreatePivotPointPipeline(
+            MTLDevice device, MTLPixelFormat colorFormat, MTLPixelFormat depthFormat)
+            => CreatePipeline(device, PivotPointShaderSource, "pivot_point_vertex", "pivot_point_fragment",
                 colorFormat, depthFormat, blend: true);
 
         public static MTLDepthStencilState CreateDepthState(MTLDevice device, bool depthWrite)
