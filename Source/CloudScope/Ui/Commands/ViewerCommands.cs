@@ -669,7 +669,7 @@ public sealed class ViewerCommands : ICommandCancellationHandler
     private static bool TryParseOpenArguments(string input, out string path, out long maxPoints, out string error)
     {
         path = "";
-        maxPoints = 50_000_000;
+        maxPoints = 0;
         error = "";
 
         string trimmed = input.Trim();
