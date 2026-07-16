@@ -4,7 +4,7 @@ namespace CloudScope.Rendering
 {
     public readonly record struct PointCloudRenderData(
         PointData[] Points,
-        int[]? RenderOrder = null,
+        ProgressivePointOrder? RenderOrder = null,
         PointCloudAttributes? Attributes = null,
         int[]? ViewToSource = null,
         PointData[]? SourcePoints = null,
@@ -12,7 +12,7 @@ namespace CloudScope.Rendering
     {
         public static PointCloudRenderData Empty { get; } = new(Array.Empty<PointData>());
 
-        public int Count => RenderOrder?.Length ?? Points.Length;
+        public int Count => RenderOrder?.Count ?? Points.Length;
         public bool HasAttributes => Attributes != null;
         public bool HasSourceColors => SourcePoints != null;
     }

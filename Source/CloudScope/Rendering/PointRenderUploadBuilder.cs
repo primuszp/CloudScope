@@ -25,14 +25,14 @@ internal static class PointRenderUploadBuilder
             return;
         }
 
-        if (data.RenderOrder is not { Length: > 0 } renderOrder)
+        if (data.RenderOrder is not { Count: > 0 } renderOrder)
         {
             data.Points.AsSpan(pointOffset, destination.Length).CopyTo(destination);
             return;
         }
 
         for (int i = 0; i < destination.Length; i++)
-            destination[i] = data.Points[renderOrder[pointOffset + i]];
+            destination[i] = data.Points[renderOrder.Resolve(pointOffset + i)];
     }
 
     public static PointSpatialUploadLayout BuildSpatialLayout(PointCloudRenderData data, int pointCount)
@@ -116,7 +116,7 @@ internal static class PointRenderUploadBuilder
     }
 
     private static int ResolveViewIndex(PointCloudRenderData data, int orderedIndex) =>
-        data.RenderOrder is { Length: > 0 } renderOrder ? renderOrder[orderedIndex] : orderedIndex;
+        data.RenderOrder is { Count: > 0 } renderOrder ? renderOrder.Resolve(orderedIndex) : orderedIndex;
 
     private static int GetCell(PointData point, Vector3 min, Vector3 max)
     {

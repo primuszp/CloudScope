@@ -48,7 +48,7 @@ namespace CloudScope.Loading
         /// <summary>Maps a visible (ViewPoints) index to its source index. Null means identity.</summary>
         public int[]? ViewToSource { get; private set; }
         /// <summary>Visible-point draw order. The prefix is an unbiased overview sample for budgeted rendering.</summary>
-        public int[]? RenderOrder { get; private set; }
+        public ProgressivePointOrder? RenderOrder { get; private set; }
         public string FilterDescription => _filter?.Description ?? "None";
         public ColorSource CurrentColorSource => _colorSource;
         public ColorSource DefaultColorSource => _hasColor ? ColorSource.Rgb : ColorSource.Height;
@@ -121,20 +121,15 @@ namespace CloudScope.Loading
             RenderOrder = BuildProgressiveRenderOrder(VisibleCount, RenderOrderSeed);
         }
 
-        private static int[]? BuildProgressiveRenderOrder(int count, int seed)
+        private static ProgressivePointOrder? BuildProgressiveRenderOrder(int count, int seed)
         {
             if (count <= 1)
                 return null;
 
-            int samplePrefix = ComputeProgressiveSamplePrefix(count);
-            var order = new int[samplePrefix];
             var rng = new Random(seed);
             int offset = rng.Next(count);
             int stride = FindCoprimeStride(count, rng);
-            for (int i = 0; i < samplePrefix; i++)
-                order[i] = (int)((offset + (long)i * stride) % count);
-
-            return order;
+            return new ProgressivePointOrder(count, offset, stride);
         }
 
         private static int FindCoprimeStride(int count, Random rng)
@@ -160,14 +155,6 @@ namespace CloudScope.Loading
             }
 
             return left;
-        }
-
-        private static int ComputeProgressiveSamplePrefix(int count)
-        {
-            const int MinimumPrefix = 1_000_000;
-            const int MaximumPrefix = 5_000_000;
-            int ratioPrefix = count / 10;
-            return Math.Min(count, Math.Clamp(ratioPrefix, MinimumPrefix, MaximumPrefix));
         }
 
         private void ApplyColors(PointData[] points, PointFilter? filter)

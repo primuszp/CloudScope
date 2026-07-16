@@ -20,8 +20,8 @@ internal static class PointRenderAttributeBuilder
             int orderedIndex = pointOffset + i;
             int viewIndex = uploadOrder is not null
                 ? uploadOrder[orderedIndex]
-                : data.RenderOrder is { Length: > 0 } renderOrder
-                    ? renderOrder[orderedIndex]
+                : data.RenderOrder is { Count: > 0 } renderOrder
+                    ? renderOrder.Resolve(orderedIndex)
                     : orderedIndex;
             int sourceIndex = viewToSource is null ? viewIndex : viewToSource[viewIndex];
             float zNormalized = zSpan > 0
