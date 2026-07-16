@@ -22,22 +22,30 @@ public abstract class EmbeddedOpenTkNativeHostBase : NativeControlHost, IEmbedde
     public string ActiveLabel => Viewer?.ActiveLabel ?? "";
     public int? ActiveInstanceId => Viewer?.ActiveInstanceId;
 
-    public void LoadPointCloud(PointData[] points, float radius)
+    public void LoadPointCloud(PointData[] points, float radius, Action? completed = null)
     {
         EmbeddedOpenTkViewerHost? viewer = Viewer;
         if (viewer == null)
             return;
 
-        viewer.Enqueue(v => v.LoadPointCloud(points, radius));
+        viewer.Enqueue(v =>
+        {
+            v.LoadPointCloud(points, radius);
+            completed?.Invoke();
+        });
     }
 
-    public void LoadPointCloud(PointCloudDataset dataset)
+    public void LoadPointCloud(PointCloudDataset dataset, Action? completed = null)
     {
         EmbeddedOpenTkViewerHost? viewer = Viewer;
         if (viewer == null)
             return;
 
-        viewer.Enqueue(v => v.LoadPointCloud(dataset));
+        viewer.Enqueue(v =>
+        {
+            v.LoadPointCloud(dataset);
+            completed?.Invoke();
+        });
     }
 
     public void ResetViewer()

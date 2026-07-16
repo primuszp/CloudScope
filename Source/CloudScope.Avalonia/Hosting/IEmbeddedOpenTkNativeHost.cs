@@ -10,8 +10,8 @@ public interface IEmbeddedOpenTkNativeHost
     IReadOnlyCollection<LabelDefinition> LabelDefinitions { get; }
     string ActiveLabel { get; }
     int? ActiveInstanceId { get; }
-    void LoadPointCloud(PointData[] points, float radius);
-    void LoadPointCloud(PointCloudDataset dataset);
+    void LoadPointCloud(PointData[] points, float radius, Action? completed = null);
+    void LoadPointCloud(PointCloudDataset dataset, Action? completed = null);
     void ResetViewer();
 
     bool IsKnownCommand(string name);
