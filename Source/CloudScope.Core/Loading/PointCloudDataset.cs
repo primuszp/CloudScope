@@ -108,14 +108,15 @@ namespace CloudScope.Loading
                 if (!_filter.Matches(Attributes, i))
                     continue;
 
-                points.Add(_sourcePoints[i]);
+                PointData point = _sourcePoints[i];
+                if (recolor)
+                    ApplyColor(ref point, i);
+                points.Add(point);
                 map.Add(i);
             }
 
             ViewPoints = points.ToArray();
             ViewToSource = map.ToArray();
-            if (recolor)
-                ApplyColors(ViewPoints, _filter);
             VisibleCount = ViewPoints.Length;
             RenderOrder = BuildProgressiveRenderOrder(VisibleCount, RenderOrderSeed);
         }
