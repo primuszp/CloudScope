@@ -39,20 +39,16 @@ public sealed class HostController
 
     public void SetPendingCloud(PointData[] points, int count, float radius, string sourceName)
     {
-        _embeddedHost?.LoadPointCloud(points, radius);
-        _renderedPointCount = count;
-        _viewerState = $"Embedded OpenTK viewer: {sourceName}";
-        StatusChanged?.Invoke($"Loaded into OpenTK viewer: {sourceName} ({count:N0} points)");
+        _viewerState = $"Preparing spatial layout and uploading {count:N0} points: {sourceName}";
         PublishStatus();
+        _embeddedHost?.LoadPointCloud(points, radius, () => CompleteCloudUpload(sourceName, count));
     }
 
     public void SetPendingCloud(PointCloudDataset dataset, string sourceName)
     {
-        _embeddedHost?.LoadPointCloud(dataset);
-        _renderedPointCount = dataset.LoadedCount;
-        _viewerState = $"Embedded OpenTK viewer: {sourceName}";
-        StatusChanged?.Invoke($"Loaded into OpenTK viewer: {sourceName} ({dataset.LoadedCount:N0} points)");
+        _viewerState = $"Preparing spatial layout and uploading {dataset.LoadedCount:N0} points: {sourceName}";
         PublishStatus();
+        _embeddedHost?.LoadPointCloud(dataset, () => CompleteCloudUpload(sourceName, dataset.LoadedCount));
     }
 
     public CommandResult ExecuteCommandResult(string commandText, bool publishResult = true)
@@ -89,6 +85,14 @@ public sealed class HostController
         ?? CommandResult.End("Embedded OpenTK host is not ready.");
 
     private void PublishStatus() => StatusChanged?.Invoke(Status);
+
+    private void CompleteCloudUpload(string sourceName, int count)
+    {
+        _renderedPointCount = count;
+        _viewerState = $"Embedded OpenTK viewer: {sourceName}";
+        StatusChanged?.Invoke($"Loaded into OpenTK viewer: {sourceName} ({count:N0} points)");
+        PublishStatus();
+    }
 
     private sealed class EmbeddedCommandExecutor(HostController host) : ICommandExecutor
     {
