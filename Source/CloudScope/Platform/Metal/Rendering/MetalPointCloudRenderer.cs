@@ -13,7 +13,7 @@ namespace CloudScope.Platform.Metal.Rendering
     {
         private const int PointStride = 24; // 6 floats
         private const int AttributeStride = 28; // 7 floats
-        private const int PointsPerChunk = 1_000_000;
+        private const int PointsPerChunk = PointRenderUploadBuilder.DefaultPointsPerChunk;
         private static readonly PointRenderLimits Limits = PointRenderLimits.Load("METAL");
 
         // Triple-buffered uniforms — CPU never blocks waiting for GPU to finish.
@@ -71,8 +71,6 @@ namespace CloudScope.Platform.Metal.Rendering
 
         public void Upload(PointCloudRenderData data)
         {
-            PointData[] points = data.Points;
-            int[]? renderOrder = data.RenderOrder;
             int requestedCount = data.Count;
             _pointCount = Math.Min(requestedCount, Limits.MaxResidentPoints);
             _hasAttributes = data.HasAttributes;
@@ -91,10 +89,7 @@ namespace CloudScope.Platform.Metal.Rendering
             if (_pointCount == 0)
                 return;
 
-            if (renderOrder is { Length: > 0 })
-                UploadToGpu(points, _pointCount, renderOrder);
-            else
-                UploadToGpu(points, _pointCount);
+            UploadToGpu(data, _pointCount);
 
             if (_hasAttributes)
                 UploadAttributesToGpu(data, _pointCount);
@@ -193,39 +188,28 @@ namespace CloudScope.Platform.Metal.Rendering
 
         // ── Private ───────────────────────────────────────────────────────────────
 
-        private unsafe void UploadToGpu(PointData[] points, int residentCount, int[]? renderOrder = null)
+        private unsafe void UploadToGpu(PointCloudRenderData data, int residentCount)
         {
             if (residentCount <= 0) return;
 
             var device = MetalFrameContext.Device;
-            int chunkCount = (residentCount + PointsPerChunk - 1) / PointsPerChunk;
+            int chunkCount = PointRenderUploadBuilder.GetChunkCount(residentCount, PointsPerChunk);
             _pointChunks = new MTLBuffer[chunkCount];
             _chunkCounts = new int[chunkCount];
 
-            fixed (PointData* srcBase = points)
+            for (int chunk = 0; chunk < chunkCount; chunk++)
             {
-                for (int chunk = 0; chunk < chunkCount; chunk++)
-                {
-                    int pointOffset = chunk * PointsPerChunk;
-                    int count = Math.Min(PointsPerChunk, residentCount - pointOffset);
-                    ulong byteSize = (ulong)(count * PointStride);
+                int pointOffset = chunk * PointsPerChunk;
+                int count = PointRenderUploadBuilder.GetChunkPointCount(residentCount, chunk, PointsPerChunk);
+                ulong byteSize = (ulong)(count * PointStride);
 
-                    var buffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
-                    if (renderOrder is null)
-                    {
-                        Buffer.MemoryCopy(srcBase + pointOffset, buffer.Contents.ToPointer(), byteSize, byteSize);
-                    }
-                    else
-                    {
-                        var dst = (PointData*)buffer.Contents.ToPointer();
-                        for (int i = 0; i < count; i++)
-                            dst[i] = srcBase[renderOrder[pointOffset + i]];
-                    }
-                    buffer.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
+                var buffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
+                var destination = new Span<PointData>(buffer.Contents.ToPointer(), count);
+                PointRenderUploadBuilder.FillPoints(data, destination, pointOffset);
+                buffer.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
 
-                    _pointChunks[chunk] = buffer;
-                    _chunkCounts[chunk] = count;
-                }
+                _pointChunks[chunk] = buffer;
+                _chunkCounts[chunk] = count;
             }
         }
 
@@ -235,13 +219,13 @@ namespace CloudScope.Platform.Metal.Rendering
                 return;
 
             var device = MetalFrameContext.Device;
-            int chunkCount = (residentCount + PointsPerChunk - 1) / PointsPerChunk;
+            int chunkCount = PointRenderUploadBuilder.GetChunkCount(residentCount, PointsPerChunk);
             _attributeChunks = new MTLBuffer[chunkCount];
 
             for (int chunk = 0; chunk < chunkCount; chunk++)
             {
                 int pointOffset = chunk * PointsPerChunk;
-                int count = Math.Min(PointsPerChunk, residentCount - pointOffset);
+                int count = PointRenderUploadBuilder.GetChunkPointCount(residentCount, chunk, PointsPerChunk);
                 ulong byteSize = (ulong)(count * AttributeStride);
 
                 var buffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);

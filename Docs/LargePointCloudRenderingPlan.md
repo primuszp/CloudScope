@@ -37,6 +37,8 @@
 
 ## Phase 3: Spatial LOD And Culling
 
+0. Started: route OpenGL and Metal resident point preparation through `PointRenderUploadBuilder`.
+   Render-order resolution and chunk boundaries now have one shared implementation. Spatial ordering can be added here without creating separate backend algorithms.
 1. Build a chunked spatial hierarchy during/after load.
    A loose octree or fixed grid with Morton ordering is sufficient; each leaf owns a compact source-index span and a local bounding box.
 2. Store multiple LOD payloads per chunk.

@@ -117,7 +117,10 @@ void main()
 
             PointData[] uploadPoints = points;
             if (renderOrder is { Length: > 0 })
-                uploadPoints = BuildOrderedPointBuffer(points, renderOrder, _pointCount);
+            {
+                uploadPoints = new PointData[_pointCount];
+                PointRenderUploadBuilder.FillPoints(data, uploadPoints);
+            }
             PointRenderAttributeData[]? uploadAttributes = data.HasAttributes
                 ? BuildOrderedAttributeBuffer(data, _pointCount)
                 : null;
@@ -209,14 +212,6 @@ void main()
                 GL.DeleteVertexArray(_vao);
                 _vao = -1;
             }
-        }
-
-        private static PointData[] BuildOrderedPointBuffer(PointData[] points, int[] renderOrder, int count)
-        {
-            var ordered = new PointData[count];
-            for (int i = 0; i < count; i++)
-                ordered[i] = points[renderOrder[i]];
-            return ordered;
         }
 
         private static PointRenderAttributeData[] BuildOrderedAttributeBuffer(PointCloudRenderData data, int count)
