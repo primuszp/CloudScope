@@ -10,16 +10,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
     {
         private const int PointStride = 24; // 6 floats
         private const int AttributeStride = 28; // 7 floats
-        private const int DefaultMaxResidentPoints = 5_000_000;
-        private const int DefaultMaxDrawPointsPerFrame = 5_000_000;
-        private static readonly int MaxDrawPointsPerFrame =
-            int.TryParse(Environment.GetEnvironmentVariable("CLOUDSCOPE_OPENGL_MAX_DRAW_POINTS"), out int maxDrawPoints) && maxDrawPoints > 0
-                ? maxDrawPoints
-                : DefaultMaxDrawPointsPerFrame;
-        private static readonly int MaxResidentPoints =
-            int.TryParse(Environment.GetEnvironmentVariable("CLOUDSCOPE_OPENGL_MAX_RESIDENT_POINTS"), out int maxResidentPoints) && maxResidentPoints > 0
-                ? maxResidentPoints
-                : DefaultMaxResidentPoints;
+        private static readonly PointRenderLimits Limits = PointRenderLimits.Load("OPENGL");
 
         private int _vao = -1, _vbo = -1, _attributeVbo = -1;
         private int _shader = -1;
@@ -116,7 +107,7 @@ void main()
             PointData[] points = data.Points;
             int[]? renderOrder = data.RenderOrder;
             int requestedCount = data.Count;
-            _pointCount = Math.Min(requestedCount, MaxResidentPoints);
+            _pointCount = Math.Min(requestedCount, Limits.MaxResidentPoints);
             _hasAttributes = data.HasAttributes;
             _hasSourceColors = data.HasSourceColors;
             _colorSource = data.ColorSource;
@@ -179,7 +170,7 @@ void main()
                 _pointCount,
                 halfViewSize,
                 cloudRadius,
-                Math.Min(MaxDrawPointsPerFrame, _pointCount));
+                Math.Min(Limits.MaxDrawPointsPerFrame, _pointCount));
 
             GL.UseProgram(_shader);
             GL.UniformMatrix4(_uView, false, ref view);

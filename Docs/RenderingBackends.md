@@ -1,40 +1,58 @@
-# Rendering Backend Roadmap
+# Rendering backends
 
-CloudScope currently runs through the OpenGL backend.
+CloudScope has OpenGL and Metal render backends behind `IRenderBackend`. The backend owns frame lifecycle, renderer creation, viewport state and depth picking; `ViewerController` owns backend-independent camera, input, selection and labeling workflows.
 
-The backend boundary is intentionally small:
+## Backend selection
 
-- `IRenderBackend` owns frame state, clear, resize, and renderer creation.
-- `IPointCloudRenderer` owns point-cloud GPU upload and draw.
-- `IOverlayRenderer` owns pivot/crosshair/mode overlay rendering.
-- `RenderBackendFactory` selects the backend. `CLOUDSCOPE_RENDER_BACKEND=metal` selects the MTKView-backed host on `net10.0-macos`; other builds fail fast with a platform message.
-- `OpenTkViewerHost` is the current OpenTK/GameWindow host. `PointCloudViewer` is only a compatibility facade.
-- `MtkViewerHost` owns the macOS `MTKView` lifecycle and forwards draw/resize callbacks into `ViewerController`.
+- OpenGL is the default backend and runs through the OpenTK host.
+- `CLOUDSCOPE_RENDER_BACKEND=metal` selects the SharpMetal/MTKView host on a supported macOS build.
+- Unsupported backend/platform combinations fail during host creation instead of silently falling back.
 
-Known OpenGL dependencies that must move before a real Metal build:
+## Current capability parity
 
-- `MtkViewerHost` currently owns the Metal view lifecycle, but macOS mouse/keyboard event forwarding still needs to be wired to `ViewerController`.
-- `MetalRenderBackend` currently creates the Metal frame clear/present path. Point cloud, label/preview highlight, overlay primitives, and first-pass selection gizmos have Metal renderers; depth picking is still a no-op placeholder.
-- Gizmo renderers still call OpenGL directly: `GizmoRendererBase`, `BoxGizmoRenderer`, `SphereGizmoRenderer`, `CylinderGizmoRenderer`.
-- `HighlightRenderer` still calls OpenGL directly.
-- `OrbitCamera` uses `IDepthPicker`; OpenGL currently provides `OpenGlDepthPicker`. Metal needs its own depth texture/readback or GPU picking path.
-- Shaders are GLSL strings. Metal needs equivalent MSL shaders and a shared shader/material description above both backends.
+Both backends implement:
 
-Target split:
+- persistent point-cloud GPU buffers and progressive draw budgeting;
+- RGB, height, class, intensity and return-number coloring;
+- stable source-index mapping and progressive render order;
+- label highlights and selection previews;
+- box, sphere and cylinder selection gizmos;
+- pivot axes, orientation rings and shaded center indicator;
+- center crosshair and active-selection-mode indicator;
+- depth-buffer picking;
+- mouse and keyboard forwarding to `ViewerController`.
 
-- `CloudScope.Core`: point data, loading, camera math, selection queries, labels.
-- `CloudScope.Platform.OpenGL`: OpenTK window host, OpenGL backend glue.
-- `CloudScope.Platform.Metal`: future MTKView host, Metal backend glue.
-- `CloudScope.App`: startup, command-line parsing, backend/platform selection.
+CPU-side render data preparation is shared in `CloudScope.Rendering`. Backend implementations should only contain API-specific resource management, shader code and draw commands. In particular, do not duplicate attribute, highlight, overlay-layout or pivot-geometry generation in a backend.
 
-Host split:
+## Point limits
 
-- `ViewerController`: camera/input/selection/label workflow and backend-agnostic render orchestration.
-- `OpenTkViewerHost`: adapts OpenTK events to `ViewerController`.
-- `MtkViewerHost`: future adapter for MTKView draw/input/resize callbacks.
+The default resident and per-frame draw limits are both 5,000,000 points. Common limits apply to both backends:
 
-Performance rule:
+- `CLOUDSCOPE_MAX_RESIDENT_POINTS`
+- `CLOUDSCOPE_MAX_DRAW_POINTS`
 
-- Keep point buffers backend-owned and long-lived.
-- Avoid per-frame allocations in render paths.
-- Keep selection resolution independent from the render backend unless GPU picking is explicitly introduced.
+Backend-specific variables override the common value when present:
+
+- `CLOUDSCOPE_OPENGL_MAX_RESIDENT_POINTS`
+- `CLOUDSCOPE_OPENGL_MAX_DRAW_POINTS`
+- `CLOUDSCOPE_METAL_MAX_RESIDENT_POINTS`
+- `CLOUDSCOPE_METAL_MAX_DRAW_POINTS`
+
+Set `CLOUDSCOPE_FRAME_LOG=1` to print periodic frame-stage timing diagnostics.
+
+## Remaining work
+
+- Implement and validate Metal render-command viewport/scissor updates for split viewport layouts. `MetalRenderBackend.SetViewport` is currently a no-op.
+- Move box, sphere and cylinder gizmo mesh generation into shared builders. Their interaction math is shared, but parts of their visual geometry are still generated independently.
+- Reuse Metal depth-readback staging buffers and investigate asynchronous picking to avoid allocating and blocking for every read.
+- Define identical out-of-bounds behavior for OpenGL and Metal depth-window reads.
+- Add automated tests for shared render-data builders and parity-sensitive layout calculations.
+- Run macOS smoke tests for Metal shader compilation, split viewports, depth picking and resource teardown. Windows builds validate the C# integration but cannot compile or execute Metal shaders.
+
+## Architecture rules
+
+- Keep GPU resources backend-owned and long-lived.
+- Avoid per-frame managed allocations in render paths.
+- Keep selection and camera math independent of graphics APIs.
+- Put deterministic CPU-side geometry and attribute generation in `CloudScope.Rendering`.
+- Keep GLSL/MSL and graphics-API state changes inside their respective backend.

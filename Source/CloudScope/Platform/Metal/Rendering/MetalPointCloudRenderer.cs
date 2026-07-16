@@ -14,16 +14,7 @@ namespace CloudScope.Platform.Metal.Rendering
         private const int PointStride = 24; // 6 floats
         private const int AttributeStride = 28; // 7 floats
         private const int PointsPerChunk = 1_000_000;
-        private const int DefaultMaxResidentPoints = 5_000_000;
-        private const int DefaultMaxDrawPointsPerFrame = 5_000_000;
-        private static readonly int MaxDrawPointsPerFrame =
-            int.TryParse(Environment.GetEnvironmentVariable("CLOUDSCOPE_METAL_MAX_DRAW_POINTS"), out int maxDrawPoints) && maxDrawPoints > 0
-                ? maxDrawPoints
-                : DefaultMaxDrawPointsPerFrame;
-        private static readonly int MaxResidentPoints =
-            int.TryParse(Environment.GetEnvironmentVariable("CLOUDSCOPE_METAL_MAX_RESIDENT_POINTS"), out int maxResidentPoints) && maxResidentPoints > 0
-                ? maxResidentPoints
-                : DefaultMaxResidentPoints;
+        private static readonly PointRenderLimits Limits = PointRenderLimits.Load("METAL");
 
         // Triple-buffered uniforms — CPU never blocks waiting for GPU to finish.
         private const int UniformBufferCount = 3;
@@ -83,7 +74,7 @@ namespace CloudScope.Platform.Metal.Rendering
             PointData[] points = data.Points;
             int[]? renderOrder = data.RenderOrder;
             int requestedCount = data.Count;
-            _pointCount = Math.Min(requestedCount, MaxResidentPoints);
+            _pointCount = Math.Min(requestedCount, Limits.MaxResidentPoints);
             _hasAttributes = data.HasAttributes;
             _hasSourceColors = data.HasSourceColors;
             _colorSource = data.ColorSource;
@@ -128,7 +119,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 _pointCount,
                 halfViewSize,
                 cloudRadius,
-                Math.Min(MaxDrawPointsPerFrame, _pointCount));
+                Math.Min(Limits.MaxDrawPointsPerFrame, _pointCount));
 
             _uniformBufferIndex = (_uniformBufferIndex + 1) % UniformBufferCount;
             var uniformBuffer = _uniformBuffers[_uniformBufferIndex];
