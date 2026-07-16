@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using CloudScope.Loading;
@@ -115,37 +116,52 @@ void main()
             if (_pointCount == 0)
                 return;
 
-            PointData[] uploadPoints = points;
-            if (renderOrder is { Length: > 0 })
-            {
-                uploadPoints = new PointData[_pointCount];
-                PointRenderUploadBuilder.FillPoints(data, uploadPoints);
-            }
-            PointRenderAttributeData[]? uploadAttributes = data.HasAttributes
-                ? BuildOrderedAttributeBuffer(data, _pointCount)
-                : null;
-
             _vao = GL.GenVertexArray();
             GL.BindVertexArray(_vao);
 
             _vbo = GL.GenBuffer();
             GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
-            GL.BufferData(BufferTarget.ArrayBuffer, _pointCount * PointStride, uploadPoints, BufferUsageHint.StaticDraw);
+            if (renderOrder is { Length: > 0 })
+            {
+                PointData[] uploadPoints = ArrayPool<PointData>.Shared.Rent(_pointCount);
+                try
+                {
+                    PointRenderUploadBuilder.FillPoints(data, uploadPoints.AsSpan(0, _pointCount));
+                    GL.BufferData(BufferTarget.ArrayBuffer, _pointCount * PointStride, uploadPoints, BufferUsageHint.StaticDraw);
+                }
+                finally
+                {
+                    ArrayPool<PointData>.Shared.Return(uploadPoints);
+                }
+            }
+            else
+            {
+                GL.BufferData(BufferTarget.ArrayBuffer, _pointCount * PointStride, points, BufferUsageHint.StaticDraw);
+            }
 
             GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, PointStride, 0);
             GL.EnableVertexAttribArray(0);
             GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, PointStride, 12);
             GL.EnableVertexAttribArray(1);
 
-            if (uploadAttributes is { Length: > 0 })
+            if (data.HasAttributes && _pointCount > 0)
             {
                 _attributeVbo = GL.GenBuffer();
                 GL.BindBuffer(BufferTarget.ArrayBuffer, _attributeVbo);
-                GL.BufferData(
-                    BufferTarget.ArrayBuffer,
-                    uploadAttributes.Length * AttributeStride,
-                    uploadAttributes,
-                    BufferUsageHint.StaticDraw);
+                PointRenderAttributeData[] uploadAttributes = ArrayPool<PointRenderAttributeData>.Shared.Rent(_pointCount);
+                try
+                {
+                    PointRenderAttributeBuilder.Fill(data, uploadAttributes.AsSpan(0, _pointCount));
+                    GL.BufferData(
+                        BufferTarget.ArrayBuffer,
+                        _pointCount * AttributeStride,
+                        uploadAttributes,
+                        BufferUsageHint.StaticDraw);
+                }
+                finally
+                {
+                    ArrayPool<PointRenderAttributeData>.Shared.Return(uploadAttributes);
+                }
 
                 GL.VertexAttribPointer(2, 1, VertexAttribPointerType.Float, false, AttributeStride, 0);
                 GL.EnableVertexAttribArray(2);
@@ -212,13 +228,6 @@ void main()
                 GL.DeleteVertexArray(_vao);
                 _vao = -1;
             }
-        }
-
-        private static PointRenderAttributeData[] BuildOrderedAttributeBuffer(PointCloudRenderData data, int count)
-        {
-            var ordered = new PointRenderAttributeData[count];
-            PointRenderAttributeBuilder.Fill(data, ordered);
-            return ordered;
         }
 
         private void UploadClassPalette()
