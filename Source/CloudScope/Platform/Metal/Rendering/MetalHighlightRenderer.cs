@@ -36,16 +36,7 @@ namespace CloudScope.Platform.Metal.Rendering
             }
 
             var data = RentScratch(indices.Count);
-            int count = 0;
-            foreach (int i in indices)
-            {
-                if ((uint)i >= (uint)points.Length) continue;
-                data[count] = points[i];
-                data[count].R = 1.0f;
-                data[count].G = 0.85f;
-                data[count].B = 0.1f;
-                count++;
-            }
+            int count = HighlightPointBuilder.FillPreview(points, indices, data);
             _previewCount = count;
             BuildBuffer(ref _previewBuffer, data, count);
         }
@@ -98,17 +89,7 @@ namespace CloudScope.Platform.Metal.Rendering
         {
             var allAnnotations = labels.AllAnnotations;
             var data  = RentScratch(allAnnotations.Count);
-            int count = 0;
-            foreach (var (ptIdx, annotation) in allAnnotations)
-            {
-                if ((uint)ptIdx >= (uint)points.Length) continue;
-                data[count] = points[ptIdx];
-                var c = annotationColor(annotation);
-                data[count].R = c.X;
-                data[count].G = c.Y;
-                data[count].B = c.Z;
-                count++;
-            }
+            int count = HighlightPointBuilder.FillAnnotations(points, allAnnotations, annotationColor, data);
             _highlightCount  = count;
             BuildBuffer(ref _highlightBuffer, data, count);
         }
