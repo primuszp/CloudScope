@@ -21,7 +21,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private int _highlightCount;
         private int _previewCount;
         private bool _dirty = true;
-        private float[] _vertexScratch = Array.Empty<float>();
+        private PointData[] _pointScratch = Array.Empty<PointData>();
 
 
         // ── Shader (same as main cloud, but we supply the color per vertex) ──
@@ -67,19 +67,11 @@ void main()
             EnsureResources();
             if (points == null || indices == null || indices.Count == 0) { _previewCount = 0; return; }
 
-            float[] data = RentVertexScratch(indices.Count);
-            int idx = 0;
-            foreach (int i in indices)
-            {
-                if (i < 0 || i >= points.Length) continue;
-                ref readonly PointData pt = ref points[i];
-                data[idx++] = pt.X; data[idx++] = pt.Y; data[idx++] = pt.Z;
-                data[idx++] = 1.0f; data[idx++] = 0.85f; data[idx++] = 0.1f; // bright yellow
-            }
-            _previewCount = idx / 6;
+            PointData[] data = RentPointScratch(indices.Count);
+            _previewCount = HighlightPointBuilder.FillPreview(points, indices, data);
             GL.BindVertexArray(_pvao);
             GL.BindBuffer(BufferTarget.ArrayBuffer, _pvbo);
-            GL.BufferData(BufferTarget.ArrayBuffer, idx * sizeof(float), data, BufferUsageHint.DynamicDraw);
+            GL.BufferData(BufferTarget.ArrayBuffer, _previewCount * 24, data, BufferUsageHint.DynamicDraw);
         }
 
         /// <summary>Render the box-selection preview highlight pass.</summary>
@@ -92,10 +84,12 @@ void main()
             GL.Uniform1(_uPointSize, pointSize + 2f);
             GL.BindVertexArray(_pvao);
             GL.Enable(EnableCap.DepthTest);
+            GL.DepthMask(false);
             GL.Enable(EnableCap.PolygonOffsetPoint);
             GL.PolygonOffset(-1f, -1f);
             GL.DrawArrays(PrimitiveType.Points, 0, _previewCount);
             GL.Disable(EnableCap.PolygonOffsetPoint);
+            GL.DepthMask(true);
         }
 
         /// <summary>
@@ -126,6 +120,7 @@ void main()
 
             // Render on top with a slight depth bias so highlight wins ties
             GL.Enable(EnableCap.DepthTest);
+            GL.DepthMask(false);
             GL.Enable(EnableCap.PolygonOffsetFill);
             GL.Enable(EnableCap.PolygonOffsetPoint);
             GL.PolygonOffset(-1f, -1f);
@@ -134,6 +129,7 @@ void main()
 
             GL.Disable(EnableCap.PolygonOffsetFill);
             GL.Disable(EnableCap.PolygonOffsetPoint);
+            GL.DepthMask(true);
         }
 
         // ── Internals ─────────────────────────────────────────────────────────
@@ -145,33 +141,20 @@ void main()
 
             if (_highlightCount == 0) return;
 
-            // 6 floats per vertex: X Y Z R G B
-            float[] data = RentVertexScratch(_highlightCount);
-            int idx = 0;
-
-            foreach (var (ptIdx, annotation) in allAnnotations)
-            {
-                if (ptIdx < 0 || ptIdx >= points.Length) continue;
-                ref readonly PointData pt = ref points[ptIdx];
-                var col = annotationColor(annotation);
-                data[idx++] = pt.X; data[idx++] = pt.Y; data[idx++] = pt.Z;
-                data[idx++] = col.X; data[idx++] = col.Y; data[idx++] = col.Z;
-            }
-
-            _highlightCount = idx / 6;  // actual valid count
+            PointData[] data = RentPointScratch(_highlightCount);
+            _highlightCount = HighlightPointBuilder.FillAnnotations(points, allAnnotations, annotationColor, data);
 
             GL.BindVertexArray(_vao);
             GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
-            GL.BufferData(BufferTarget.ArrayBuffer, idx * sizeof(float),
+            GL.BufferData(BufferTarget.ArrayBuffer, _highlightCount * 24,
                           data, BufferUsageHint.DynamicDraw);
         }
 
-        private float[] RentVertexScratch(int vertexCount)
+        private PointData[] RentPointScratch(int pointCount)
         {
-            int required = vertexCount * 6;
-            if (_vertexScratch.Length < required)
-                _vertexScratch = new float[required];
-            return _vertexScratch;
+            if (_pointScratch.Length < pointCount)
+                _pointScratch = new PointData[pointCount];
+            return _pointScratch;
         }
 
         private void EnsureResources()
