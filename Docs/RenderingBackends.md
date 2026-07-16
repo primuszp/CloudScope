@@ -26,7 +26,7 @@ CPU-side render data preparation is shared in `CloudScope.Rendering`. Backend im
 
 ## Point limits
 
-The default resident and per-frame draw limits are both 5,000,000 points. Common limits apply to both backends:
+Resident and per-frame draw counts are unlimited by default; the zoom-dependent draw budget still reduces overview density. Optional common limits apply to both backends:
 
 - `CLOUDSCOPE_MAX_RESIDENT_POINTS`
 - `CLOUDSCOPE_MAX_DRAW_POINTS`

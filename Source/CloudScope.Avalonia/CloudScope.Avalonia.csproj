@@ -20,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\CloudScope\CloudScope.csproj" AdditionalProperties="EnableSharpMetal=false;EnableImGui=false" />
+    <ProjectReference Include="..\CloudScope\CloudScope.csproj" />
     <ProjectReference Include="..\CloudScope.Core\CloudScope.Core.csproj" />
   </ItemGroup>
 
