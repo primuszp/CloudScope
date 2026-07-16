@@ -185,7 +185,7 @@ void main()
             GL.UniformMatrix4(_uView, false, ref view);
             GL.UniformMatrix4(_uProj, false, ref projection);
             GL.Uniform1(_uPointSize, pointSize);
-            GL.Uniform1(_uColorSource, MapColorSource(_colorSource));
+            GL.Uniform1(_uColorSource, PointRenderAttributeBuilder.MapColorSource(_colorSource));
             GL.Uniform1(_uHasAttributes, _hasAttributes ? 1 : 0);
             GL.BindVertexArray(_vao);
             GL.DrawArrays(PrimitiveType.Points, 0, drawCount);
@@ -230,35 +230,8 @@ void main()
 
         private static PointRenderAttributeData[] BuildOrderedAttributeBuffer(PointCloudRenderData data, int count)
         {
-            var attributes = data.Attributes
-                ?? throw new InvalidOperationException("Point render attributes are missing.");
-            int[] viewToSource = data.ViewToSource
-                ?? throw new InvalidOperationException("Point render source map is missing.");
-
             var ordered = new PointRenderAttributeData[count];
-            double zSpan = attributes.MaxZ - attributes.MinZ;
-            for (int i = 0; i < count; i++)
-            {
-                int viewIndex = data.RenderOrder is { Length: > 0 } renderOrder ? renderOrder[i] : i;
-                int sourceIndex = viewToSource[viewIndex];
-                float zNormalized = zSpan > 0
-                    ? (float)((attributes.Z[sourceIndex] - attributes.MinZ) / zSpan)
-                    : 0.5f;
-                zNormalized = Math.Clamp(zNormalized, 0f, 1f);
-                float intensityNormalized = attributes.Intensity[sourceIndex] / 65535f;
-                PointData rgbSource = data.SourcePoints is { } sourcePoints
-                    ? sourcePoints[sourceIndex]
-                    : data.Points[viewIndex];
-                ordered[i] = new PointRenderAttributeData(
-                    zNormalized,
-                    intensityNormalized,
-                    attributes.Class[sourceIndex],
-                    attributes.ReturnNumber[sourceIndex],
-                    rgbSource.R,
-                    rgbSource.G,
-                    rgbSource.B);
-            }
-
+            PointRenderAttributeBuilder.Fill(data, ordered);
             return ordered;
         }
 
@@ -275,15 +248,6 @@ void main()
                 GL.Uniform3(location, color);
             }
         }
-
-        private static int MapColorSource(ColorSource source) => source switch
-        {
-            ColorSource.Height => 1,
-            ColorSource.Class => 2,
-            ColorSource.Intensity => 3,
-            ColorSource.Return => 4,
-            _ => 0
-        };
 
         private static int BuildShader(string vertSrc, string fragSrc)
         {
