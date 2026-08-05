@@ -10,8 +10,14 @@ namespace CloudScope.Platform.Metal.Rendering
     [SupportedOSPlatform("macos")]
     internal abstract class MetalGizmoRendererBase : ISelectionGizmoRenderer
     {
+        private const int BufferedFrameCount = 3;
+        private const int DynamicBuffersPerFrame = 64;
         protected readonly MetalPrimitiveRenderer Renderer = new();
         private MTLBuffer _axisBuffer;
+        private readonly MTLBuffer[] _dynamicBuffers = new MTLBuffer[BufferedFrameCount * DynamicBuffersPerFrame];
+        private MetalFrameState? _dynamicFrame;
+        private int _dynamicFrameIndex = -1;
+        private int _dynamicDrawIndex;
 
         protected static readonly Vector4[] AxisColor =
         {
@@ -28,6 +34,12 @@ namespace CloudScope.Platform.Metal.Rendering
                 return false;
 
             Renderer.SetFrame(frame);
+            if (!ReferenceEquals(_dynamicFrame, frame))
+            {
+                _dynamicFrame = frame;
+                _dynamicFrameIndex = (_dynamicFrameIndex + 1) % BufferedFrameCount;
+                _dynamicDrawIndex = 0;
+            }
             return true;
         }
 
@@ -49,7 +61,7 @@ namespace CloudScope.Platform.Metal.Rendering
         {
             EnsureBase();
             for (int axis = 0; axis < 3; axis++)
-                Renderer.Draw(_axisBuffer, 2, MTLPrimitiveType.Line, mvp, AxisColor[axis], depthTest: false);
+                Renderer.Draw(_axisBuffer, 2, MTLPrimitiveType.Line, mvp, AxisColor[axis], depthTest: false, firstVertex: axis * 2);
         }
 
         protected static (float x, float y) ScreenToNdc(float sx, float sy, float width, float height)
@@ -60,8 +72,6 @@ namespace CloudScope.Platform.Metal.Rendering
         private readonly float[] _lineBuf    = new float[6];
         private readonly float[] _arrowBuf   = new float[9];
         private readonly float[] _diamondBuf = new float[18];
-        private MTLBuffer _dynamicBuffer;
-
         protected void DrawLine(float x0, float y0, float x1, float y1, Vector4 color)
         {
             _lineBuf[0] = x0; _lineBuf[1] = y0; _lineBuf[2] = 0f;
@@ -94,14 +104,21 @@ namespace CloudScope.Platform.Metal.Rendering
 
         protected void DrawDynamic(float[] vertices, int vertexCount, MTLPrimitiveType primitive, Vector4 color)
         {
-            Renderer.UpdateBuffer(ref _dynamicBuffer, vertices);
-            Renderer.Draw(_dynamicBuffer, vertexCount, primitive, Matrix4.Identity, color, depthTest: false);
+            // Every encoded Metal draw must retain its own vertex contents until the
+            // command buffer completes. Reusing one buffer here made rotation rings
+            // and arrow handles display the last uploaded line series repeatedly.
+            int drawInFrame = Math.Min(_dynamicDrawIndex++, DynamicBuffersPerFrame - 1);
+            int bufferIndex = _dynamicFrameIndex * DynamicBuffersPerFrame + drawInFrame;
+            ref MTLBuffer dynamicBuffer = ref _dynamicBuffers[bufferIndex];
+            Renderer.UpdateBuffer(ref dynamicBuffer, vertices);
+            Renderer.Draw(dynamicBuffer, vertexCount, primitive, Matrix4.Identity, color, depthTest: false);
         }
 
         public virtual void Dispose()
         {
             MetalPrimitiveRenderer.Release(ref _axisBuffer);
-            MetalPrimitiveRenderer.Release(ref _dynamicBuffer);
+            for (int i = 0; i < _dynamicBuffers.Length; i++)
+                MetalPrimitiveRenderer.Release(ref _dynamicBuffers[i]);
             Renderer.Dispose();
         }
     }
@@ -129,6 +146,13 @@ namespace CloudScope.Platform.Metal.Rendering
             -1,-1, 1,  1,-1, 1,  1, 1, 1,   -1,-1, 1,  1, 1, 1, -1, 1, 1,
         };
 
+        private static readonly Vector4[] FaceColors =
+        {
+            new(0.95f, 0.20f, 0.20f, 0.07f), new(0.95f, 0.20f, 0.20f, 0.07f),
+            new(0.20f, 0.95f, 0.30f, 0.07f), new(0.20f, 0.95f, 0.30f, 0.07f),
+            new(0.25f, 0.55f, 1.00f, 0.07f), new(0.25f, 0.55f, 1.00f, 0.07f),
+        };
+
         private MTLBuffer _edgeBuffer;
         private MTLBuffer _faceBuffer;
         private MTLBuffer _placementFillBuffer;
@@ -141,7 +165,8 @@ namespace CloudScope.Platform.Metal.Rendering
             var box = (BoxSelectionTool)tool;
             EnsureResources();
             Matrix4 mvp = box.GetModelMatrix() * view * proj;
-            Renderer.Draw(_faceBuffer, 36, MTLPrimitiveType.Triangle, mvp, new Vector4(0.2f, 0.75f, 1f, 0.07f), depthTest: true);
+            for (int face = 0; face < FaceColors.Length; face++)
+                Renderer.Draw(_faceBuffer, 6, MTLPrimitiveType.Triangle, mvp, FaceColors[face], depthTest: true, firstVertex: face * 6);
             RenderAxis(mvp);
             Renderer.Draw(_edgeBuffer, 24, MTLPrimitiveType.Line, mvp, new Vector4(0f, 0.8f, 1f, 0.8f),  depthTest: true);
             Renderer.Draw(_edgeBuffer, 24, MTLPrimitiveType.Line, mvp, new Vector4(0f, 0.8f, 1f, 0.18f), depthTest: false);

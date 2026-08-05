@@ -4,8 +4,9 @@ CloudScope has OpenGL and Metal render backends behind `IRenderBackend`. The bac
 
 ## Backend selection
 
-- OpenGL is the default backend and runs through the OpenTK host.
+- Metal is the default backend on macOS; OpenGL is the default elsewhere and runs through the OpenTK host.
 - `CLOUDSCOPE_RENDER_BACKEND=metal` selects the SharpMetal/MTKView host on a supported macOS build.
+- `CLOUDSCOPE_RENDER_BACKEND=opengl` keeps the OpenTK/OpenGL host on macOS, including in the Avalonia application.
 - Unsupported backend/platform combinations fail during host creation instead of silently falling back.
 
 ## Current capability parity
@@ -42,7 +43,7 @@ Set `CLOUDSCOPE_FRAME_LOG=1` to print periodic frame-stage timing diagnostics.
 
 ## Remaining work
 
-- Implement and validate Metal render-command viewport/scissor updates for split viewport layouts. `MetalRenderBackend.SetViewport` is currently a no-op.
+- Validate Metal split-viewport interaction and depth picking with large real-world datasets.
 - Move box, sphere and cylinder gizmo mesh generation into shared builders. Their interaction math is shared, but parts of their visual geometry are still generated independently.
 - Reuse Metal depth-readback staging buffers and investigate asynchronous picking to avoid allocating and blocking for every read.
 - Define identical out-of-bounds behavior for OpenGL and Metal depth-window reads.

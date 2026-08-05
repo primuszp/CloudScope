@@ -30,6 +30,12 @@
     <Compile Remove="Platform\Metal\**\*.cs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>CloudScope.Avalonia</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
   <ItemGroup Condition="'$(EnableImGui)' != 'true'">
     <Compile Remove="Platform\OpenGL\ImGuiController.cs" />
     <Compile Remove="Ui\CommandLineOverlay.cs" />

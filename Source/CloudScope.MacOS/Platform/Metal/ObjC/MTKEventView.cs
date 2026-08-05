@@ -45,6 +45,8 @@ namespace CloudScope.Platform.Metal.ObjC
         [DllImport("libobjc.dylib", EntryPoint = "objc_msgSend")]
         private static extern NSPoint NSPoint_msgSend(IntPtr obj, IntPtr sel);
         [DllImport("libobjc.dylib", EntryPoint = "objc_msgSend")]
+        private static extern NSPoint NSPoint_msgSend_Point_IntPtr(IntPtr obj, IntPtr sel, NSPoint point, IntPtr view);
+        [DllImport("libobjc.dylib", EntryPoint = "objc_msgSend")]
         private static extern double Double_msgSend(IntPtr obj, IntPtr sel);
         [DllImport("libobjc.dylib", EntryPoint = "objc_msgSend")]
         private static extern ushort UShort_msgSend(IntPtr obj, IntPtr sel);
@@ -52,6 +54,7 @@ namespace CloudScope.Platform.Metal.ObjC
         private static extern IntPtr IntPtr_msgSend(IntPtr obj, IntPtr sel);
 
         private static readonly IntPtr sel_locationInWindow   = new Selector("locationInWindow");
+        private static readonly IntPtr sel_convertPointFromView = new Selector("convertPoint:fromView:");
         private static readonly IntPtr sel_deltaY             = new Selector("deltaY");
         private static readonly IntPtr sel_scrollingDeltaY    = new Selector("scrollingDeltaY");
         private static readonly IntPtr sel_keyCode            = new Selector("keyCode");
@@ -127,10 +130,15 @@ namespace CloudScope.Platform.Metal.ObjC
 
         private (int x, int y) GetPixelCoords(IntPtr evt)
         {
-            var pt = NSPoint_msgSend(evt, sel_locationInWindow);
-            int x = (int)(pt.X * _pixelScale);
-            int y = _drawableHeight - (int)(pt.Y * _pixelScale);
-            return (x, Math.Clamp(y, 0, _drawableHeight));
+            // NSEvent coordinates are relative to the NSWindow. This matters when the
+            // MTKView is embedded below Avalonia menus/toolbars instead of filling a
+            // standalone window: convert to the view's own coordinate system first.
+            var windowPoint = NSPoint_msgSend(evt, sel_locationInWindow);
+            var viewPoint = NSPoint_msgSend_Point_IntPtr(
+                NativePtr, sel_convertPointFromView, windowPoint, IntPtr.Zero);
+            int x = (int)(viewPoint.X * _pixelScale);
+            int y = _drawableHeight - 1 - (int)(viewPoint.Y * _pixelScale);
+            return (Math.Max(0, x), Math.Clamp(y, 0, Math.Max(0, _drawableHeight - 1)));
         }
 
         private static void OnMouseDown(IntPtr self, IntPtr cmd, IntPtr evt) =>

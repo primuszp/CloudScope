@@ -17,6 +17,7 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.3" />
     <PackageReference Include="OpenTK" Version="4.9.4" />
     <PackageReference Include="OpenTK.Mathematics" Version="4.9.4" />
+    <PackageReference Include="SharpMetal" Version="1.1.0" />
   </ItemGroup>
 
   <ItemGroup>

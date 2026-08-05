@@ -9,7 +9,7 @@ public sealed class HostController
     private readonly CommandDispatcher _commands;
     private IEmbeddedOpenTkNativeHost? _embeddedHost;
     private int _renderedPointCount;
-    private string _viewerState = "Embedded OpenTK host not created";
+    private string _viewerState = "Embedded renderer not created";
 
     public event Action<string>? StatusChanged;
 
@@ -32,8 +32,8 @@ public sealed class HostController
     {
         _embeddedHost = embeddedHost;
         _viewerState = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
-            ? "Embedded OpenTK host ready"
-            : "Embedded OpenTK host is currently implemented for Windows and macOS";
+            ? $"Embedded {embeddedHost.RendererName} host ready"
+            : "Embedded renderer is currently implemented for Windows and macOS";
         PublishStatus();
     }
 
@@ -75,22 +75,23 @@ public sealed class HostController
         _embeddedHost?.ResetViewer();
         _renderedPointCount = 0;
         _viewerState = _embeddedHost == null
-            ? "Embedded OpenTK host not created"
-            : "Embedded OpenTK viewer reset";
+            ? "Embedded renderer not created"
+            : $"Embedded {_embeddedHost.RendererName} viewer reset";
         PublishStatus();
     }
 
     private CommandResult EmbeddedExecuteResult(string commandText) =>
         _embeddedHost?.ExecuteViewerCommandResult(commandText)
-        ?? CommandResult.End("Embedded OpenTK host is not ready.");
+        ?? CommandResult.End("Embedded renderer is not ready.");
 
     private void PublishStatus() => StatusChanged?.Invoke(Status);
 
     private void CompleteCloudUpload(string sourceName, int count)
     {
         _renderedPointCount = count;
-        _viewerState = $"Embedded OpenTK viewer: {sourceName}";
-        StatusChanged?.Invoke($"Loaded into OpenTK viewer: {sourceName} ({count:N0} points)");
+        string renderer = _embeddedHost?.RendererName ?? "GPU";
+        _viewerState = $"Embedded {renderer} viewer: {sourceName}";
+        StatusChanged?.Invoke($"Loaded into {renderer} viewer: {sourceName} ({count:N0} points)");
         PublishStatus();
     }
 

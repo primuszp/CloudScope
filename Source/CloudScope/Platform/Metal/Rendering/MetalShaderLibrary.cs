@@ -217,11 +217,11 @@ struct ColorVertexOut { float4 position [[position]]; };
 
 vertex ColorVertexOut color_vertex(
     uint vertexId [[vertex_id]],
-    const device float3* vertices [[buffer(0)]],
+    const device packed_float3* vertices [[buffer(0)]],
     constant ColorUniforms& uniforms [[buffer(1)]])
 {
     ColorVertexOut out;
-    out.position = uniforms.mvp * float4(vertices[vertexId], 1.0);
+    out.position = uniforms.mvp * float4(float3(vertices[vertexId]), 1.0);
     return out;
 }
 

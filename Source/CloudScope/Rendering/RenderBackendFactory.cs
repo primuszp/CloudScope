@@ -11,20 +11,23 @@ namespace CloudScope.Rendering
     public static class RenderBackendFactory
     {
         public static IRenderBackend CreateDefault()
+            => Create(GetDefaultKind());
+
+        public static RenderBackendKind GetDefaultKind()
         {
             string? requested = Environment.GetEnvironmentVariable("CLOUDSCOPE_RENDER_BACKEND");
             if (string.Equals(requested, "opengl", StringComparison.OrdinalIgnoreCase))
-                return Create(RenderBackendKind.OpenGL);
+                return RenderBackendKind.OpenGL;
             if (string.Equals(requested, "metal", StringComparison.OrdinalIgnoreCase))
-                return Create(RenderBackendKind.Metal);
+                return RenderBackendKind.Metal;
 
 #if ENABLE_SHARPMETAL
             // macOS-en Metal az alapértelmezett
             if (OperatingSystem.IsMacOS())
-                return Create(RenderBackendKind.Metal);
+                return RenderBackendKind.Metal;
 #endif
 
-            return Create(RenderBackendKind.OpenGL);
+            return RenderBackendKind.OpenGL;
         }
 
         public static IRenderBackend Create(RenderBackendKind kind)

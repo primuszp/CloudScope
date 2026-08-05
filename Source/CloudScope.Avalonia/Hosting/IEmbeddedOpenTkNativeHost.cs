@@ -6,6 +6,7 @@ namespace CloudScope.Avalonia.Hosting;
 
 public interface IEmbeddedOpenTkNativeHost
 {
+    string RendererName { get; }
     string CommandPrompt { get; }
     IReadOnlyCollection<LabelDefinition> LabelDefinitions { get; }
     string ActiveLabel { get; }
