@@ -11,15 +11,29 @@ namespace CloudScope.Platform.Metal.Rendering
     [SupportedOSPlatform("macos")]
     internal sealed class MetalPrimitiveRenderer : IDisposable
     {
+        private const int UniformStride = 256;
+        private const int DrawsPerFrame = 512;
+        private const int BufferedFrameCount = 3;
         private MetalFrameState? _frame;
         private MTLRenderPipelineState _pipeline;
         private MTLDepthStencilState _depthOn;
         private MTLDepthStencilState _depthOff;
         private MTLBuffer _uniformsBuffer;
         private int _uniformOffset;
+        private int _bufferedFrameIndex = -1;
+        private MetalFrameState? _uniformFrame;
         private bool _initialized;
 
-        public void SetFrame(MetalFrameState frame) => _frame = frame;
+        public void SetFrame(MetalFrameState frame)
+        {
+            _frame = frame;
+            if (ReferenceEquals(_uniformFrame, frame))
+                return;
+
+            _uniformFrame = frame;
+            _bufferedFrameIndex = (_bufferedFrameIndex + 1) % BufferedFrameCount;
+            _uniformOffset = _bufferedFrameIndex * DrawsPerFrame;
+        }
 
         public void EnsureResources()
         {
@@ -34,8 +48,9 @@ namespace CloudScope.Platform.Metal.Rendering
             _depthOn  = MetalShaderLibrary.CreateDepthState(device, depthWrite: false);
             _depthOff = CreateDepthAlwaysState(device);
 
-            ulong uniformSize = 256; // Must be 256-byte aligned for offset
-            _uniformsBuffer = device.NewBuffer(uniformSize * 256, MTLResourceOptions.ResourceStorageModeShared); // enough for 256 draw calls per frame
+            _uniformsBuffer = device.NewBuffer(
+                UniformStride * DrawsPerFrame * BufferedFrameCount,
+                MTLResourceOptions.ResourceStorageModeShared);
 
             _initialized = true;
         }
@@ -75,7 +90,8 @@ namespace CloudScope.Platform.Metal.Rendering
         public void Draw(
             MTLBuffer vertexBuffer, int vertexCount,
             MTLPrimitiveType primitiveType,
-            Matrix4 mvp, Vector4 color, bool depthTest)
+            Matrix4 mvp, Vector4 color, bool depthTest,
+            int firstVertex = 0)
         {
             if (vertexBuffer.NativePtr == IntPtr.Zero || vertexCount <= 0 || !_initialized)
                 return;
@@ -84,12 +100,15 @@ namespace CloudScope.Platform.Metal.Rendering
             if (encoder.NativePtr == IntPtr.Zero)
                 return;
 
-            ulong stride = 256;
+            ulong stride = UniformStride;
             ulong offset = (ulong)_uniformOffset * stride;
-            if (offset + stride > _uniformsBuffer.Length)
+            int frameRegionEnd = (_bufferedFrameIndex + 1) * DrawsPerFrame;
+            if (_uniformOffset >= frameRegionEnd || offset + stride > _uniformsBuffer.Length)
             {
-                _uniformOffset = 0;
-                offset = 0;
+                // A pathological gizmo frame exceeded its reserved region. Reuse the
+                // last slot deterministically instead of corrupting another in-flight frame.
+                _uniformOffset = frameRegionEnd - 1;
+                offset = (ulong)_uniformOffset * stride;
             }
 
             unsafe
@@ -104,7 +123,11 @@ namespace CloudScope.Platform.Metal.Rendering
             encoder.SetDepthStencilState(depthTest ? _depthOn : _depthOff);
             encoder.SetVertexBuffer(vertexBuffer, 0, 0);
             encoder.SetVertexBuffer(_uniformsBuffer, offset, 1);
-            encoder.DrawPrimitives(primitiveType, 0, (ulong)vertexCount);
+            // ColorUniforms is consumed by both color_vertex and color_fragment.
+            // Binding only the vertex stage leaves the fragment color undefined,
+            // making all primitive-based gizmos and line overlays disappear.
+            encoder.SetFragmentBuffer(_uniformsBuffer, offset, 1);
+            encoder.DrawPrimitives(primitiveType, (ulong)firstVertex, (ulong)vertexCount);
         }
 
         public void Dispose()

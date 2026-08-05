@@ -33,7 +33,13 @@ namespace CloudScope.Platform.Metal
 
             var da = frame.RenderPassDescriptor.DepthAttachment;
             if (da.NativePtr != IntPtr.Zero && da.Texture.NativePtr != IntPtr.Zero)
+            {
+                // Picking happens from input events after this render pass has ended.
+                // MTKView may default depth to DontCare, which permits Metal to discard
+                // it as soon as rendering completes, so explicitly preserve it.
+                da.StoreAction = MTLStoreAction.Store;
                 MetalFrameContext.SetDepthTexture(da.Texture);
+            }
 
             var cmdBuffer = frame.CommandBuffer;
             if (cmdBuffer.NativePtr == IntPtr.Zero) return MetalFrameSession.Empty;
@@ -47,7 +53,39 @@ namespace CloudScope.Platform.Metal
 
         public void Resize(int width, int height) { }
 
-        public void SetViewport(int x, int y, int width, int height) { }
+        public void SetViewport(int x, int y, int width, int height)
+        {
+            MetalFrameState? frame = MetalFrameContext.CurrentFrame;
+            if (frame == null || width <= 0 || height <= 0)
+                return;
+
+            MTLRenderCommandEncoder encoder = frame.RenderCommandEncoder;
+            if (encoder.NativePtr == IntPtr.Zero)
+                return;
+
+            // ViewerController supplies OpenGL-style bottom-left coordinates. Metal's
+            // viewport/scissor origin is top-left, so mirror Y against the attachment.
+            var colorTexture = frame.RenderPassDescriptor.ColorAttachments.Object(0).Texture;
+            int targetHeight = colorTexture.NativePtr == IntPtr.Zero ? height : checked((int)colorTexture.Height);
+            int metalY = Math.Max(0, targetHeight - y - height);
+
+            encoder.SetViewport(new MTLViewport
+            {
+                originX = x,
+                originY = metalY,
+                width = width,
+                height = height,
+                znear = 0.0,
+                zfar = 1.0
+            });
+            encoder.SetScissorRect(new MTLScissorRect
+            {
+                x = (ulong)Math.Max(0, x),
+                y = (ulong)metalY,
+                width = (ulong)width,
+                height = (ulong)height
+            });
+        }
 
         private sealed class MetalFrameSession : IRenderFrameSession
         {

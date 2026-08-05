@@ -27,10 +27,10 @@ namespace CloudScope.Platform.Metal
 
         private unsafe int ReadDepthWindow(int x, int y, int width, int height, Span<float> destination)
         {
+            destination.Fill(1f);
             var texture = MetalFrameContext.DepthTexture;
             if (texture.NativePtr == IntPtr.Zero || width <= 0 || height <= 0)
             {
-                destination.Fill(1f);
                 return 0;
             }
 
@@ -51,7 +51,6 @@ namespace CloudScope.Platform.Metal
             int count = Math.Max(0, readW * readH);
             if (count == 0)
             {
-                destination.Fill(1f);
                 return 0;
             }
 
@@ -106,7 +105,13 @@ namespace CloudScope.Platform.Metal
                         float* src = (float*)(srcBase + (ulong)row * bytesPerRow);
                         float* dst = dstBase + row * readW;
                         for (int col = 0; col < readW; col++)
-                            dst[col] = src[col];
+                        {
+                            // The shared camera supplies the established OpenGL projection
+                            // matrix directly to both renderers. Metal stores its resulting
+                            // NDC Z, while OrbitCamera expects OpenGL window depth.
+                            float metalDepth = src[col];
+                            dst[col] = metalDepth >= 1f ? 1f : metalDepth * 0.5f + 0.5f;
+                        }
                     }
                 }
             }
