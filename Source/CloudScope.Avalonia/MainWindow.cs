@@ -21,6 +21,7 @@ public sealed partial class MainWindow : Window
 
     // Cached control references — resolved once after InitializeComponent
     private Menu _mainMenuControl = null!;
+    private Grid _workspaceGrid = null!;
     private TextBlock _statusBlock = null!;
     private TextBox _commandInput = null!;
     private TextBox _historyOutput = null!;
@@ -56,6 +57,7 @@ public sealed partial class MainWindow : Window
 
     private void ResolveControls()
     {
+        _workspaceGrid    = this.FindControl<Grid>("WorkspaceGrid")            ?? throw new InvalidOperationException("WorkspaceGrid control is missing.");
         _mainMenuControl  = this.FindControl<Menu>("MainMenuBar")              ?? throw new InvalidOperationException("MainMenuBar control is missing.");
         _statusBlock      = this.FindControl<TextBlock>("StatusText")           ?? throw new InvalidOperationException("StatusText control is missing.");
         _commandInput     = this.FindControl<TextBox>("CommandBox")             ?? throw new InvalidOperationException("CommandBox control is missing.");
@@ -70,6 +72,7 @@ public sealed partial class MainWindow : Window
             return;
 
         _mainMenuControl.IsVisible = false;
+        _workspaceGrid.RowDefinitions[0].Height = new GridLength(0);
         NativeMenu.SetMenu(this, BuildNativeMenu());
     }
 

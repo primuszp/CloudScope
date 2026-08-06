@@ -52,7 +52,7 @@
     </Style>
   </Window.Styles>
 
-  <Grid RowDefinitions="30,58,*,146,24">
+  <Grid x:Name="WorkspaceGrid" RowDefinitions="30,58,*,146,24">
     <Menu x:Name="MainMenuBar" Grid.Row="0">
       <MenuItem Header="_File">
         <MenuItem x:Name="OpenLasMenuItem" Header="_Open point cloud..." InputGesture="Ctrl+O" />
