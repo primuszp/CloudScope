@@ -13,9 +13,10 @@ Console.WriteLine("Command line:");
 Console.WriteLine("  OPEN <path> [max-points] - Load a .las/.laz point cloud");
 Console.WriteLine("  Enter / Space            - Submit or repeat the last command");
 Console.WriteLine("  Up / Down                - Browse command history");
-Console.WriteLine("  Escape                   - Cancel the active command");
-Console.WriteLine("  Commands                 - OPEN, SELECT, ZOOM, VIEW, PROJECTION, POINTSIZE,");
-Console.WriteLine("                             LABEL, SAVELABELS, LOADLABELS, UNDO, HELP");
+Console.WriteLine("  Tab                      - Complete keywords and command names");
+Console.WriteLine("  Escape                   - Dismiss the list, then cancel the command");
+Console.WriteLine("  F1 / F2                  - Help / expanded command history");
+Console.WriteLine("  HELP                     - List every registered command");
 Console.WriteLine();
 
 using var viewer = ViewerHostFactory.Create(1600, 900);

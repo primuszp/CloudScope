@@ -1,14 +1,18 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using CloudScope.Avalonia.Controls;
 using CloudScope.Avalonia.Hosting;
 using CloudScope.Avalonia.Hosting.Input;
 using CloudScope.Library;
 using CloudScope.Loading;
 using CloudScope.Commands;
+using CloudScope.Ui;
 
 namespace CloudScope.Avalonia;
 
@@ -17,82 +21,328 @@ public sealed partial class MainWindow : Window
     private readonly HostController _hostController = new();
     private readonly bool _useNativeMenu = OperatingSystem.IsMacOS();
     private readonly CommandLineSession _commandSession;
-    private ViewportInputHost? _viewport;
+    private readonly DispatcherTimer _statusTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
+    private readonly List<(Button Button, string CheckState)> _toolButtons = [];
+    private readonly Dictionary<string, TextBlock> _inspectorValues = new(StringComparer.Ordinal);
+    private readonly ShellSettings _settings = ShellSettings.Load();
+
+    private CommandLineControl _commandLine = null!;
 
     // Cached control references — resolved once after InitializeComponent
     private Menu _mainMenuControl = null!;
     private Grid _workspaceGrid = null!;
-    private TextBlock _statusBlock = null!;
-    private TextBox _commandInput = null!;
-    private TextBox _historyOutput = null!;
-    private TextBlock _commandPrompt = null!;
+    private StackPanel _toolStripPanel = null!;
+    private StackPanel _inspectorPanel = null!;
+    private Grid _contentGrid = null!;
+    private ContentControl _commandLineHost = null!;
     private ContentControl _viewportContainer = null!;
+    private TextBlock _statusText = null!;
+    private TextBlock _statusPoints = null!;
+    private TextBlock _statusMode = null!;
+    private TextBlock _statusLabel = null!;
+    private TextBlock _statusProjection = null!;
+    private TextBlock _statusFps = null!;
+    private TextBlock _viewBadgeTitle = null!;
+    private TextBlock _viewBadgeSubtitle = null!;
 
     public MainWindow()
     {
         _commandSession = new CommandLineSession(
             command => _hostController.ExecuteCommandResult(command, publishResult: false),
-            () => _hostController.CommandPrompt);
+            () => _hostController.CommandPrompt,
+            _hostController.Commands);
 
         InitializeComponent();
         ResolveControls();
 
         _hostController.StatusChanged += OnStatusChanged;
-        ConfigureMenuUi();
-        WireMenu();
-        WireToolbar();
-        WireCommandBox();
+        _hostController.ViewerStateChanged += _ => Dispatcher.UIThread.Post(RefreshViewerState);
 
-        _viewport = new ViewportInputHost(_hostController);
-        _viewportContainer.Content = _viewport;
+        ConfigureWindowChrome();
+        BuildMenu();
+        BuildToolStrip();
+        BuildInspector();
+        BuildCommandLine();
+
+        _viewportContainer.Content = new ViewportInputHost(_hostController);
 
         AddHandler(KeyDownEvent, OnWindowKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, OnWindowKeyUp, RoutingStrategies.Tunnel);
 
-        _statusBlock.Text = _hostController.Status;
-        RefreshHistory();
+        _statusText.Text = _hostController.StatusText;
+
+        // The viewer's FPS and camera state change without a command being run, so the
+        // inspector and status bar are refreshed on a slow timer rather than per frame.
+        _statusTimer.Tick += (_, _) => RefreshViewerState();
+        _statusTimer.Start();
+
+        Opened += (_, _) => _commandLine.FocusInput();
+        Closing += (_, _) => SaveShellSettings();
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 
     private void ResolveControls()
     {
-        _workspaceGrid    = this.FindControl<Grid>("WorkspaceGrid")            ?? throw new InvalidOperationException("WorkspaceGrid control is missing.");
-        _mainMenuControl  = this.FindControl<Menu>("MainMenuBar")              ?? throw new InvalidOperationException("MainMenuBar control is missing.");
-        _statusBlock      = this.FindControl<TextBlock>("StatusText")           ?? throw new InvalidOperationException("StatusText control is missing.");
-        _commandInput     = this.FindControl<TextBox>("CommandBox")             ?? throw new InvalidOperationException("CommandBox control is missing.");
-        _historyOutput    = this.FindControl<TextBox>("HistoryText")            ?? throw new InvalidOperationException("HistoryText control is missing.");
-        _commandPrompt    = this.FindControl<TextBlock>("CommandPromptText")    ?? throw new InvalidOperationException("CommandPromptText control is missing.");
-        _viewportContainer = this.FindControl<ContentControl>("ViewportHost")  ?? throw new InvalidOperationException("ViewportHost control is missing.");
+        _workspaceGrid      = Find<Grid>("WorkspaceGrid");
+        _mainMenuControl    = Find<Menu>("MainMenuBar");
+        _toolStripPanel     = Find<StackPanel>("ToolStripPanel");
+        _inspectorPanel     = Find<StackPanel>("InspectorPanel");
+        _contentGrid        = Find<Grid>("ContentGrid");
+        _commandLineHost    = Find<ContentControl>("CommandLineHost");
+        _viewportContainer  = Find<ContentControl>("ViewportHost");
+        _statusText         = Find<TextBlock>("StatusText");
+        _statusPoints       = Find<TextBlock>("StatusPoints");
+        _statusMode         = Find<TextBlock>("StatusMode");
+        _statusLabel        = Find<TextBlock>("StatusLabel");
+        _statusProjection   = Find<TextBlock>("StatusProjection");
+        _statusFps          = Find<TextBlock>("StatusFps");
+        _viewBadgeTitle     = Find<TextBlock>("ViewBadgeTitle");
+        _viewBadgeSubtitle  = Find<TextBlock>("ViewBadgeSubtitle");
     }
 
-    private void ConfigureMenuUi()
+    private T Find<T>(string name) where T : Control =>
+        this.FindControl<T>(name) ?? throw new InvalidOperationException($"{name} control is missing.");
+
+    // ── Chrome ──────────────────────────────────────────────────────────────
+
+    private void ConfigureWindowChrome()
     {
         if (!_useNativeMenu)
             return;
 
+        // macOS: the menu belongs in the system menu bar, and the tool strip sits in a
+        // unified titlebar so the window reads like a native document app.
         _mainMenuControl.IsVisible = false;
         _workspaceGrid.RowDefinitions[0].Height = new GridLength(0);
-        NativeMenu.SetMenu(this, BuildNativeMenu());
+
+        ExtendClientAreaToDecorationsHint = true;
+        ExtendClientAreaTitleBarHeightHint = -1;
+        Find<Border>("ToolStripBorder").Padding = new Thickness(78, 0, 0, 0);
     }
 
-    private void WireMenu()
+    // ── Menu ────────────────────────────────────────────────────────────────
+
+    private void BuildMenu()
     {
-        MenuItem("OpenLasMenuItem").Click     += (_, _) => RunCommandFromUi("OPEN");
-        MenuItem("ProjectionMenuItem").Click  += (_, _) => RunCommandFromUi("PROJECTION");
-        MenuItem("StatusMenuItem").Click      += (_, _) => RunCommandFromUi("STATUS");
-        MenuItem("ResetMenuItem").Click       += (_, _) => RunCommandFromUi("RESET");
-        MenuItem("ExitMenuItem").Click        += (_, _) => Close();
-        MenuItem("NavigateMenuItem").Click    += (_, _) => RunCommandFromUi("NAVIGATE");
-        MenuItem("LabelModeMenuItem").Click   += (_, _) => RunCommandFromUi("LABELMODE");
-        MenuItem("BoxMenuItem").Click         += (_, _) => RunCommandFromUi("SELECT B");
-        MenuItem("SphereMenuItem").Click      += (_, _) => RunCommandFromUi("SELECT S");
-        MenuItem("CylinderMenuItem").Click    += (_, _) => RunCommandFromUi("SELECT C");
-        MenuItem("ConfirmMenuItem").Click     += (_, _) => RunCommandFromUi("CONFIRM");
-        MenuItem("CancelMenuItem").Click      += (_, _) => RunCommandFromUi("CANCEL");
-        MenuItem("FitMenuItem").Click         += (_, _) => RunCommandFromUi("FIT");
-        MenuItem("FitGroundMenuItem").Click   += (_, _) => RunCommandFromUi("FITGROUND");
-        MenuItem("LabelRegistryMenuItem").Click += (_, _) => OpenLabelRegistry();
+        IReadOnlyList<CommandMenuEntry> model = CommandMenu.Build();
+
+        if (_useNativeMenu)
+        {
+            NativeMenu.SetMenu(this, BuildNativeMenu(model));
+            return;
+        }
+
+        foreach (CommandMenuEntry group in model)
+            _mainMenuControl.Items.Add(BuildMenuItem(group));
+    }
+
+    private MenuItem BuildMenuItem(CommandMenuEntry entry)
+    {
+        var item = new MenuItem { Header = entry.Header };
+
+        if (entry.IsSubmenu)
+        {
+            foreach (CommandMenuEntry child in entry.Items)
+            {
+                if (child.IsSeparator)
+                    item.Items.Add(new Separator());
+                else
+                    item.Items.Add(BuildMenuItem(child));
+            }
+
+            return item;
+        }
+
+        if (entry.Shortcut.Length > 0 && TryParseGesture(entry.Shortcut, out KeyGesture? gesture))
+            item.InputGesture = gesture;
+
+        item.Click += (_, _) => Activate(entry.Command);
+        return item;
+    }
+
+    private NativeMenu BuildNativeMenu(IReadOnlyList<CommandMenuEntry> model)
+    {
+        var menu = new NativeMenu();
+        foreach (CommandMenuEntry group in model)
+        {
+            var groupItem = new NativeMenuItem(group.Header) { Menu = new NativeMenu() };
+            foreach (CommandMenuEntry child in group.Items)
+                groupItem.Menu.Add(BuildNativeItem(child));
+            menu.Items.Add(groupItem);
+        }
+
+        return menu;
+    }
+
+    private NativeMenuItemBase BuildNativeItem(CommandMenuEntry entry)
+    {
+        if (entry.IsSeparator)
+            return new NativeMenuItemSeparator();
+
+        var item = new NativeMenuItem(entry.Header);
+        if (entry.IsSubmenu)
+        {
+            item.Menu = new NativeMenu();
+            foreach (CommandMenuEntry child in entry.Items)
+                item.Menu.Add(BuildNativeItem(child));
+            return item;
+        }
+
+        if (entry.Shortcut.Length > 0 && TryParseGesture(entry.Shortcut, out KeyGesture? gesture))
+            item.Gesture = gesture;
+
+        item.Click += (_, _) => Activate(entry.Command);
+        return item;
+    }
+
+    // "Mod" is Cmd on macOS and Ctrl elsewhere, so one menu model serves both platforms.
+    private bool TryParseGesture(string shortcut, out KeyGesture? gesture)
+    {
+        gesture = null;
+        string text = shortcut.Replace("Mod+", _useNativeMenu ? "Meta+" : "Ctrl+");
+
+        try
+        {
+            gesture = KeyGesture.Parse(text);
+            return true;
+        }
+        catch (Exception)
+        {
+            // A shortcut this platform cannot express is not worth failing startup over.
+            return false;
+        }
+    }
+
+    // ── Tool strip ──────────────────────────────────────────────────────────
+
+    private void BuildToolStrip()
+    {
+        AddToolButton("⌸", "Open", "OPEN", "");
+        AddToolSeparator();
+        AddToolButton("✥", "Navigate", "NAVIGATE", CommandMenu.CheckStates.ModeNavigate);
+        AddToolButton("✎", "Label", "LABELMODE", CommandMenu.CheckStates.ModeLabel);
+        AddToolSeparator();
+        AddToolButton("▭", "Box", "SELECT B", CommandMenu.CheckStates.ToolBox);
+        AddToolButton("○", "Sphere", "SELECT S", CommandMenu.CheckStates.ToolSphere);
+        AddToolButton("◍", "Cylinder", "SELECT C", CommandMenu.CheckStates.ToolCylinder);
+        AddToolSeparator();
+        AddToolButton("⤢", "Fit", "FIT", "");
+        AddToolButton("✓", "Confirm", "CONFIRM", "");
+        AddToolButton("✕", "Cancel", "CANCEL", "");
+        AddToolSeparator();
+        AddToolButton("⛶", "Extents", "ZOOM E", "");
+    }
+
+    private void AddToolButton(string glyph, string caption, string command, string checkState)
+    {
+        var button = new Button
+        {
+            Classes = { "tool" },
+            Content = new StackPanel
+            {
+                Children =
+                {
+                    new TextBlock { Text = glyph, Classes = { "glyph" } },
+                    new TextBlock { Text = caption, Classes = { "caption" } }
+                }
+            }
+        };
+
+        ToolTip.SetTip(button, $"{caption}  ·  {command}");
+        button.Click += (_, _) => Activate(command);
+        _toolStripPanel.Children.Add(button);
+
+        if (checkState.Length > 0)
+            _toolButtons.Add((button, checkState));
+    }
+
+    private void AddToolSeparator() =>
+        _toolStripPanel.Children.Add(new Border
+        {
+            Width = 1,
+            Margin = new Thickness(6, 4),
+            [!BackgroundProperty] = new global::Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("CsBorder")
+        });
+
+    // ── Inspector ───────────────────────────────────────────────────────────
+
+    private void BuildInspector()
+    {
+        AddInspectorGroup("GENERAL", "File", "Points", "Filter");
+        AddInspectorGroup("VIEW", "Projection", "View", "Layout", "FPS");
+        AddInspectorGroup("DISPLAY", "Color by", "Point size");
+        AddInspectorGroup("LABELING", "Mode", "Tool", "State", "Label", "Instance");
+
+        var registry = new Button { Content = "Label registry...", HorizontalAlignment = HorizontalAlignment.Stretch };
+        registry.Click += (_, _) => OpenLabelRegistry();
+        _inspectorPanel.Children.Add(registry);
+    }
+
+    private void AddInspectorGroup(string title, params string[] rows)
+    {
+        _inspectorPanel.Children.Add(new TextBlock { Text = title, Classes = { "sectionTitle" } });
+
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("104,*"), RowSpacing = 5 };
+        for (int i = 0; i < rows.Length; i++)
+        {
+            grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+
+            var name = new TextBlock { Text = rows[i], Classes = { "propertyName" } };
+            var value = new TextBlock { Text = "—", Classes = { "propertyValue" } };
+            Grid.SetRow(name, i);
+            Grid.SetRow(value, i);
+            Grid.SetColumn(value, 1);
+            grid.Children.Add(name);
+            grid.Children.Add(value);
+            _inspectorValues[rows[i]] = value;
+        }
+
+        _inspectorPanel.Children.Add(grid);
+    }
+
+    // ── Command line ────────────────────────────────────────────────────────
+
+    // The command window keeps the height the user dragged it to, and the input history
+    // survives a restart, so the tool behaves like a workspace rather than a dialog.
+    private const double CommandLineChromeHeight = 62;
+    private const double CommandLineTextLineHeight = 17;
+
+    private void BuildCommandLine()
+    {
+        _commandLine = new CommandLineControl(_commandSession, ExecuteCommandAsync);
+        _commandLine.HistoryRequested += ToggleHistoryWindow;
+        _commandLineHost.Content = _commandLine;
+
+        _commandSession.SeedInputHistory(_settings.RecentInput);
+        _workspaceGrid.RowDefinitions[3].Height = new GridLength(
+            Math.Clamp(_settings.HeightInLines, 1, 20) * CommandLineTextLineHeight + CommandLineChromeHeight);
+        _contentGrid.ColumnDefinitions[2].Width = new GridLength(Math.Clamp(_settings.InspectorWidth, 180, 640));
+    }
+
+    private void SaveShellSettings()
+    {
+        double pixels = _workspaceGrid.RowDefinitions[3].ActualHeight;
+        _settings.HeightInLines = Math.Max(1, (pixels - CommandLineChromeHeight) / CommandLineTextLineHeight);
+        _settings.InspectorWidth = _contentGrid.ColumnDefinitions[2].ActualWidth;
+        _settings.RecentInput = _commandSession.InputHistory.ToList();
+        _settings.Save();
+    }
+
+    private CommandHistoryWindow? _historyWindow;
+
+    private void ToggleHistoryWindow()
+    {
+        if (_historyWindow is { } existing)
+        {
+            existing.Close();
+            _historyWindow = null;
+            return;
+        }
+
+        _historyWindow = new CommandHistoryWindow(_commandSession);
+        _historyWindow.Closed += (_, _) => _historyWindow = null;
+        _historyWindow.Show(this);
     }
 
     private LabelRegistryWindow? _labelRegistryWindow;
@@ -111,132 +361,25 @@ public sealed partial class MainWindow : Window
         _labelRegistryWindow.Show(this);
     }
 
-    private void WireCommandBox()
-    {
-        _commandInput.KeyDown += (_, e) =>
-        {
-            if (e.Key == Key.Escape)
-            {
-                _ = ExecuteCommandAsync("CANCEL");
-                _commandInput.Text = "";
-                e.Handled = true;
-                return;
-            }
-
-            if (e.Key == Key.Up)
-            {
-                _commandInput.Text = _commandSession.Recall(-1);
-                _commandInput.CaretIndex = _commandInput.Text?.Length ?? 0;
-                e.Handled = true;
-                return;
-            }
-
-            if (e.Key == Key.Down)
-            {
-                _commandInput.Text = _commandSession.Recall(1);
-                _commandInput.CaretIndex = _commandInput.Text?.Length ?? 0;
-                e.Handled = true;
-                return;
-            }
-
-            if (e.Key is not Key.Enter and not Key.Space)
-                return;
-
-            string command = _commandInput.Text ?? "";
-            _ = ExecuteCommandAsync(command);
-            _commandInput.Text = "";
-            _commandInput.Focus();
-            e.Handled = true;
-        };
-    }
-
-    private void WireToolbar()
-    {
-        Button("OpenToolbarButton").Click += (_, _) => RunCommandFromUi("OPEN");
-        WireCommandButton("NavigateToolbarButton", "NAVIGATE");
-        WireCommandButton("BoxToolbarButton",      "SELECT B");
-        WireCommandButton("SphereToolbarButton",   "SELECT S");
-        WireCommandButton("CylinderToolbarButton", "SELECT C");
-        WireCommandButton("ConfirmToolbarButton",  "CONFIRM");
-        WireCommandButton("CancelToolbarButton",   "CANCEL");
-    }
-
-    private void WireCommandButton(string name, string command) =>
-        Button(name).Click += (_, _) => RunCommandFromUi(command);
-
-    private void StageCommand(string command)
-    {
-        _commandSession.Stage(command);
-        _commandInput.Text = command;
-        _commandInput.CaretIndex = command.Length;
-        _commandInput.Focus();
-    }
+    /// <summary>
+    /// Every menu item, toolbar button and keyboard shortcut goes through here, so the UI
+    /// can only do what the user could type. Commands needing a shell-owned window are
+    /// handled in <see cref="ExecuteCommandAsync"/>, which is also what typing them hits.
+    /// </summary>
+    private void Activate(string command) => RunCommandFromUi(command);
 
     private void RunCommandFromUi(string command)
     {
-        StageCommand(command);
+        _commandLine.Stage(command);
         _ = SubmitStagedCommandAsync(command);
     }
 
     private async Task SubmitStagedCommandAsync(string command)
     {
         await ExecuteCommandAsync(command);
-        _commandInput.Text = "";
-        _commandInput.Focus();
-    }
-
-    private Button Button(string name) =>
-        this.FindControl<Button>(name)
-        ?? throw new InvalidOperationException($"{name} control is missing.");
-
-    private MenuItem MenuItem(string name) =>
-        this.FindControl<MenuItem>(name)
-        ?? throw new InvalidOperationException($"{name} control is missing.");
-
-    private NativeMenu BuildNativeMenu()
-    {
-        var menu = new NativeMenu();
-
-        menu.Items.Add(CreateNativeGroup("Host",
-        [
-            NativeAction("Open LAS...", (_, _) => RunCommandFromUi("OPEN"), "Meta+O"),
-            NativeAction("Status",      (_, _) => RunCommandFromUi("STATUS")),
-            NativeAction("Reset Host",  (_, _) => RunCommandFromUi("RESET")),
-            new NativeMenuItemSeparator(),
-            NativeAction("Exit",        (_, _) => Close(), "Meta+Q")
-        ]));
-
-        menu.Items.Add(CreateNativeGroup("Viewer",
-        [
-            NativeAction("Navigate",   (_, _) => RunCommandFromUi("NAVIGATE")),
-            NativeAction("Label Mode", (_, _) => RunCommandFromUi("LABELMODE")),
-            new NativeMenuItemSeparator(),
-            NativeAction("Box",      (_, _) => RunCommandFromUi("SELECT B")),
-            NativeAction("Sphere",   (_, _) => RunCommandFromUi("SELECT S")),
-            NativeAction("Cylinder", (_, _) => RunCommandFromUi("SELECT C")),
-            new NativeMenuItemSeparator(),
-            NativeAction("Confirm", (_, _) => RunCommandFromUi("CONFIRM"), "Meta+Enter"),
-            NativeAction("Cancel",  (_, _) => RunCommandFromUi("CANCEL"),  "Escape")
-        ]));
-
-        return menu;
-    }
-
-    private static NativeMenuItem CreateNativeGroup(string header, params NativeMenuItemBase[] items)
-    {
-        var group = new NativeMenuItem(header) { Menu = new NativeMenu() };
-        foreach (NativeMenuItemBase item in items)
-            group.Menu.Add(item);
-        return group;
-    }
-
-    private static NativeMenuItem NativeAction(string header, EventHandler handler, string? gesture = null)
-    {
-        var item = new NativeMenuItem(header);
-        item.Click += handler;
-        if (!string.IsNullOrWhiteSpace(gesture))
-            item.Gesture = KeyGesture.Parse(gesture);
-        return item;
+        _commandLine.Clear();
+        _commandLine.Refresh();
+        _commandLine.FocusInput();
     }
 
     private async Task ExecuteCommandAsync(string command)
@@ -244,49 +387,146 @@ public sealed partial class MainWindow : Window
         if (TryGetOpenPath(command, out string? path))
         {
             _commandSession.Submit(command, _ => CommandResult.End("Loading point cloud..."));
-            RefreshHistory();
-            _commandPrompt.Text = _hostController.CommandPrompt;
             await OpenLasAsync(path);
+            RefreshViewerState();
+            return;
+        }
+
+        // These two commands open windows this shell owns rather than viewer state, so they
+        // are answered here instead of being forwarded to the viewer's runtime.
+        if (CommandText.TryMatch(command, "HISTORY", out _))
+        {
+            _commandSession.Submit(command, _ =>
+            {
+                ToggleHistoryWindow();
+                return CommandResult.End($"Command history {(_historyWindow != null ? "shown" : "hidden")}.");
+            });
+            return;
+        }
+
+        if (CommandText.TryMatch(command, "LABELS", out _))
+        {
+            _commandSession.Submit(command, _ =>
+            {
+                OpenLabelRegistry();
+                return CommandResult.End("Label registry shown.");
+            });
             return;
         }
 
         _commandSession.Submit(command);
-        RefreshHistory();
-        _commandPrompt.Text = _hostController.CommandPrompt;
+        RefreshViewerState();
     }
+
+    // ── State refresh ───────────────────────────────────────────────────────
+
+    private ViewerStatusSnapshot? _lastStatus;
+
+    private void RefreshViewerState()
+    {
+        ViewerStatusSnapshot status = _hostController.Status;
+
+        // FPS moves every tick, so it is written on its own; everything else is rewritten
+        // only when it actually changed, instead of invalidating layout a few times a second.
+        _statusFps.Text = status.Fps > 0f ? $"{status.Fps:0} fps" : "";
+        SetValue("FPS", status.Fps > 0f ? $"{status.Fps:0}" : "—");
+
+        if (_lastStatus is { } previous && status == previous with { Fps = status.Fps })
+            return;
+
+        _lastStatus = status;
+
+        SetValue("File", status.SourceName.Length > 0 ? status.SourceName : "—");
+        SetValue("Points", status.HasCloud ? status.PointCountText : "—");
+        SetValue("Filter", status.Filter.Length > 0 ? status.Filter : "None");
+        SetValue("Projection", status.ProjectionText);
+        SetValue("View", status.ViewName);
+        SetValue("Layout", status.ViewportLayout);
+        SetValue("Color by", status.ColorSource.ToDisplayName());
+        SetValue("Point size", $"{status.PointSize:0.0} px");
+        SetValue("Mode", status.Mode.ToString());
+        SetValue("Tool", status.ActiveTool.ToString());
+        SetValue("State", status.InteractionState.ToString());
+        SetValue("Label", status.CurrentLabel.Length > 0 ? status.CurrentLabel : "—");
+        SetValue("Instance", status.InstanceText);
+
+        _statusPoints.Text = status.HasCloud ? $"{status.PointCountText} pts" : "No point cloud";
+        _statusMode.Text = $"{status.Mode} · {status.ActiveTool}";
+        _statusLabel.Text = status.CurrentLabel.Length > 0
+            ? $"Label: {status.CurrentLabel} ({status.InstanceText})"
+            : "Label: —";
+        _statusProjection.Text = status.ProjectionText;
+
+        _viewBadgeTitle.Text = status.ViewName;
+        _viewBadgeSubtitle.Text = status.ViewportLayout;
+
+        foreach ((Button button, string checkState) in _toolButtons)
+        {
+            bool active = CommandMenu.IsChecked(checkState, status);
+            if (active != button.Classes.Contains("active"))
+            {
+                if (active) button.Classes.Add("active");
+                else button.Classes.Remove("active");
+            }
+        }
+    }
+
+    private void SetValue(string row, string value)
+    {
+        if (_inspectorValues.TryGetValue(row, out TextBlock? block))
+            block.Text = value;
+    }
+
+    // ── Input ───────────────────────────────────────────────────────────────
 
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
     {
-        if (ReferenceEquals(e.Source, _commandInput))
+        if (e.Source is TextBox)
             return;
+
+        if (e.Key == Key.F2)
+        {
+            ToggleHistoryWindow();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.F1)
+        {
+            _commandLine.Stage("HELP");
+            e.Handled = true;
+            return;
+        }
 
         if (e.Key is Key.Enter or Key.Space)
         {
-            _ = ExecuteCommandAsync("");
+            _ = SubmitStagedCommandAsync("");
             e.Handled = true;
             return;
         }
 
-        if (e.Key is Key.F1 or Key.F2 || (e.Key == Key.Space && e.KeyModifiers.HasFlag(KeyModifiers.Control)))
-        {
-            if (e.Key == Key.F1)
-                StageCommand("HELP");
-            _commandInput.Focus();
-            e.Handled = true;
-            return;
-        }
-
+        // AutoCAD keeps the command line hot: typing anywhere that is not a viewer shortcut
+        // starts a command instead of being swallowed by the focused control.
         ViewerKey key = AvaloniaViewerKeyMapper.ToViewerKey(e.Key);
         if (key == ViewerKey.Unknown)
+        {
+            if (IsTypingKey(e))
+                _commandLine.FocusInput();
+
             return;
+        }
 
         _hostController.ForwardKeyDown(key);
         e.Handled = true;
     }
 
+    private static bool IsTypingKey(KeyEventArgs e) =>
+        e.KeyModifiers is KeyModifiers.None or KeyModifiers.Shift &&
+        (e.Key is >= Key.A and <= Key.Z || e.Key is >= Key.D0 and <= Key.D9);
+
     private void OnWindowKeyUp(object? sender, KeyEventArgs e)
     {
-        if (ReferenceEquals(e.Source, _commandInput))
+        if (e.Source is TextBox)
             return;
 
         ViewerKey key = AvaloniaViewerKeyMapper.ToViewerKey(e.Key);
@@ -301,24 +541,20 @@ public sealed partial class MainWindow : Window
     {
         Dispatcher.UIThread.Post(() =>
         {
-            _statusBlock.Text = _hostController.Status;
+            _statusText.Text = _hostController.StatusText;
             _commandSession.AddHistory(message);
-            RefreshHistory();
-            _commandPrompt.Text = _hostController.CommandPrompt;
+            _commandLine.Refresh();
+            RefreshViewerState();
         });
     }
 
     private void AddHistory(string message)
     {
         _commandSession.AddHistory(message);
-        RefreshHistory();
+        _commandLine.Refresh();
     }
 
-    private void RefreshHistory()
-    {
-        _historyOutput.Text = string.Join(Environment.NewLine, _commandSession.History);
-        _historyOutput.CaretIndex = _historyOutput.Text.Length;
-    }
+    // ── Loading ─────────────────────────────────────────────────────────────
 
     private async Task OpenLasAsync(string? path)
     {
@@ -331,7 +567,7 @@ public sealed partial class MainWindow : Window
 
         try
         {
-            var progress = new Progress<int>(pct => Dispatcher.UIThread.Post(() => _statusBlock.Text = $"Loading {pct}%"));
+            var progress = new Progress<int>(pct => Dispatcher.UIThread.Post(() => _statusText.Text = $"Loading {pct}%"));
             LoadedPointCloud cloud = await Task.Run(() =>
             {
                 using var reader = new LasReader(path);

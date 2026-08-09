@@ -13,12 +13,17 @@ public abstract class EmbeddedOpenTkNativeHostBase : NativeControlHost, IEmbedde
 
     protected EmbeddedOpenTkNativeHostBase(HostController hostController)
     {
+        Commands = new DelegatingCommandExecutor(
+            () => Viewer?.Commands,
+            "Embedded OpenTK host is not ready.");
         hostController.SetEmbeddedHost(this);
     }
 
     protected EmbeddedOpenTkViewerHost? Viewer { get; private set; }
     public string RendererName => "OpenGL";
-    public string CommandPrompt => Viewer?.CommandPrompt ?? "Command:";
+    public ViewerStatusSnapshot Status => Viewer?.Status ?? ViewerStatusSnapshot.Empty;
+
+    public ICommandExecutor Commands { get; }
     public IReadOnlyCollection<CloudScope.Labeling.LabelDefinition> LabelDefinitions => Viewer?.LabelDefinitions ?? System.Array.Empty<CloudScope.Labeling.LabelDefinition>();
     public string ActiveLabel => Viewer?.ActiveLabel ?? "";
     public int? ActiveInstanceId => Viewer?.ActiveInstanceId;
@@ -57,22 +62,6 @@ public abstract class EmbeddedOpenTkNativeHostBase : NativeControlHost, IEmbedde
 
         viewer.Enqueue(v => v.Reset());
     }
-
-    public CommandResult ExecuteViewerCommandResult(string commandText) =>
-        Viewer?.ExecuteCommandResult(commandText) ?? CommandResult.End("Embedded OpenTK host is not ready.");
-
-    public bool IsKnownCommand(string name) => Viewer?.IsKnownCommand(name) == true;
-
-    public IReadOnlyCollection<string> KnownCommandNames => Viewer?.KnownCommandNames ?? [];
-
-    public bool HasActiveCommand => Viewer?.HasActiveCommand == true;
-
-    public bool IsTransparentCommand(string name) => Viewer?.IsTransparentCommand(name) == true;
-
-    public CommandResult CancelActiveCommand() => Viewer?.CancelActiveCommand() ?? CommandResult.Cancel();
-
-    public string ExecuteViewerCommand(string commandText) =>
-        ExecuteViewerCommandResult(commandText).Message;
 
     public void ForwardKeyDown(ViewerKey key) => Viewer?.ForwardKeyDown(key);
 

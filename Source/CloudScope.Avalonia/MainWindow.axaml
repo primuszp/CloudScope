@@ -1,214 +1,159 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="CloudScope.Avalonia.MainWindow"
-        Title="CloudScope — Point Cloud Workspace"
+        Title="CloudScope"
         Width="1440"
         Height="900"
         MinWidth="1040"
         MinHeight="680"
-        Background="#1E2228"
-        FontFamily="Segoe UI, Arial">
+        Background="{DynamicResource CsSurface}"
+        FontFamily="{DynamicResource CsUiFont}">
   <Window.Styles>
     <Style Selector="Menu">
-      <Setter Property="Background" Value="#242A31" />
-      <Setter Property="Foreground" Value="#E4E9EE" />
+      <Setter Property="Background" Value="{DynamicResource CsSurfaceAlt}" />
+      <Setter Property="Foreground" Value="{DynamicResource CsText}" />
     </Style>
     <Style Selector="MenuItem">
       <Setter Property="FontSize" Value="12" />
     </Style>
+
+    <!-- Tool strip: NSToolbar-like on macOS, a flat command strip elsewhere. -->
     <Style Selector="Button.tool">
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="#D9E0E7" />
-      <Setter Property="BorderBrush" Value="#3E4852" />
+      <Setter Property="Foreground" Value="{DynamicResource CsText}" />
       <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="CornerRadius" Value="2" />
-      <Setter Property="Padding" Value="9,5" />
+      <Setter Property="CornerRadius" Value="5" />
+      <Setter Property="Padding" Value="10,4" />
       <Setter Property="FontSize" Value="12" />
+      <Setter Property="MinWidth" Value="54" />
     </Style>
-    <Style Selector="Button.tool:pointerover">
-      <Setter Property="Background" Value="#39434D" />
+    <Style Selector="Button.tool:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource CsSurfaceAlt}" />
     </Style>
-    <Style Selector="Button.commandChip">
-      <Setter Property="Background" Value="#303942" />
-      <Setter Property="Foreground" Value="#D8E0E7" />
-      <Setter Property="BorderBrush" Value="#46515C" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="2" />
-      <Setter Property="Padding" Value="8,3" />
+    <Style Selector="Button.tool.active /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource CsAccentDim}" />
+    </Style>
+    <Style Selector="Button.tool TextBlock.glyph">
+      <Setter Property="FontSize" Value="17" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{DynamicResource CsAccent}" />
+    </Style>
+    <Style Selector="Button.tool TextBlock.caption">
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
+    </Style>
+
+    <!-- Command window -->
+    <Style Selector="TextBlock.prompt">
+      <Setter Property="Foreground" Value="{DynamicResource CsAccent}" />
+      <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,0,8,0" />
+    </Style>
+    <Style Selector="TextBox.commandInput">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="{DynamicResource CsText}" />
+      <Setter Property="CaretBrush" Value="{DynamicResource CsAccent}" />
+      <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="Button.keywordLink">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="6,1" />
+      <Setter Property="Margin" Value="0,0,4,0" />
       <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
     </Style>
+    <Style Selector="Button.keywordLink:pointerover">
+      <Setter Property="Foreground" Value="{DynamicResource CsAccent}" />
+    </Style>
+    <Style Selector="Button.keywordLink.defaultKeyword">
+      <Setter Property="Foreground" Value="{DynamicResource CsAccent}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
     <Style Selector="TextBlock.sectionTitle">
-      <Setter Property="Foreground" Value="#AAB6C2" />
+      <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
       <Setter Property="FontSize" Value="10" />
       <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
     <Style Selector="TextBlock.propertyName">
-      <Setter Property="Foreground" Value="#9DA9B5" />
+      <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
       <Setter Property="FontSize" Value="11" />
     </Style>
     <Style Selector="TextBlock.propertyValue">
-      <Setter Property="Foreground" Value="#E0E6EC" />
+      <Setter Property="Foreground" Value="{DynamicResource CsText}" />
       <Setter Property="FontSize" Value="11" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+    <Style Selector="TextBlock.statusItem">
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="8,0" />
     </Style>
   </Window.Styles>
 
-  <Grid x:Name="WorkspaceGrid" RowDefinitions="30,58,*,146,24">
-    <Menu x:Name="MainMenuBar" Grid.Row="0">
-      <MenuItem Header="_File">
-        <MenuItem x:Name="OpenLasMenuItem" Header="_Open point cloud..." InputGesture="Ctrl+O" />
-        <Separator />
-        <MenuItem x:Name="ExitMenuItem" Header="E_xit" />
-      </MenuItem>
-      <MenuItem Header="_Home">
-        <MenuItem x:Name="NavigateMenuItem" Header="_Navigate" />
-        <MenuItem x:Name="LabelModeMenuItem" Header="_Label mode" />
-        <Separator />
-        <MenuItem x:Name="BoxMenuItem" Header="_Box selection" />
-        <MenuItem x:Name="SphereMenuItem" Header="_Sphere selection" />
-        <MenuItem x:Name="CylinderMenuItem" Header="_Cylinder selection" />
-        <Separator />
-        <MenuItem x:Name="LabelRegistryMenuItem" Header="Label _registry..." />
-      </MenuItem>
-      <MenuItem Header="_Edit">
-        <MenuItem x:Name="FitMenuItem" Header="_Fit to points" />
-        <MenuItem x:Name="FitGroundMenuItem" Header="Fit to _ground" />
-        <Separator />
-        <MenuItem x:Name="ConfirmMenuItem" Header="_Confirm" />
-        <MenuItem x:Name="CancelMenuItem" Header="_Cancel" />
-      </MenuItem>
-      <MenuItem Header="_View">
-        <MenuItem x:Name="ProjectionMenuItem" Header="Toggle _projection (persp/parallel)" />
-        <Separator />
-        <MenuItem x:Name="StatusMenuItem" Header="_Status" />
-        <MenuItem x:Name="ResetMenuItem" Header="_Reset host" />
-      </MenuItem>
-    </Menu>
+  <Grid x:Name="WorkspaceGrid" RowDefinitions="30,Auto,*,180,24">
+    <!-- Row 0 is collapsed on macOS, where the menu lives in the system menu bar. -->
+    <Menu x:Name="MainMenuBar" Grid.Row="0" />
 
-    <Border Grid.Row="1" Background="#2B323A" BorderBrush="#12161A" BorderThickness="0,0,0,1">
-      <Grid ColumnDefinitions="Auto,1,Auto,1,Auto,*,Auto" Margin="8,5">
-        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2">
-          <Button x:Name="OpenToolbarButton" Classes="tool" ToolTip.Tip="Open point cloud (Ctrl+O)">
-            <StackPanel>
-              <TextBlock Text="OPEN" Foreground="#4DB7E5" FontWeight="Bold" HorizontalAlignment="Center" />
-              <TextBlock Text="Point Cloud" FontSize="10" HorizontalAlignment="Center" />
-            </StackPanel>
-          </Button>
-          <Button x:Name="NavigateToolbarButton" Classes="tool">
-            <StackPanel>
-              <TextBlock Text="PAN / ORBIT" Foreground="#D7DEE5" FontWeight="Bold" HorizontalAlignment="Center" />
-              <TextBlock Text="Navigate" FontSize="10" HorizontalAlignment="Center" />
-            </StackPanel>
-          </Button>
-        </StackPanel>
-        <Border Grid.Column="1" Background="#4A555F" Margin="8,0" />
-        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
-          <Button x:Name="BoxToolbarButton" Classes="tool">
-            <StackPanel><TextBlock Text="▭" Foreground="#50BFE8" FontSize="20" HorizontalAlignment="Center" /><TextBlock Text="Box" FontSize="10" /></StackPanel>
-          </Button>
-          <Button x:Name="SphereToolbarButton" Classes="tool">
-            <StackPanel><TextBlock Text="○" Foreground="#50BFE8" FontSize="20" HorizontalAlignment="Center" /><TextBlock Text="Sphere" FontSize="10" /></StackPanel>
-          </Button>
-          <Button x:Name="CylinderToolbarButton" Classes="tool">
-            <StackPanel><TextBlock Text="◉" Foreground="#50BFE8" FontSize="20" HorizontalAlignment="Center" /><TextBlock Text="Cylinder" FontSize="10" /></StackPanel>
-          </Button>
-        </StackPanel>
-        <Border Grid.Column="3" Background="#4A555F" Margin="8,0" />
-        <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="2">
-          <Button x:Name="ConfirmToolbarButton" Classes="tool">
-            <StackPanel><TextBlock Text="✓" Foreground="#72D391" FontSize="20" HorizontalAlignment="Center" /><TextBlock Text="Confirm" FontSize="10" /></StackPanel>
-          </Button>
-          <Button x:Name="CancelToolbarButton" Classes="tool">
-            <StackPanel><TextBlock Text="×" Foreground="#EF7B7B" FontSize="20" HorizontalAlignment="Center" /><TextBlock Text="Cancel" FontSize="10" /></StackPanel>
-          </Button>
-        </StackPanel>
-        <TextBlock Grid.Column="6" Text="CLOUDSCOPE  ·  POINT CLOUD" Foreground="#8795A2"
-                   FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center" Margin="16,0" />
-      </Grid>
+    <Border x:Name="ToolStripBorder" Grid.Row="1"
+            Background="{DynamicResource CsSurfaceAlt}"
+            BorderBrush="{DynamicResource CsBorder}" BorderThickness="0,0,0,1">
+      <StackPanel x:Name="ToolStripPanel" Orientation="Horizontal" Margin="10,6" Spacing="2" />
     </Border>
 
-    <Grid Grid.Row="2" ColumnDefinitions="*,236">
-      <Border Background="#11171C" BorderBrush="#0A0D10" BorderThickness="0,0,1,0">
+    <Grid x:Name="ContentGrid" Grid.Row="2" ColumnDefinitions="*,Auto,280">
+      <Border Background="{DynamicResource CsViewportBackdrop}">
         <Grid>
           <ContentControl x:Name="ViewportHost" />
-          <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12"
-                  Background="#B8181E24" BorderBrush="#51606C" BorderThickness="1" CornerRadius="2" Padding="8,5">
+          <Border x:Name="ViewBadge" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12"
+                  Background="{DynamicResource CsSurfaceDeep}" Opacity="0.82"
+                  BorderBrush="{DynamicResource CsBorder}" BorderThickness="1" CornerRadius="4" Padding="8,5">
             <StackPanel>
-              <TextBlock Text="[ TOP ]" Foreground="#E0E7ED" FontSize="11" FontWeight="SemiBold" />
-              <TextBlock Text="2D WIREFRAME" Foreground="#8595A3" FontSize="9" />
+              <TextBlock x:Name="ViewBadgeTitle" Text="Perspective" Foreground="{DynamicResource CsText}"
+                         FontSize="11" FontWeight="SemiBold" />
+              <TextBlock x:Name="ViewBadgeSubtitle" Text="Single viewport" Classes="sectionTitle" />
             </StackPanel>
           </Border>
-          <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12"
-                  Background="#B8181E24" BorderBrush="#51606C" BorderThickness="1" CornerRadius="2" Padding="8">
-            <StackPanel Spacing="4">
-              <TextBlock Text="   TOP" Foreground="#D5DDE4" FontSize="9" HorizontalAlignment="Center" />
-              <TextBlock Text="LEFT  ◇  RIGHT" Foreground="#7991A3" FontSize="9" />
-              <TextBlock Text="  FRONT" Foreground="#D5DDE4" FontSize="9" HorizontalAlignment="Center" />
-            </StackPanel>
-          </Border>
-          <StackPanel HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="12" Spacing="2">
-            <TextBlock Text="Y" Foreground="#69D488" FontWeight="Bold" FontSize="11" />
-            <TextBlock Text="└── X" Foreground="#E16D6D" FontWeight="Bold" FontSize="11" />
-          </StackPanel>
         </Grid>
       </Border>
 
-      <Border Grid.Column="1" Background="#252C33" Padding="10">
-        <StackPanel Spacing="10">
-          <TextBlock Text="PROPERTIES" Classes="sectionTitle" />
-          <Border Height="1" Background="#46515B" />
-          <Grid ColumnDefinitions="94,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="7">
-            <TextBlock Grid.Row="0" Text="Mode" Classes="propertyName" />
-            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="ModePropertyText" Text="Navigate" Classes="propertyValue" />
-            <TextBlock Grid.Row="1" Text="Selection" Classes="propertyName" />
-            <TextBlock Grid.Row="1" Grid.Column="1" Text="None" Classes="propertyValue" />
-            <TextBlock Grid.Row="2" Text="Layer" Classes="propertyName" />
-            <TextBlock Grid.Row="2" Grid.Column="1" Text="Point Cloud" Classes="propertyValue" />
-            <TextBlock Grid.Row="3" Text="Color" Classes="propertyName" />
-            <TextBlock Grid.Row="3" Grid.Column="1" Text="Classification" Classes="propertyValue" />
-            <TextBlock Grid.Row="4" Text="Point size" Classes="propertyName" />
-            <TextBlock Grid.Row="4" Grid.Column="1" Text="1.0 px" Classes="propertyValue" />
-          </Grid>
-          <TextBlock Text="COMMAND ALIASES" Classes="sectionTitle" Margin="0,10,0,0" />
-          <TextBlock Text="B  Box selection&#10;S  Sphere selection&#10;C  Cylinder selection&#10;U  Undo&#10;Esc  Cancel"
-                     Foreground="#9FAAB4" FontFamily="Cascadia Mono, Consolas" FontSize="10" LineHeight="18" />
-        </StackPanel>
+      <GridSplitter Grid.Column="1" Width="4" Background="{DynamicResource CsBorder}"
+                    ResizeDirection="Columns" />
+
+      <Border Grid.Column="2" Background="{DynamicResource CsSurface}"
+              BorderBrush="{DynamicResource CsBorder}" BorderThickness="1,0,0,0">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel x:Name="InspectorPanel" Margin="12" Spacing="8" />
+        </ScrollViewer>
       </Border>
     </Grid>
 
-    <Border Grid.Row="3" Background="#171C21" BorderBrush="#4A5661" BorderThickness="0,1,0,1">
-      <Grid RowDefinitions="24,*,34">
-        <Grid Background="#222930" ColumnDefinitions="Auto,*,Auto">
-          <TextBlock Text="COMMAND LINE" Foreground="#C4CDD5" FontSize="10" FontWeight="SemiBold"
-                     VerticalAlignment="Center" Margin="10,0" />
-          <TextBlock Grid.Column="2" Text="F2  EXPAND HISTORY" Foreground="#74828E" FontSize="9"
-                     VerticalAlignment="Center" Margin="10,0" />
-        </Grid>
-        <TextBox x:Name="HistoryText" Grid.Row="1" Background="#171C21" BorderThickness="0"
-                 Foreground="#CAD3DB" FontFamily="Cascadia Mono, Consolas" FontSize="11"
-                 Padding="8,3" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
-                 ScrollViewer.VerticalScrollBarVisibility="Auto" />
-        <Border Grid.Row="2" Background="#20262C" BorderBrush="#4DB7E5" BorderThickness="2,1,0,0">
-          <Grid ColumnDefinitions="Auto,*">
-            <TextBlock x:Name="CommandPromptText" Text="Command:" Foreground="#E5EBF0" FontFamily="Cascadia Mono, Consolas"
-                       FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Margin="9,0,0,0" />
-            <TextBox x:Name="CommandBox" Grid.Column="1" Background="Transparent" BorderThickness="0"
-                     Foreground="#F0F4F7" CaretBrush="#51BDE8" FontFamily="Cascadia Mono, Consolas"
-                     FontSize="12" VerticalContentAlignment="Center"
-                     PlaceholderText="Type a command or press F1 for help" />
-          </Grid>
-        </Border>
-      </Grid>
+    <GridSplitter Grid.Row="3" Height="4" VerticalAlignment="Top"
+                  Background="{DynamicResource CsBorder}" ResizeDirection="Rows" />
+
+    <Border Grid.Row="3" Margin="0,4,0,0" MinHeight="120"
+            Background="{DynamicResource CsSurfaceDeep}"
+            BorderBrush="{DynamicResource CsBorder}" BorderThickness="0,1,0,1">
+      <ContentControl x:Name="CommandLineHost" />
     </Border>
 
-    <Border Grid.Row="4" Background="#2585B8">
-      <Grid ColumnDefinitions="Auto,*,Auto,Auto">
-        <TextBlock Text="●  READY" Foreground="White" FontSize="10" VerticalAlignment="Center" Margin="9,0" />
-        <TextBlock x:Name="StatusText" Grid.Column="1" Foreground="White" FontSize="10"
-                   VerticalAlignment="Center" Margin="8,0" />
-        <TextBlock Grid.Column="2" Text="SNAP   GRID   ORTHO   POLAR" Foreground="#D9F1FC"
-                   FontSize="9" VerticalAlignment="Center" Margin="8,0" />
-        <TextBlock Grid.Column="3" Text="MODEL" Foreground="White" FontSize="10" FontWeight="Bold"
-                   VerticalAlignment="Center" Margin="12,0" />
+    <Border Grid.Row="4" Background="{DynamicResource CsAccentDim}">
+      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto">
+        <TextBlock x:Name="StatusPoints" Classes="statusItem" Text="No point cloud" />
+        <TextBlock x:Name="StatusMode" Grid.Column="1" Classes="statusItem" Text="Navigate" />
+        <TextBlock x:Name="StatusLabel" Grid.Column="2" Classes="statusItem" Text="Label: —" />
+        <TextBlock x:Name="StatusProjection" Grid.Column="3" Classes="statusItem" Text="Perspective" />
+        <TextBlock x:Name="StatusText" Grid.Column="4" Classes="statusItem" TextTrimming="CharacterEllipsis" />
+        <TextBlock x:Name="StatusFps" Grid.Column="5" Classes="statusItem" Text="" />
       </Grid>
     </Border>
   </Grid>

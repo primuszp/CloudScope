@@ -40,10 +40,14 @@ public sealed class MacOsEmbeddedMetalNativeHost : NativeControlHost, IEmbeddedO
 
     public MacOsEmbeddedMetalNativeHost(HostController hostController)
     {
+        Commands = new DelegatingCommandExecutor(
+            () => _commands,
+            "Embedded Metal host is not ready.",
+            RequestRedraw);
         hostController.SetEmbeddedHost(this);
     }
 
-    public string CommandPrompt => _commands?.CurrentPrompt ?? "Command:";
+    public ViewerStatusSnapshot Status => _controller?.Status ?? ViewerStatusSnapshot.Empty;
     public string RendererName => "Metal";
     public IReadOnlyCollection<CloudScope.Labeling.LabelDefinition> LabelDefinitions =>
         _controller?.LabelRegistry.Definitions ?? [];
@@ -166,23 +170,11 @@ public sealed class MacOsEmbeddedMetalNativeHost : NativeControlHost, IEmbeddedO
         Enqueue(() => { _controller?.LoadPointCloud(dataset); completed?.Invoke(); });
 
     public void ResetViewer() => Enqueue(() => _controller?.Reset());
-    public bool IsKnownCommand(string name) => _commands?.IsKnownCommand(name) == true;
-    public IReadOnlyCollection<string> KnownCommandNames => _commands?.KnownCommandNames ?? [];
-    public bool HasActiveCommand => _commands?.HasActiveCommand == true;
-    public bool IsTransparentCommand(string name) => _commands?.IsTransparentCommand(name) == true;
-    public CommandResult CancelActiveCommand()
-    {
-        CommandResult result = _commands?.CancelActive() ?? CommandResult.Cancel();
-        RequestRedraw();
-        return result;
-    }
-    public CommandResult ExecuteViewerCommandResult(string text)
-    {
-        CommandResult result = _commands?.ExecuteResult(text) ?? CommandResult.End("Embedded Metal host is not ready.");
-        RequestRedraw();
-        return result;
-    }
-    public string ExecuteViewerCommand(string text) => ExecuteViewerCommandResult(text).Message;
+    /// <summary>
+    /// The Metal host renders on demand, so every command is followed by a redraw request —
+    /// that side effect is the only reason this host wraps the dispatcher at all.
+    /// </summary>
+    public ICommandExecutor Commands { get; }
 
     public void ForwardKeyDown(ViewerKey key)
     {

@@ -24,32 +24,39 @@ namespace CloudScope.Platform.OpenGL
         private int _vertexBufferSize;
         private int _indexBufferSize;
 
-        public ImGuiController(int width, int height)
+        private readonly float _uiScale;
+
+        /// <param name="uiScale">
+        /// Physical pixels per logical pixel (2.0 on Retina). The UI is drawn in physical
+        /// pixels and the style and fonts are scaled to match, so text stays crisp instead of
+        /// being upscaled by the renderer.
+        /// </param>
+        public ImGuiController(int width, int height, float uiScale = 1f)
         {
+            _uiScale = uiScale > 0f ? uiScale : 1f;
+
             ImGui.CreateContext();
-            ImGui.StyleColorsDark();
 
             ImGuiIOPtr io = ImGui.GetIO();
             io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
             io.ConfigFlags |= ImGuiConfigFlags.NavEnableKeyboard;
-            io.DisplaySize = new SysVec2(width, height);
+            io.DisplaySize = new SysVec2(width * _uiScale, height * _uiScale);
 
+            Ui.ImGuiTheme.Apply(_uiScale);
             CreateDeviceResources();
         }
 
         public void Update(GameWindow window, float deltaSeconds)
         {
             ImGuiIOPtr io = ImGui.GetIO();
-            io.DisplaySize = new SysVec2(window.ClientSize.X, window.ClientSize.Y);
-            if (window.ClientSize.X > 0 && window.ClientSize.Y > 0)
-            {
-                io.DisplayFramebufferScale = new SysVec2(
-                    (float)window.FramebufferSize.X / window.ClientSize.X,
-                    (float)window.FramebufferSize.Y / window.ClientSize.Y);
-            }
+
+            // Draw in physical pixels: the GL viewport is the framebuffer, so mapping ImGui's
+            // coordinate space onto it 1:1 is what keeps glyphs sharp on HiDPI displays.
+            io.DisplaySize = new SysVec2(window.FramebufferSize.X, window.FramebufferSize.Y);
+            io.DisplayFramebufferScale = SysVec2.One;
 
             io.DeltaTime = deltaSeconds > 0f ? deltaSeconds : 1f / 60f;
-            UpdateInput(window);
+            UpdateInput(window, PixelScale(window));
 
             ImGui.NewFrame();
         }
@@ -145,7 +152,15 @@ void main()
             GL.BindTexture(TextureTarget.Texture2D, previousTexture);
         }
 
-        private static void UpdateInput(GameWindow window)
+        /// <summary>Logical→physical pixel factor derived from the window itself.</summary>
+        private static SysVec2 PixelScale(GameWindow window) =>
+            window.ClientSize.X > 0 && window.ClientSize.Y > 0
+                ? new SysVec2(
+                    (float)window.FramebufferSize.X / window.ClientSize.X,
+                    (float)window.FramebufferSize.Y / window.ClientSize.Y)
+                : SysVec2.One;
+
+        private static void UpdateInput(GameWindow window, SysVec2 pixelScale)
         {
             ImGuiIOPtr io = ImGui.GetIO();
             MouseState mouse = window.MouseState;
@@ -154,7 +169,7 @@ void main()
             io.AddMouseButtonEvent(0, mouse.IsButtonDown(MouseButton.Left));
             io.AddMouseButtonEvent(1, mouse.IsButtonDown(MouseButton.Right));
             io.AddMouseButtonEvent(2, mouse.IsButtonDown(MouseButton.Middle));
-            io.AddMousePosEvent(mouse.Position.X, mouse.Position.Y);
+            io.AddMousePosEvent(mouse.Position.X * pixelScale.X, mouse.Position.Y * pixelScale.Y);
             io.AddMouseWheelEvent(mouse.ScrollDelta.X, mouse.ScrollDelta.Y);
 
             AddKey(io, ImGuiKey.Tab, keyboard, Keys.Tab);

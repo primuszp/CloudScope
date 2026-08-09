@@ -207,6 +207,14 @@ public sealed class ViewerCommands : ICommandCancellationHandler
         return CommandResult.End("Label registry window toggled.");
     }
 
+    [CommandMethod("HISTORY", Flags = CommandFlags.NoUndoMarker | CommandFlags.NoHistory | CommandFlags.Transparent)]
+    public CommandResult History(CommandContext context)
+    {
+        var viewer = context.GetTarget<ViewerController>();
+        viewer.CommandHistoryVisible = !viewer.CommandHistoryVisible;
+        return CommandResult.End($"Command history {(viewer.CommandHistoryVisible ? "shown" : "hidden")}.");
+    }
+
     [CommandMethod("UNDO", "U", Flags = CommandFlags.NoUndoMarker)]
     public CommandResult Undo(CommandContext context) =>
         CommandResult.End(context.GetTarget<ViewerController>().UndoSelectionCommand() ? "Undo complete." : "Nothing to undo.");
@@ -564,9 +572,24 @@ public sealed class ViewerCommands : ICommandCancellationHandler
     public CommandResult FitGround(CommandContext context) =>
         CommandResult.End(context.GetTarget<ViewerController>().FitActiveSelection(useGround: true));
 
+    /// <summary>
+    /// Set by the dispatcher after registration so HELP can list what is actually
+    /// registered. A hand-written list is a second source of truth that silently rots.
+    /// </summary>
+    internal ICommandExecutor? Executor { get; set; }
+
     [CommandMethod("HELP", "?", Flags = CommandFlags.NoUndoMarker | CommandFlags.NoHistory | CommandFlags.Transparent)]
-    public CommandResult Help(CommandContext context) => CommandResult.End(
-        "Commands: OPEN, SELECT, FILTER, COLORBY, ATTRS, VPORTS, ZOOM, VIEW, PROJECTION, POINTSIZE, LABEL, INSTANCE, SAVELABELS, LOADLABELS, CLEARLABELS, NAVIGATE, RESET, UNDO, HELP.");
+    public CommandResult Help(CommandContext context)
+    {
+        if (Executor == null)
+            return CommandResult.End("Type a command name, or press F1 for the command list.");
+
+        IEnumerable<string> names = Executor.KnownCommandNames
+            .Where(name => Executor.ResolveGlobalName(name).Equals(name, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase);
+
+        return CommandResult.End($"Commands: {string.Join(", ", names)}.");
+    }
 
     public void CancelCommand(CommandContext context, string globalCommandName)
     {

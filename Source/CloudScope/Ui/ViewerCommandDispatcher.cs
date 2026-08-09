@@ -10,8 +10,10 @@ public sealed class ViewerCommandDispatcher : ICommandExecutor
 
     public ViewerCommandDispatcher(ViewerController viewer)
     {
-        _runtime = new CommandRuntime(viewer, new ViewerCommands());
-        Session = new CommandLineSession(ExecuteResult, () => CurrentPrompt);
+        var commands = new ViewerCommands();
+        _runtime = new CommandRuntime(viewer, commands);
+        commands.Executor = _runtime;
+        Session = new CommandLineSession(this);
     }
 
     public event EventHandler<CommandEventArgs>
@@ -25,13 +27,13 @@ public sealed class ViewerCommandDispatcher : ICommandExecutor
 
     public string CurrentPrompt => _runtime.CurrentPrompt;
     public bool IsKnownCommand(string name) => _runtime.IsKnownCommand(name);
+    public string ResolveGlobalName(string name) => _runtime.ResolveGlobalName(name);
     public IReadOnlyCollection<string> KnownCommandNames => _runtime.KnownCommandNames;
     public bool HasActiveCommand => _runtime.HasActiveCommand;
+    public PromptOptions? ActiveOptions => _runtime.ActiveOptions;
     public bool IsTransparentCommand(string name) => _runtime.IsTransparentCommand(name);
-    public CommandResult ExecuteResult(string commandText) => _runtime.Execute(commandText);
-    public CommandResult Execute(string input) => ExecuteResult(input);
+    public CommandResult Execute(string input) => _runtime.Execute(input);
     public CommandResult CancelActive() => _runtime.CancelActive();
-    public string ExecuteCommand(string commandText) => ExecuteResult(commandText).Message;
 
     public bool TryExecuteShortcut(ViewerKey key, bool ctrl)
     {

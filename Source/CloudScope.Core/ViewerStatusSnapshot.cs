@@ -1,0 +1,65 @@
+using CloudScope.Loading;
+using CloudScope.Selection;
+
+namespace CloudScope;
+
+/// <summary>
+/// Everything the shells' status bars and properties panels display, captured in one
+/// immutable value. The viewer publishes it whenever state changes so no UI has to poll
+/// the controller or keep its own copy — the Avalonia inspector and the ImGui properties
+/// panel render the same snapshot.
+/// </summary>
+/// <remarks>
+/// Viewport layout and view are strings because their enums live in the viewer project;
+/// the shells only display them. It is a struct because the panel-rendered viewer reads it
+/// once per frame, where a class would put a short-lived allocation on the render loop's
+/// GC path for no benefit.
+/// </remarks>
+public readonly record struct ViewerStatusSnapshot
+{
+    public ViewerStatusSnapshot() { }
+
+    public static readonly ViewerStatusSnapshot Empty = new();
+
+    /// <summary>File name of the loaded point cloud, empty when nothing is loaded.</summary>
+    public string SourceName { get; init; } = "";
+
+    /// <summary>Points loaded into the viewer.</summary>
+    public int LoadedCount { get; init; }
+
+    /// <summary>Points passing the active filter (equals <see cref="LoadedCount"/> when unfiltered).</summary>
+    public int VisibleCount { get; init; }
+
+    /// <summary>Description of the active point filter, empty when none.</summary>
+    public string Filter { get; init; } = "";
+
+    public InteractionMode Mode { get; init; } = InteractionMode.Navigate;
+    public SelectionToolType ActiveTool { get; init; } = SelectionToolType.Box;
+    public SelectionInteractionState InteractionState { get; init; } = SelectionInteractionState.Navigate;
+    public bool HasActiveSelection { get; init; }
+
+    public string CurrentLabel { get; init; } = "";
+    public int? CurrentInstanceId { get; init; }
+
+    public ColorSource ColorSource { get; init; } = ColorSource.Rgb;
+    public float PointSize { get; init; } = 1f;
+    public bool IsPerspective { get; init; } = true;
+
+    /// <summary>Display name of the active viewport layout, e.g. "Single" or "Two vertical".</summary>
+    public string ViewportLayout { get; init; } = "Single";
+
+    /// <summary>Display name of the active viewport's standard view, e.g. "Top".</summary>
+    public string ViewName { get; init; } = "Perspective";
+
+    public float Fps { get; init; }
+
+    public bool HasCloud => LoadedCount > 0;
+
+    public string InstanceText => CurrentInstanceId is int id ? id.ToString() : "none";
+
+    public string ProjectionText => IsPerspective ? "Perspective" : "Parallel";
+
+    public string PointCountText => VisibleCount == LoadedCount
+        ? $"{LoadedCount:N0}"
+        : $"{VisibleCount:N0} / {LoadedCount:N0}";
+}

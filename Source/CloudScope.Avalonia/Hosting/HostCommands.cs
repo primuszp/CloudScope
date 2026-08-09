@@ -9,7 +9,7 @@ internal sealed class HostCommands
     public HostCommands(HostController host) => _host = host;
 
     [CommandMethod("STATUS", Flags = CommandFlags.NoHistory | CommandFlags.NoUndoMarker | CommandFlags.Transparent)]
-    public CommandResult Status(CommandContext context) => CommandResult.End(_host.Status);
+    public CommandResult Status(CommandContext context) => CommandResult.End(_host.StatusText);
 
     [CommandMethod("HOSTRESET", Flags = CommandFlags.NoUndoMarker)]
     public CommandResult Reset(CommandContext context)

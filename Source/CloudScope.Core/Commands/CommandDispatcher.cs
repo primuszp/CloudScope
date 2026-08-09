@@ -16,23 +16,60 @@ public sealed class CommandDispatcher : ICommandExecutor
 
     public bool HasActiveCommand => _activeExecutor?.HasActiveCommand == true;
 
+    public PromptOptions? ActiveOptions => _activeExecutor?.ActiveOptions;
+
     public IReadOnlyCollection<string> KnownCommandNames =>
         _executors.SelectMany(executor => executor.KnownCommandNames).ToArray();
 
     public void Register(ICommandExecutor executor)
     {
-        foreach (string name in executor.KnownCommandNames)
-        {
-            ICommandExecutor? owner = _executors.FirstOrDefault(e => e.IsKnownCommand(name));
-            if (owner != null)
-                throw new InvalidOperationException(
-                    $"Command name or alias '{name}' is already registered by another executor and would be shadowed.");
-        }
+        string? conflict = FindShadowedName(executor);
+        if (conflict != null)
+            throw new InvalidOperationException(
+                $"Command name or alias '{conflict}' is already registered by another executor and would be shadowed.");
 
         _executors.Add(executor);
+        _shadowingChecked = _executors.All(e => e.KnownCommandNames.Count > 0);
+    }
+
+    private string? FindShadowedName(ICommandExecutor executor)
+    {
+        foreach (string name in executor.KnownCommandNames)
+        {
+            if (_executors.Any(e => !ReferenceEquals(e, executor) && e.IsKnownCommand(name)))
+                return name;
+        }
+
+        return null;
+    }
+
+    // An executor whose command surface is created later (an embedded viewer host) reports no
+    // names at registration, so the shadowing check has nothing to compare and must run again
+    // once every executor is populated. It is reported rather than thrown, because by then it
+    // would surface in the middle of a session.
+    private bool _shadowingChecked;
+
+    private string? CheckShadowingOnce()
+    {
+        if (_shadowingChecked || _executors.Any(e => e.KnownCommandNames.Count == 0))
+            return null;
+
+        _shadowingChecked = true;
+        foreach (ICommandExecutor executor in _executors)
+        {
+            string? conflict = FindShadowedName(executor);
+            if (conflict != null)
+                return $"Command '{conflict}' is registered by more than one executor and is shadowed. " +
+                       "Rename one of them; only the first registration will run.";
+        }
+
+        return null;
     }
 
     public bool IsKnownCommand(string name) => _executors.Any(executor => executor.IsKnownCommand(name));
+
+    public string ResolveGlobalName(string name) =>
+        _executors.FirstOrDefault(executor => executor.IsKnownCommand(name))?.ResolveGlobalName(name) ?? "";
 
     public bool IsTransparentCommand(string name) =>
         _executors.Any(executor => executor.IsKnownCommand(name) && executor.IsTransparentCommand(name));
@@ -46,6 +83,9 @@ public sealed class CommandDispatcher : ICommandExecutor
 
     public CommandResult Execute(string input)
     {
+        if (CheckShadowingOnce() is { } shadowing)
+            return new CommandResult(CommandStatus.Failed, shadowing);
+
         string firstWord = CommandText.FirstWord(input);
         if (firstWord.Length == 0)
         {
