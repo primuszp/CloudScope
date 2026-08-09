@@ -27,11 +27,14 @@ namespace CloudScope
         private bool _forceAuxiliaryViewRefresh;
         private float _cloudRadius = 50f;
         private PointCloudDataset? _dataset;
+        private string _sourceName = "";
+        private float _smoothedFps;
 
         private bool _suppressEscapeClose;
 
         private int _width;
         private int _height;
+        private ViewportInset _inset;
 
         public ViewerController(int width, int height, IRenderBackend renderBackend)
         {
@@ -107,12 +110,43 @@ namespace CloudScope
             return $"Loaded {cloud.LoadedCount:N0} points from {Path.GetFileName(path)} ({sw.Elapsed.TotalSeconds:0.0}s).";
         }
 
-        public void SetLasFilePath(string path) => _selection.SetLasFilePath(path);
+        public void SetLasFilePath(string path)
+        {
+            _sourceName = Path.GetFileName(path);
+            _selection.SetLasFilePath(path);
+        }
+
+        /// <summary>
+        /// Current viewer state for status bars and properties panels. Cheap to build; the
+        /// shells read it after each command and (for the panel-rendered UI) per frame.
+        /// </summary>
+        public ViewerStatusSnapshot Status => new()
+        {
+            SourceName = _sourceName,
+            LoadedCount = _dataset?.LoadedCount ?? _pointRenderer.PointCount,
+            VisibleCount = _dataset?.VisibleCount ?? _pointRenderer.PointCount,
+            Filter = _dataset is { FilterDescription: not "None" } filtered ? filtered.FilterDescription : "",
+            Mode = _selection.Mode,
+            ActiveTool = _selection.ActiveTool.ToolType,
+            InteractionState = _selection.InteractionState,
+            HasActiveSelection = _selection.HasActiveSelection,
+            CurrentLabel = _selection.CurrentLabel,
+            CurrentInstanceId = _selection.CurrentInstanceId,
+            ColorSource = _dataset?.CurrentColorSource ?? ColorSource.Rgb,
+            PointSize = ActiveViewport.Input.PointSize,
+            IsPerspective = ActiveViewport.Camera.IsPerspective,
+            ViewportLayout = DescribeViewportLayout(_viewportLayout),
+            ViewName = ActiveViewport.Camera.IsPerspective && _viewportLayout == ViewportLayoutKind.SinglePerspective
+                ? "Perspective"
+                : DescribeViewportView(_auxiliaryViewportView),
+            Fps = _smoothedFps
+        };
 
         public void Reset()
         {
             _cloudRadius = 50f;
             _dataset = null;
+            _sourceName = "";
             _selection.Reset();
             foreach (ViewportState viewport in _viewports)
                 FitViewport(viewport);
@@ -139,6 +173,9 @@ namespace CloudScope
         public string CurrentLabel => _selection.CurrentLabel;
         public int? CurrentInstanceId => _selection.CurrentInstanceId;
         public bool LabelWindowVisible { get; set; }
+
+        /// <summary>Whether the expanded command-history panel (F2) is shown.</summary>
+        public bool CommandHistoryVisible { get; set; }
         public void ToggleLabelWindow() => LabelWindowVisible = !LabelWindowVisible;
 
         public string DefineLabel(string name, byte code)
@@ -362,6 +399,9 @@ namespace CloudScope
 
         public bool UpdateFrame(float dt, IViewerKeyboard keyboard)
         {
+            if (dt > 0f)
+                _smoothedFps = _smoothedFps <= 0f ? 1f / dt : _smoothedFps * 0.9f + 0.1f / dt;
+
             if (_suppressEscapeClose && !keyboard.IsKeyDown(ViewerKey.Escape))
                 _suppressEscapeClose = false;
 
@@ -534,6 +574,24 @@ namespace CloudScope
             UpdateViewportLayout();
         }
 
+        /// <summary>
+        /// Reserves edges of the framebuffer for a shell's panels, so the 3D view occupies
+        /// only the rectangle the user can actually see. Everything derived from the viewport
+        /// — the centre crosshair, zoom-to-centre, picking and the projection aspect — then
+        /// refers to the visible area instead of the whole window.
+        /// </summary>
+        public void SetViewportInset(int left, int top, int right, int bottom)
+        {
+            var inset = new ViewportInset(
+                Math.Max(0, left), Math.Max(0, top), Math.Max(0, right), Math.Max(0, bottom));
+
+            if (inset == _inset)
+                return;
+
+            _inset = inset;
+            UpdateViewportLayout();
+        }
+
         public void Dispose()
         {
             _pointRenderer.Dispose();
@@ -575,29 +633,31 @@ namespace CloudScope
 
         private void UpdateViewportLayout()
         {
-            int safeWidth = Math.Max(1, _width);
-            int safeHeight = Math.Max(1, _height);
+            int left = _inset.Left;
+            int top = _inset.Top;
+            int safeWidth = Math.Max(1, _width - _inset.Left - _inset.Right);
+            int safeHeight = Math.Max(1, _height - _inset.Top - _inset.Bottom);
 
             switch (_viewportLayout)
             {
                 case ViewportLayoutKind.SingleTop:
-                    SetViewportBounds(_viewports[1], new ViewportBounds(0, 0, safeWidth, safeHeight));
+                    SetViewportBounds(_viewports[1], new ViewportBounds(left, top, safeWidth, safeHeight));
                     _activeViewportIndex = 1;
                     break;
                 case ViewportLayoutKind.TwoVertical:
                     int halfWidth = Math.Max(1, safeWidth / 2);
-                    SetViewportBounds(_viewports[0], new ViewportBounds(0, 0, halfWidth, safeHeight));
-                    SetViewportBounds(_viewports[1], new ViewportBounds(halfWidth, 0, safeWidth - halfWidth, safeHeight));
+                    SetViewportBounds(_viewports[0], new ViewportBounds(left, top, halfWidth, safeHeight));
+                    SetViewportBounds(_viewports[1], new ViewportBounds(left + halfWidth, top, safeWidth - halfWidth, safeHeight));
                     _activeViewportIndex = Math.Clamp(_activeViewportIndex, 0, 1);
                     break;
                 case ViewportLayoutKind.TwoHorizontal:
                     int halfHeight = Math.Max(1, safeHeight / 2);
-                    SetViewportBounds(_viewports[0], new ViewportBounds(0, 0, safeWidth, halfHeight));
-                    SetViewportBounds(_viewports[1], new ViewportBounds(0, halfHeight, safeWidth, safeHeight - halfHeight));
+                    SetViewportBounds(_viewports[0], new ViewportBounds(left, top, safeWidth, halfHeight));
+                    SetViewportBounds(_viewports[1], new ViewportBounds(left, top + halfHeight, safeWidth, safeHeight - halfHeight));
                     _activeViewportIndex = Math.Clamp(_activeViewportIndex, 0, 1);
                     break;
                 default:
-                    SetViewportBounds(_viewports[0], new ViewportBounds(0, 0, safeWidth, safeHeight));
+                    SetViewportBounds(_viewports[0], new ViewportBounds(left, top, safeWidth, safeHeight));
                     _activeViewportIndex = 0;
                     break;
             }
@@ -696,6 +756,9 @@ namespace CloudScope
             public ViewportBounds Bounds { get; set; } = new(0, 0, 1, 1);
             public bool IsInitialized { get; set; }
         }
+
+        /// <summary>Framebuffer edges reserved for shell panels, in physical pixels.</summary>
+        private readonly record struct ViewportInset(int Left, int Top, int Right, int Bottom);
 
         private readonly record struct ViewportBounds(int X, int Y, int Width, int Height)
         {

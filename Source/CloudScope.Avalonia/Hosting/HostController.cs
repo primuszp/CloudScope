@@ -7,14 +7,34 @@ public sealed class HostController
 {
     private readonly CommandRuntime _hostRuntime;
     private readonly CommandDispatcher _commands;
+    private readonly DelegatingCommandExecutor _viewerCommands;
+
     private IEmbeddedOpenTkNativeHost? _embeddedHost;
     private int _renderedPointCount;
+    private string _sourceName = "";
     private string _viewerState = "Embedded renderer not created";
 
     public event Action<string>? StatusChanged;
 
-    public string Status => $"Points: {_renderedPointCount:N0} | {_viewerState}";
+    public string StatusText => $"Points: {_renderedPointCount:N0} | {_viewerState}";
     public string CommandPrompt => _commands.CurrentPrompt;
+
+    /// <summary>The command surface the command line completes against and submits to.</summary>
+    public ICommandExecutor Commands => _commands;
+
+    /// <summary>
+    /// Live viewer state for the inspector and status bar. The shell owns the file name
+    /// because the embedded viewer is loaded from a dataset, not from a path.
+    /// </summary>
+    public ViewerStatusSnapshot Status => (_embeddedHost?.Status ?? ViewerStatusSnapshot.Empty) with
+    {
+        SourceName = _sourceName
+    };
+
+    public event Action<ViewerStatusSnapshot>? ViewerStateChanged;
+
+    /// <summary>Raises <see cref="ViewerStateChanged"/> so the shell can refresh bound UI.</summary>
+    public void PublishViewerState() => ViewerStateChanged?.Invoke(Status);
     public IReadOnlyCollection<CloudScope.Labeling.LabelDefinition> LabelDefinitions =>
         _embeddedHost?.LabelDefinitions ?? System.Array.Empty<CloudScope.Labeling.LabelDefinition>();
     public string ActiveLabel => _embeddedHost?.ActiveLabel ?? "";
@@ -22,10 +42,13 @@ public sealed class HostController
 
     public HostController()
     {
+        _viewerCommands = new DelegatingCommandExecutor(
+            () => _embeddedHost?.Commands,
+            "Embedded renderer is not ready.");
         _hostRuntime = new CommandRuntime(this, new HostCommands(this));
-        _commands = new CommandDispatcher(EmbeddedExecuteResult);
+        _commands = new CommandDispatcher(_viewerCommands.Execute);
         _commands.Register(_hostRuntime);
-        _commands.Register(new EmbeddedCommandExecutor(this));
+        _commands.Register(_viewerCommands);
     }
 
     public void SetEmbeddedHost(IEmbeddedOpenTkNativeHost embeddedHost)
@@ -46,6 +69,7 @@ public sealed class HostController
 
     public void SetPendingCloud(PointCloudDataset dataset, string sourceName)
     {
+        _sourceName = sourceName;
         _viewerState = $"Preparing spatial layout and uploading {dataset.LoadedCount:N0} points: {sourceName}";
         PublishStatus();
         _embeddedHost?.LoadPointCloud(dataset, () => CompleteCloudUpload(sourceName, dataset.LoadedCount));
@@ -60,9 +84,6 @@ public sealed class HostController
 
         return result;
     }
-
-    public string ExecuteCommand(string commandText, bool publishResult = true) =>
-        ExecuteCommandResult(commandText, publishResult).Message;
 
     public void ForwardKeyDown(ViewerKey key) => _embeddedHost?.ForwardKeyDown(key);
 
@@ -80,35 +101,16 @@ public sealed class HostController
         PublishStatus();
     }
 
-    private CommandResult EmbeddedExecuteResult(string commandText) =>
-        _embeddedHost?.ExecuteViewerCommandResult(commandText)
-        ?? CommandResult.End("Embedded renderer is not ready.");
-
-    private void PublishStatus() => StatusChanged?.Invoke(Status);
+    private void PublishStatus() => StatusChanged?.Invoke(StatusText);
 
     private void CompleteCloudUpload(string sourceName, int count)
     {
+        _sourceName = sourceName;
         _renderedPointCount = count;
+        PublishViewerState();
         string renderer = _embeddedHost?.RendererName ?? "GPU";
         _viewerState = $"Embedded {renderer} viewer: {sourceName}";
         StatusChanged?.Invoke($"Loaded into {renderer} viewer: {sourceName} ({count:N0} points)");
         PublishStatus();
-    }
-
-    private sealed class EmbeddedCommandExecutor(HostController host) : ICommandExecutor
-    {
-        public string CurrentPrompt => host._embeddedHost?.CommandPrompt ?? "Command:";
-
-        public bool IsKnownCommand(string name) => host._embeddedHost?.IsKnownCommand(name) == true;
-
-        public IReadOnlyCollection<string> KnownCommandNames => host._embeddedHost?.KnownCommandNames ?? [];
-
-        public bool HasActiveCommand => host._embeddedHost?.HasActiveCommand == true;
-
-        public bool IsTransparentCommand(string name) => host._embeddedHost?.IsTransparentCommand(name) == true;
-
-        public CommandResult CancelActive() => host._embeddedHost?.CancelActiveCommand() ?? CommandResult.Cancel();
-
-        public CommandResult Execute(string input) => host.EmbeddedExecuteResult(input);
     }
 }

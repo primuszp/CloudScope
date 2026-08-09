@@ -28,7 +28,8 @@ public sealed class LabelRegistryWindow : Window
         Title = "Label registry";
         Width = 380;
         Height = 460;
-        Background = new SolidColorBrush(Color.FromRgb(0x25, 0x2C, 0x33));
+        // Follows the app theme instead of pinning a dark surface colour.
+        this[!BackgroundProperty] = new global::Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("CsSurface");
 
         var define = new Button { Content = "Define / update" };
         define.Click += (_, _) => DefineFromInputs();

@@ -28,6 +28,32 @@ public sealed class Keyword
 
     public IReadOnlyList<string> Aliases { get; }
 
+    /// <summary>
+    /// <see cref="Display"/> split into runs, marking the capitalised letters that form the
+    /// accepted abbreviation. UIs underline those runs the way AutoCAD does, so the user can
+    /// see that "ReTurn" is typed as "RT".
+    /// </summary>
+    public IReadOnlyList<KeywordSegment> DisplaySegments => _segments ??= BuildSegments(Display);
+
+    private IReadOnlyList<KeywordSegment>? _segments;
+
+    private static KeywordSegment[] BuildSegments(string display)
+    {
+        var segments = new List<KeywordSegment>();
+        int start = 0;
+        for (int i = 1; i <= display.Length; i++)
+        {
+            bool endOfRun = i == display.Length || char.IsUpper(display[i]) != char.IsUpper(display[start]);
+            if (!endOfRun)
+                continue;
+
+            segments.Add(new KeywordSegment(display[start..i], char.IsUpper(display[start])));
+            start = i;
+        }
+
+        return segments.ToArray();
+    }
+
     public bool Matches(string input)
     {
         string s = input.Trim();
@@ -59,3 +85,7 @@ public sealed class Keyword
     private static string Capitalize(string value) =>
         value.Length == 0 ? value : char.ToUpperInvariant(value[0]) + value[1..].ToLowerInvariant();
 }
+
+/// <summary>One run of a keyword's display text; <paramref name="IsAbbreviation"/> marks the
+/// capitalised letters the user may type instead of the whole word.</summary>
+public readonly record struct KeywordSegment(string Text, bool IsAbbreviation);

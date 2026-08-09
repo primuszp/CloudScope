@@ -15,7 +15,7 @@ namespace CloudScope
     /// OpenTK/GameWindow host. It adapts OpenTK lifecycle and input events to
     /// <see cref="ViewerController"/>; viewer state stays outside the platform host.
     /// </summary>
-    public class OpenTkViewerHost : GameWindow
+    public class OpenTkViewerHost : GameWindow, IViewerHost
     {
         private readonly ViewerController _controller;
         private readonly bool _enableOverlay;
@@ -79,17 +79,12 @@ namespace CloudScope
 
         public void SetLasFilePath(string path) => _controller.SetLasFilePath(path);
 
-        public CommandResult ExecuteCommandResult(string commandText) => _commandDispatcher.ExecuteResult(commandText);
-        public string ExecuteCommand(string commandText) => _commandDispatcher.ExecuteCommand(commandText);
-        public bool IsKnownCommand(string name) => _commandDispatcher.IsKnownCommand(name);
+        /// <summary>The viewer's command surface; shells drive it through this one member.</summary>
+        public ICommandExecutor Commands => _commandDispatcher;
         public System.Collections.Generic.IReadOnlyCollection<CloudScope.Labeling.LabelDefinition> LabelDefinitions => _controller.LabelRegistry.Definitions;
         public string ActiveLabel => _controller.CurrentLabel;
         public int? ActiveInstanceId => _controller.CurrentInstanceId;
-        public IReadOnlyCollection<string> KnownCommandNames => _commandDispatcher.KnownCommandNames;
-        public bool HasActiveCommand => _commandDispatcher.HasActiveCommand;
-        public bool IsTransparentCommand(string name) => _commandDispatcher.IsTransparentCommand(name);
-        public CommandResult CancelActiveCommand() => _commandDispatcher.CancelActive();
-        public string CommandPrompt => _commandDispatcher.CurrentPrompt;
+        public ViewerStatusSnapshot Status => _controller.Status;
 
         public void ForwardKeyDown(ViewerKey key, bool ctrl, int mouseX, int mouseY)
         {
@@ -104,8 +99,8 @@ namespace CloudScope
 #if ENABLE_IMGUI
             if (_enableOverlay)
             {
-                _imgui = new ImGuiController(ClientSize.X, ClientSize.Y);
-                _commandLine = new CommandLineOverlay(_controller, _commandDispatcher);
+                _imgui = new ImGuiController(ClientSize.X, ClientSize.Y, PixelScaleY);
+                _commandLine = new CommandLineOverlay(_controller, _commandDispatcher, PixelScaleY);
             }
 #endif
         }
@@ -169,6 +164,17 @@ namespace CloudScope
         {
             base.OnKeyDown(e);
 #if ENABLE_IMGUI
+            if (_commandLine != null && e.Key == Keys.F2)
+            {
+                _commandLine.ToggleHistoryWindow();
+                return;
+            }
+            if (_commandLine != null && e.Key == Keys.F1)
+            {
+                _commandLine.FocusCommandLine();
+                _commandDispatcher.Session.Stage("HELP");
+                return;
+            }
             if (_commandLine != null && e.Key is Keys.Enter or Keys.Space)
             {
                 _commandLine.Submit();
@@ -204,7 +210,7 @@ namespace CloudScope
             if (_imgui != null && _commandLine != null)
             {
                 _imgui.Update(this, (float)args.Time);
-                _commandLine.Render(ClientSize.X, ClientSize.Y);
+                _commandLine.Render(EffectiveFramebufferWidth, EffectiveFramebufferHeight);
                 _imgui.Render();
             }
 #endif
@@ -230,6 +236,7 @@ namespace CloudScope
         protected override void OnUnload()
         {
 #if ENABLE_IMGUI
+            _commandLine?.SaveSettings();
             _imgui?.Dispose();
 #endif
             _controller.Dispose();

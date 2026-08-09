@@ -126,10 +126,15 @@ public sealed class CommandRuntime : ICommandExecutor
 
     public bool HasActiveCommand => _active != null;
 
+    public PromptOptions? ActiveOptions => _activePrompt;
+
     public bool IsTransparentCommand(string name) =>
         _commands.TryGetValue(name, out Descriptor? descriptor) && descriptor.Flags.HasFlag(CommandFlags.Transparent);
 
     public IReadOnlyCollection<string> KnownCommandNames => _commands.Keys;
+
+    public string ResolveGlobalName(string name) =>
+        _commands.TryGetValue(name, out Descriptor? descriptor) ? descriptor.Name : "";
 
     private CommandResult ActivateAndRun(Descriptor descriptor, string input)
     {

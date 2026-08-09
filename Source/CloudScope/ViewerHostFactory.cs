@@ -12,7 +12,7 @@ namespace CloudScope
             if (backend.Kind == RenderBackendKind.Metal && OperatingSystem.IsMacOS())
                 return CreateMetalHost(width, height, backend);
 
-            return new PointCloudViewer(width, height, backend);
+            return new OpenTkViewerHost(width, height, backend);
         }
 
         [SupportedOSPlatform("macos")]
