@@ -1,7 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace CloudScope.Rendering;
+namespace CloudScope;
 
 /// <summary>
 /// A point as it is stored in GPU memory: position at full precision, color quantized to a
