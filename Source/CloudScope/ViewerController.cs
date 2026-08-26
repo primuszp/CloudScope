@@ -520,6 +520,9 @@ namespace CloudScope
             Fps = _smoothedFps,
             LabelWindowVisible = LabelWindowVisible,
             CommandHistoryVisible = CommandHistoryVisible,
+            CommandLineVisible = CommandLineVisible,
+            CommandLineFloating = CommandLineFloating,
+            CloseRequested = CloseRequested,
             LoadProgress = LoadProgress
         };
 
@@ -581,6 +584,12 @@ namespace CloudScope
 
         /// <summary>Whether the expanded command-history panel (F2) is shown.</summary>
         public bool CommandHistoryVisible { get; set; }
+
+        /// <summary>Whether the docked command window is shown (Ctrl+9).</summary>
+        public bool CommandLineVisible { get; set; } = true;
+
+        /// <summary>Whether the command window floats free of the workspace.</summary>
+        public bool CommandLineFloating { get; set; }
         public void ToggleLabelWindow() => LabelWindowVisible = !LabelWindowVisible;
 
         public string DefineLabel(string name, byte code, Vector3? color = null)

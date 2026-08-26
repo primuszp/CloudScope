@@ -89,11 +89,14 @@ namespace CloudScope.Ui
         public void Render(int width, int height)
         {
             ViewerStatusSnapshot status = _viewer.Status;
+            HandleCommandWindowToggle();
 
             float menuHeight = RenderMainMenu(status);
             float toolStripHeight = RenderToolStrip(menuHeight, width, status);
             float statusHeight = RenderStatusBar(width, height, status);
-            float commandHeight = RenderCommandWindow(width, height - statusHeight);
+            float commandHeight = status.CommandLineVisible
+                ? RenderCommandWindow(width, height - statusHeight, status.CommandLineFloating)
+                : 0f;
 
             float contentTop = menuHeight + toolStripHeight;
             float contentBottom = height - statusHeight - commandHeight;
@@ -306,23 +309,44 @@ namespace CloudScope.Ui
 
         // ── Command window ──────────────────────────────────────────────────────
 
-        private float RenderCommandWindow(int width, float bottom)
+        // Ctrl+9 is AutoCAD's command-window toggle, and it has to keep working while the
+        // window is gone — it is the only way back to it in this shell.
+        private void HandleCommandWindowToggle()
+        {
+            if (ImGui.GetIO().KeyCtrl && ImGui.IsKeyPressed(ImGuiKey._9, repeat: false))
+                Run("COMMANDLINE Toggle");
+        }
+
+        /// <param name="floating">
+        /// True when the command window floats over the drawing: it is then moved and sized by
+        /// the user, and reserves no room, so the viewport keeps the space underneath it.
+        /// </param>
+        /// <returns>Height to keep the viewport clear of, which is none while floating.</returns>
+        private float RenderCommandWindow(int width, float bottom, bool floating)
         {
             float lineHeight = ImGui.GetTextLineHeightWithSpacing();
             float chrome = ImGui.GetFrameHeightWithSpacing() + ImGui.GetStyle().WindowPadding.Y * 2f;
             float height = MathF.Round(_commandLines * lineHeight + chrome);
             float top = bottom - height;
 
-            ImGui.SetNextWindowPos(new Vector2(0f, top), ImGuiCond.Always);
-            ImGui.SetNextWindowSize(new Vector2(width, height), ImGuiCond.Always);
+            ImGui.SetNextWindowPos(new Vector2(0f, top), floating ? ImGuiCond.FirstUseEver : ImGuiCond.Always);
+            ImGui.SetNextWindowSize(new Vector2(width, height), floating ? ImGuiCond.FirstUseEver : ImGuiCond.Always);
             ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(10f * _scale, 6f * _scale));
             ImGui.PushStyleColor(ImGuiCol.WindowBg, ImGuiTheme.SurfaceDeep);
-            ImGui.Begin("##CloudScopeCommandLine", FixedPanelFlags);
+            ImGui.Begin(floating ? "Command" : "##CloudScopeCommandLine",
+                floating ? ImGuiWindowFlags.NoSavedSettings : FixedPanelFlags);
 
-            RenderResizeGrip(width, top, lineHeight);
+            if (floating)
+            {
+                height = ImGui.GetWindowSize().Y;
+                top = ImGui.GetWindowPos().Y;
+            }
+
+            if (!floating)
+                RenderResizeGrip(width, top, lineHeight);
+
             RenderContextMenu();
             RenderHistoryLines(height - chrome);
-            RenderKeywordLinks();
             RenderPromptLine();
 
             ImGui.End();
@@ -330,7 +354,7 @@ namespace CloudScope.Ui
             ImGui.PopStyleVar();
 
             RenderCompletionPopup(top);
-            return height;
+            return floating ? 0f : height;
         }
 
         // A thin drag strip along the top edge resizes the command window, the way the
@@ -392,23 +416,30 @@ namespace CloudScope.Ui
             clipper.Destroy();
         }
 
-        // Bracketed prompt keywords become clickable, like AutoCAD's dynamic prompt links.
-        private void RenderKeywordLinks()
+        // The prompt's keywords are clickable where they are written, inside its own
+        // "[Box/Cylinder/Sphere]" — the layout comes from PromptLayout, so this shell and the
+        // Avalonia one cannot disagree about what a prompt line says.
+        private void RenderPromptSegments()
         {
-            PromptOptions? options = _session.ActiveOptions;
-            if (options == null || options.Keywords.Count == 0)
-                return;
+            ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(0f, ImGui.GetStyle().ItemSpacing.Y));
 
-            foreach (Keyword keyword in options.Keywords)
+            foreach (PromptSegment segment in PromptLayout.Split(_dispatcher.CurrentPrompt, _session.ActiveOptions))
             {
-                bool isDefault = string.Equals(keyword.GlobalName, options.DefaultKeyword, StringComparison.OrdinalIgnoreCase);
-                if (isDefault)
+                if (segment.Kind == PromptSegmentKind.Text)
+                {
+                    ImGui.TextColored(ImGuiTheme.Accent, segment.Text);
+                    ImGui.SameLine();
+                    continue;
+                }
+
+                Keyword keyword = segment.Keyword!;
+                if (segment.IsDefault)
                     ImGui.PushStyleColor(ImGuiCol.Text, ImGuiTheme.Accent);
 
                 if (ImGui.SmallButton(KeywordLabel(keyword)))
                     Run(keyword.GlobalName);
 
-                if (isDefault)
+                if (segment.IsDefault)
                     ImGui.PopStyleColor();
 
                 if (ImGui.IsItemHovered() && keyword.Abbreviation.Length > 0)
@@ -417,7 +448,7 @@ namespace CloudScope.Ui
                 ImGui.SameLine();
             }
 
-            ImGui.NewLine();
+            ImGui.PopStyleVar();
         }
 
         // ImGui buttons cannot underline part of their label, so the accepted abbreviation is
@@ -430,8 +461,7 @@ namespace CloudScope.Ui
         private void RenderPromptLine()
         {
             PushMono();
-            ImGui.TextColored(ImGuiTheme.Accent, _dispatcher.CurrentPrompt);
-            ImGui.SameLine();
+            RenderPromptSegments();
 
             // What Tab would complete to. ImGui's input has no inline suggestion, so the
             // candidate is shown next to the prompt instead of inside the field.

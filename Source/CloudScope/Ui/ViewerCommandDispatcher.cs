@@ -6,10 +6,12 @@ namespace CloudScope.Ui;
 public sealed class ViewerCommandDispatcher : ICommandExecutor, ICommandOutputSource
 {
     private readonly CommandRuntime _runtime;
+    private readonly ViewerController _viewer;
     public CommandLineSession Session { get; }
 
     public ViewerCommandDispatcher(ViewerController viewer)
     {
+        _viewer = viewer;
         var commands = new ViewerCommands();
         _runtime = new CommandRuntime(viewer, commands);
         commands.Executor = _runtime;
@@ -75,6 +77,7 @@ public sealed class ViewerCommandDispatcher : ICommandExecutor, ICommandOutputSo
     public string ResolveGlobalName(string name) => _runtime.ResolveGlobalName(name);
     public IReadOnlyCollection<string> KnownCommandNames => _runtime.KnownCommandNames;
     public IReadOnlyCollection<CommandDescriptor> Commands => _runtime.Commands;
+    public IReadOnlyCollection<SystemVariable> Variables => _viewer.Variables.All;
     public bool TryGetCommand(string name, out CommandDescriptor command) => _runtime.TryGetCommand(name, out command);
     public bool HasActiveCommand => _runtime.HasActiveCommand;
     public PromptOptions? ActiveOptions => _runtime.ActiveOptions;

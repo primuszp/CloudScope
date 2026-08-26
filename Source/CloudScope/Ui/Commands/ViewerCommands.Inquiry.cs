@@ -77,6 +77,54 @@ public sealed partial class ViewerCommands
         yield break;
     }
 
+    [CommandMethod("COMMANDLINE", Flags = CommandFlags.NoUndoMarker | CommandFlags.NoHistory | CommandFlags.Transparent,
+        Group = CommandGroup.Inquiry, Scope = CommandScope.Viewer,
+        Summary = "Shows, hides, floats or docks the command window.",
+        Syntax = "COMMANDLINE [On/Off/Toggle/Float/Dock]")]
+    public IEnumerable<PromptStep> CommandLine(CommandContext context)
+    {
+        var viewer = context.GetTarget<ViewerController>();
+        PromptStep state = context.Editor
+            .GetKeywords("Command window [On/Off/Toggle/Float/Dock] <On>:",
+                new Keyword("ON", "On"), new Keyword("OFF", "Off"), new Keyword("TOGGLE", "Toggle"),
+                new Keyword("FLOAT", "Float"), new Keyword("DOCK", "Dock"))
+            .WithDefaultKeyword("ON");
+        yield return state;
+
+        if (state.Status != PromptStatus.Keyword) yield break;
+
+        // Floating and docking say where the window is, not whether it is there at all, so
+        // they turn it on: asking for a floating command line and getting none would be odd.
+        if (state.Is("FLOAT") || state.Is("DOCK"))
+        {
+            viewer.CommandLineFloating = state.Is("FLOAT");
+            viewer.CommandLineVisible = true;
+            context.Editor.WriteMessage(viewer.CommandLineFloating
+                ? "Command line floating."
+                : "Command line docked.");
+            yield break;
+        }
+
+        viewer.CommandLineVisible = state.Is("TOGGLE") ? !viewer.CommandLineVisible : state.Is("ON");
+        context.Editor.WriteMessage(viewer.CommandLineVisible
+            ? "Command line shown."
+            : "Command line hidden. Press Ctrl+9 to show it.");
+    }
+
+    // AutoCAD spells hiding as its own command as well, and a script that wants the command
+    // line gone must not have to know whether it is currently up.
+    [CommandMethod("COMMANDLINEHIDE", Flags = CommandFlags.NoUndoMarker | CommandFlags.NoHistory | CommandFlags.Transparent,
+        Group = CommandGroup.Inquiry, Scope = CommandScope.Viewer,
+        Summary = "Hides the docked command window.",
+        Syntax = "COMMANDLINEHIDE")]
+    public IEnumerable<PromptStep> CommandLineHide(CommandContext context)
+    {
+        var viewer = context.GetTarget<ViewerController>();
+        viewer.CommandLineVisible = false;
+        context.Editor.WriteMessage("Command line hidden. Press Ctrl+9 to show it.");
+        yield break;
+    }
+
     [CommandMethod("UNDO", "U", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.Edit, Scope = CommandScope.Viewer,
         Summary = "Steps back through completed commands.",

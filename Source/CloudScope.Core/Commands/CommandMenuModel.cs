@@ -154,6 +154,7 @@ public static class CommandMenu
         CommandMenuEntry.Submenu("Window",
             CommandMenuEntry.Action("Label registry", "LABELS", "Mod+L"),
             CommandMenuEntry.Action("Command history", "HISTORY", "F2"),
+            CommandMenuEntry.Action("Command line", "COMMANDLINE Toggle", "Mod+9", CheckStates.CommandLine),
             CommandMenuEntry.Separator,
             CommandMenuEntry.Action("Reset viewer", "RESET")),
 
@@ -171,6 +172,7 @@ public static class CommandMenu
         public const string ToolCylinder = "tool.cylinder";
         public const string Perspective = "projection.perspective";
         public const string Parallel = "projection.parallel";
+        public const string CommandLine = "window.commandline";
     }
 
     /// <summary>Resolves an entry's check mark from the current viewer state.</summary>
@@ -183,6 +185,7 @@ public static class CommandMenu
         CheckStates.ToolCylinder => status.ActiveTool == Selection.SelectionToolType.Cylinder,
         CheckStates.Perspective => status.IsPerspective,
         CheckStates.Parallel => !status.IsPerspective,
+        CheckStates.CommandLine => status.CommandLineVisible,
         _ => false
     };
 

@@ -18,6 +18,12 @@ public sealed class ShellSettings
     /// <summary>Width of the properties inspector, in logical pixels.</summary>
     public double InspectorWidth { get; set; } = 280;
 
+    /// <summary>Whether the command window was left floating rather than docked.</summary>
+    public bool CommandLineFloating { get; set; }
+
+    /// <summary>Where the floating command window was left, as "x,y,width,height".</summary>
+    public string CommandLineBounds { get; set; } = "";
+
     /// <summary>Most recent submitted inputs, oldest first.</summary>
     public List<string> RecentInput { get; set; } = [];
 

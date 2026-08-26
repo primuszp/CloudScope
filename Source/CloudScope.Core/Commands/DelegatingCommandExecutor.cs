@@ -49,6 +49,8 @@ public sealed class DelegatingCommandExecutor : ICommandExecutor
 
     public bool HasActiveCommand => _resolve()?.HasActiveCommand == true;
 
+    public IReadOnlyCollection<SystemVariable> Variables => _resolve()?.Variables ?? [];
+
     public bool IsTransparentCommand(string name) => _resolve()?.IsTransparentCommand(name) == true;
 
     public string ResolveGlobalName(string name) => _resolve()?.ResolveGlobalName(name) ?? "";

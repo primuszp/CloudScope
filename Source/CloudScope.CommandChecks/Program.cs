@@ -166,6 +166,57 @@ Check("deferred lines run after the command", r.Message.Contains("pong"), r.Mess
 r = Run("NOSUCHCOMMAND");
 Check("unknown command reports", r.Message.Contains("Unknown command"), r.Message);
 
+// ---------- 2b. Prompt layout the shells draw ----------
+{
+    var options = new PromptOptions("Select shape [Box/CYlinder/Sphere] <Box>:",
+        new Keyword("BOX", "Box"), new Keyword("CYLINDER", "CYlinder"), new Keyword("SPHERE", "Sphere"))
+    { DefaultKeyword = "BOX" };
+
+    IReadOnlyList<PromptSegment> laid = PromptLayout.Split(options.Message, options);
+    Check("prompt layout keeps its text", string.Concat(laid.Select(x => x.Text)) == options.Message,
+        string.Concat(laid.Select(x => x.Text)));
+    Check("prompt layout finds every keyword",
+        laid.Count(x => x.Kind == PromptSegmentKind.Keyword) == 3);
+    Check("prompt layout marks the default",
+        laid.Single(x => x.IsDefault).Keyword?.GlobalName == "BOX");
+    Check("prompt layout leaves a keywordless prompt alone",
+        PromptLayout.Split("Specify point:", null) is [{ Kind: PromptSegmentKind.Text, Text: "Specify point:" }]);
+    Check("prompt layout appends keywords a message did not list",
+        PromptLayout.Split("Answer:", options).Count(x => x.Kind == PromptSegmentKind.Keyword) == 3);
+
+    // Notation that is not a keyword must stay text, or clicking "<0-9>" would submit it.
+    var ranged = new PromptOptions("Set level [All/1-9]:", new Keyword("ALL", "All"));
+    Check("prompt layout leaves unknown bracket words as text",
+        PromptLayout.Split(ranged.Message, ranged).Count(x => x.Kind == PromptSegmentKind.Keyword) == 1);
+}
+
+// ---------- 2c. Autocomplete ----------
+{
+    var vars = new SystemVariableTable();
+    double pdsize = 2;
+    vars.RegisterReal("PTMAX", "per-frame point budget", () => pdsize, v => pdsize = v, 0.5, 20);
+    string[] names = ["ZOOM", "SETVAR", "PAN", "POINTSIZE"];
+
+    var hits = CommandCompletionSource.Complete("z", null, names, null, variables: vars.All);
+    Check("completion prefers a prefix match", hits[0].Insert == "ZOOM", hits[0].Insert);
+
+    hits = CommandCompletionSource.Complete("ptmax", null, names, null, variables: vars.All);
+    Check("completion offers a variable as SETVAR",
+        hits.Any(h => h.Kind == CompletionKind.Variable && h.Insert == "SETVAR PTMAX"),
+        string.Join(",", hits.Select(h => h.Insert)));
+
+    hits = CommandCompletionSource.Complete("SETVAR pt", null, names, null, variables: vars.All);
+    Check("completion completes a variable name as an argument",
+        hits.Count == 1 && hits[0].Insert == "SETVAR PTMAX",
+        string.Join(",", hits.Select(h => h.Insert)));
+
+    // Two commands match "p" equally well; the one just run comes first.
+    hits = CommandCompletionSource.Complete("p", null, names, null, recentCommands: ["POINTSIZE"]);
+    Check("completion puts a recently run command first", hits[0].Insert == "POINTSIZE", hits[0].Insert);
+    hits = CommandCompletionSource.Complete("p", null, names, null, recentCommands: ["PAN"]);
+    Check("completion recency does not outrank a better match", hits[0].Insert == "PAN", hits[0].Insert);
+}
+
 // ---------- 3. System variables ----------
 var table = new SystemVariableTable();
 double size = 2;

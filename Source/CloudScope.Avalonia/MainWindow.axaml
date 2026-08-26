@@ -62,12 +62,15 @@
       <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="Padding" Value="0" />
     </Style>
+    <!-- A keyword sits inside the prompt's own "[...]", so it has to sit on the text's
+         baseline and metrics rather than look like a button dropped into a sentence. -->
     <Style Selector="Button.keywordLink">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="6,1" />
-      <Setter Property="Margin" Value="0,0,4,0" />
-      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Padding" Value="3,0" />
+      <Setter Property="Margin" Value="0" />
+      <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
+      <Setter Property="FontSize" Value="12" />
       <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
     </Style>
     <Style Selector="Button.keywordLink:pointerover">
@@ -137,10 +140,10 @@
       </Border>
     </Grid>
 
-    <GridSplitter Grid.Row="3" Height="4" VerticalAlignment="Top"
+    <GridSplitter x:Name="CommandLineSplitter" Grid.Row="3" Height="4" VerticalAlignment="Top"
                   Background="{DynamicResource CsBorder}" ResizeDirection="Rows" />
 
-    <Border Grid.Row="3" Margin="0,4,0,0" MinHeight="120"
+    <Border x:Name="CommandLineBorder" Grid.Row="3" Margin="0,4,0,0" MinHeight="120"
             Background="{DynamicResource CsSurfaceDeep}"
             BorderBrush="{DynamicResource CsBorder}" BorderThickness="0,1,0,1">
       <ContentControl x:Name="CommandLineHost" />
