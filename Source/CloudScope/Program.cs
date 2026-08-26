@@ -13,12 +13,15 @@ Console.WriteLine("Command line:");
 Console.WriteLine("  OPEN <path> [max-points]    - Load a .las/.laz point cloud");
 Console.WriteLine("  INDEX <path> [dir] [Source] - Index a cloud of any size; Source keeps LAS record numbers");
 Console.WriteLine("  OPENSTORE <store dir>       - Stream an indexed cloud straight off disk");
+Console.WriteLine("  SCRIPT <path>               - Run a file of commands, one per line");
+Console.WriteLine("  SETVAR ? *                  - List the system variables");
 Console.WriteLine("  Enter / Space               - Submit or repeat the last command");
 Console.WriteLine("  Up / Down                   - Browse command history");
 Console.WriteLine("  Tab                         - Complete keywords and command names");
-Console.WriteLine("  Escape                      - Dismiss the list, then cancel the command");
+Console.WriteLine("  Escape                      - Cancel the active command");
+Console.WriteLine("  \u0027COMMAND                    - Run a transparent command inside another");
 Console.WriteLine("  F1 / F2                     - Help / expanded command history");
-Console.WriteLine("  HELP                        - List every registered command");
+Console.WriteLine("  HELP / HELP <command>       - List every command, or explain one");
 Console.WriteLine();
 
 using var viewer = ViewerHostFactory.Create(1600, 900);

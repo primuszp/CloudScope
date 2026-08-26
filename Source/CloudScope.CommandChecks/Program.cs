@@ -1,0 +1,282 @@
+// Command-system checks. Run with:  dotnet run --project Source/CloudScope.CommandChecks
+//
+// These cover the two things that rot quietly: the command table (every command declared,
+// described and reachable from the menu) and the runtime's conversation rules (prompts,
+// keywords, defaults, cancellation, transparency, repeat). They need no display, so they
+// run anywhere the solution builds.
+
+using CloudScope.Commands;
+using CloudScope.Ui.Commands;
+using OpenTK.Mathematics;
+
+int failures = 0;
+void Check(string name, bool ok, string detail = "")
+{
+    Console.WriteLine($"{(ok ? "  ok  " : "FAIL  ")}{name}{(ok || detail.Length == 0 ? "" : "  -> " + detail)}");
+    if (!ok) failures++;
+}
+
+// ---------- 1. Registration of the real command set ----------
+try
+{
+    var runtime = new CommandRuntime(new object(), new ViewerCommands());
+    var commands = runtime.Commands;
+    Check("ViewerCommands registers", commands.Count > 0, "");
+    Console.WriteLine($"       {commands.Count} commands, {runtime.KnownCommandNames.Count} names incl. aliases");
+
+    Check("every command has a summary", commands.All(c => c.Summary.Length > 0));
+    Check("every command has a syntax", commands.All(c => c.Syntax.Length > 0),
+        string.Join(",", commands.Where(c => c.Syntax.Length == 0).Select(c => c.GlobalName)));
+
+    foreach (var group in commands.GroupBy(c => c.Group).OrderBy(g => g.Key))
+        Console.WriteLine($"       {group.Key,-9} {string.Join(" ", group.Select(c => c.GlobalName).OrderBy(n => n))}");
+
+    // Menu coverage: every menu command must resolve in the table, with valid keywords.
+    int menuChecked = 0, menuBad = 0;
+    void WalkMenu(IReadOnlyList<CommandMenuEntry> items)
+    {
+        foreach (CommandMenuEntry entry in items)
+        {
+            if (entry.IsSubmenu) { WalkMenu(entry.Items); continue; }
+            if (entry.IsSeparator || entry.Command.Length == 0) continue;
+
+            menuChecked++;
+            string name = CommandText.FirstWord(entry.Command);
+            if (!runtime.IsKnownCommand(name))
+            {
+                Console.WriteLine($"       menu '{entry.Header}' -> unknown command {name}");
+                menuBad++;
+            }
+        }
+    }
+    WalkMenu(CommandMenu.Build());
+    Check($"menu commands resolve ({menuChecked} entries)", menuBad == 0);
+}
+catch (Exception ex)
+{
+    Check("ViewerCommands registers", false, ex.Message);
+}
+
+// ---------- 1b. Coverage of the viewer API ----------
+{
+    var runtime = new CommandRuntime(new object(), new ViewerCommands());
+    var report = CommandCoverage.Analyse(runtime.Commands, typeof(CloudScope.ViewerController));
+    Console.WriteLine();
+    Console.WriteLine(report.Describe());
+    Console.WriteLine();
+}
+
+// ---------- 2. Runtime mechanics, against a command class built for it ----------
+var log = new List<string>();
+var probeRuntime = new CommandRuntime(log, new ProbeCommands());
+
+CommandResult Run(string input) => probeRuntime.Execute(input);
+
+// one-shot
+log.Clear();
+var r = Run("PING");
+Check("one-shot command ends", r.Status == CommandStatus.Ended && r.Message == "pong", r.Message);
+
+// prompt then answer
+log.Clear();
+r = Run("GREET");
+Check("prompts when no argument", r.Status == CommandStatus.Prompting && r.Prompt.StartsWith("Enter name"), r.Prompt);
+r = Run("Anna");
+Check("answer completes command", r.Status == CommandStatus.Ended && r.Message == "Hello Anna", r.Message);
+
+// argument on the command line skips the prompt
+r = Run("GREET Bela");
+Check("inline argument skips prompt", r.Status == CommandStatus.Ended && r.Message == "Hello Bela", r.Message);
+
+// multiple tokens satisfy successive prompts (script-style)
+r = Run("ADD 2 3");
+Check("two tokens answer two prompts", r.Status == CommandStatus.Ended && r.Message == "5", r.Message);
+
+// keyword resolution and abbreviation
+r = Run("SHAPE B");
+Check("keyword abbreviation resolves", r.Message == "BOX", r.Message);
+r = Run("SHAPE Sphere");
+Check("full keyword resolves", r.Message == "SPHERE", r.Message);
+r = Run("SHAPE");
+Check("keyword prompt appears", r.Status == CommandStatus.Prompting);
+r = Run("");
+Check("Enter takes the default keyword", r.Message == "BOX", r.Message);
+
+// invalid keyword re-asks instead of failing
+r = Run("SHAPE zzz");
+Check("invalid keyword re-asks", r.Status == CommandStatus.Prompting && r.Message.Contains("Invalid option"), r.Message);
+probeRuntime.CancelActive();
+
+// cancellation runs the command's finally block
+log.Clear();
+r = Run("HOLD");
+Check("HOLD suspends", r.Status == CommandStatus.Prompting);
+r = Run("ESC");
+Check("Escape cancels", r.Status == CommandStatus.Cancelled);
+Check("cancel unwinds the command body", log.Contains("cleanup"), string.Join(",", log));
+
+// a keyword at an active prompt beats a command name (the "Z at a filter prompt" case)
+log.Clear();
+Run("SHAPE");
+r = Run("PING");
+Check("command name at keyword prompt switches command", r.Message == "pong", r.Message);
+
+// free-form prompts keep text as data, not as a command
+Run("GREET");
+r = Run("PING");
+Check("value prompt keeps text as data", r.Message == "Hello PING", r.Message);
+
+// numbers and ranges
+r = Run("LIMIT 500");
+Check("range rejects out-of-range", r.Status == CommandStatus.Prompting && r.Message.Contains("between"), r.Message);
+r = Run("42");
+Check("range accepts valid value", r.Message == "42", r.Message);
+
+// point prompts, answered by a pick
+r = Run("PICK");
+Check("point prompt waits", r.Status == CommandStatus.Prompting && probeRuntime.AwaitsPoint);
+r = probeRuntime.SupplyPoint(new Vector3(1, 2, 3), 10, 20);
+Check("viewport pick answers point prompt", r.Message == "1,2,3", r.Message);
+r = Run("PICK 4,5,6");
+Check("typed point answers point prompt", r.Message == "4,5,6", r.Message);
+
+// transparent command inside a suspended one
+log.Clear();
+Run("GREET");
+r = Run("PEEK");
+Check("bare name at a value prompt stays data", r.Message == "Hello PEEK", r.Message);
+Run("GREET");
+r = Run("'PEEK");
+Check("apostrophe runs a transparent command mid-command", r.Message == "peeked", r.Message);
+r = Run("'GREET");
+Check("apostrophe refuses a non-transparent command", r.Message.Contains("cannot be used transparently"), r.Message);
+r = Run("Cili");
+Check("interrupted command resumes", r.Message == "Hello Cili", r.Message);
+
+// repeat with Enter
+Run("PING");
+r = Run("");
+Check("Enter repeats the last command", r.Message == "pong", r.Message);
+
+// deferred lines (what SCRIPT is built on)
+r = Run("BATCH");
+Check("deferred lines run after the command", r.Message.Contains("pong"), r.Message);
+
+// unknown command
+r = Run("NOSUCHCOMMAND");
+Check("unknown command reports", r.Message.Contains("Unknown command"), r.Message);
+
+// ---------- 3. System variables ----------
+var table = new SystemVariableTable();
+double size = 2;
+table.RegisterReal("PDSIZE", "point size", () => size, v => size = v, 0.5, 20);
+table.RegisterInt("READONLY", "read only", () => 7);
+Check("variable writes through", table.Write("PDSIZE", "5").Contains("5") && Math.Abs(size - 5) < 1e-9);
+Check("variable rejects out-of-range", table.Write("PDSIZE", "999").Contains("between"));
+Check("read-only variable refuses", table.Write("READONLY", "1").Contains("read-only"));
+Check("unknown variable reports", table.Read("NOPE").Contains("Unknown"));
+
+// ---------- 4. Undo ----------
+var history = new UndoManager();
+int value = 0;
+history.BeginMark("A"); history.Record(new DelegateUndoAction("inc", () => value--, () => value++)); value++; history.Commit();
+history.BeginMark("B"); history.Record(new DelegateUndoAction("inc", () => value--, () => value++)); value++; history.Commit();
+Check("undo depth counts commands", history.Depth == 2, history.Depth.ToString());
+history.Undo();
+Check("undo reverses one command", value == 1, value.ToString());
+history.Redo();
+Check("redo reapplies", value == 2, value.ToString());
+history.Undo(2);
+Check("undo takes a count", value == 0, value.ToString());
+history.BeginMark("C"); history.Record(new DelegateUndoAction("inc", () => value--, () => value++)); value++;
+history.Rollback();
+Check("rollback reverses a cancelled command", value == 0, value.ToString());
+
+Console.WriteLine();
+Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : $"{failures} CHECK(S) FAILED");
+return failures == 0 ? 0 : 1;
+
+sealed class ProbeCommands
+{
+    [CommandMethod("PING", Summary = "Replies pong.", Syntax = "PING")]
+    public IEnumerable<PromptStep> Ping(CommandContext c) { c.Editor.WriteMessage("pong"); yield break; }
+
+    [CommandMethod("PEEK", Flags = CommandFlags.Transparent | CommandFlags.NoHistory,
+        Summary = "Transparent probe.", Syntax = "PEEK")]
+    public IEnumerable<PromptStep> Peek(CommandContext c) { c.Editor.WriteMessage("peeked"); yield break; }
+
+    [CommandMethod("GREET", Summary = "Greets by name.", Syntax = "GREET <name>")]
+    public IEnumerable<PromptStep> Greet(CommandContext c)
+    {
+        var name = c.Editor.GetString("Enter name:");
+        yield return name;
+        if (!name.IsOk) yield break;
+        c.Editor.WriteMessage($"Hello {name.Value}");
+    }
+
+    [CommandMethod("ADD", Summary = "Adds two numbers.", Syntax = "ADD <a> <b>")]
+    public IEnumerable<PromptStep> Add(CommandContext c)
+    {
+        var a = c.Editor.GetInteger("Enter first:");
+        yield return a;
+        if (!a.IsOk) yield break;
+        var b = c.Editor.GetInteger("Enter second:");
+        yield return b;
+        if (!b.IsOk) yield break;
+        c.Editor.WriteMessage((a.Value + b.Value).ToString());
+    }
+
+    [CommandMethod("SHAPE", Summary = "Picks a shape.", Syntax = "SHAPE [Box/Sphere]")]
+    public IEnumerable<PromptStep> Shape(CommandContext c)
+    {
+        var s = c.Editor
+            .GetKeywords("Specify shape [Box/Sphere] <Box>:", new Keyword("BOX", "Box"), new Keyword("SPHERE", "Sphere"))
+            .WithDefaultKeyword("BOX");
+        yield return s;
+        c.Editor.WriteMessage(s.Keyword);
+    }
+
+    [CommandMethod("LIMIT", Summary = "Takes a bounded number.", Syntax = "LIMIT <0-100>")]
+    public IEnumerable<PromptStep> Limit(CommandContext c)
+    {
+        var v = c.Editor.GetInteger("Enter value 0-100:").WithRange(0, 100);
+        yield return v;
+        if (!v.IsOk) yield break;
+        c.Editor.WriteMessage(v.Value.ToString());
+    }
+
+    [CommandMethod("PICK", Summary = "Takes a point.", Syntax = "PICK <x,y,z>")]
+    public IEnumerable<PromptStep> Pick(CommandContext c)
+    {
+        var p = c.Editor.GetPoint("Specify point:");
+        yield return p;
+        if (!p.IsOk) yield break;
+        c.Editor.WriteMessage($"{p.Value.X:0.#},{p.Value.Y:0.#},{p.Value.Z:0.#}");
+    }
+
+    [CommandMethod("HOLD", Summary = "Suspends to test cancellation.", Syntax = "HOLD")]
+    public IEnumerable<PromptStep> Hold(CommandContext c)
+    {
+        var log = (List<string>)c.Target;
+        bool finished = false;
+        try
+        {
+            var s = c.Editor.GetString("Waiting:");
+            yield return s;
+            finished = true;
+            c.Editor.WriteMessage("done");
+        }
+        finally
+        {
+            if (!finished) log.Add("cleanup");
+        }
+    }
+
+    [CommandMethod("BATCH", Summary = "Queues deferred lines.", Syntax = "BATCH")]
+    public IEnumerable<PromptStep> Batch(CommandContext c)
+    {
+        c.Editor.WriteMessage("queued");
+        c.Editor.RunAfter("PING");
+        yield break;
+    }
+}

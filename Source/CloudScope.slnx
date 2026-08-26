@@ -1,6 +1,7 @@
 <Solution>
   <Project Path="CloudScope/CloudScope.csproj" />
   <Project Path="CloudScope.Avalonia/CloudScope.Avalonia.csproj" />
+  <Project Path="CloudScope.CommandChecks/CloudScope.CommandChecks.csproj" />
   <Project Path="CloudScope.Core/CloudScope.Core.csproj" />
   <Project Path="CloudScope.MacOS/CloudScope.MacOS.csproj" />
   <Project Path="MetalTriangleTest/MetalTriangleTest.csproj" />

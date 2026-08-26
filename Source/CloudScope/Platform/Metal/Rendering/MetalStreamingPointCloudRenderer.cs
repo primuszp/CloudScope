@@ -37,7 +37,7 @@ namespace CloudScope.Platform.Metal.Rendering
 
         private const int PagesPerChunk = PointsPerChunk / PageSizeInPoints;
 
-        private static readonly PointRenderLimits Limits = PointRenderLimits.Load("METAL");
+        private static PointRenderLimits Limits => PointRenderLimits.For("METAL");
 
         private const int UniformBufferCount = 3;
 

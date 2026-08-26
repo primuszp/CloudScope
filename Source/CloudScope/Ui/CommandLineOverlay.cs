@@ -195,15 +195,15 @@ namespace CloudScope.Ui
                 ToolButton("Navigate", "NAVIGATE", status.Mode == InteractionMode.Navigate, "Orbit / pan / zoom");
                 ToolButton("Label", "LABELMODE", status.Mode == InteractionMode.Label, "Place and edit selections");
                 ToolSeparator();
-                ToolButton("Box", "SELECT B", status.ActiveTool == SelectionToolType.Box, "Box selection");
-                ToolButton("Sphere", "SELECT S", status.ActiveTool == SelectionToolType.Sphere, "Sphere selection");
-                ToolButton("Cylinder", "SELECT C", status.ActiveTool == SelectionToolType.Cylinder, "Cylinder selection");
+                ToolButton("Box", "SELECT Box", status.ActiveTool == SelectionToolType.Box, "Box selection");
+                ToolButton("Sphere", "SELECT Sphere", status.ActiveTool == SelectionToolType.Sphere, "Sphere selection");
+                ToolButton("Cylinder", "SELECT Cylinder", status.ActiveTool == SelectionToolType.Cylinder, "Cylinder selection");
                 ToolSeparator();
-                ToolButton("Fit", "FIT", false, "Fit the selection to the points inside it");
+                ToolButton("Fit", "FIT Points", false, "Fit the selection to the points inside it");
                 ToolButton("Confirm", "CONFIRM", false, "Apply the active selection");
                 ToolButton("Cancel", "CANCEL", false, "Cancel the active command");
                 ToolSeparator();
-                ToolButton("Zoom extents", "ZOOM E", false, "Fit the whole cloud in the view");
+                ToolButton("Zoom extents", "ZOOM Extents", false, "Fit the whole cloud in the view");
             }
 
             ImGui.End();

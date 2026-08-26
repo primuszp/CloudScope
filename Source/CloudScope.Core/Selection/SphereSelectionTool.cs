@@ -150,6 +150,8 @@ namespace CloudScope.Selection
             }
         }
 
+        public override void ScaleBy(float factor) => Radius = MathF.Max(Radius * factor, 0.001f);
+
         public override void AdjustScale(float delta)
         {
             if (!IsEditing) return;

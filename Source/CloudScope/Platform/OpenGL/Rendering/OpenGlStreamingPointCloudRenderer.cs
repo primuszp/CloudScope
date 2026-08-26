@@ -30,7 +30,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
         /// </remarks>
         private const int PageSizeInPoints = 64 * 1024;
 
-        private static readonly PointRenderLimits Limits = PointRenderLimits.Load("OPENGL");
+        private static PointRenderLimits Limits => PointRenderLimits.For("OPENGL");
 
         private readonly OpenGlPointCloudProgram _program = new();
 

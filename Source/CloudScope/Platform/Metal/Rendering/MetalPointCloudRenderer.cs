@@ -18,7 +18,7 @@ namespace CloudScope.Platform.Metal.Rendering
         private const int PointStride = GpuPointVertex.Stride;
         private const int AttributeStride = GpuPointAttribute.Stride;
         private const int PointsPerChunk = PointRenderUploadBuilder.DefaultPointsPerChunk;
-        private static readonly PointRenderLimits Limits = PointRenderLimits.Load("METAL");
+        private static PointRenderLimits Limits => PointRenderLimits.For("METAL");
 
         // Triple-buffered uniforms — CPU never blocks waiting for GPU to finish.
         private const int UniformBufferCount = 3;

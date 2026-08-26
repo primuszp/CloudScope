@@ -63,6 +63,7 @@ public sealed partial class MainWindow : Window
         BuildToolStrip();
         BuildInspector();
         BuildCommandLine();
+        _hostController.ViewerCommandOutput += OnViewerCommandOutput;
 
         _viewportContainer.Content = new ViewportInputHost(_hostController);
 
@@ -223,15 +224,15 @@ public sealed partial class MainWindow : Window
         AddToolButton("✥", "Navigate", "NAVIGATE", CommandMenu.CheckStates.ModeNavigate);
         AddToolButton("✎", "Label", "LABELMODE", CommandMenu.CheckStates.ModeLabel);
         AddToolSeparator();
-        AddToolButton("▭", "Box", "SELECT B", CommandMenu.CheckStates.ToolBox);
-        AddToolButton("○", "Sphere", "SELECT S", CommandMenu.CheckStates.ToolSphere);
-        AddToolButton("◍", "Cylinder", "SELECT C", CommandMenu.CheckStates.ToolCylinder);
+        AddToolButton("▭", "Box", "SELECT Box", CommandMenu.CheckStates.ToolBox);
+        AddToolButton("○", "Sphere", "SELECT Sphere", CommandMenu.CheckStates.ToolSphere);
+        AddToolButton("◍", "Cylinder", "SELECT Cylinder", CommandMenu.CheckStates.ToolCylinder);
         AddToolSeparator();
         AddToolButton("⤢", "Fit", "FIT", "");
         AddToolButton("✓", "Confirm", "CONFIRM", "");
         AddToolButton("✕", "Cancel", "CANCEL", "");
         AddToolSeparator();
-        AddToolButton("⛶", "Extents", "ZOOM E", "");
+        AddToolButton("⛶", "Extents", "ZOOM Extents", "");
     }
 
     private void AddToolButton(string glyph, string caption, string command, string checkState)
@@ -416,6 +417,74 @@ public sealed partial class MainWindow : Window
 
         _commandSession.Submit(command);
         RefreshViewerState();
+        await AnswerFilePromptAsync();
+    }
+
+    /// <summary>
+    /// Answers a command's file prompt with the platform's file dialog. The command asked for
+    /// a path; this shell can offer a nicer way to give it one, and typing the path still
+    /// works, so a script is not shut out of anything the dialog can do.
+    /// </summary>
+    private async Task AnswerFilePromptAsync()
+    {
+        if (_hostController.Commands.ActiveStep is not PromptFileStep prompt)
+            return;
+
+        string? picked = prompt.Mode switch
+        {
+            PromptFileMode.OpenFile => await PickFileAsync(prompt.Filter, save: false),
+            PromptFileMode.SaveFile => await PickFileAsync(prompt.Filter, save: true),
+            _ => await PickFolderAsync()
+        };
+
+        if (picked == null)
+            return;
+
+        await ExecuteCommandAsync(picked.Contains(' ') ? $"\"{picked}\"" : picked);
+    }
+
+    private async Task<string?> PickFileAsync(string filter, bool save)
+    {
+        TopLevel? topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel == null)
+            return null;
+
+        FilePickerFileType type = filter.Length == 0
+            ? FilePickerFileTypes.All
+            : new FilePickerFileType(filter.ToUpperInvariant() + " files") { Patterns = [$"*.{filter}"] };
+
+        if (save)
+        {
+            IStorageFile? file = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Save file",
+                DefaultExtension = filter.Length == 0 ? null : filter,
+                FileTypeChoices = [type, FilePickerFileTypes.All]
+            });
+
+            return file?.Path.LocalPath;
+        }
+
+        IReadOnlyList<IStorageFile> files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Open file",
+            AllowMultiple = false,
+            FileTypeFilter = [type, FilePickerFileTypes.All]
+        });
+
+        return files.FirstOrDefault()?.Path.LocalPath;
+    }
+
+    private async Task<string?> PickFolderAsync()
+    {
+        TopLevel? topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel == null)
+            return null;
+
+        IReadOnlyList<IStorageFolder> folders = await topLevel.StorageProvider.OpenFolderPickerAsync(
+            new FolderPickerOpenOptions { Title = "Select folder", AllowMultiple = false });
+
+        return folders.FirstOrDefault()?.Path.LocalPath;
     }
 
     // ── State refresh ───────────────────────────────────────────────────────
@@ -543,6 +612,21 @@ public sealed partial class MainWindow : Window
         {
             _statusText.Text = _hostController.StatusText;
             _commandSession.AddHistory(message);
+            _commandLine.Refresh();
+            RefreshViewerState();
+        });
+    }
+
+    /// <summary>Echoes a prompt answered inside the viewport onto this shell's command line.</summary>
+    private void OnViewerCommandOutput(CommandResult result)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!string.IsNullOrWhiteSpace(result.Message))
+                _commandSession.AddHistory(result.Message);
+            if (result.Status == CommandStatus.Prompting && !string.IsNullOrWhiteSpace(result.Prompt))
+                _commandSession.AddHistory(result.Prompt, CommandEntryKind.Prompt);
+
             _commandLine.Refresh();
             RefreshViewerState();
         });

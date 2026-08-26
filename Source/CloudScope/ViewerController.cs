@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using CloudScope.Commands;
 using CloudScope.Labeling;
 using CloudScope.Library;
 using CloudScope.Loading;
@@ -69,6 +70,100 @@ namespace CloudScope
 
             foreach (ViewportState viewport in _viewports)
                 viewport.Camera.SetDepthPicker(new ViewportDepthPicker(renderBackend.CreateDepthPicker(), () => viewport.Bounds, () => _height));
+
+            _backendName = renderBackend.Kind.ToString();
+            RegisterSystemVariables();
+
+            // One undo step per labelling command: the label manager reports each reversible
+            // change, and the runtime's command marks decide where the steps begin and end.
+            _selection.Labels.ActionRecorded += () => UndoHistory.Record(
+                new DelegateUndoAction("Label change",
+                    () => _selection.Labels.Undo(),
+                    () => _selection.Labels.Redo()));
+        }
+
+        private readonly string _backendName;
+
+        /// <summary>Rendering backend this viewer was created with.</summary>
+        public string RenderBackendName => _backendName;
+
+        /// <summary>
+        /// The command surface driving this viewer, set by the dispatcher. It is consulted
+        /// before a click becomes a selection gesture: while a command is waiting for a point,
+        /// clicking in the viewport answers that prompt.
+        /// </summary>
+        public ICommandExecutor? CommandPrompts { get; set; }
+
+        /// <summary>Command-level undo history; the runtime opens and closes its marks.</summary>
+        public UndoManager UndoHistory { get; } = new();
+
+        /// <summary>Named viewer state, readable and writable with SETVAR and GETVAR.</summary>
+        public SystemVariableTable Variables { get; } = new();
+
+        /// <summary>Set by QUIT; the host closes the window on the next frame.</summary>
+        public bool CloseRequested { get; private set; }
+
+        public void RequestClose() => CloseRequested = true;
+
+        /// <summary>Frame timing and point throughput, for TIME.</summary>
+        public string DescribeFrameTiming()
+        {
+            ViewerStatusSnapshot status = Status;
+            return $"Frame rate    {status.Fps:0.0} fps"
+                 + Environment.NewLine + $"Backend       {_backendName}"
+                 + Environment.NewLine + $"Points loaded {status.LoadedCount:N0}"
+                 + Environment.NewLine + $"Points drawn  {status.VisibleCount:N0}"
+                 + Environment.NewLine + $"Frame budget  {(PointRenderBudget.MaxDrawPointsPerFrame?.ToString("N0") ?? PointRenderLimits.DefaultFrameBudget.ToString("N0"))} points"
+                 + Environment.NewLine + $"Verbose log   {(_frameTiming.Enabled ? "on (CLOUDSCOPE_FRAME_LOG)" : "off")}";
+        }
+
+        private void RegisterSystemVariables()
+        {
+            Variables.RegisterReal("PDSIZE", "On-screen size of a point, in pixels.",
+                () => ActiveViewport.Input.PointSize, value => SetPointSize((float)value), 0.5, 20);
+
+            Variables.RegisterBool("PERSPECTIVE", "Perspective projection (1) or parallel (0).",
+                () => ActiveViewport.Camera.IsPerspective, value => SetProjection(value));
+
+            Variables.RegisterEnum("COLORSOURCE", "Attribute the cloud is coloured by.",
+                ["Rgb", "Height", "Class", "Intensity", "Return"],
+                () => (_dataset?.CurrentColorSource ?? ColorSource.Rgb).ToString(),
+                value => SetColorSource(Enum.Parse<ColorSource>(value, ignoreCase: true)));
+
+            Variables.RegisterString("VPORTLAYOUT", "Current viewport layout.",
+                () => DescribeViewportLayout(_viewportLayout));
+
+            Variables.RegisterString("VIEWNAME", "Name of the current view.", () => Status.ViewName);
+
+            Variables.RegisterString("SELMODE", "Navigate or Label.", () => _selection.Mode.ToString());
+
+            Variables.RegisterString("SELTOOL", "Active selection tool.", () => _selection.ActiveTool.ToolType.ToString());
+
+            Variables.RegisterString("CLABEL", "Label applied to new selections.",
+                () => _selection.CurrentLabel, value => SetActiveLabel(value));
+
+            Variables.RegisterString("CINSTANCE", "Instance id applied to new selections.",
+                () => Status.InstanceText,
+                value => SetActiveInstance(int.TryParse(value, out int id) ? id : null));
+
+            Variables.RegisterInt("PTMAX", "Maximum points drawn per frame.",
+                () => PointRenderBudget.MaxDrawPointsPerFrame ?? PointRenderLimits.DefaultFrameBudget,
+                value => PointRenderBudget.MaxDrawPointsPerFrame = value,
+                min: 10_000);
+
+            Variables.RegisterInt("PTRESIDENT", "Maximum points kept on the GPU; applies to clouds opened after it changes.",
+                () => PointRenderBudget.MaxResidentPoints ?? 0,
+                value => PointRenderBudget.MaxResidentPoints = value > 0 ? value : null,
+                min: 0);
+
+            Variables.RegisterString("RENDERBACKEND", "Rendering backend in use (read-only for this session).",
+                () => _backendName);
+
+            Variables.RegisterString("SOURCENAME", "Name of the open cloud.", () => _sourceName);
+            Variables.RegisterInt("LOADEDPOINTS", "Points in the open cloud.", () => Status.LoadedCount);
+            Variables.RegisterInt("VISIBLEPOINTS", "Points passing the current filter.", () => Status.VisibleCount);
+            Variables.RegisterReal("FPS", "Smoothed frame rate.", () => Status.Fps);
+            Variables.RegisterInt("LABELCOUNT", "Number of labelled points.", () => _selection.Labels.Count);
         }
 
         public void Load()
@@ -248,6 +343,24 @@ namespace CloudScope
         }
 
         /// <summary>Closes one layer by name, or every layer when the name is empty.</summary>
+        /// <summary>Structure of the open stores, for STOREINFO.</summary>
+        public string DescribeStores()
+        {
+            if (_layers.Count == 0)
+                return "No point tile store is open. OPENSTORE loads one.";
+
+            return string.Join(Environment.NewLine, _layers.Select(layer =>
+            {
+                Store.PointTileStoreHeader header = layer.Store.Header;
+                return $"  {layer.Name}"
+                     + Environment.NewLine + $"    directory   {layer.Store.Directory}"
+                     + Environment.NewLine + $"    points      {header.PointCount:N0}"
+                     + Environment.NewLine + $"    cells       {layer.Store.Nodes.Length:N0}"
+                     + Environment.NewLine + $"    source col  {(layer.Store.HasSourceIndices ? "yes" : "no")}"
+                     + Environment.NewLine + $"    source file {layer.Store.SourcePath ?? "(none)"}";
+            }));
+        }
+
         public string CloseLayer(string name)
         {
             if (name.Length == 0)
@@ -410,6 +523,7 @@ namespace CloudScope
         // ── Label registry (name → ASPRS class code + color) ──────────────────
         public LabelRegistry LabelRegistry => _selection.Registry;
         public string CurrentLabel => _selection.CurrentLabel;
+        public int LabelledPointCount => _selection.Labels.Count;
         public int? CurrentInstanceId => _selection.CurrentInstanceId;
         public bool LabelWindowVisible { get; set; }
 
@@ -417,11 +531,31 @@ namespace CloudScope
         public bool CommandHistoryVisible { get; set; }
         public void ToggleLabelWindow() => LabelWindowVisible = !LabelWindowVisible;
 
-        public string DefineLabel(string name, byte code)
+        public string DefineLabel(string name, byte code, Vector3? color = null)
         {
-            LabelDefinition def = _selection.Registry.Define(name, code);
+            LabelDefinition def = _selection.Registry.Define(name, code, color);
             _highlightRenderer.MarkDirty();
-            return $"Label '{def.Name}' = class {def.Code} ({PointCloudAttributes.FormatClassName(def.Code)}).";
+            string colorText = color is Vector3 c ? $"  colour {c.X:0.##},{c.Y:0.##},{c.Z:0.##}" : "";
+            return $"Label '{def.Name}' = class {def.Code} ({PointCloudAttributes.FormatClassName(def.Code)}).{colorText}";
+        }
+
+        public string RemoveLabelDefinition(string name)
+        {
+            bool removed = _selection.Registry.Remove(name);
+            if (removed) _highlightRenderer.MarkDirty();
+            return removed ? $"Label definition '{name}' removed." : $"No label definition named '{name}'.";
+        }
+
+        public string DescribeLabelDefinitions()
+        {
+            IReadOnlyCollection<LabelDefinition> definitions = _selection.Registry.Definitions;
+            if (definitions.Count == 0)
+                return "No label definitions. Add one with LABELDEF.";
+
+            return string.Join(Environment.NewLine, definitions
+                .OrderBy(d => d.Code)
+                .Select(d => $"  {d.Name}  class {d.Code} ({PointCloudAttributes.FormatClassName(d.Code)})"
+                           + $"  colour {d.Color.X:0.##},{d.Color.Y:0.##},{d.Color.Z:0.##}"));
         }
 
         public string SetActiveLabel(string name)
@@ -459,6 +593,10 @@ namespace CloudScope
 
         public string FitActiveSelection(bool useGround) => _selection.FitActiveToolToSelection(useGround);
 
+        public string MoveActiveSelection(Vector3 displacement) => _selection.MoveActiveSelection(displacement);
+        public string RotateActiveSelection(float degrees, int axis) => _selection.RotateActiveSelection(degrees, axis);
+        public string ScaleActiveSelection(float factor) => _selection.ScaleActiveSelection(factor);
+
         public void CancelOrExitLabelMode() => _selection.CancelOrExitLabelMode();
 
         public bool UndoSelectionCommand() => _selection.UndoSelectionCommand();
@@ -475,6 +613,67 @@ namespace CloudScope
         }
 
         public void ZoomWindow(int x0, int y0, int x1, int y1) => ActiveViewport.Camera.ZoomWindow(x0, y0, x1, y1);
+
+        public string PanByPixels(int dx, int dy)
+        {
+            ActiveViewport.Camera.PanPixels(dx, dy);
+            return $"Panned {dx},{dy} pixels.";
+        }
+
+        public string OrbitBy(float azimuthDegrees, float elevationDegrees)
+        {
+            ActiveViewport.Camera.OrbitBy(azimuthDegrees, elevationDegrees);
+            return $"Orbited {azimuthDegrees:0.###}°, {elevationDegrees:0.###}°.";
+        }
+
+        public string SetOrbitPivot(Vector3 worldPoint)
+        {
+            ActiveViewport.Camera.SetOrbitPivot(worldPoint);
+            return $"Pivot: {worldPoint.X:0.###},{worldPoint.Y:0.###},{worldPoint.Z:0.###}";
+        }
+
+        public string SetOrbitPivotFromScreen(int x, int y)
+        {
+            OrbitCamera camera = ActiveViewport.Camera;
+            if (!camera.SetOrbitPivotFromScreen(x, y))
+                return "No point under that position.";
+
+            Vector3 pivot = camera.Pivot;
+            return $"Pivot: {pivot.X:0.###},{pivot.Y:0.###},{pivot.Z:0.###}";
+        }
+
+        public string ResetOrbitPivot()
+        {
+            ActiveViewport.Camera.SetOrbitPivot(Vector3.Zero);
+            return "Pivot reset to the cloud origin.";
+        }
+
+        // ----- Named views -----
+
+        private readonly Dictionary<string, OrbitCamera.CameraState> _namedViews = new(StringComparer.OrdinalIgnoreCase);
+
+        public string SaveNamedView(string name)
+        {
+            _namedViews[name] = ActiveViewport.Camera.SaveState();
+            return $"View '{name}' saved.";
+        }
+
+        public string RestoreNamedView(string name)
+        {
+            if (!_namedViews.TryGetValue(name, out OrbitCamera.CameraState state))
+                return $"No saved view named '{name}'.";
+
+            ActiveViewport.Camera.RestoreState(state);
+            return $"View '{name}' restored.";
+        }
+
+        public string DeleteNamedView(string name) =>
+            _namedViews.Remove(name) ? $"View '{name}' deleted." : $"No saved view named '{name}'.";
+
+        public string DescribeNamedViews() =>
+            _namedViews.Count == 0
+                ? "No saved views. Store one with VIEW Save."
+                : "Saved views: " + string.Join(", ", _namedViews.Keys.OrderBy(n => n, StringComparer.OrdinalIgnoreCase));
 
         public void ZoomCenter()
         {
@@ -608,9 +807,6 @@ namespace CloudScope
             return $"Projection: {(perspective ? "Perspective" : "Parallel")}.";
         }
 
-        public string SetViewportLayout(ViewportLayoutKind layout)
-            => SetViewportLayout(layout, _auxiliaryViewportView);
-
         public string SetViewportLayout(ViewportLayoutKind layout, ViewportViewKind view)
         {
             if (layout == ViewportLayoutKind.Previous)
@@ -628,13 +824,15 @@ namespace CloudScope
             return $"Viewport layout: {DescribeViewportLayout(_viewportLayout)}. View: {DescribeViewportView(_auxiliaryViewportView)}.";
         }
 
-        public bool SaveLabels() => _selection.SaveLabels();
+        public bool SaveLabels(string? destinationPath = null) => _selection.SaveLabels(destinationPath);
 
         public string SaveLabelsToLas() => _selection.SaveLabelsToLas();
 
-        public bool LoadLabels() => _selection.LoadLabels();
+        public bool LoadLabels(string? sourcePath = null) => _selection.LoadLabels(sourcePath);
 
         public void ClearLabels() => _selection.ClearLabels();
+        public string RemoveSelectionLabels() => _selection.RemoveActiveSelectionLabels();
+        public string DescribeLabelStatistics() => _selection.DescribeLabelStatistics();
 
         public bool UpdateFrame(float dt, IViewerKeyboard keyboard)
         {
@@ -660,7 +858,7 @@ namespace CloudScope
             }
 
             _selection.UpdatePreview(dt);
-            return shouldClose;
+            return shouldClose || CloseRequested;
         }
 
         public void MouseDown(ViewerMouseButton button, int mx, int my)
@@ -670,6 +868,17 @@ namespace CloudScope
 
             OrbitCamera camera = viewport.Camera;
             camera.CancelTransition();
+
+            // A pending point prompt owns the click. Answering it here rather than in every
+            // host is what lets MOVE, PIVOT and ZOOM Window be driven by the mouse without
+            // any of them growing a second, gesture-shaped implementation.
+            if (button == ViewerMouseButton.Left && CommandPrompts?.AwaitsPoint == true)
+            {
+                camera.TryPickWorldPoint(localX, localY, 11, out Vector3 picked);
+                CommandPrompts.SupplyPoint(picked, localX, localY);
+                return;
+            }
+
             _selection.SetViewConstraint(ConstraintFor(viewport));
             if (button == ViewerMouseButton.Left)
             {

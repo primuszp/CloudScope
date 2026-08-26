@@ -51,9 +51,18 @@ public sealed class HostController
         _commands.Register(_viewerCommands);
     }
 
+    /// <summary>
+    /// Output the viewer produced on its own — a viewport pick answering a point prompt.
+    /// The shell's command line shows it exactly like the answer to a typed prompt.
+    /// </summary>
+    public event Action<CommandResult>? ViewerCommandOutput;
+
     public void SetEmbeddedHost(IEmbeddedViewerHost embeddedHost)
     {
         _embeddedHost = embeddedHost;
+        if (embeddedHost.Commands is ICommandOutputSource output)
+            output.OutputProduced += result => ViewerCommandOutput?.Invoke(result);
+
         _viewerState = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
             ? $"Embedded {embeddedHost.RendererName} host ready"
             : "Embedded renderer is currently implemented for Windows and macOS";

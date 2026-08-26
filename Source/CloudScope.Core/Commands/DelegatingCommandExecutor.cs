@@ -35,11 +35,36 @@ public sealed class DelegatingCommandExecutor : ICommandExecutor
 
     public IReadOnlyCollection<string> KnownCommandNames => _resolve()?.KnownCommandNames ?? [];
 
+    public IReadOnlyCollection<CommandDescriptor> Commands => _resolve()?.Commands ?? [];
+
+    public bool TryGetCommand(string name, out CommandDescriptor command)
+    {
+        ICommandExecutor? target = _resolve();
+        if (target != null)
+            return target.TryGetCommand(name, out command);
+
+        command = null!;
+        return false;
+    }
+
     public bool HasActiveCommand => _resolve()?.HasActiveCommand == true;
 
     public bool IsTransparentCommand(string name) => _resolve()?.IsTransparentCommand(name) == true;
 
     public string ResolveGlobalName(string name) => _resolve()?.ResolveGlobalName(name) ?? "";
+
+    public PromptStep? ActiveStep => _resolve()?.ActiveStep;
+
+    public bool AwaitsPoint => _resolve()?.AwaitsPoint == true;
+
+    public PromptStep? PointPrompt => _resolve()?.PointPrompt;
+
+    public CommandResult SupplyPoint(OpenTK.Mathematics.Vector3 world, int screenX, int screenY)
+    {
+        CommandResult result = _resolve()?.SupplyPoint(world, screenX, screenY) ?? CommandResult.End();
+        _afterExecute?.Invoke();
+        return result;
+    }
 
     public CommandResult CancelActive()
     {
