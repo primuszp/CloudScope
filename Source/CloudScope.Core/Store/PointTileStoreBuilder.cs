@@ -34,6 +34,17 @@ public readonly record struct PointTileBuildOptions
     /// <summary>Directory for the intermediate chunk files; defaults to the output directory.</summary>
     public string? ScratchDirectory { get; init; }
 
+    /// <summary>
+    /// Whether the store records which LAS record each point came from.
+    /// </summary>
+    /// <remarks>
+    /// Eight bytes a point in the store, and the same again in the scratch files while the
+    /// build runs — sixteen gigabytes each at two billion points. Worth it only when labels
+    /// made on the store have to be written back into a copy of the LAS, which is the one
+    /// thing that cannot be done without it.
+    /// </remarks>
+    public bool WriteSourceIndices { get; init; }
+
     public static PointTileBuildOptions Default => new()
     {
         ChunkTargetPoints = 8_000_000,
@@ -98,7 +109,8 @@ public static class PointTileStoreBuilder
 
         stage.Restart();
         ChunkPlan plan = ChunkPlan.FromSurvey(surveyCounts, options.ChunkTargetPoints);
-        long[] chunkCounts = Distribute(sourceReader, pointCount, plan, scratch, progress);
+        long[] chunkCounts = Distribute(
+            sourceReader, pointCount, plan, scratch, options.WriteSourceIndices, progress);
         TimeSpan distributeTime = stage.Elapsed;
 
         stage.Restart();
@@ -107,7 +119,8 @@ public static class PointTileStoreBuilder
         int maxLevel;
         TimeSpan cellTime;
         TimeSpan writeTime;
-        using (var writer = new PointTileStoreWriter(outputDirectory, sourceReader.HasAttributes))
+        using (var writer = new PointTileStoreWriter(
+            outputDirectory, sourceReader.HasAttributes, options.WriteSourceIndices))
         {
             written = BuildCells(plan, chunkCounts, scratch, bounds, options, writer, progress);
             cellTime = stage.Elapsed;
@@ -121,6 +134,15 @@ public static class PointTileStoreBuilder
         }
 
         Directory.Delete(scratch, recursive: true);
+
+        if (options.WriteSourceIndices)
+        {
+            // A label written back needs to know which file it is writing back to, and the
+            // store is the only thing that outlives the session that made it.
+            File.WriteAllText(
+                Path.Combine(outputDirectory, PointTileStore.SourcePathFileName),
+                Path.GetFullPath(lasPath));
+        }
 
         return new PointTileBuildReport(
             pointCount, written, nodeCount, maxLevel, plan.ChunkCount,
@@ -153,11 +175,12 @@ public static class PointTileStoreBuilder
         long pointCount,
         ChunkPlan plan,
         string scratchDirectory,
+        bool withSourceIndices,
         IProgress<PointTileBuildProgress>? progress)
     {
         var writers = new ChunkWriter[plan.ChunkCount];
         for (int i = 0; i < writers.Length; i++)
-            writers[i] = new ChunkWriter(Path.Combine(scratchDirectory, $"chunk{i:D5}.bin"));
+            writers[i] = new ChunkWriter(Path.Combine(scratchDirectory, $"chunk{i:D5}.bin"), withSourceIndices);
 
         try
         {
@@ -211,7 +234,8 @@ public static class PointTileStoreBuilder
                 return;
 
             string path = Path.Combine(scratchDirectory, $"chunk{chunkIndex:D5}.bin");
-            StorePoint[] points = ChunkWriter.ReadAll(path, (int)chunkCounts[chunkIndex]);
+            StorePoint[] points = ChunkWriter.ReadAll(
+                path, (int)chunkCounts[chunkIndex], options.WriteSourceIndices);
             (float min, float max)[] cube = plan.ChunkCube(chunkIndex, bounds);
 
             var cells = new List<PointTileCell>();

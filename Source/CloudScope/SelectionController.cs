@@ -617,16 +617,8 @@ namespace CloudScope
 
         public string SaveLabelsToLas()
         {
-            if (_streamed != null)
-            {
-                // A store records where a point sits in its own point file, not which record
-                // of the LAS it was read from, and the builder reorders points into cells - so
-                // there is nothing here to map a label back onto a LAS record. Giving a store
-                // that column would cost eight bytes a point, which is sixteen gigabytes at
-                // two billion, and is a format decision rather than something to guess at.
-                return "Labels on a streamed cloud have no LAS record to write back to. "
-                    + "SAVELABELS writes them beside the store instead.";
-            }
+            if (_streamed is { } streamed)
+                return SaveStreamedLabelsToLas(streamed);
 
             if (string.IsNullOrEmpty(_lasFilePath))
                 return "No source file is associated with the viewer.";
@@ -642,6 +634,42 @@ namespace CloudScope
             string dest = LasClassificationWriter.DefaultDestinationPath(_lasFilePath);
             int written = LasClassificationWriter.Write(_lasFilePath, dest, map);
             return $"Wrote class codes for {written:N0} points to {System.IO.Path.GetFileName(dest)}.";
+        }
+
+        /// <summary>
+        /// Writes class codes for a streamed cloud into copies of the LAS files it was built
+        /// from.
+        /// </summary>
+        /// <remarks>
+        /// Only possible when the store was indexed with the source column: the builder
+        /// reorders points into cells, so without it nothing connects a stored point back to
+        /// the record it came from.
+        /// </remarks>
+        private string SaveStreamedLabelsToLas(StreamedSelectionSource streamed)
+        {
+            Dictionary<string, Dictionary<int, byte>> byFile =
+                streamed.MapToSourceRecords(_labelManager.AllAnnotations, _registry.CodeFor);
+            if (byFile.Count == 0)
+            {
+                return "Nothing to write back. The store needs the source column "
+                    + "(INDEX ... Source) and the labels need class codes.";
+            }
+
+            var written = new List<string>();
+            foreach ((string sourcePath, Dictionary<int, byte> map) in byFile)
+            {
+                if (!System.IO.File.Exists(sourcePath))
+                {
+                    written.Add($"{System.IO.Path.GetFileName(sourcePath)}: source file is missing");
+                    continue;
+                }
+
+                string dest = LasClassificationWriter.DefaultDestinationPath(sourcePath);
+                int count = LasClassificationWriter.Write(sourcePath, dest, map);
+                written.Add($"{count:N0} points to {System.IO.Path.GetFileName(dest)}");
+            }
+
+            return "Wrote class codes for " + string.Join("; ", written) + ".";
         }
 
         public bool LoadLabels()

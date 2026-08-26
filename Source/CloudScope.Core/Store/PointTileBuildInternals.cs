@@ -8,13 +8,26 @@ using CloudScope.Library;
 namespace CloudScope.Store;
 
 /// <summary>A point on its way into the store: already in the packed layout the GPU reads.</summary>
-[StructLayout(LayoutKind.Sequential)]
+/// <remarks>
+/// <see cref="SourceIndex"/> rides along through the chunk files and the cell builder, which
+/// shuffle points about; carrying it inside the point is what keeps it attached to the right
+/// one without teaching every stage to permute a second array in step. Packed to four bytes so
+/// the record is thirty-six rather than forty, since the scratch files are sized by it.
+/// </remarks>
+[StructLayout(LayoutKind.Sequential, Pack = 4)]
 internal struct StorePoint
 {
-    public const int Stride = GpuPointVertex.Stride + GpuPointAttribute.Stride;
+    /// <summary>Bytes of a point written to a chunk file when the source column is wanted.</summary>
+    public const int Stride = GpuPointVertex.Stride + GpuPointAttribute.Stride + sizeof(long);
+
+    /// <summary>Bytes when it is not, which is what a build that never needs it pays.</summary>
+    public const int CompactStride = GpuPointVertex.Stride + GpuPointAttribute.Stride;
 
     public GpuPointVertex Vertex;
     public GpuPointAttribute Attribute;
+
+    /// <summary>Which record of the source LAS this point was read from.</summary>
+    public long SourceIndex;
 }
 
 /// <summary>The cloud's extent, and the origin its stored float coordinates are measured from.</summary>
@@ -106,7 +119,13 @@ internal sealed class LasPointStream
         int wanted = Math.Min(destination.Length, _batch.Length);
         int read = _reader.ReadBatch(startIndex, _batch, wanted, _raw);
         for (int i = 0; i < read; i++)
+        {
             destination[i] = Convert(_batch[i]);
+            // The reader walks the file in order, so a point's record number is where it sits
+            // in the run that was asked for.
+            destination[i].SourceIndex = startIndex + i;
+        }
+
         return read;
     }
 
@@ -299,11 +318,20 @@ internal sealed class ChunkWriter : IDisposable
 
     private readonly FileStream _stream;
     private readonly StorePoint[] _buffer = new StorePoint[BufferPoints];
+    private readonly bool _withSourceIndices;
+    private readonly byte[]? _record;
     private int _pending;
 
-    public ChunkWriter(string path)
+    /// <param name="withSourceIndices">
+    /// Whether each point's source record travels with it. When it does not, the record on
+    /// disk is the same twenty-eight bytes it always was — a build that will never write the
+    /// source column pays nothing in scratch space for the field existing.
+    /// </param>
+    public ChunkWriter(string path, bool withSourceIndices)
     {
         _stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16);
+        _withSourceIndices = withSourceIndices;
+        _record = withSourceIndices ? null : new byte[BufferPoints * StorePoint.CompactStride];
     }
 
     public long Count { get; private set; }
@@ -321,15 +349,57 @@ internal sealed class ChunkWriter : IDisposable
         if (_pending == 0)
             return;
 
-        _stream.Write(MemoryMarshal.AsBytes(_buffer.AsSpan(0, _pending)));
+        ReadOnlySpan<byte> source = MemoryMarshal.AsBytes(_buffer.AsSpan(0, _pending));
+        if (_withSourceIndices)
+        {
+            _stream.Write(source);
+        }
+        else
+        {
+            // Drop the tail of each record rather than the field: the struct is one shape, the
+            // file is two.
+            Span<byte> compact = _record.AsSpan(0, _pending * StorePoint.CompactStride);
+            for (int i = 0; i < _pending; i++)
+            {
+                source.Slice(i * StorePoint.Stride, StorePoint.CompactStride)
+                    .CopyTo(compact[(i * StorePoint.CompactStride)..]);
+            }
+
+            _stream.Write(compact);
+        }
+
         _pending = 0;
     }
 
-    public static StorePoint[] ReadAll(string path, int count)
+    public static StorePoint[] ReadAll(string path, int count, bool withSourceIndices)
     {
         var points = new StorePoint[count];
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16);
-        stream.ReadExactly(MemoryMarshal.AsBytes(points.AsSpan()));
+        Span<byte> destination = MemoryMarshal.AsBytes(points.AsSpan());
+        if (withSourceIndices)
+        {
+            stream.ReadExactly(destination);
+            return points;
+        }
+
+        // A compact file has no source column, so each record is read into the front of its
+        // slot and the field it never held stays zero.
+        byte[] compact = ArrayPool<byte>.Shared.Rent(count * StorePoint.CompactStride);
+        try
+        {
+            Span<byte> source = compact.AsSpan(0, count * StorePoint.CompactStride);
+            stream.ReadExactly(source);
+            for (int i = 0; i < count; i++)
+            {
+                source.Slice(i * StorePoint.CompactStride, StorePoint.CompactStride)
+                    .CopyTo(destination[(i * StorePoint.Stride)..]);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(compact);
+        }
+
         return points;
     }
 

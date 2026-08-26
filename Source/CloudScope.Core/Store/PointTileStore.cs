@@ -84,6 +84,7 @@ public readonly record struct PointTileStoreHeader(
     int NodeCount,
     int MaxLevel,
     bool HasAttributes,
+    bool HasSourceIndices,
     double OriginX,
     double OriginY,
     double OriginZ,
@@ -117,6 +118,9 @@ public readonly record struct PointTileStoreHeader(
         BinaryPrimitives.WriteInt32LittleEndian(destination[16..], NodeCount);
         BinaryPrimitives.WriteInt32LittleEndian(destination[20..], MaxLevel);
         BinaryPrimitives.WriteInt32LittleEndian(destination[24..], HasAttributes ? 1 : 0);
+        // A store written before the source column existed leaves these bytes zero, which
+        // reads back as "no source indices" - so the flag needs no version bump.
+        BinaryPrimitives.WriteInt32LittleEndian(destination[28..], HasSourceIndices ? 1 : 0);
         Span<double> values = stackalloc double[9]
         {
             OriginX, OriginY, OriginZ, MinX, MinY, MinZ, MaxX, MaxY, MaxZ
@@ -140,6 +144,7 @@ public readonly record struct PointTileStoreHeader(
             BinaryPrimitives.ReadInt32LittleEndian(source[16..]),
             BinaryPrimitives.ReadInt32LittleEndian(source[20..]),
             BinaryPrimitives.ReadInt32LittleEndian(source[24..]) != 0,
+            BinaryPrimitives.ReadInt32LittleEndian(source[28..]) != 0,
             ReadValue(source, 0), ReadValue(source, 1), ReadValue(source, 2),
             ReadValue(source, 3), ReadValue(source, 4), ReadValue(source, 5),
             ReadValue(source, 6), ReadValue(source, 7), ReadValue(source, 8));
@@ -166,18 +171,38 @@ public sealed class PointTileStore : IDisposable
     public const string PointFileName = "points.bin";
     public const string AttributeFileName = "attributes.bin";
 
+    /// <summary>
+    /// Where each stored point came from in the LAS it was built from, one 64-bit record
+    /// index per point, in point-file order.
+    /// </summary>
+    /// <remarks>
+    /// Optional, because it costs eight bytes a point - sixteen gigabytes at two billion - and
+    /// is only needed to write labels back into the source file. Without it a store is a
+    /// viewer's cloud; with it, labels made on a two-billion-point cloud can be written into a
+    /// copy of the LAS they came from.
+    /// </remarks>
+    public const string SourceIndexFileName = "source.bin";
+
+    /// <summary>Names the LAS a store was built from, so labels know what to write back to.</summary>
+    public const string SourcePathFileName = "source.txt";
+
     private readonly MemoryMappedFile _points;
     private readonly MemoryMappedViewAccessor _pointView;
     private readonly MemoryMappedFile? _attributes;
     private readonly MemoryMappedViewAccessor? _attributeView;
+    private readonly MemoryMappedFile? _sourceIndices;
+    private readonly MemoryMappedViewAccessor? _sourceIndexView;
 
     private PointTileStore(
         string directory,
         PointTileStoreHeader header,
         PointTileNode[] nodes,
         MemoryMappedFile points,
-        MemoryMappedFile? attributes)
+        MemoryMappedFile? attributes,
+        MemoryMappedFile? sourceIndices,
+        string? sourcePath)
     {
+        SourcePath = sourcePath;
         Directory = directory;
         Header = header;
         Nodes = nodes;
@@ -185,7 +210,15 @@ public sealed class PointTileStore : IDisposable
         _pointView = points.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
         _attributes = attributes;
         _attributeView = attributes?.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
+        _sourceIndices = sourceIndices;
+        _sourceIndexView = sourceIndices?.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
     }
+
+    /// <summary>The LAS this store was built from, when it recorded one.</summary>
+    public string? SourcePath { get; }
+
+    /// <summary>Whether the store can say where each point came from in that LAS.</summary>
+    public bool HasSourceIndices => _sourceIndexView is not null;
 
     public string Directory { get; }
     public PointTileStoreHeader Header { get; }
@@ -210,7 +243,16 @@ public sealed class PointTileStore : IDisposable
             ? MemoryMappedFile.CreateFromFile(attributePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read)
             : null;
 
-        return new PointTileStore(directory, header, nodes, points, attributes);
+        string sourceIndexPath = Path.Combine(directory, SourceIndexFileName);
+        MemoryMappedFile? sourceIndices = header.HasSourceIndices && File.Exists(sourceIndexPath)
+            ? MemoryMappedFile.CreateFromFile(
+                sourceIndexPath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read)
+            : null;
+
+        string sourcePathFile = Path.Combine(directory, SourcePathFileName);
+        string? sourcePath = File.Exists(sourcePathFile) ? File.ReadAllText(sourcePathFile).Trim() : null;
+
+        return new PointTileStore(directory, header, nodes, points, attributes, sourceIndices, sourcePath);
     }
 
     /// <summary>Copies one cell's vertices out of the mapped point file.</summary>
@@ -250,6 +292,20 @@ public sealed class PointTileStore : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// The LAS record numbers of a run of the point file, when the store carries them.
+    /// </summary>
+    public bool ReadSourceIndices(long firstPoint, Span<long> destination)
+    {
+        if (_sourceIndexView is null)
+            return false;
+        if (firstPoint < 0 || firstPoint + destination.Length > Header.PointCount)
+            throw new ArgumentOutOfRangeException(nameof(firstPoint));
+
+        ReadInto(_sourceIndexView, firstPoint * sizeof(long), MemoryMarshal.AsBytes(destination));
+        return true;
+    }
+
     private static unsafe void ReadInto(MemoryMappedViewAccessor view, long byteOffset, Span<byte> destination)
     {
         byte* source = null;
@@ -267,6 +323,8 @@ public sealed class PointTileStore : IDisposable
 
     public void Dispose()
     {
+        _sourceIndexView?.Dispose();
+        _sourceIndices?.Dispose();
         _attributeView?.Dispose();
         _attributes?.Dispose();
         _pointView.Dispose();

@@ -53,6 +53,8 @@ public sealed class ViewerCommands : ICommandCancellationHandler
         new("PARALLEL", "PArallel", "ORTHO", "ORTHOGRAPHIC")
     ];
 
+    private static readonly Keyword SourceKeyword = new("SOURCE", "Source");
+
     private static readonly Keyword[] LayerKeywords =
     [
         new("LIST", "List"),
@@ -299,7 +301,8 @@ public sealed class ViewerCommands : ICommandCancellationHandler
     [CommandMethod("INDEX", Flags = CommandFlags.NoUndoMarker)]
     public CommandResult Index(CommandContext context)
     {
-        if (!TryParseIndexArguments(context.Input, out string lasPath, out string outputDirectory, out string error))
+        if (!TryParseIndexArguments(
+                context.Input, out string lasPath, out string outputDirectory, out bool withSource, out string error))
             return CommandResult.Continue(Value("Enter LAS file and store directory:"), error);
 
         if (!File.Exists(lasPath))
@@ -307,10 +310,14 @@ public sealed class ViewerCommands : ICommandCancellationHandler
 
         // The build streams the file three times and never holds more than one chunk, so its
         // cost is the disk's, not the machine's memory.
-        PointTileBuildReport report = PointTileStoreBuilder.Build(lasPath, outputDirectory);
+        PointTileBuildReport report = PointTileStoreBuilder.Build(
+            lasPath, outputDirectory, PointTileBuildOptions.Default with { WriteSourceIndices = withSource });
+        string note = withSource
+            ? " It records where each point came from, so labels can be written back to the LAS."
+            : " Add the Source option if labels will be written back to the LAS.";
         return CommandResult.End(
             $"Indexed {report.SourcePoints:N0} points into {report.NodeCount:N0} cells "
-            + $"({report.Total.TotalSeconds:0.0}s). Open it with OPENSTORE.");
+            + $"({report.Total.TotalSeconds:0.0}s). Open it with OPENSTORE.{note}");
     }
 
     /// <summary>
@@ -322,10 +329,15 @@ public sealed class ViewerCommands : ICommandCancellationHandler
     /// count.
     /// </remarks>
     private static bool TryParseIndexArguments(
-        string input, out string lasPath, out string outputDirectory, out string error)
+        string input,
+        out string lasPath,
+        out string outputDirectory,
+        out bool withSourceIndices,
+        out string error)
     {
         lasPath = "";
         outputDirectory = "";
+        withSourceIndices = false;
         error = "";
 
         string trimmed = input.Trim();
@@ -356,6 +368,14 @@ public sealed class ViewerCommands : ICommandCancellationHandler
         {
             error = "INDEX requires a LAS file path.";
             return false;
+        }
+
+        // A trailing Source keyword asks for the column that lets labels reach the LAS again.
+        string[] tail = remaining.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tail.Length > 0 && SourceKeyword.Matches(tail[^1]))
+        {
+            withSourceIndices = true;
+            remaining = string.Join(' ', tail[..^1]);
         }
 
         // Defaulting the store to sit beside the file it came from is what makes INDEX a

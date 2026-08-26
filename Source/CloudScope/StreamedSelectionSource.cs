@@ -145,6 +145,50 @@ namespace CloudScope
             return restored;
         }
 
+        /// <summary>
+        /// Maps labelled points onto records of the LAS they were built from, per source file.
+        /// </summary>
+        /// <remarks>
+        /// Only layers whose store kept the source column can answer, and each store names its
+        /// own LAS — two layers built from two files are written back to two copies, which is
+        /// why the result is grouped by path rather than flattened.
+        /// </remarks>
+        public Dictionary<string, Dictionary<int, byte>> MapToSourceRecords(
+            IReadOnlyDictionary<int, PointAnnotation> annotations, Func<string, byte?> codeFor)
+        {
+            var byFile = new Dictionary<string, Dictionary<int, byte>>(StringComparer.OrdinalIgnoreCase);
+            var single = new long[1];
+            foreach ((int index, PointAnnotation annotation) in annotations)
+            {
+                if ((uint)index >= (uint)_refs.Count || codeFor(annotation.LabelName) is not byte code)
+                    continue;
+
+                PointRef reference = _refs[index];
+                if ((uint)reference.LayerIndex >= (uint)_layers.Count)
+                    continue;
+
+                PointTileStore store = _layers[reference.LayerIndex].Store;
+                if (store.SourcePath is not { Length: > 0 } path
+                    || !store.ReadSourceIndices(reference.PointIndex, single))
+                    continue;
+
+                // The writer addresses records with an int, which is what a LAS under two
+                // billion points needs; a record beyond that cannot be written anyway.
+                if (single[0] > int.MaxValue)
+                    continue;
+
+                if (!byFile.TryGetValue(path, out Dictionary<int, byte>? map))
+                {
+                    map = [];
+                    byFile[path] = map;
+                }
+
+                map[(int)single[0]] = code;
+            }
+
+            return byFile;
+        }
+
         /// <summary>Forgets every remembered point, for when the scene is replaced.</summary>
         public void Clear()
         {

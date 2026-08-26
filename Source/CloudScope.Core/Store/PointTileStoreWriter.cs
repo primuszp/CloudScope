@@ -19,17 +19,19 @@ internal sealed class PointTileStoreWriter : IDisposable
     private readonly bool _hasAttributes;
     private readonly FileStream _points;
     private readonly FileStream? _attributes;
+    private readonly FileStream? _sourceIndices;
     private readonly List<PointTileNode> _nodes = [];
     private readonly List<int> _roots = [];
     private readonly Lock _gate = new();
     private long _pointOffset;
 
-    public PointTileStoreWriter(string directory, bool hasAttributes)
+    public PointTileStoreWriter(string directory, bool hasAttributes, bool hasSourceIndices = false)
     {
         _directory = directory;
         _hasAttributes = hasAttributes;
         _points = Create(PointTileStore.PointFileName);
         _attributes = hasAttributes ? Create(PointTileStore.AttributeFileName) : null;
+        _sourceIndices = hasSourceIndices ? Create(PointTileStore.SourceIndexFileName) : null;
 
         FileStream Create(string name) =>
             new(Path.Combine(directory, name), FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20);
@@ -105,6 +107,16 @@ internal sealed class PointTileStoreWriter : IDisposable
             _attributes.Write(MemoryMarshal.AsBytes(attributes.AsSpan()));
         }
 
+        if (_sourceIndices is not null)
+        {
+            // Written in point-file order like everything else, so a point's index into
+            // points.bin is its index here too.
+            var sources = new long[cell.PointCount];
+            for (int i = 0; i < points.Length; i++)
+                sources[i] = points[i].SourceIndex;
+            _sourceIndices.Write(MemoryMarshal.AsBytes(sources.AsSpan()));
+        }
+
         _pointOffset += cell.PointCount;
         return offset;
     }
@@ -114,9 +126,10 @@ internal sealed class PointTileStoreWriter : IDisposable
     {
         _points.Flush(true);
         _attributes?.Flush(true);
+        _sourceIndices?.Flush(true);
 
         var header = new PointTileStoreHeader(
-            _pointOffset, _nodes.Count, MaxLevel, _hasAttributes,
+            _pointOffset, _nodes.Count, MaxLevel, _hasAttributes, _sourceIndices is not null,
             bounds.OriginX, bounds.OriginY, bounds.OriginZ,
             bounds.MinX, bounds.MinY, bounds.MinZ,
             bounds.MaxX, bounds.MaxY, bounds.MaxZ);
@@ -132,5 +145,6 @@ internal sealed class PointTileStoreWriter : IDisposable
     {
         _points.Dispose();
         _attributes?.Dispose();
+        _sourceIndices?.Dispose();
     }
 }
