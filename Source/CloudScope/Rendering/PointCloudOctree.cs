@@ -92,8 +92,7 @@ internal static class PointCloudOctree
         try
         {
             PointData[] points = data.Points;
-            for (int i = 0; i < pointCount; i++)
-                order[i] = ResolveViewIndex(data, i);
+            FillInitialOrder(data, pointCount, order);
 
             (Vector3 min, Vector3 max) = ComputeBounds(points, order, 0, pointCount);
 
@@ -256,6 +255,31 @@ internal static class PointCloudOctree
         return (childMin, childMax);
     }
 
-    private static int ResolveViewIndex(PointCloudRenderData data, int orderedIndex) =>
-        data.RenderOrder is { Count: > 0 } renderOrder ? renderOrder.Resolve(orderedIndex) : orderedIndex;
+    /// <summary>
+    /// Seeds the working order with the point indices to build over, in ascending order.
+    /// </summary>
+    /// <remarks>
+    /// Ascending matters: every pass of the build reads the point array through this order, so
+    /// a scattered one turns each read into a cache miss. Taking the whole cloud is therefore
+    /// the identity. Only a cloud trimmed to the resident limit goes through
+    /// <see cref="PointCloudRenderData.RenderOrder"/> — that picks an even subset of the whole
+    /// cloud rather than its first however-many points — and the result is sorted straight back
+    /// into ascending order. Which points is what the render order decides; the order they are
+    /// visited in is ours, and the octree's own in-cell shuffle is what keeps the drawn sample
+    /// even.
+    /// </remarks>
+    private static void FillInitialOrder(PointCloudRenderData data, int pointCount, int[] order)
+    {
+        if (data.RenderOrder is not { Count: > 0 } renderOrder || pointCount >= renderOrder.Count)
+        {
+            for (int i = 0; i < pointCount; i++)
+                order[i] = i;
+            return;
+        }
+
+        for (int i = 0; i < pointCount; i++)
+            order[i] = renderOrder.Resolve(i);
+
+        Array.Sort(order, 0, pointCount);
+    }
 }
