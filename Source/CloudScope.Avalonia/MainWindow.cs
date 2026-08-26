@@ -9,7 +9,6 @@ using Avalonia.Threading;
 using CloudScope.Avalonia.Controls;
 using CloudScope.Avalonia.Hosting;
 using CloudScope.Avalonia.Hosting.Input;
-using CloudScope.Library;
 using CloudScope.Loading;
 using CloudScope.Commands;
 using CloudScope.Ui;
@@ -276,7 +275,7 @@ public sealed partial class MainWindow : Window
         AddInspectorGroup("LABELING", "Mode", "Tool", "State", "Label", "Instance");
 
         var registry = new Button { Content = "Label registry...", HorizontalAlignment = HorizontalAlignment.Stretch };
-        registry.Click += (_, _) => OpenLabelRegistry();
+        registry.Click += (_, _) => RunCommandFromUi("LABELS");
         _inspectorPanel.Children.Add(registry);
     }
 
@@ -312,7 +311,7 @@ public sealed partial class MainWindow : Window
     private void BuildCommandLine()
     {
         _commandLine = new CommandLineControl(_commandSession, ExecuteCommandAsync);
-        _commandLine.HistoryRequested += ToggleHistoryWindow;
+        _commandLine.HistoryRequested += () => RunCommandFromUi("HISTORY");
         _commandLineHost.Content = _commandLine;
 
         _commandSession.SeedInputHistory(_settings.RecentInput);
@@ -332,35 +331,62 @@ public sealed partial class MainWindow : Window
 
     private CommandHistoryWindow? _historyWindow;
 
-    private void ToggleHistoryWindow()
+    /// <summary>
+    /// Opens and closes this shell's windows to match the viewer's state. Closing one by hand
+    /// issues the command that turns it off, so the viewer stays the only place the flag is set.
+    /// </summary>
+    private void ProjectViewerWindows(ViewerStatusSnapshot status)
     {
-        if (_historyWindow is { } existing)
-        {
-            existing.Close();
-            _historyWindow = null;
-            return;
-        }
+        if (status.CommandHistoryVisible && _historyWindow == null)
+            ShowHistoryWindow();
+        else if (!status.CommandHistoryVisible && _historyWindow != null)
+            CloseHistoryWindow();
 
+        if (status.LabelWindowVisible && _labelRegistryWindow == null)
+            ShowLabelRegistry();
+        else if (!status.LabelWindowVisible && _labelRegistryWindow != null)
+            CloseLabelRegistry();
+    }
+
+    private void ShowHistoryWindow()
+    {
         _historyWindow = new CommandHistoryWindow(_commandSession);
-        _historyWindow.Closed += (_, _) => _historyWindow = null;
+        _historyWindow.Closed += (_, _) =>
+        {
+            _historyWindow = null;
+            if (_hostController.Status.CommandHistoryVisible)
+                RunCommandFromUi("HISTORY");
+        };
         _historyWindow.Show(this);
     }
 
-    private LabelRegistryWindow? _labelRegistryWindow;
-
-    private void OpenLabelRegistry()
+    private void CloseHistoryWindow()
     {
-        if (_labelRegistryWindow is { } existing)
-        {
-            existing.Activate();
-            existing.Refresh();
-            return;
-        }
+        CommandHistoryWindow? window = _historyWindow;
+        _historyWindow = null;
+        window?.Close();
+    }
 
+    private void ShowLabelRegistry()
+    {
         _labelRegistryWindow = new LabelRegistryWindow(_hostController, RunCommandFromUi);
-        _labelRegistryWindow.Closed += (_, _) => _labelRegistryWindow = null;
+        _labelRegistryWindow.Closed += (_, _) =>
+        {
+            _labelRegistryWindow = null;
+            if (_hostController.Status.LabelWindowVisible)
+                RunCommandFromUi("LABELS");
+        };
         _labelRegistryWindow.Show(this);
     }
+
+    private void CloseLabelRegistry()
+    {
+        LabelRegistryWindow? window = _labelRegistryWindow;
+        _labelRegistryWindow = null;
+        window?.Close();
+    }
+
+    private LabelRegistryWindow? _labelRegistryWindow;
 
     /// <summary>
     /// Every menu item, toolbar button and keyboard shortcut goes through here, so the UI
@@ -383,38 +409,13 @@ public sealed partial class MainWindow : Window
         _commandLine.FocusInput();
     }
 
+    /// <summary>
+    /// Every submission goes to the one command interpreter. This shell adds no commands and
+    /// intercepts none: what it contributes is a file dialog when a command asks for a path,
+    /// and windows for the viewer state that asks to be shown.
+    /// </summary>
     private async Task ExecuteCommandAsync(string command)
     {
-        if (TryGetOpenPath(command, out string? path))
-        {
-            _commandSession.Submit(command, _ => CommandResult.End("Loading point cloud..."));
-            await OpenLasAsync(path);
-            RefreshViewerState();
-            return;
-        }
-
-        // These two commands open windows this shell owns rather than viewer state, so they
-        // are answered here instead of being forwarded to the viewer's runtime.
-        if (CommandText.TryMatch(command, "HISTORY", out _))
-        {
-            _commandSession.Submit(command, _ =>
-            {
-                ToggleHistoryWindow();
-                return CommandResult.End($"Command history {(_historyWindow != null ? "shown" : "hidden")}.");
-            });
-            return;
-        }
-
-        if (CommandText.TryMatch(command, "LABELS", out _))
-        {
-            _commandSession.Submit(command, _ =>
-            {
-                OpenLabelRegistry();
-                return CommandResult.End("Label registry shown.");
-            });
-            return;
-        }
-
         _commandSession.Submit(command);
         RefreshViewerState();
         await AnswerFilePromptAsync();
@@ -500,6 +501,13 @@ public sealed partial class MainWindow : Window
         _statusFps.Text = status.Fps > 0f ? $"{status.Fps:0} fps" : "";
         SetValue("FPS", status.Fps > 0f ? $"{status.Fps:0}" : "—");
 
+        // Windows follow viewer state rather than deciding for themselves. LABELS and HISTORY
+        // are viewer commands in both shells; this one draws what they asked for.
+        ProjectViewerWindows(status);
+
+        if (status.IsLoading)
+            _statusText.Text = $"Loading {status.LoadProgress}%";
+
         if (_lastStatus is { } previous && status == previous with { Fps = status.Fps })
             return;
 
@@ -555,7 +563,7 @@ public sealed partial class MainWindow : Window
 
         if (e.Key == Key.F2)
         {
-            ToggleHistoryWindow();
+            RunCommandFromUi("HISTORY");
             e.Handled = true;
             return;
         }
@@ -638,62 +646,4 @@ public sealed partial class MainWindow : Window
         _commandLine.Refresh();
     }
 
-    // ── Loading ─────────────────────────────────────────────────────────────
-
-    private async Task OpenLasAsync(string? path)
-    {
-        path ??= await PickLasPathAsync();
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            AddHistory("Open cancelled.");
-            return;
-        }
-
-        try
-        {
-            var progress = new Progress<int>(pct => Dispatcher.UIThread.Post(() => _statusText.Text = $"Loading {pct}%"));
-            LoadedPointCloud cloud = await Task.Run(() =>
-            {
-                using var reader = new LasReader(path);
-                return PointCloudLoader.Load(reader, maxPoints: 0, progress: progress);
-            });
-
-            _hostController.SetPendingCloud(cloud.ToDataset(), Path.GetFileName(path));
-        }
-        catch (Exception ex)
-        {
-            AddHistory($"Load failed: {ex.Message}");
-        }
-    }
-
-    private async Task<string?> PickLasPathAsync()
-    {
-        TopLevel? topLevel = TopLevel.GetTopLevel(this);
-        if (topLevel == null)
-            return null;
-
-        IReadOnlyList<IStorageFile> files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-        {
-            Title = "Open LAS point cloud",
-            AllowMultiple = false,
-            FileTypeFilter =
-            [
-                new FilePickerFileType("LAS point clouds") { Patterns = ["*.las", "*.laz"] },
-                FilePickerFileTypes.All
-            ]
-        });
-
-        return files.FirstOrDefault()?.Path.LocalPath;
-    }
-
-    private static bool TryGetOpenPath(string command, out string? path)
-    {
-        path = null;
-        if (!CommandText.TryMatch(command, "OPEN", out string argument))
-            return false;
-
-        if (!string.IsNullOrWhiteSpace(argument))
-            path = argument;
-        return true;
-    }
 }

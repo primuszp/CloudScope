@@ -157,13 +157,6 @@ public sealed class MacOsEmbeddedMetalHost : NativeControlHost, IEmbeddedViewerH
         base.DestroyNativeControlCore(control);
     }
 
-    public void LoadPointCloud(PointData[] points, float radius, Action? completed = null) =>
-        Enqueue(() => { _controller?.LoadPointCloud(points, radius); completed?.Invoke(); });
-
-    public void LoadPointCloud(PointCloudDataset dataset, Action? completed = null) =>
-        Enqueue(() => { _controller?.LoadPointCloud(dataset); completed?.Invoke(); });
-
-    public void ResetViewer() => Enqueue(() => _controller?.Reset());
     /// <summary>
     /// The Metal host renders on demand, so every command is followed by a redraw request —
     /// that side effect is the only reason this host wraps the dispatcher at all.

@@ -8,7 +8,9 @@ Ez a dokumentum ma már nem az egyetlen őre a lefedettségnek: a `COVERAGE` par
 `Source/CloudScope.CommandChecks` futtatása) a fordított kódból állapítja meg, mely
 viewer-képességhez nem vezet parancs. **Jelenleg 51 az 51-ből elérhető.**
 
-Összesen **52 parancs**, 34 aliasszal, hét csoportban.
+Összesen **51 parancs**, 34 aliasszal, hét csoportban: 50 a vieweré, egy (`HOSTSTATUS`) a
+héjé — az az egyetlen dolog, amit a héj tud és a viewer nem. Egy parancsértelmező futtatja
+mindet; az Avalonia-projekt UI-réteg, saját parancsot nem implementál és egyet sem kap el.
 
 
 ## Fájl és adat (7)
@@ -88,13 +90,12 @@ viewer-képességhez nem vezet parancs. **Jelenleg 51 az 51-ből elérhető.**
 | `POINTCLOUDCONFIG` | PTCONFIG | `POINTCLOUDCONFIG [Frame <points>/Resident <points>/Show]` | Shows or sets the per-frame and resident point budgets. |
 | `SETVAR` | SET | `SETVAR <name> <value> \| ? [pattern]` | Lists or changes a system variable. |
 
-## Segédparancsok (5)
+## Segédparancsok (4)
 
 | Parancs | Alias | Szintaxis | Mit csinál |
 | --- | --- | --- | --- |
 | `COVERAGE` | – | `COVERAGE` | Reports which viewer capabilities no command can reach. |
 | `HELP` | ? | `HELP [command]` | Lists the commands, or explains one of them. |
-| `HOSTRESET` | – | `HOSTRESET` | Reinitialises the embedded viewer host. |
 | `QUIT` | EXIT | `QUIT` | Closes the viewer. |
 | `SCRIPT` | SCR | `SCRIPT <path>` | Runs a file of commands, one per line. |
 

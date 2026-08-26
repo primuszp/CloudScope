@@ -22,15 +22,4 @@ internal sealed class HostCommands
         context.Editor.WriteMessage(_host.StatusText);
         yield break;
     }
-
-    [CommandMethod("HOSTRESET", Flags = CommandFlags.NoUndoMarker,
-        Group = CommandGroup.Utility, Scope = CommandScope.Application,
-        Summary = "Reinitialises the embedded viewer host.",
-        Syntax = "HOSTRESET")]
-    public IEnumerable<PromptStep> Reset(CommandContext context)
-    {
-        _host.PerformReset();
-        context.Editor.WriteMessage("Host controller reset.");
-        yield break;
-    }
 }
