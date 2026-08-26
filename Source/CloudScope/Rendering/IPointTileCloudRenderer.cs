@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using CloudScope.Loading;
 using CloudScope.Store;
 
@@ -28,8 +29,15 @@ public interface IPointTileCloudRenderer : IDisposable
 
     void Initialize();
 
-    /// <summary>Attaches a store. The renderer does not take ownership of it.</summary>
-    void Open(PointTileStore store);
+    /// <summary>
+    /// Attaches the layers to draw. The renderer does not take ownership of their stores.
+    /// </summary>
+    /// <remarks>
+    /// The list is held live, not copied: toggling a layer's visibility or changing its tint
+    /// takes effect on the next frame without reopening anything. Adding or removing a layer
+    /// does need a reopen, since the working set is sized from what is on screen.
+    /// </remarks>
+    void Open(IReadOnlyList<PointTileLayer> layers);
 
     /// <summary>Detaches the store and releases the working set, drawing nothing until reopened.</summary>
     void Close();

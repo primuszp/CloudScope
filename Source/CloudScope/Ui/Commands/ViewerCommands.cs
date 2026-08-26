@@ -53,6 +53,14 @@ public sealed class ViewerCommands : ICommandCancellationHandler
         new("PARALLEL", "PArallel", "ORTHO", "ORTHOGRAPHIC")
     ];
 
+    private static readonly Keyword[] LayerKeywords =
+    [
+        new("LIST", "List"),
+        new("ON", "ON"),
+        new("OFF", "OFf"),
+        new("CLOSE", "Close")
+    ];
+
     private static readonly Keyword[] ColorKeywords =
     [
         new("RGB", "Rgb"),
@@ -237,6 +245,55 @@ public sealed class ViewerCommands : ICommandCancellationHandler
             return CommandResult.Continue(Value("Enter point tile store directory:"), "");
 
         return CommandResult.End(context.GetTarget<ViewerController>().OpenPointTileStore(directory));
+    }
+
+    [CommandMethod("ADDSTORE", Flags = CommandFlags.NoUndoMarker)]
+    public CommandResult AddStore(CommandContext context)
+    {
+        string directory = CommandText.Unquote(context.Input.Trim());
+        if (directory.Length == 0)
+            return CommandResult.Continue(Value("Enter point tile store directory to add as a layer:"), "");
+
+        return CommandResult.End(
+            context.GetTarget<ViewerController>().OpenPointTileStore(directory, replace: false));
+    }
+
+    [CommandMethod("LAYER", "LA", Flags = CommandFlags.NoUndoMarker)]
+    public CommandResult Layer(CommandContext context)
+    {
+        var viewer = context.GetTarget<ViewerController>();
+        string input = context.Input.Trim();
+        if (input.Length == 0)
+            return CommandResult.End(DescribeLayers(viewer));
+
+        // The option and the layer it applies to arrive together, so the keyword is matched
+        // off the first word rather than through the prompt's own keyword handling.
+        string[] parts = input.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        string? option = LayerKeywords.FirstOrDefault(k => k.Matches(parts[0]))?.GlobalName;
+        string name = parts.Length == 2 ? CommandText.Unquote(parts[1]) : "";
+
+        return option switch
+        {
+            "LIST" => CommandResult.End(DescribeLayers(viewer)),
+            "ON" => CommandResult.End(viewer.SetLayerVisible(name, visible: true)),
+            "OFF" => CommandResult.End(viewer.SetLayerVisible(name, visible: false)),
+            "CLOSE" => CommandResult.End(viewer.CloseLayer(name)),
+            _ => CommandResult.Continue(LayerPrompt(), $"Invalid layer option: {parts[0]}")
+        };
+    }
+
+    private static PromptOptions LayerPrompt() =>
+        new("Layer [List/ON/OFf/Close] <List>:", LayerKeywords) { DefaultKeyword = "LIST" };
+
+    private static string DescribeLayers(ViewerController viewer)
+    {
+        if (viewer.Layers.Count == 0)
+            return "No layers are open. OPENSTORE loads one, ADDSTORE adds another.";
+
+        return string.Join(
+            Environment.NewLine,
+            viewer.Layers.Select(layer =>
+                $"  {(layer.Visible ? "on " : "off")}  {layer.Name}  {layer.PointCount:N0} points"));
     }
 
     [CommandMethod("INDEX", Flags = CommandFlags.NoUndoMarker)]

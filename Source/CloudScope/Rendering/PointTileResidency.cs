@@ -7,6 +7,18 @@ using CloudScope.Store;
 
 namespace CloudScope.Rendering;
 
+/// <summary>Identifies one cell across every layer on screen.</summary>
+/// <remarks>
+/// Layer and node together, so one residency serves every open cloud and the least-recently
+/// used cell is the least-recently used cell <em>anywhere</em>. A per-layer residency would
+/// have to be told how to split the budget; this way a layer nobody is looking at simply stops
+/// being touched and loses its pages to one that is being looked at.
+/// </remarks>
+internal readonly record struct PointTileCellKey(int LayerIndex, int NodeIndex);
+
+/// <summary>A run of one layer's draw ranges, drawn together under that layer's tint.</summary>
+internal readonly record struct PointTileLayerBatch(int LayerIndex, int FirstRange, int RangeCount);
+
 /// <summary>
 /// The GPU side of a streamed cloud: one large vertex buffer the residency writes pages of.
 /// </summary>
@@ -65,13 +77,14 @@ internal sealed class PointTileResidency : IDisposable
     /// </remarks>
     private const int PageQuarantineFrames = 3;
 
-    private readonly PointTileStore _store;
+    private readonly IReadOnlyList<PointTileLayer> _layers;
     private readonly IPointTilePageBuffer _buffer;
     private readonly PointTilePageTable _pages;
 
-    private readonly Dictionary<int, Entry> _resident = new();
-    private readonly HashSet<int> _inFlight = new();
-    private readonly BlockingCollection<int> _requests = new(new ConcurrentQueue<int>(), MaxPendingLoads);
+    private readonly Dictionary<PointTileCellKey, Entry> _resident = new();
+    private readonly HashSet<PointTileCellKey> _inFlight = new();
+    private readonly BlockingCollection<PointTileCellKey> _requests =
+        new(new ConcurrentQueue<PointTileCellKey>(), MaxPendingLoads);
     private readonly ConcurrentQueue<Loaded> _completed = new();
     private readonly Queue<Quarantined> _quarantine = new();
     private readonly Thread _loader;
@@ -79,9 +92,10 @@ internal sealed class PointTileResidency : IDisposable
 
     private int _frame;
 
-    public PointTileResidency(PointTileStore store, IPointTilePageBuffer buffer, PointTilePageTable pages)
+    public PointTileResidency(
+        IReadOnlyList<PointTileLayer> layers, IPointTilePageBuffer buffer, PointTilePageTable pages)
     {
-        _store = store;
+        _layers = layers;
         _buffer = buffer;
         _pages = pages;
         _loader = new Thread(LoadLoop) { IsBackground = true, Name = "PointTileLoader" };
@@ -99,10 +113,16 @@ internal sealed class PointTileResidency : IDisposable
     /// Takes this frame's visible cells and emits the draw ranges for those already resident,
     /// queueing the rest. Cells not named here become eviction candidates.
     /// </summary>
-    /// <returns>How many entries of <paramref name="destination"/> were filled.</returns>
+    /// <param name="batches">
+    /// Receives one batch per layer that has anything to draw. Ranges are grouped by layer
+    /// rather than left in the traversal's depth order, so a layer's tint is set once and its
+    /// pages go to the GPU in a single call instead of one per run of neighbouring cells.
+    /// </param>
+    /// <returns>How many batches were filled.</returns>
     public int BeginFrame(
         ReadOnlySpan<PointTileVisit> visible,
         Span<PointDrawRange> destination,
+        Span<PointTileLayerBatch> batches,
         out long pointsDrawn)
     {
         _frame++;
@@ -111,37 +131,51 @@ internal sealed class PointTileResidency : IDisposable
         ReleaseQuarantinedPages();
         PumpCompletedLoads();
 
-        int count = 0;
-        for (int i = 0; i < visible.Length; i++)
+        int rangeCount = 0;
+        int batchCount = 0;
+        for (int layerIndex = 0; layerIndex < _layers.Count && batchCount < batches.Length; layerIndex++)
         {
-            int nodeIndex = visible[i].NodeIndex;
-            if (!_resident.TryGetValue(nodeIndex, out Entry entry))
-            {
-                Request(nodeIndex);
+            if (!_layers[layerIndex].Visible)
                 continue;
-            }
 
-            // Touching the entry is what keeps it out of the eviction scan.
-            _resident[nodeIndex] = entry with { LastUsedFrame = _frame };
-
-            if (count + entry.PageCount > destination.Length)
-                break;
-
-            // One range per page: the pages of a cell need not be neighbours, and the draw
-            // call takes them either way.
-            int remaining = entry.PointCount;
-            for (int page = 0; page < entry.PageCount; page++)
+            int batchStart = rangeCount;
+            for (int i = 0; i < visible.Length; i++)
             {
-                int pointsOnPage = Math.Min(remaining, _pages.PageSizeInPoints);
-                destination[count++] = new PointDrawRange(
-                    entry.Pages[page] * _pages.PageSizeInPoints, pointsOnPage);
-                remaining -= pointsOnPage;
+                if (visible[i].LayerIndex != layerIndex)
+                    continue;
+
+                var key = new PointTileCellKey(layerIndex, visible[i].NodeIndex);
+                if (!_resident.TryGetValue(key, out Entry entry))
+                {
+                    Request(key);
+                    continue;
+                }
+
+                // Touching the entry is what keeps it out of the eviction scan.
+                _resident[key] = entry with { LastUsedFrame = _frame };
+
+                if (rangeCount + entry.PageCount > destination.Length)
+                    break;
+
+                // One range per page: the pages of a cell need not be neighbours, and the draw
+                // call takes them either way.
+                int remaining = entry.PointCount;
+                for (int page = 0; page < entry.PageCount; page++)
+                {
+                    int pointsOnPage = Math.Min(remaining, _pages.PageSizeInPoints);
+                    destination[rangeCount++] = new PointDrawRange(
+                        entry.Pages[page] * _pages.PageSizeInPoints, pointsOnPage);
+                    remaining -= pointsOnPage;
+                }
+
+                pointsDrawn += entry.PointCount;
             }
 
-            pointsDrawn += entry.PointCount;
+            if (rangeCount > batchStart)
+                batches[batchCount++] = new PointTileLayerBatch(layerIndex, batchStart, rangeCount - batchStart);
         }
 
-        return count;
+        return batchCount;
     }
 
     /// <summary>Returns pages the GPU can no longer be reading to the free list.</summary>
@@ -154,15 +188,15 @@ internal sealed class PointTileResidency : IDisposable
     }
 
     /// <summary>Queues a cell for the loader; call order carries the nearest-first priority.</summary>
-    private void Request(int nodeIndex)
+    private void Request(PointTileCellKey key)
     {
-        if (_inFlight.Count >= MaxPendingLoads || !_inFlight.Add(nodeIndex))
+        if (_inFlight.Count >= MaxPendingLoads || !_inFlight.Add(key))
             return;
 
         // A full queue is not an error: the camera is moving faster than the disk, and the
         // cell will be asked for again next frame if it is still visible.
-        if (!_requests.TryAdd(nodeIndex))
-            _inFlight.Remove(nodeIndex);
+        if (!_requests.TryAdd(key))
+            _inFlight.Remove(key);
     }
 
     /// <summary>Moves finished reads onto the GPU, making room first when the pages run out.</summary>
@@ -171,10 +205,10 @@ internal sealed class PointTileResidency : IDisposable
         int uploaded = 0;
         while (uploaded < MaxPageUploadsPerFrame && _completed.TryDequeue(out Loaded loaded))
         {
-            _inFlight.Remove(loaded.NodeIndex);
+            _inFlight.Remove(loaded.Key);
             try
             {
-                if (_resident.ContainsKey(loaded.NodeIndex))
+                if (_resident.ContainsKey(loaded.Key))
                     continue;
 
                 int pageCount = _pages.PagesFor(loaded.PointCount);
@@ -196,7 +230,7 @@ internal sealed class PointTileResidency : IDisposable
                     remaining -= pointsOnPage;
                 }
 
-                _resident[loaded.NodeIndex] = new Entry(pages, pageCount, loaded.PointCount, _frame);
+                _resident[loaded.Key] = new Entry(pages, pageCount, loaded.PointCount, _frame);
                 uploaded += pageCount;
             }
             finally
@@ -229,18 +263,20 @@ internal sealed class PointTileResidency : IDisposable
             if (_pages.FreePageCount + QuarantinedPageCount >= pageCount)
                 return false;
 
-            int oldest = -1;
+            PointTileCellKey oldest = default;
+            bool found = false;
             int oldestFrame = int.MaxValue;
-            foreach ((int nodeIndex, Entry entry) in _resident)
+            foreach ((PointTileCellKey key, Entry entry) in _resident)
             {
                 if (entry.LastUsedFrame < oldestFrame && entry.LastUsedFrame != _frame)
                 {
-                    oldest = nodeIndex;
+                    oldest = key;
                     oldestFrame = entry.LastUsedFrame;
+                    found = true;
                 }
             }
 
-            if (oldest < 0)
+            if (!found)
                 return false;
 
             Evict(oldest);
@@ -249,9 +285,9 @@ internal sealed class PointTileResidency : IDisposable
         return true;
     }
 
-    private void Evict(int nodeIndex)
+    private void Evict(PointTileCellKey key)
     {
-        if (_resident.Remove(nodeIndex, out Entry entry))
+        if (_resident.Remove(key, out Entry entry))
             _quarantine.Enqueue(new Quarantined(entry.Pages.AsSpan(0, entry.PageCount).ToArray(), _frame));
     }
 
@@ -278,26 +314,30 @@ internal sealed class PointTileResidency : IDisposable
     {
         try
         {
-            foreach (int nodeIndex in _requests.GetConsumingEnumerable(_shutdown.Token))
+            foreach (PointTileCellKey key in _requests.GetConsumingEnumerable(_shutdown.Token))
             {
-                PointTileNode node = _store.Nodes[nodeIndex];
+                if ((uint)key.LayerIndex >= (uint)_layers.Count)
+                    continue;
+
+                PointTileStore store = _layers[key.LayerIndex].Store;
+                PointTileNode node = store.Nodes[key.NodeIndex];
                 if (node.PointCount <= 0)
                     continue;
 
                 GpuPointVertex[] points = ArrayPool<GpuPointVertex>.Shared.Rent(node.PointCount);
                 GpuPointAttribute[]? attributes = null;
-                _store.ReadPoints(node, points);
-                if (_store.Header.HasAttributes)
+                store.ReadPoints(node, points);
+                if (store.Header.HasAttributes)
                 {
                     attributes = ArrayPool<GpuPointAttribute>.Shared.Rent(node.PointCount);
-                    if (!_store.ReadAttributes(node, attributes))
+                    if (!store.ReadAttributes(node, attributes))
                     {
                         ArrayPool<GpuPointAttribute>.Shared.Return(attributes);
                         attributes = null;
                     }
                 }
 
-                _completed.Enqueue(new Loaded(nodeIndex, node.PointCount, points, attributes));
+                _completed.Enqueue(new Loaded(key, node.PointCount, points, attributes));
             }
         }
         catch (OperationCanceledException)
@@ -336,5 +376,5 @@ internal sealed class PointTileResidency : IDisposable
     private readonly record struct Entry(int[] Pages, int PageCount, int PointCount, int LastUsedFrame);
 
     private readonly record struct Loaded(
-        int NodeIndex, int PointCount, GpuPointVertex[] Points, GpuPointAttribute[]? Attributes);
+        PointTileCellKey Key, int PointCount, GpuPointVertex[] Points, GpuPointAttribute[]? Attributes);
 }

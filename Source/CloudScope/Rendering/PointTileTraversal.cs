@@ -1,13 +1,15 @@
 using System;
+using System.Collections.Generic;
 using CloudScope.Store;
 using OpenTK.Mathematics;
 
 namespace CloudScope.Rendering;
 
 /// <summary>One cell the traversal decided to draw this frame.</summary>
-/// <param name="NodeIndex">Index into <see cref="PointTileStore.Nodes"/>.</param>
+/// <param name="LayerIndex">Which layer's store the cell belongs to.</param>
+/// <param name="NodeIndex">Index into that store's <see cref="PointTileStore.Nodes"/>.</param>
 /// <param name="Depth">Near distance of the cell, for eviction and load priority.</param>
-internal readonly record struct PointTileVisit(int NodeIndex, float Depth);
+internal readonly record struct PointTileVisit(int LayerIndex, int NodeIndex, float Depth);
 
 /// <summary>
 /// Walks an on-disk cloud's cell table and picks the cells one frame should draw.
@@ -74,15 +76,18 @@ internal static class PointTileTraversal
     /// <summary>
     /// Collects the visible cells, nearest first, until the frame's point budget runs out.
     /// </summary>
-    /// <param name="roots">The forest's roots, from <see cref="FindRoots"/>.</param>
+    /// <param name="layers">
+    /// Every layer on screen. They are walked out of one heap and against one budget, so the
+    /// frame's points go to whatever is nearest the camera rather than being split by a rule
+    /// that does not know where anything is.
+    /// </param>
     /// <param name="view">Camera for the frame, in the store's origin-relative space.</param>
     /// <param name="drawBudget">Points this frame may draw.</param>
     /// <param name="destination">Receives the chosen cells; also caps how many are returned.</param>
     /// <param name="scratch">Reused traversal queue, so a frame allocates nothing.</param>
     /// <returns>How many entries of <paramref name="destination"/> were filled.</returns>
     public static int Collect(
-        ReadOnlySpan<PointTileNode> nodes,
-        ReadOnlySpan<int> roots,
+        IReadOnlyList<PointTileLayer> layers,
         in PointRenderView view,
         int drawBudget,
         Span<PointTileVisit> destination,
@@ -90,7 +95,7 @@ internal static class PointTileTraversal
         out long plannedPointCount)
     {
         plannedPointCount = 0;
-        if (nodes.IsEmpty || drawBudget <= 0 || destination.IsEmpty)
+        if (layers.Count == 0 || drawBudget <= 0 || destination.IsEmpty)
             return 0;
 
         Matrix4 viewProjection = view.View * view.Projection;
@@ -100,23 +105,33 @@ internal static class PointTileTraversal
         // to load, so the budget and the load queue are spent on it first. The queue is a
         // binary heap keyed on the cell's near distance.
         PointTileHeap heap = scratch.Reset();
-        foreach (int root in roots)
+        for (int layerIndex = 0; layerIndex < layers.Count; layerIndex++)
         {
-            if (TryProject(nodes[root], ref viewProjection, view.ViewportWidth, view.ViewportHeight,
-                    out float rootArea, out float rootDepth))
-                heap.Push(root, rootDepth, rootArea);
+            PointTileLayer layer = layers[layerIndex];
+            if (!layer.Visible)
+                continue;
+
+            PointTileNode[] layerNodes = layer.Store.Nodes;
+            foreach (int root in layer.Roots)
+            {
+                if (TryProject(layerNodes[root], ref viewProjection, view.ViewportWidth, view.ViewportHeight,
+                        out float rootArea, out float rootDepth))
+                    heap.Push(layerIndex, root, rootDepth, rootArea);
+            }
         }
 
         int count = 0;
-        while (count < destination.Length && heap.TryPop(out int index, out float depth, out float screenArea))
+        while (count < destination.Length
+            && heap.TryPop(out int layer, out int index, out float depth, out float screenArea))
         {
+            PointTileNode[] nodes = layers[layer].Store.Nodes;
             PointTileNode node = nodes[index];
             if (node.PointCount > 0)
             {
                 if (plannedPointCount + node.PointCount > drawBudget)
                     break;
 
-                destination[count++] = new PointTileVisit(index, depth);
+                destination[count++] = new PointTileVisit(layer, index, depth);
                 plannedPointCount += node.PointCount;
             }
 
@@ -135,7 +150,7 @@ internal static class PointTileTraversal
                     continue;
                 if (TryProject(nodes[childIndex], ref viewProjection, view.ViewportWidth, view.ViewportHeight,
                         out float childArea, out float childDepth))
-                    heap.Push(childIndex, childDepth, childArea);
+                    heap.Push(layer, childIndex, childDepth, childArea);
             }
         }
 

@@ -35,6 +35,7 @@ uniform float pointSize;
 uniform int colorSource;
 uniform bool hasAttributes;
 uniform vec3 classPalette[256];
+uniform vec3 layerTint;
 
 vec3 gradientColor(float t)
 {
@@ -66,6 +67,9 @@ void main()
         vColor = classPalette[int(clamp(aReturn, 0.0, 255.0))];
     else
         vColor = aCol.rgb;
+
+    // White leaves a cloud exactly as it was stored; a layer only tints when asked to.
+    vColor *= layerTint;
 }
 ";
 
@@ -84,7 +88,7 @@ void main()
 ";
 
         private int _shader = -1;
-        private int _uView, _uProj, _uPointSize, _uColorSource, _uHasAttributes;
+        private int _uView, _uProj, _uPointSize, _uColorSource, _uHasAttributes, _uLayerTint;
 
         public void Initialize()
         {
@@ -94,6 +98,7 @@ void main()
             _uPointSize = GL.GetUniformLocation(_shader, "pointSize");
             _uColorSource = GL.GetUniformLocation(_shader, "colorSource");
             _uHasAttributes = GL.GetUniformLocation(_shader, "hasAttributes");
+            _uLayerTint = GL.GetUniformLocation(_shader, "layerTint");
             UploadClassPalette();
         }
 
@@ -108,7 +113,11 @@ void main()
             GL.Uniform1(_uPointSize, renderView.PointSize);
             GL.Uniform1(_uColorSource, PointRenderAttributeBuilder.MapColorSource(colorSource));
             GL.Uniform1(_uHasAttributes, hasAttributes ? 1 : 0);
+            SetLayerTint(Vector3.One);
         }
+
+        /// <summary>Sets the tint for the layer about to be drawn.</summary>
+        public void SetLayerTint(Vector3 tint) => GL.Uniform3(_uLayerTint, tint);
 
         /// <summary>Points the vertex attributes at the currently bound vertex buffer.</summary>
         public static void BindPositionAttributes()
