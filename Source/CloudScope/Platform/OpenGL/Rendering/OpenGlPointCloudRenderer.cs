@@ -7,10 +7,10 @@ using CloudScope.Rendering;
 
 namespace CloudScope.Platform.OpenGL.Rendering
 {
-    public sealed class OpenGlPointCloudRenderer : IPointCloudRenderer
+    internal sealed class OpenGlPointCloudRenderer : IPointCloudRenderer
     {
-        private const int PointStride = 24; // 6 floats
-        private const int AttributeStride = 28; // 7 floats
+        private const int PointStride = GpuPointVertex.Stride;
+        private const int AttributeStride = GpuPointAttribute.Stride;
         private static readonly PointRenderLimits Limits = PointRenderLimits.Load("OPENGL");
 
         private int _vao = -1, _vbo = -1, _attributeVbo = -1;
@@ -20,13 +20,16 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private bool _hasAttributes;
         private bool _hasSourceColors;
         private ColorSource _colorSource = ColorSource.Rgb;
-        private PointRenderChunk[] _chunks = Array.Empty<PointRenderChunk>();
+        private PointOctreeNode[] _nodes = Array.Empty<PointOctreeNode>();
         private PointDrawRange[] _drawRanges = Array.Empty<PointDrawRange>();
+        private PointLodScratch _lodScratch = new(0);
+        private int[] _multiDrawFirst = Array.Empty<int>();
+        private int[] _multiDrawCount = Array.Empty<int>();
 
         private const string VertSrc = @"
 #version 330 core
 layout(location = 0) in vec3 aPos;
-layout(location = 1) in vec3 aCol;
+layout(location = 1) in vec4 aCol;
 layout(location = 2) in float aZ;
 layout(location = 3) in float aIntensity;
 layout(location = 4) in float aClass;
@@ -59,7 +62,7 @@ void main()
     gl_Position  = projection * view * vec4(aPos, 1.0);
     gl_PointSize = pointSize;
     if (!hasAttributes)
-        vColor = aCol;
+        vColor = aCol.rgb;
     else if (colorSource == 0)
         vColor = aRgb;
     else if (colorSource == 1)
@@ -71,7 +74,7 @@ void main()
     else if (colorSource == 4)
         vColor = classPalette[int(clamp(aReturn, 0.0, 255.0))];
     else
-        vColor = aCol;
+        vColor = aCol.rgb;
 }
 ";
 
@@ -95,7 +98,7 @@ void main()
 
         public void Initialize()
         {
-            _shader = BuildShader(VertSrc, FragSrc);
+            _shader = OpenGlShaderCompiler.CreateProgram(VertSrc, FragSrc, "point cloud");
             _uView = GL.GetUniformLocation(_shader, "view");
             _uProj = GL.GetUniformLocation(_shader, "projection");
             _uPointSize = GL.GetUniformLocation(_shader, "pointSize");
@@ -108,7 +111,9 @@ void main()
         {
             ReleasePointBuffers();
             int requestedCount = data.Count;
-            _pointCount = Math.Min(requestedCount, Limits.MaxResidentPoints);
+            // OpenGL has no portable way to ask how much memory the device has, so the cloud
+            // is bounded only by CLOUDSCOPE_MAX_RESIDENT_POINTS here.
+            _pointCount = Math.Min(requestedCount, Limits.ResolveResidentLimit(null, 0));
             _hasAttributes = data.HasAttributes;
             _hasSourceColors = data.HasSourceColors;
             _colorSource = data.ColorSource;
@@ -116,16 +121,19 @@ void main()
             if (_pointCount == 0)
                 return;
 
-            using PointSpatialUploadLayout layout = PointRenderUploadBuilder.BuildSpatialLayout(data, _pointCount);
-            _chunks = layout.Chunks;
-            _drawRanges = new PointDrawRange[_chunks.Length];
+            using PointCloudOctreeLayout layout = PointCloudOctree.Build(data, _pointCount);
+            _nodes = layout.Nodes;
+            _drawRanges = new PointDrawRange[_nodes.Length];
+            _lodScratch = new PointLodScratch(_nodes.Length);
+            _multiDrawFirst = new int[_nodes.Length];
+            _multiDrawCount = new int[_nodes.Length];
 
             _vao = GL.GenVertexArray();
             GL.BindVertexArray(_vao);
 
             _vbo = GL.GenBuffer();
             GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
-            PointData[] uploadPoints = ArrayPool<PointData>.Shared.Rent(_pointCount);
+            GpuPointVertex[] uploadPoints = ArrayPool<GpuPointVertex>.Shared.Rent(_pointCount);
             try
             {
                 PointRenderUploadBuilder.FillPoints(data, uploadPoints.AsSpan(0, _pointCount), uploadOrder: layout.UploadOrder);
@@ -133,19 +141,20 @@ void main()
             }
             finally
             {
-                ArrayPool<PointData>.Shared.Return(uploadPoints);
+                ArrayPool<GpuPointVertex>.Shared.Return(uploadPoints);
             }
 
             GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, PointStride, 0);
             GL.EnableVertexAttribArray(0);
-            GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, PointStride, 12);
+            // Normalized unsigned bytes: the shader still sees a 0..1 color.
+            GL.VertexAttribPointer(1, 4, VertexAttribPointerType.UnsignedByte, true, PointStride, 12);
             GL.EnableVertexAttribArray(1);
 
             if (data.HasAttributes && _pointCount > 0)
             {
                 _attributeVbo = GL.GenBuffer();
                 GL.BindBuffer(BufferTarget.ArrayBuffer, _attributeVbo);
-                PointRenderAttributeData[] uploadAttributes = ArrayPool<PointRenderAttributeData>.Shared.Rent(_pointCount);
+                GpuPointAttribute[] uploadAttributes = ArrayPool<GpuPointAttribute>.Shared.Rent(_pointCount);
                 try
                 {
                     PointRenderAttributeBuilder.Fill(
@@ -158,18 +167,20 @@ void main()
                 }
                 finally
                 {
-                    ArrayPool<PointRenderAttributeData>.Shared.Return(uploadAttributes);
+                    ArrayPool<GpuPointAttribute>.Shared.Return(uploadAttributes);
                 }
 
-                GL.VertexAttribPointer(2, 1, VertexAttribPointerType.Float, false, AttributeStride, 0);
+                // Height and intensity are normalized 16-bit; class and return number are raw
+                // byte codes, so they are not normalized; the source color is normalized bytes.
+                GL.VertexAttribPointer(2, 1, VertexAttribPointerType.UnsignedShort, true, AttributeStride, 0);
                 GL.EnableVertexAttribArray(2);
-                GL.VertexAttribPointer(3, 1, VertexAttribPointerType.Float, false, AttributeStride, 4);
+                GL.VertexAttribPointer(3, 1, VertexAttribPointerType.UnsignedShort, true, AttributeStride, 2);
                 GL.EnableVertexAttribArray(3);
-                GL.VertexAttribPointer(4, 1, VertexAttribPointerType.Float, false, AttributeStride, 8);
+                GL.VertexAttribPointer(4, 1, VertexAttribPointerType.UnsignedByte, false, AttributeStride, 8);
                 GL.EnableVertexAttribArray(4);
-                GL.VertexAttribPointer(5, 1, VertexAttribPointerType.Float, false, AttributeStride, 12);
+                GL.VertexAttribPointer(5, 1, VertexAttribPointerType.UnsignedByte, false, AttributeStride, 9);
                 GL.EnableVertexAttribArray(5);
-                GL.VertexAttribPointer(6, 3, VertexAttribPointerType.Float, false, AttributeStride, 16);
+                GL.VertexAttribPointer(6, 3, VertexAttribPointerType.UnsignedByte, true, AttributeStride, 4);
                 GL.EnableVertexAttribArray(6);
             }
 
@@ -178,31 +189,38 @@ void main()
 
         public void UpdateColorSource(ColorSource source) => _colorSource = source;
 
-        public int Render(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 projection, float pointSize, double halfViewSize, float cloudRadius)
+        public int Render(IRenderFrameData frameData, in PointRenderView renderView)
         {
             if (_pointCount <= 0)
                 return 0;
 
-            int drawCount = PointDrawBudget.Compute(
-                _pointCount,
-                halfViewSize,
-                cloudRadius,
-                Math.Min(Limits.MaxDrawPointsPerFrame, _pointCount));
+            int drawBudget = Limits.GetFrameBudget(_pointCount);
 
+            int rangeCount = PointLodPlanner.Plan(
+                _nodes, in renderView, drawBudget, _drawRanges, _lodScratch, out int drawnPointCount);
+            if (rangeCount == 0)
+                return 0;
+
+            Matrix4 view = renderView.View;
+            Matrix4 projection = renderView.Projection;
             GL.UseProgram(_shader);
             GL.UniformMatrix4(_uView, false, ref view);
             GL.UniformMatrix4(_uProj, false, ref projection);
-            GL.Uniform1(_uPointSize, pointSize);
+            GL.Uniform1(_uPointSize, renderView.PointSize);
             GL.Uniform1(_uColorSource, PointRenderAttributeBuilder.MapColorSource(_colorSource));
             GL.Uniform1(_uHasAttributes, _hasAttributes ? 1 : 0);
             GL.BindVertexArray(_vao);
-            int rangeCount = PointChunkDrawPlanner.FillDrawRanges(
-                _chunks, ref view, ref projection, drawCount, _drawRanges, out int drawnPointCount);
+
+            // One MultiDrawArrays instead of a call per cell: a large cloud plans a couple of
+            // thousand ranges every frame, and that many driver round trips shows up in the
+            // frame time on its own.
             for (int i = 0; i < rangeCount; i++)
             {
-                PointDrawRange range = _drawRanges[i];
-                GL.DrawArrays(PrimitiveType.Points, range.First, range.Count);
+                _multiDrawFirst[i] = _drawRanges[i].First;
+                _multiDrawCount[i] = _drawRanges[i].Count;
             }
+
+            GL.MultiDrawArrays(PrimitiveType.Points, _multiDrawFirst, _multiDrawCount, rangeCount);
 
             return drawnPointCount;
         }
@@ -232,8 +250,11 @@ void main()
                 GL.DeleteVertexArray(_vao);
                 _vao = -1;
             }
-            _chunks = Array.Empty<PointRenderChunk>();
+            _nodes = Array.Empty<PointOctreeNode>();
             _drawRanges = Array.Empty<PointDrawRange>();
+            _lodScratch = new PointLodScratch(0);
+            _multiDrawFirst = Array.Empty<int>();
+            _multiDrawCount = Array.Empty<int>();
         }
 
         private void UploadClassPalette()
@@ -250,37 +271,5 @@ void main()
             }
         }
 
-        private static int BuildShader(string vertSrc, string fragSrc)
-        {
-            int v = GL.CreateShader(ShaderType.VertexShader);
-            GL.ShaderSource(v, vertSrc);
-            GL.CompileShader(v);
-            CheckShader(v, "vertex");
-
-            int f = GL.CreateShader(ShaderType.FragmentShader);
-            GL.ShaderSource(f, fragSrc);
-            GL.CompileShader(f);
-            CheckShader(f, "fragment");
-
-            int prog = GL.CreateProgram();
-            GL.AttachShader(prog, v);
-            GL.AttachShader(prog, f);
-            GL.LinkProgram(prog);
-
-            GL.GetProgram(prog, GetProgramParameterName.LinkStatus, out int ok);
-            if (ok == 0)
-                throw new InvalidOperationException("Shader link:\n" + GL.GetProgramInfoLog(prog));
-
-            GL.DeleteShader(v);
-            GL.DeleteShader(f);
-            return prog;
-        }
-
-        private static void CheckShader(int shader, string name)
-        {
-            GL.GetShader(shader, ShaderParameter.CompileStatus, out int ok);
-            if (ok == 0)
-                throw new InvalidOperationException($"{name} shader:\n" + GL.GetShaderInfoLog(shader));
-        }
     }
 }

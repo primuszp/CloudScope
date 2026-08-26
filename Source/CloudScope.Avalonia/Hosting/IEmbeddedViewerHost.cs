@@ -4,7 +4,7 @@ using CloudScope.Loading;
 
 namespace CloudScope.Avalonia.Hosting;
 
-public interface IEmbeddedOpenTkNativeHost
+public interface IEmbeddedViewerHost
 {
     string RendererName { get; }
 

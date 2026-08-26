@@ -23,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\CloudScope\CloudScope.csproj" />
     <ProjectReference Include="..\CloudScope.Core\CloudScope.Core.csproj" />
+    <ProjectReference Include="..\CloudScope.MacOS\CloudScope.MacOS.csproj" />
   </ItemGroup>
 
 </Project>

@@ -9,7 +9,7 @@ public sealed class HostController
     private readonly CommandDispatcher _commands;
     private readonly DelegatingCommandExecutor _viewerCommands;
 
-    private IEmbeddedOpenTkNativeHost? _embeddedHost;
+    private IEmbeddedViewerHost? _embeddedHost;
     private int _renderedPointCount;
     private string _sourceName = "";
     private string _viewerState = "Embedded renderer not created";
@@ -51,7 +51,7 @@ public sealed class HostController
         _commands.Register(_viewerCommands);
     }
 
-    public void SetEmbeddedHost(IEmbeddedOpenTkNativeHost embeddedHost)
+    public void SetEmbeddedHost(IEmbeddedViewerHost embeddedHost)
     {
         _embeddedHost = embeddedHost;
         _viewerState = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()

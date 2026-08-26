@@ -19,7 +19,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
     ///   6. Rotation rings               (R/G/B)
     ///   7. Extrude arrow                (orange, flat box only)
     /// </summary>
-    public sealed class OpenGlBoxGizmoRenderer : OpenGlGizmoRendererBase, IBoxSelectionGizmoRenderer
+    internal sealed class OpenGlBoxGizmoRenderer : OpenGlGizmoRendererBase, IBoxSelectionGizmoRenderer
     {
         // ── Static GL resources ───────────────────────────────────────────────
         private int _edgeVao = -1, _edgeVbo = -1;
@@ -95,19 +95,17 @@ namespace CloudScope.Platform.OpenGL.Rendering
             Dyn(new[]{ nx0,ny0,0f, nx1,ny0,0f, nx1,ny1,0f, nx0,ny0,0f, nx1,ny1,0f, nx0,ny1,0f });
             GL.DrawArrays(PrimitiveType.Triangles, 0, 6);
 
-            SetColor(0f, 0.82f, 1f, 0.85f); GL.LineWidth(1.5f);
             Dyn(new[]{ nx0,ny0,0f, nx1,ny0,0f, nx1,ny0,0f, nx1,ny1,0f, nx1,ny1,0f, nx0,ny1,0f, nx0,ny1,0f, nx0,ny0,0f });
-            GL.DrawArrays(PrimitiveType.Lines, 0, 8);
+            DrawDynamicLines(0, 8, new Vector4(0f, 0.82f, 1f, 0.85f), 1.5f);
 
             float d = Math.Max(Math.Min(Math.Abs(nx1 - nx0), Math.Abs(ny1 - ny0)) * 0.18f, 0.008f);
-            SetColor(1f, 1f, 1f, 0.95f); GL.LineWidth(2f);
             Dyn(new[]{
                 nx0,ny0,0f, nx0+d,ny0,0f,  nx0,ny0,0f, nx0,ny0+d,0f,
                 nx1,ny0,0f, nx1-d,ny0,0f,  nx1,ny0,0f, nx1,ny0+d,0f,
                 nx1,ny1,0f, nx1-d,ny1,0f,  nx1,ny1,0f, nx1,ny1-d,0f,
                 nx0,ny1,0f, nx0+d,ny1,0f,  nx0,ny1,0f, nx0,ny1-d,0f,
             });
-            GL.DrawArrays(PrimitiveType.Lines, 0, 16);
+            DrawDynamicLines(0, 16, new Vector4(1f, 1f, 1f, 0.95f), 2f);
 
             EndScreenSpaceRender();
             GL.Disable(EnableCap.Blend);
@@ -119,7 +117,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
         {
             GL.UseProgram(_shader);
             GL.BindVertexArray(_faceVao);
-            GL.UniformMatrix4(_uMVP, false, ref mvp);
+            SetMvp(ref mvp);
             GL.Enable(EnableCap.DepthTest);
             GL.DepthMask(false);
             GL.Disable(EnableCap.CullFace);
@@ -137,18 +135,14 @@ namespace CloudScope.Platform.OpenGL.Rendering
         {
             GL.UseProgram(_shader);
             GL.BindVertexArray(_edgeVao);
-            GL.UniformMatrix4(_uMVP, false, ref mvp);
+            SetMvp(ref mvp);
             GL.DepthMask(false);
 
             GL.Enable(EnableCap.DepthTest);
-            SetColor(0f, 0.8f, 1f, 0.65f);
-            GL.LineWidth(1.5f);
-            GL.DrawArrays(PrimitiveType.Lines, 0, 24);
+            DrawLines(_edgeVbo, 0, 24, new Vector4(0f, 0.8f, 1f, 0.65f), 1.5f);
 
             GL.Disable(EnableCap.DepthTest);
-            SetColor(0f, 0.8f, 1f, 0.12f);
-            GL.LineWidth(1f);
-            GL.DrawArrays(PrimitiveType.Lines, 0, 24);
+            DrawLines(_edgeVbo, 0, 24, new Vector4(0f, 0.8f, 1f, 0.12f), 1f);
 
             GL.DepthMask(true);
             GL.Enable(EnableCap.DepthTest);
@@ -238,7 +232,6 @@ namespace CloudScope.Platform.OpenGL.Rendering
                     && activeGrip.Kind == GripKind.RotationRing
                     && activeGrip.Axis == axis;
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveRing(hov, AxisColor[axis], active);
-                GL.LineWidth(style.LineWidth);
 
                 int vc = 0;
                 float psx = 0, psy = 0; bool pok = false;
@@ -265,8 +258,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 }
                 if (vc == 0) continue;
                 Dyn(_ringSegBuf, vc);
-                SetColor(style.Color);
-                GL.DrawArrays(PrimitiveType.Lines, 0, vc / 3);
+                DrawDynamicLines(0, vc / 3, style.Color, style.LineWidth);
             }
 
             EndScreenSpaceRender();

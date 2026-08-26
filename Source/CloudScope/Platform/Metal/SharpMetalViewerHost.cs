@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using CloudScope.Platform.MacOS;
 using CloudScope.Platform.MacOS.ObjC;
 using CloudScope.Platform.Metal.ObjC;
 using CloudScope.Rendering;
@@ -16,6 +17,7 @@ namespace CloudScope.Platform.Metal
     [SupportedOSPlatform("macos")]
     internal sealed class SharpMetalViewerHost : IViewerHost
     {
+        private readonly MetalRenderBackend    _renderBackend;
         private readonly ViewerController      _controller;
         private readonly ViewerCommandDispatcher _commandDispatcher;
         private readonly NSApplication         _app;
@@ -32,10 +34,11 @@ namespace CloudScope.Platform.Metal
         private int _lastMouseY;
         private bool _controllerLoaded;
         private bool _controllerLoadStarted;
-        private readonly RealKeyboard _keyboard = new();
+        private readonly ViewerKeyboardState _keyboard = new();
 
-        public SharpMetalViewerHost(int width, int height, IRenderBackend renderBackend)
+        public SharpMetalViewerHost(int width, int height, MetalRenderBackend renderBackend)
         {
+            _renderBackend = renderBackend;
             _controller = new ViewerController(width, height, renderBackend);
             _commandDispatcher = new ViewerCommandDispatcher(_controller);
             ObjectiveC.LinkMetal();
@@ -49,17 +52,16 @@ namespace CloudScope.Platform.Metal
 
             _appDelegate.OnDidFinishLaunching += _ =>
             {
-                var device = MTLDevice.CreateSystemDefaultDevice();
+                MTLDevice device = _renderBackend.Device;
                 _device = device;
                 _commandQueue = device.NewCommandQueue();
-                MetalFrameContext.Initialize(device, _commandQueue.Value);
 
                 var rect = new NSRect(100, 100, width, height);
                 _mtkView = new MTKEventView(rect, device)
                 {
                     ColorPixelFormat        = MTLPixelFormat.BGRA8Unorm,
                     DepthStencilPixelFormat = MTLPixelFormat.Depth32Float,
-                    ClearColor              = new MTLClearColor { red = 0.0, green = 0.0, blue = 0.0, alpha = 1.0 },
+                    ClearColor              = MetalClearColor.FromPalette(),
                     FramebufferOnly         = false,
                     Paused                  = true,
                     EnableSetNeedsDisplay   = true
@@ -116,7 +118,7 @@ namespace CloudScope.Platform.Metal
                         _controller.UpdateFrame(dt, _keyboard);
 
                         var cmdBuf = _commandQueue.Value.CommandBuffer();
-                        MetalFrameContext.Begin(view, descriptor, drawable, cmdBuf);
+                        _renderBackend.PrepareFrame(descriptor, drawable, cmdBuf);
                         _controller.RenderFrame(0);
                         if (_controller.NeedsContinuousFrames)
                             RequestRedraw();
@@ -144,7 +146,7 @@ namespace CloudScope.Platform.Metal
                 _mtkView.OnMouseMove_  = (x, y)      => { _lastMouseX = x; _lastMouseY = y; _controller.MouseMove(x, y); RequestRedraw(); };
                 _mtkView.OnMouseWheel_ = (x, y, d)   => { _lastMouseX = x; _lastMouseY = y; _controller.MouseWheel(x, y, d); RequestRedraw(); };
                 _mtkView.OnKeyDown_    = code         => { HandleKeyDown(code); RequestRedraw(); };
-                _mtkView.OnKeyUp_      = code         => { _keyboard.KeyUp(MapKey(code)); RequestRedraw(); };
+                _mtkView.OnKeyUp_      = code         => { _keyboard.KeyUp(MacKeyCodes.ToViewerKey(code)); RequestRedraw(); };
                 RequestRedraw();
             };
         }
@@ -186,7 +188,7 @@ namespace CloudScope.Platform.Metal
 
         private void HandleKeyDown(ushort code)
         {
-            var key = MapKey(code);
+            var key = MacKeyCodes.ToViewerKey(code);
             if (key == ViewerKey.Unknown) return;
             int mx = _lastMouseX, my = _lastMouseY;
             _keyboard.KeyDown(key);
@@ -198,32 +200,6 @@ namespace CloudScope.Platform.Metal
         private void RequestRedraw()
         {
             _mtkView?.SetNeedsDisplay();
-        }
-
-        private static ViewerKey MapKey(ushort code) => code switch
-        {
-            53  => ViewerKey.Escape,    49  => ViewerKey.Space,
-            36  => ViewerKey.Enter,     56  => ViewerKey.LeftShift,
-            60  => ViewerKey.RightShift, 59 => ViewerKey.LeftControl,
-            62  => ViewerKey.RightControl,
-            12  => ViewerKey.Q,         13  => ViewerKey.W,
-            14  => ViewerKey.E,         0   => ViewerKey.A,
-            1   => ViewerKey.S,         2   => ViewerKey.D,
-            69  => ViewerKey.KeyPadAdd, 78  => ViewerKey.KeyPadSubtract,
-            71  => ViewerKey.KeyPad7,   77  => ViewerKey.KeyPad3,
-            65  => ViewerKey.KeyPad1,   87  => ViewerKey.KeyPad5,
-            115 => ViewerKey.Home,      3   => ViewerKey.F,
-            _   => ViewerKey.Unknown
-        };
-
-        private class RealKeyboard : IViewerKeyboard
-        {
-            private readonly System.Collections.Generic.HashSet<ViewerKey> _down = new();
-            public void KeyDown(ViewerKey key) => _down.Add(key);
-            public void KeyUp(ViewerKey key)   => _down.Remove(key);
-            public bool IsKeyDown(ViewerKey key) => _down.Contains(key);
-            public bool IsKeyPressed(ViewerKey key) => _down.Contains(key);
-            public bool HasAnyKeyDown => _down.Count > 0;
         }
     }
 }

@@ -6,7 +6,7 @@ internal static class PointRenderAttributeBuilder
 {
     public static void Fill(
         PointCloudRenderData data,
-        Span<PointRenderAttributeData> destination,
+        Span<GpuPointAttribute> destination,
         int pointOffset = 0,
         int[]? uploadOrder = null)
     {
@@ -17,12 +17,7 @@ internal static class PointRenderAttributeBuilder
         double zSpan = attributes.MaxZ - attributes.MinZ;
         for (int i = 0; i < destination.Length; i++)
         {
-            int orderedIndex = pointOffset + i;
-            int viewIndex = uploadOrder is not null
-                ? uploadOrder[orderedIndex]
-                : data.RenderOrder is { Count: > 0 } renderOrder
-                    ? renderOrder.Resolve(orderedIndex)
-                    : orderedIndex;
+            int viewIndex = PointRenderUploadBuilder.ResolveViewIndex(data, pointOffset + i, uploadOrder);
             int sourceIndex = viewToSource is null ? viewIndex : viewToSource[viewIndex];
             float zNormalized = zSpan > 0
                 ? (float)((attributes.Z[sourceIndex] - attributes.MinZ) / zSpan)
@@ -33,7 +28,7 @@ internal static class PointRenderAttributeBuilder
                 ? sourcePoints[sourceIndex]
                 : data.Points[viewIndex];
 
-            destination[i] = new PointRenderAttributeData(
+            destination[i] = new GpuPointAttribute(
                 zNormalized,
                 intensityNormalized,
                 attributes.Class[sourceIndex],

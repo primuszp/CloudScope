@@ -1,6 +1,5 @@
 using System;
 using CloudScope.Loading;
-using OpenTK.Mathematics;
 
 namespace CloudScope.Rendering
 {
@@ -12,6 +11,7 @@ namespace CloudScope.Rendering
         void Initialize();
         void Upload(PointCloudRenderData data);
         void UpdateColorSource(ColorSource source);
-        int Render(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 projection, float pointSize, double halfViewSize, float cloudRadius);
+        /// <summary>Draws the cloud and returns how many points actually went to the GPU.</summary>
+        int Render(IRenderFrameData frameData, in PointRenderView view);
     }
 }

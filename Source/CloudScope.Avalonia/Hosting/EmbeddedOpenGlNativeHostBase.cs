@@ -7,11 +7,11 @@ using OpenTK.Mathematics;
 
 namespace CloudScope.Avalonia.Hosting;
 
-public abstract class EmbeddedOpenTkNativeHostBase : NativeControlHost, IEmbeddedOpenTkNativeHost
+public abstract class EmbeddedOpenGlNativeHostBase : NativeControlHost, IEmbeddedViewerHost
 {
     private DispatcherTimer? _pumpTimer;
 
-    protected EmbeddedOpenTkNativeHostBase(HostController hostController)
+    protected EmbeddedOpenGlNativeHostBase(HostController hostController)
     {
         Commands = new DelegatingCommandExecutor(
             () => Viewer?.Commands,

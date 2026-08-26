@@ -5,17 +5,17 @@ using CloudScope.Rendering;
 
 namespace CloudScope.Avalonia.Hosting.Platform;
 
-internal static class EmbeddedOpenTkNativeHostFactory
+internal static class EmbeddedViewerHostFactory
 {
     public static Control Create(HostController hostController)
     {
         if (OperatingSystem.IsWindows())
-            return new Win32EmbeddedOpenTkNativeHost(hostController);
+            return new Win32EmbeddedOpenGlHost(hostController);
 
         if (OperatingSystem.IsMacOS())
             return RenderBackendFactory.GetDefaultKind() == RenderBackendKind.Metal
-                ? new MacOsEmbeddedMetalNativeHost(hostController)
-                : new MacOsEmbeddedOpenTkNativeHost(hostController);
+                ? new MacOsEmbeddedMetalHost(hostController)
+                : new MacOsEmbeddedOpenGlHost(hostController);
 
         return new AvaloniaOpenGlHostControl();
     }
