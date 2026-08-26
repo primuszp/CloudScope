@@ -6,6 +6,7 @@ using CloudScope.Loading;
 using OpenTK.Mathematics;
 using CloudScope.Selection;
 using CloudScope.Rendering;
+using CloudScope.Store;
 
 namespace CloudScope
 {
@@ -13,6 +14,7 @@ namespace CloudScope
     {
         private readonly IRenderFrameLifecycle _frameLifecycle;
         private readonly IPointCloudRenderer _pointRenderer;
+        private readonly IPointTileCloudRenderer _streamingRenderer;
         private readonly IOverlayRenderer _overlayRenderer;
         private readonly IHighlightRenderer _highlightRenderer;
         private readonly SelectionGizmoRenderers _selectionGizmoRenderers;
@@ -27,6 +29,16 @@ namespace CloudScope
         private bool _forceAuxiliaryViewRefresh;
         private float _cloudRadius = 50f;
         private PointCloudDataset? _dataset;
+
+        /// <summary>
+        /// The on-disk cloud being streamed, or null when the resident path is drawing.
+        /// </summary>
+        /// <remarks>
+        /// The two paths are exclusive rather than layered: a store is drawn straight off disk
+        /// and has no <c>PointData[]</c> behind it, so selection and labelling are unavailable
+        /// while one is open. Opening a LAS the ordinary way closes it again.
+        /// </remarks>
+        private PointTileStore? _store;
         private string _sourceName = "";
         private float _smoothedFps;
 
@@ -42,6 +54,7 @@ namespace CloudScope
             _height = height;
             _frameLifecycle = renderBackend;
             _pointRenderer = renderBackend.CreatePointCloudRenderer();
+            _streamingRenderer = renderBackend.CreateStreamingPointCloudRenderer();
             _overlayRenderer = renderBackend.CreateOverlayRenderer();
             _highlightRenderer = renderBackend.CreateHighlightRenderer();
             _selectionGizmoRenderers = renderBackend.CreateSelectionGizmoRenderers();
@@ -60,12 +73,21 @@ namespace CloudScope
         {
             _frameLifecycle.Initialize();
             _pointRenderer.Initialize();
+            _streamingRenderer.Initialize();
             _overlayRenderer.Initialize();
             UpdateViewportLayout();
+
+            // Opening a store from the environment, the same way the render limits and the
+            // backend choice are set. It is how a large cloud is put on screen without typing
+            // a path into the command window every run.
+            string? startupStore = Environment.GetEnvironmentVariable("CLOUDSCOPE_OPEN_STORE");
+            if (!string.IsNullOrWhiteSpace(startupStore))
+                Console.WriteLine(OpenPointTileStore(startupStore));
         }
 
         public void LoadPointCloud(PointData[] pts, float cloudRadius = 50f)
         {
+            CloseStore();
             _dataset = null;
             _cloudRadius = cloudRadius;
             _selection.LoadPointCloud(pts);
@@ -76,6 +98,7 @@ namespace CloudScope
 
         public void LoadPointCloud(PointCloudDataset dataset)
         {
+            CloseStore();
             _dataset = dataset;
             _cloudRadius = dataset.Radius;
             LoadDatasetIntoSelection();
@@ -110,6 +133,68 @@ namespace CloudScope
             return $"Loaded {cloud.LoadedCount:N0} points from {Path.GetFileName(path)} ({sw.Elapsed.TotalSeconds:0.0}s).";
         }
 
+        /// <summary>
+        /// Opens an indexed cloud and draws it straight off disk, whatever its size.
+        /// </summary>
+        /// <remarks>
+        /// Nothing here scales with the file: the cell table is read into memory, the points
+        /// stay on disk, and the renderer pulls in only the cells the camera is looking at.
+        /// The same call drives either backend — the streaming renderer came from the render
+        /// backend, so Metal and OpenGL differ only in how a page reaches the GPU.
+        /// </remarks>
+        public string OpenPointTileStore(string directory)
+        {
+            if (string.IsNullOrWhiteSpace(directory))
+                return "OPENSTORE requires a store directory.";
+
+            if (!File.Exists(Path.Combine(directory, PointTileStore.IndexFileName)))
+                return $"Not a point tile store: {directory}";
+
+            var sw = Stopwatch.StartNew();
+            PointTileStore store = PointTileStore.Open(directory);
+
+            // The resident path owns the frame while it holds points, so it is emptied first.
+            CloseStore();
+            _pointRenderer.Upload(PointCloudRenderData.Empty);
+            _dataset = null;
+            _selection.Reset();
+
+            _store = store;
+            _cloudRadius = StoreRadius(store.Header);
+            _sourceName = Path.GetFileName(Path.TrimEndingDirectorySeparator(directory));
+            _streamingRenderer.Open(store);
+            foreach (ViewportState viewport in _viewports)
+                FitViewport(viewport);
+            sw.Stop();
+
+            return $"Streaming {store.Header.PointCount:N0} points from {_sourceName} "
+                + $"({store.Header.NodeCount:N0} cells, {sw.Elapsed.TotalSeconds:0.0}s).";
+        }
+
+        /// <summary>
+        /// Half the diagonal of the cloud's bounds — the same measure the resident path frames
+        /// the camera with, so a cloud sits identically however it was opened.
+        /// </summary>
+        private static float StoreRadius(in PointTileStoreHeader header)
+        {
+            float x = (float)(header.MaxX - header.MinX) * 0.5f;
+            float y = (float)(header.MaxY - header.MinY) * 0.5f;
+            float z = (float)(header.MaxZ - header.MinZ) * 0.5f;
+            float radius = MathF.Sqrt(x * x + y * y + z * z);
+            return radius > 0f ? radius : 50f;
+        }
+
+        private void CloseStore()
+        {
+            if (_store is null)
+                return;
+
+            // The renderer holds pages against the store's mapped file, so it lets go first.
+            _streamingRenderer.Close();
+            _store.Dispose();
+            _store = null;
+        }
+
         public void SetLasFilePath(string path)
         {
             _sourceName = Path.GetFileName(path);
@@ -123,8 +208,8 @@ namespace CloudScope
         public ViewerStatusSnapshot Status => new()
         {
             SourceName = _sourceName,
-            LoadedCount = _dataset?.LoadedCount ?? _pointRenderer.PointCount,
-            VisibleCount = _dataset?.VisibleCount ?? _pointRenderer.PointCount,
+            LoadedCount = StoredPointCount ?? _dataset?.LoadedCount ?? _pointRenderer.PointCount,
+            VisibleCount = StoredPointCount ?? _dataset?.VisibleCount ?? _pointRenderer.PointCount,
             Filter = _dataset is { FilterDescription: not "None" } filtered ? filtered.FilterDescription : "",
             Mode = _selection.Mode,
             ActiveTool = _selection.ActiveTool.ToolType,
@@ -142,8 +227,22 @@ namespace CloudScope
             Fps = _smoothedFps
         };
 
+        /// <summary>
+        /// Points in the open store, clamped to what a count field can hold.
+        /// </summary>
+        /// <remarks>
+        /// The counts the shells display are <see cref="int"/>, which a two-billion-point
+        /// cloud overflows. Widening them is part of the same change that gives selection
+        /// 64-bit point indices; until then the status bar saturates rather than wrapping to a
+        /// negative number.
+        /// </remarks>
+        private int? StoredPointCount => _store is null
+            ? null
+            : (int)Math.Min(_store.Header.PointCount, int.MaxValue);
+
         public void Reset()
         {
+            CloseStore();
             _cloudRadius = 50f;
             _dataset = null;
             _sourceName = "";
@@ -153,7 +252,16 @@ namespace CloudScope
             _pointRenderer.Upload(PointCloudRenderData.Empty);
         }
 
-        public bool NeedsContinuousFrames => _viewports.Any(v => v.Input.NeedsContinuousFrames);
+        /// <summary>
+        /// Whether the shell should keep drawing without waiting for input.
+        /// </summary>
+        /// <remarks>
+        /// A streaming cloud loads across frames, so a still camera has to keep drawing until
+        /// the cells it asked for have arrived — otherwise a shell that renders on demand
+        /// would leave the picture half loaded until the user happened to move.
+        /// </remarks>
+        public bool NeedsContinuousFrames =>
+            _viewports.Any(v => v.Input.NeedsContinuousFrames) || _streamingRenderer.PendingCellCount > 0;
 
         public InteractionMode Mode => _selection.Mode;
         public SelectionInteractionState SelectionInteractionState => _selection.InteractionState;
@@ -504,7 +612,9 @@ namespace CloudScope
                     view, proj,
                     viewport.Bounds.Width, viewport.Bounds.Height,
                     viewport.Input.PointSize);
-                int drawCount = _pointRenderer.Render(frameData, in renderView);
+                int drawCount = _store is null
+                    ? _pointRenderer.Render(frameData, in renderView)
+                    : _streamingRenderer.Render(frameData, in renderView);
                 totalDrawCount += drawCount;
 
                 Breadcrumb("highlight");
@@ -540,9 +650,10 @@ namespace CloudScope
                     _overlayRenderer.RenderModeIndicator(frameData, viewport.Bounds.Width, viewport.Bounds.Height, _selection.ActiveTool.ToolType);
             }
 
-            int loadedCount = _dataset?.LoadedCount ?? _pointRenderer.PointCount;
-            int visibleCount = _dataset?.VisibleCount ?? _pointRenderer.PointCount;
-            _frameTiming.MarkMainDraw(totalDrawCount, loadedCount, visibleCount, _pointRenderer.PointCount);
+            int loadedCount = StoredPointCount ?? _dataset?.LoadedCount ?? _pointRenderer.PointCount;
+            int visibleCount = StoredPointCount ?? _dataset?.VisibleCount ?? _pointRenderer.PointCount;
+            _frameTiming.MarkMainDraw(
+                totalDrawCount, loadedCount, visibleCount, StoredPointCount ?? _pointRenderer.PointCount);
             _frameTiming.MarkHighlight();
             _frameTiming.MarkPreview();
             _frameTiming.MarkGizmo();
@@ -598,6 +709,8 @@ namespace CloudScope
 
         public void Dispose()
         {
+            CloseStore();
+            _streamingRenderer.Dispose();
             _pointRenderer.Dispose();
             _overlayRenderer.Dispose();
             _selectionGizmoRenderers.Box.Dispose();

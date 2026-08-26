@@ -34,6 +34,7 @@ namespace CloudScope.Platform.Metal
         public MTLDevice Device => _context.Device;
 
         public IPointCloudRenderer  CreatePointCloudRenderer()  => new MetalPointCloudRenderer(_context);
+        public IPointTileCloudRenderer CreateStreamingPointCloudRenderer() => new MetalStreamingPointCloudRenderer(_context);
         public IHighlightRenderer   CreateHighlightRenderer()   => new MetalHighlightRenderer(_context);
         public IOverlayRenderer     CreateOverlayRenderer()     => new MetalOverlayRenderer(_context);
         public SelectionGizmoRenderers CreateSelectionGizmoRenderers()
