@@ -37,41 +37,9 @@ internal static class PointTileTraversal
     /// </summary>
     /// <remarks>
     /// The store's index does not name them: the builder writes one subtree per chunk, so a
-    /// store is a forest whose roots sit at the chunk level rather than at level zero. They
-    /// are recovered here instead of costing the format a section, since a single sweep of a
-    /// table that is five megabytes at two billion points is cheaper than the compatibility
-    /// break would be.
+    /// store is a forest whose roots sit at the chunk level rather than at level zero.
     /// </remarks>
-    public static int[] FindRoots(ReadOnlySpan<PointTileNode> nodes)
-    {
-        var claimed = new bool[nodes.Length];
-        foreach (PointTileNode node in nodes)
-        {
-            for (int child = 0; child < node.ChildCount; child++)
-            {
-                int index = node.FirstChild + child;
-                if ((uint)index < (uint)claimed.Length)
-                    claimed[index] = true;
-            }
-        }
-
-        int count = 0;
-        for (int i = 0; i < claimed.Length; i++)
-        {
-            if (!claimed[i])
-                count++;
-        }
-
-        var roots = new int[count];
-        int next = 0;
-        for (int i = 0; i < claimed.Length; i++)
-        {
-            if (!claimed[i])
-                roots[next++] = i;
-        }
-
-        return roots;
-    }
+    public static int[] FindRoots(ReadOnlySpan<PointTileNode> nodes) => PointTileVolumeQuery.FindRoots(nodes);
 
     /// <summary>
     /// Collects the visible cells, nearest first, until the frame's point budget runs out.

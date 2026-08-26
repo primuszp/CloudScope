@@ -179,26 +179,26 @@ namespace CloudScope.Selection
                 _r2 = radius * radius;
             }
 
-            public IReadOnlyList<int> Resolve(PointData[] points, CancellationToken cancellationToken = default)
+            public bool IsEmpty => _r2 < 1e-8f;
+
+            public void GetBounds(out Vector3 min, out Vector3 max)
             {
-                if (_r2 < 1e-8f) return Array.Empty<int>();
-
-                var list = new List<int>();
-                for (int i = 0; i < points.Length; i++)
-                {
-                    if ((i & 4095) == 0)
-                        cancellationToken.ThrowIfCancellationRequested();
-
-                    float dx = points[i].X - _cx;
-                    float dy = points[i].Y - _cy;
-                    float dxy = dx * dx + dy * dy;
-                    if (dxy > _r2) continue;
-                    float dz = points[i].Z - _cz;
-                    if (dxy + dz * dz <= _r2) list.Add(i);
-                }
-
-                return list;
+                float radius = MathF.Sqrt(_r2);
+                var center = new Vector3(_cx, _cy, _cz);
+                min = center - new Vector3(radius);
+                max = center + new Vector3(radius);
             }
+
+            public bool Contains(float x, float y, float z)
+            {
+                float dx = x - _cx;
+                float dy = y - _cy;
+                float dz = z - _cz;
+                return dx * dx + dy * dy + dz * dz <= _r2;
+            }
+
+            public IReadOnlyList<int> Resolve(PointData[] points, CancellationToken cancellationToken = default)
+                => PointSelectionQuery.Resolve(this, points, cancellationToken);
         }
     }
 }
