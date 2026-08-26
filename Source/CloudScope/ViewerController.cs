@@ -31,14 +31,16 @@ namespace CloudScope
         private PointCloudDataset? _dataset;
 
         /// <summary>
-        /// The on-disk cloud being streamed, or null when the resident path is drawing.
+        /// The on-disk clouds being streamed, empty when the resident path is drawing.
         /// </summary>
         /// <remarks>
-        /// The two paths are exclusive rather than layered: a store is drawn straight off disk
-        /// and has no <c>PointData[]</c> behind it, so selection and labelling are unavailable
-        /// while one is open. Opening a LAS the ordinary way closes it again.
+        /// Streaming and the resident path are exclusive rather than layered: a store has no
+        /// <c>PointData[]</c> behind it, so selection and labelling are unavailable while one
+        /// is open, and opening a LAS the ordinary way closes them all. Several stores may be
+        /// open at once, though — they share one page budget, so a second cloud does not halve
+        /// the first one's detail, it competes for the same pages by how close it is.
         /// </remarks>
-        private PointTileStore? _store;
+        private readonly List<PointTileLayer> _layers = [];
         private string _sourceName = "";
         private float _smoothedFps;
 
@@ -77,17 +79,25 @@ namespace CloudScope
             _overlayRenderer.Initialize();
             UpdateViewportLayout();
 
-            // Opening a store from the environment, the same way the render limits and the
+            // Opening stores from the environment, the same way the render limits and the
             // backend choice are set. It is how a large cloud is put on screen without typing
-            // a path into the command window every run.
-            string? startupStore = Environment.GetEnvironmentVariable("CLOUDSCOPE_OPEN_STORE");
-            if (!string.IsNullOrWhiteSpace(startupStore))
-                Console.WriteLine(OpenPointTileStore(startupStore));
+            // a path into the command window every run; several, separated the way the
+            // platform separates paths, come up as layers of one scene.
+            string? startupStores = Environment.GetEnvironmentVariable("CLOUDSCOPE_OPEN_STORE");
+            if (string.IsNullOrWhiteSpace(startupStores))
+                return;
+
+            bool first = true;
+            foreach (string path in startupStores.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                Console.WriteLine(OpenPointTileStore(path, replace: first));
+                first = false;
+            }
         }
 
         public void LoadPointCloud(PointData[] pts, float cloudRadius = 50f)
         {
-            CloseStore();
+            CloseLayers();
             _dataset = null;
             _cloudRadius = cloudRadius;
             _selection.LoadPointCloud(pts);
@@ -98,7 +108,7 @@ namespace CloudScope
 
         public void LoadPointCloud(PointCloudDataset dataset)
         {
-            CloseStore();
+            CloseLayers();
             _dataset = dataset;
             _cloudRadius = dataset.Radius;
             LoadDatasetIntoSelection();
@@ -142,7 +152,21 @@ namespace CloudScope
         /// The same call drives either backend — the streaming renderer came from the render
         /// backend, so Metal and OpenGL differ only in how a page reaches the GPU.
         /// </remarks>
-        public string OpenPointTileStore(string directory)
+        public string OpenPointTileStore(string directory) => OpenPointTileStore(directory, replace: true);
+
+        /// <summary>
+        /// Opens an indexed cloud and draws it straight off disk, whatever its size.
+        /// </summary>
+        /// <param name="replace">
+        /// Whether the open store replaces what is on screen or joins it as another layer.
+        /// </param>
+        /// <remarks>
+        /// Nothing here scales with the file: the cell table is read into memory, the points
+        /// stay on disk, and the renderer pulls in only the cells the camera is looking at.
+        /// The same call drives either backend — the streaming renderer came from the render
+        /// backend, so Metal and OpenGL differ only in how a page reaches the GPU.
+        /// </remarks>
+        public string OpenPointTileStore(string directory, bool replace)
         {
             if (string.IsNullOrWhiteSpace(directory))
                 return "OPENSTORE requires a store directory.";
@@ -152,47 +176,148 @@ namespace CloudScope
 
             var sw = Stopwatch.StartNew();
             PointTileStore store = PointTileStore.Open(directory);
+            string name = Path.GetFileName(Path.TrimEndingDirectorySeparator(directory));
 
-            // The resident path owns the frame while it holds points, so it is emptied first.
-            CloseStore();
-            _pointRenderer.Upload(PointCloudRenderData.Empty);
-            _dataset = null;
-            _selection.Reset();
+            if (replace)
+            {
+                // The resident path owns the frame while it holds points, so it is emptied.
+                CloseLayers();
+                _pointRenderer.Upload(PointCloudRenderData.Empty);
+                _dataset = null;
+                _selection.Reset();
+            }
+            else
+            {
+                // Adding a layer resizes the working set, so the renderer lets go of the old
+                // one before it is handed the new list.
+                _streamingRenderer.Close();
+            }
 
-            _store = store;
-            _cloudRadius = StoreRadius(store.Header);
-            _sourceName = Path.GetFileName(Path.TrimEndingDirectorySeparator(directory));
-            _streamingRenderer.Open(store);
-            foreach (ViewportState viewport in _viewports)
-                FitViewport(viewport);
+            var layer = new PointTileLayer(name, store)
+            {
+                // Layers past the first are tinted apart by default, since two surveys of the
+                // same site are otherwise impossible to tell from each other.
+                Tint = _layers.Count == 0 ? Vector3.One : LayerTintPalette[_layers.Count % LayerTintPalette.Length]
+            };
+            _layers.Add(layer);
+
+            _sourceName = _layers.Count == 1 ? name : $"{_layers.Count} layers";
+            _cloudRadius = LayerRadius();
+            _streamingRenderer.Open(_layers);
+            if (replace)
+            {
+                foreach (ViewportState viewport in _viewports)
+                    FitViewport(viewport);
+            }
+
             sw.Stop();
-
-            return $"Streaming {store.Header.PointCount:N0} points from {_sourceName} "
+            return $"Streaming {store.Header.PointCount:N0} points from {name} "
                 + $"({store.Header.NodeCount:N0} cells, {sw.Elapsed.TotalSeconds:0.0}s).";
         }
 
         /// <summary>
-        /// Half the diagonal of the cloud's bounds — the same measure the resident path frames
-        /// the camera with, so a cloud sits identically however it was opened.
+        /// Default tints for layers past the first, kept far apart in hue so overlapping
+        /// clouds separate at a glance.
         /// </summary>
-        private static float StoreRadius(in PointTileStoreHeader header)
+        private static readonly Vector3[] LayerTintPalette =
+        [
+            new(1.0f, 1.0f, 1.0f),
+            new(1.0f, 0.6f, 0.5f),
+            new(0.5f, 1.0f, 0.7f),
+            new(0.6f, 0.7f, 1.0f),
+            new(1.0f, 0.95f, 0.5f)
+        ];
+
+        /// <summary>Every open layer, in the order they were opened.</summary>
+        public IReadOnlyList<PointTileLayer> Layers => _layers;
+
+        /// <summary>Shows or hides one layer by name, and reports what happened.</summary>
+        public string SetLayerVisible(string name, bool visible)
         {
-            float x = (float)(header.MaxX - header.MinX) * 0.5f;
-            float y = (float)(header.MaxY - header.MinY) * 0.5f;
-            float z = (float)(header.MaxZ - header.MinZ) * 0.5f;
+            PointTileLayer? layer = FindLayer(name);
+            if (layer is null)
+                return $"No such layer: {name}";
+
+            // Visibility costs nothing to change: the renderer holds the list live, and a
+            // hidden layer simply stops being traversed, so its pages age out on their own.
+            layer.Visible = visible;
+            return $"Layer {layer.Name} {(visible ? "shown" : "hidden")}.";
+        }
+
+        /// <summary>Closes one layer by name, or every layer when the name is empty.</summary>
+        public string CloseLayer(string name)
+        {
+            if (name.Length == 0)
+            {
+                int closed = _layers.Count;
+                CloseLayers();
+                return closed == 0 ? "No layers are open." : $"Closed {closed} layer(s).";
+            }
+
+            PointTileLayer? layer = FindLayer(name);
+            if (layer is null)
+                return $"No such layer: {name}";
+
+            _streamingRenderer.Close();
+            _layers.Remove(layer);
+            layer.Store.Dispose();
+
+            if (_layers.Count > 0)
+            {
+                _cloudRadius = LayerRadius();
+                _streamingRenderer.Open(_layers);
+            }
+
+            _sourceName = _layers.Count switch
+            {
+                0 => "",
+                1 => _layers[0].Name,
+                _ => $"{_layers.Count} layers"
+            };
+            return $"Closed layer {layer.Name}.";
+        }
+
+        private PointTileLayer? FindLayer(string name) =>
+            _layers.FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>The framing radius for every open layer taken together.</summary>
+        private float LayerRadius()
+        {
+            if (_layers.Count == 0)
+                return 50f;
+
+            double minX = double.MaxValue, minY = double.MaxValue, minZ = double.MaxValue;
+            double maxX = double.MinValue, maxY = double.MinValue, maxZ = double.MinValue;
+            foreach (PointTileLayer layer in _layers)
+            {
+                PointTileStoreHeader header = layer.Store.Header;
+                // Bounds are absolute, but the points are stored relative to each store's own
+                // origin, so a layer's extent has to be measured where it will be drawn.
+                minX = Math.Min(minX, header.MinX - header.OriginX);
+                minY = Math.Min(minY, header.MinY - header.OriginY);
+                minZ = Math.Min(minZ, header.MinZ - header.OriginZ);
+                maxX = Math.Max(maxX, header.MaxX - header.OriginX);
+                maxY = Math.Max(maxY, header.MaxY - header.OriginY);
+                maxZ = Math.Max(maxZ, header.MaxZ - header.OriginZ);
+            }
+
+            float x = (float)(maxX - minX) * 0.5f;
+            float y = (float)(maxY - minY) * 0.5f;
+            float z = (float)(maxZ - minZ) * 0.5f;
             float radius = MathF.Sqrt(x * x + y * y + z * z);
             return radius > 0f ? radius : 50f;
         }
 
-        private void CloseStore()
+        private void CloseLayers()
         {
-            if (_store is null)
+            if (_layers.Count == 0)
                 return;
 
-            // The renderer holds pages against the store's mapped file, so it lets go first.
+            // The renderer holds pages against the stores' mapped files, so it lets go first.
             _streamingRenderer.Close();
-            _store.Dispose();
-            _store = null;
+            foreach (PointTileLayer layer in _layers)
+                layer.Store.Dispose();
+            _layers.Clear();
         }
 
         public void SetLasFilePath(string path)
@@ -236,13 +361,13 @@ namespace CloudScope
         /// 64-bit point indices; until then the status bar saturates rather than wrapping to a
         /// negative number.
         /// </remarks>
-        private int? StoredPointCount => _store is null
+        private int? StoredPointCount => _layers.Count == 0
             ? null
-            : (int)Math.Min(_store.Header.PointCount, int.MaxValue);
+            : (int)Math.Min(_layers.Sum(layer => layer.Store.Header.PointCount), int.MaxValue);
 
         public void Reset()
         {
-            CloseStore();
+            CloseLayers();
             _cloudRadius = 50f;
             _dataset = null;
             _sourceName = "";
@@ -612,7 +737,7 @@ namespace CloudScope
                     view, proj,
                     viewport.Bounds.Width, viewport.Bounds.Height,
                     viewport.Input.PointSize);
-                int drawCount = _store is null
+                int drawCount = _layers.Count == 0
                     ? _pointRenderer.Render(frameData, in renderView)
                     : _streamingRenderer.Render(frameData, in renderView);
                 totalDrawCount += drawCount;
@@ -709,7 +834,7 @@ namespace CloudScope
 
         public void Dispose()
         {
-            CloseStore();
+            CloseLayers();
             _streamingRenderer.Dispose();
             _pointRenderer.Dispose();
             _overlayRenderer.Dispose();

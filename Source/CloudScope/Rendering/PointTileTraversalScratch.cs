@@ -21,12 +21,12 @@ internal sealed class PointTileTraversalScratch
         return new PointTileHeap(this);
     }
 
-    internal void Push(int index, float depth, float screenArea)
+    internal void Push(int layer, int index, float depth, float screenArea)
     {
         if (_count == _entries.Length)
             Array.Resize(ref _entries, _entries.Length * 2);
 
-        _entries[_count] = new PointTileHeapEntry(index, depth, screenArea);
+        _entries[_count] = new PointTileHeapEntry(layer, index, depth, screenArea);
         // Sift up: the nearest cell rises to the root.
         int child = _count++;
         while (child > 0)
@@ -39,10 +39,11 @@ internal sealed class PointTileTraversalScratch
         }
     }
 
-    internal bool TryPop(out int index, out float depth, out float screenArea)
+    internal bool TryPop(out int layer, out int index, out float depth, out float screenArea)
     {
         if (_count == 0)
         {
+            layer = 0;
             index = 0;
             depth = 0f;
             screenArea = 0f;
@@ -50,6 +51,7 @@ internal sealed class PointTileTraversalScratch
         }
 
         PointTileHeapEntry root = _entries[0];
+        layer = root.Layer;
         index = root.Index;
         depth = root.Depth;
         screenArea = root.ScreenArea;
@@ -75,7 +77,7 @@ internal sealed class PointTileTraversalScratch
         return true;
     }
 
-    private readonly record struct PointTileHeapEntry(int Index, float Depth, float ScreenArea);
+    private readonly record struct PointTileHeapEntry(int Layer, int Index, float Depth, float ScreenArea);
 }
 
 /// <summary>Nearest-first view of a <see cref="PointTileTraversalScratch"/> for one frame.</summary>
@@ -85,8 +87,9 @@ internal readonly ref struct PointTileHeap
 
     internal PointTileHeap(PointTileTraversalScratch scratch) => _scratch = scratch;
 
-    public void Push(int index, float depth, float screenArea) => _scratch.Push(index, depth, screenArea);
+    public void Push(int layer, int index, float depth, float screenArea)
+        => _scratch.Push(layer, index, depth, screenArea);
 
-    public bool TryPop(out int index, out float depth, out float screenArea)
-        => _scratch.TryPop(out index, out depth, out screenArea);
+    public bool TryPop(out int layer, out int index, out float depth, out float screenArea)
+        => _scratch.TryPop(out layer, out index, out depth, out screenArea);
 }
