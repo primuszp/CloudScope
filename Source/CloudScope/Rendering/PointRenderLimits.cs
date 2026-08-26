@@ -24,6 +24,26 @@ internal readonly record struct PointRenderLimits(int MaxResidentPoints, int Max
     /// <summary>Share of the GPU's working set a cloud may occupy when the backend reports one.</summary>
     private const double GpuMemoryShare = 0.5;
 
+    private static readonly Dictionary<string, PointRenderLimits> Baselines = [];
+
+    /// <summary>
+    /// The limits in force for a backend: the environment's baseline, with any live override
+    /// from <see cref="PointRenderBudget"/> applied. Renderers read this per frame so
+    /// POINTCLOUDCONFIG can change the budget without a restart.
+    /// </summary>
+    public static PointRenderLimits For(string backendName)
+    {
+        if (!Baselines.TryGetValue(backendName, out PointRenderLimits baseline))
+        {
+            baseline = Load(backendName);
+            Baselines[backendName] = baseline;
+        }
+
+        return new PointRenderLimits(
+            PointRenderBudget.MaxResidentPoints ?? baseline.MaxResidentPoints,
+            PointRenderBudget.MaxDrawPointsPerFrame ?? baseline.MaxDrawPointsPerFrame);
+    }
+
     public static PointRenderLimits Load(string backendName) => new(
         ReadLimit("CLOUDSCOPE_MAX_RESIDENT_POINTS", $"CLOUDSCOPE_{backendName}_MAX_RESIDENT_POINTS", int.MaxValue),
         ReadLimit("CLOUDSCOPE_MAX_DRAW_POINTS", $"CLOUDSCOPE_{backendName}_MAX_DRAW_POINTS", DefaultMaxDrawPointsPerFrame));
@@ -50,10 +70,25 @@ internal readonly record struct PointRenderLimits(int MaxResidentPoints, int Max
     /// <summary>The per-frame point budget for a cloud of <paramref name="pointCount"/> points.</summary>
     public int GetFrameBudget(int pointCount) => Math.Min(pointCount, MaxDrawPointsPerFrame);
 
+    /// <summary>The default per-frame ceiling, reported by POINTCLOUDCONFIG.</summary>
+    public static int DefaultFrameBudget => DefaultMaxDrawPointsPerFrame;
+
     private static int ReadLimit(string commonVariable, string backendVariable, int defaultValue)
     {
         string? value = Environment.GetEnvironmentVariable(backendVariable)
             ?? Environment.GetEnvironmentVariable(commonVariable);
         return int.TryParse(value, out int limit) && limit > 0 ? limit : defaultValue;
     }
+}
+
+/// <summary>
+/// Live overrides for the render budget, set through the PTMAX and PTRESIDENT system
+/// variables. Null means "use what the environment configured".
+/// </summary>
+internal static class PointRenderBudget
+{
+    public static int? MaxDrawPointsPerFrame { get; set; }
+
+    /// <summary>Takes effect for clouds uploaded after it changes, not for resident ones.</summary>
+    public static int? MaxResidentPoints { get; set; }
 }

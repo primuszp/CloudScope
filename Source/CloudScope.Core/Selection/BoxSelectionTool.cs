@@ -323,6 +323,11 @@ namespace CloudScope.Selection
             }
         }
 
+        public override void ScaleBy(float factor)
+        {
+            HalfExtents = Vector3.ComponentMax(HalfExtents * factor, new Vector3(0.001f));
+        }
+
         public override void AdjustScale(float delta)
         {
             if (!IsEditing) return;

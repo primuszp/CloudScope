@@ -146,6 +146,40 @@ namespace CloudScope
         public void SetViewConstraint(GripViewConstraint constraint) => ActiveTool.ViewConstraint = constraint;
 
         /// <summary>
+        /// Moves the active selection volume by a displacement. This is the typed counterpart of
+        /// the grip drag: the same tool state, reached by a number instead of a gesture.
+        /// </summary>
+        public string MoveActiveSelection(Vector3 displacement)
+        {
+            if (!HasActiveSelection) return "No active selection.";
+            ActiveTool.Center += displacement;
+            RequestPreview();
+            return $"Moved by {displacement.X:0.###},{displacement.Y:0.###},{displacement.Z:0.###}.";
+        }
+
+        /// <summary>Rotates the active selection volume around a world axis, in degrees.</summary>
+        public string RotateActiveSelection(float degrees, int axis)
+        {
+            if (!HasActiveSelection) return "No active selection.";
+            if (!ActiveTool.HasVolume) return "The active selection tool cannot be rotated.";
+
+            Vector3 direction = axis switch { 0 => Vector3.UnitX, 1 => Vector3.UnitY, _ => Vector3.UnitZ };
+            var delta = Quaternion.FromAxisAngle(direction, MathHelper.DegreesToRadians(degrees));
+            ActiveTool.Rotation = delta * ActiveTool.Rotation;
+            RequestPreview();
+            return $"Rotated {degrees:0.###}° about {(axis switch { 0 => "X", 1 => "Y", _ => "Z" })}.";
+        }
+
+        /// <summary>Scales the active selection volume by a factor.</summary>
+        public string ScaleActiveSelection(float factor)
+        {
+            if (!HasActiveSelection) return "No active selection.";
+            ActiveTool.ScaleBy(factor);
+            RequestPreview();
+            return $"Scaled by {factor:0.###}.";
+        }
+
+        /// <summary>
         /// Fit the active tool's primitive tightly to the points currently inside its volume.
         /// Height comes from the fitted OBB by default, or from the average surrounding ground
         /// (class 2) level up to the cluster top when <paramref name="useGround"/> is set.
@@ -399,6 +433,12 @@ namespace CloudScope
             return false;
         }
 
+        /// <summary>
+        /// Makes the next frame recompute the preview instead of waiting out the poll interval,
+        /// so a typed MOVE or SCALE shows its result as promptly as a dragged one.
+        /// </summary>
+        private void RequestPreview() => _previewTimer = PreviewInterval;
+
         public void UpdatePreview(float dt)
         {
             bool active = Mode == InteractionMode.Label && ActiveTool.HasVolume
@@ -601,7 +641,7 @@ namespace CloudScope
             return true;
         }
 
-        public bool SaveLabels()
+        public bool SaveLabels(string? destinationPath = null)
         {
             if (_streamed is { } streamed && streamed.LabelDirectory.Length > 0)
             {
@@ -612,7 +652,7 @@ namespace CloudScope
                 return true;
             }
 
-            return !string.IsNullOrEmpty(_lasFilePath) && SaveLabelsCore();
+            return !string.IsNullOrEmpty(_lasFilePath) && SaveLabelsCore(destinationPath);
         }
 
         public string SaveLabelsToLas()
@@ -672,10 +712,10 @@ namespace CloudScope
             return "Wrote class codes for " + string.Join("; ", written) + ".";
         }
 
-        public bool LoadLabels()
+        public bool LoadLabels(string? sourcePath = null)
         {
             if (_streamed is not { } streamed || streamed.LabelDirectory.Length == 0)
-                return !string.IsNullOrEmpty(_lasFilePath) && LabelFileIO.Load(_lasFilePath, _labelManager);
+                return !string.IsNullOrEmpty(_lasFilePath) && LabelFileIO.Load(_lasFilePath, _labelManager, sourcePath);
 
             var saved = PointTileLabelFile.Load(streamed.LabelDirectory);
             if (saved.Count == 0)
@@ -689,9 +729,69 @@ namespace CloudScope
 
         public void ClearLabels() => _labelManager.ClearAll();
 
-        private bool SaveLabelsCore()
+        /// <summary>
+        /// Removes the labels of every point inside the active selection volume. This is the
+        /// counterpart of <see cref="ConfirmActiveSelection"/> and resolves the volume the
+        /// same way, so an erase covers exactly what a label would have covered.
+        /// </summary>
+        public string RemoveActiveSelectionLabels()
         {
-            LabelFileIO.Save(_lasFilePath, _labelManager);
+            if (!ActiveTool.IsEditing || !ActiveTool.HasVolume)
+                return "No active selection to erase.";
+
+            if (_points == null && _streamed == null)
+                return "No point cloud is loaded.";
+
+            IReadOnlyCollection<int> selected = _points != null
+                ? MapToSource(ActiveTool.CreateQuery().Resolve(_points))
+                : (IReadOnlyCollection<int>)_streamed!.ResolveAndRemember(ActiveTool.CreateQuery());
+
+            if (selected.Count == 0)
+                return "No points in selection volume.";
+
+            int labelled = selected.Count(index => _labelManager.GetAnnotation(index) != null);
+            _labelManager.RemoveLabels(selected);
+            ActiveTool.Confirm();
+            _pendingAction = EditAction.None;
+            Mode = InteractionMode.Navigate;
+            SetRestingInteractionState();
+            return $"Erased labels from {labelled:N0} of {selected.Count:N0} points  (total: {_labelManager.Count}).";
+        }
+
+        /// <summary>Points and instances per label, for LABELSTAT.</summary>
+        public string DescribeLabelStatistics()
+        {
+            if (_labelManager.Count == 0)
+                return "No points are labelled.";
+
+            var byLabel = new Dictionary<string, (int Points, HashSet<int> Instances)>(StringComparer.Ordinal);
+            foreach ((_, PointAnnotation annotation) in _labelManager.AllAnnotations)
+            {
+                if (!byLabel.TryGetValue(annotation.LabelName, out var entry))
+                    entry = (0, []);
+
+                entry.Points++;
+                if (annotation.InstanceId is int id) entry.Instances.Add(id);
+                byLabel[annotation.LabelName] = entry;
+            }
+
+            IEnumerable<string> lines = byLabel
+                .OrderByDescending(pair => pair.Value.Points)
+                .Select(pair =>
+                {
+                    string instances = pair.Value.Instances.Count > 0
+                        ? $", {pair.Value.Instances.Count:N0} instance(s)"
+                        : "";
+                    return $"  {pair.Key}: {pair.Value.Points:N0} points{instances}";
+                });
+
+            return $"{_labelManager.Count:N0} labelled points in {byLabel.Count} label(s):"
+                 + Environment.NewLine + string.Join(Environment.NewLine, lines);
+        }
+
+        private bool SaveLabelsCore(string? destinationPath)
+        {
+            LabelFileIO.Save(_lasFilePath, _labelManager, destinationPath);
             return true;
         }
 

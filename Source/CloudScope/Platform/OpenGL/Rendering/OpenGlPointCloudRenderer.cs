@@ -11,7 +11,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
     {
         private const int PointStride = GpuPointVertex.Stride;
         private const int AttributeStride = GpuPointAttribute.Stride;
-        private static readonly PointRenderLimits Limits = PointRenderLimits.Load("OPENGL");
+        private static PointRenderLimits Limits => PointRenderLimits.For("OPENGL");
 
         private readonly OpenGlPointCloudProgram _program = new();
         private int _vao = -1, _vbo = -1, _attributeVbo = -1;
