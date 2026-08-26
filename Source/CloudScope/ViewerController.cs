@@ -204,6 +204,9 @@ namespace CloudScope
             _sourceName = _layers.Count == 1 ? name : $"{_layers.Count} layers";
             _cloudRadius = LayerRadius();
             _streamingRenderer.Open(_layers);
+            // Selection resolves against the cell trees now, so labelling keeps working on a
+            // cloud that never fits in memory.
+            _selection.SetStreamedSource(_layers);
             if (replace)
             {
                 foreach (ViewportState viewport in _viewports)
@@ -268,6 +271,8 @@ namespace CloudScope
                 _streamingRenderer.Open(_layers);
             }
 
+            _selection.SetStreamedSource(_layers);
+
             _sourceName = _layers.Count switch
             {
                 0 => "",
@@ -315,6 +320,7 @@ namespace CloudScope
 
             // The renderer holds pages against the stores' mapped files, so it lets go first.
             _streamingRenderer.Close();
+            _selection.SetStreamedSource(null);
             foreach (PointTileLayer layer in _layers)
                 layer.Store.Dispose();
             _layers.Clear();

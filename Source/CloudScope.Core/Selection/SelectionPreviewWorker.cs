@@ -9,15 +9,32 @@ namespace CloudScope.Selection
     {
         private readonly object _gate = new();
         private CancellationTokenSource? _cts;
-        private IPointSelectionQuery? _pendingQuery;
-        private PointData[]? _pendingPoints;
+        private Func<CancellationToken, PreviewResult>? _pendingWork;
         private int _version;
-        private IReadOnlyList<int>? _latest;
+        private PreviewResult? _latest;
         private bool _dirty;
         private bool _running;
         private bool _disposed;
 
+        /// <summary>
+        /// The points a preview highlights, and which of them the volume caught.
+        /// </summary>
+        /// <remarks>
+        /// The array travels with the indices because an out-of-core preview has no cloud in
+        /// memory to index into — it reads the points it found and hands them over together.
+        /// For an in-memory cloud the array is simply the cloud itself.
+        /// </remarks>
+        public readonly record struct PreviewResult(PointData[] Points, IReadOnlyList<int> Indices);
+
         public void Request(IPointSelectionQuery query, PointData[] points)
+            => Request(token => new PreviewResult(points, query.Resolve(points, token)));
+
+        /// <summary>
+        /// Runs <paramref name="resolve"/> off the interaction thread, cancelling whatever it
+        /// replaces. Only the newest request survives, so dragging a gizmo does not queue up a
+        /// backlog of selections nobody will look at.
+        /// </summary>
+        public void Request(Func<CancellationToken, PreviewResult> resolve)
         {
             CancellationTokenSource cts;
             int version;
@@ -28,8 +45,7 @@ namespace CloudScope.Selection
 
                 if (_running)
                 {
-                    _pendingQuery = query;
-                    _pendingPoints = points;
+                    _pendingWork = resolve;
                     _cts?.Cancel();
                     return;
                 }
@@ -37,7 +53,7 @@ namespace CloudScope.Selection
                 (version, cts) = BeginRunLocked();
             }
 
-            RunAsync(query, points, version, cts);
+            RunAsync(resolve, version, cts);
         }
 
         private (int version, CancellationTokenSource cts) BeginRunLocked()
@@ -47,16 +63,16 @@ namespace CloudScope.Selection
             return (++_version, _cts);
         }
 
-        private void RunAsync(IPointSelectionQuery query, PointData[] points, int version, CancellationTokenSource cts)
+        private void RunAsync(
+            Func<CancellationToken, PreviewResult> resolve, int version, CancellationTokenSource cts)
         {
             CancellationToken token = cts.Token;
             Task.Run(() =>
             {
                 try
                 {
-                    var result = query.Resolve(points, token);
-                    IPointSelectionQuery? nextQuery = null;
-                    PointData[]? nextPoints = null;
+                    PreviewResult result = resolve(token);
+                    Func<CancellationToken, PreviewResult>? next = null;
                     CancellationTokenSource? nextCts = null;
                     int nextVersion = 0;
 
@@ -82,24 +98,21 @@ namespace CloudScope.Selection
 
                         _running = false;
 
-                        if (!_disposed && _pendingQuery != null && _pendingPoints != null)
+                        if (!_disposed && _pendingWork != null)
                         {
-                            nextQuery = _pendingQuery;
-                            nextPoints = _pendingPoints;
-                            _pendingQuery = null;
-                            _pendingPoints = null;
+                            next = _pendingWork;
+                            _pendingWork = null;
                             (nextVersion, nextCts) = BeginRunLocked();
                         }
                     }
 
-                    if (nextQuery != null && nextPoints != null && nextCts != null)
-                        RunAsync(nextQuery, nextPoints, nextVersion, nextCts);
+                    if (next != null && nextCts != null)
+                        RunAsync(next, nextVersion, nextCts);
                 }
                 catch (OperationCanceledException)
                 {
                     bool shouldDispose = true;
-                    IPointSelectionQuery? nextQuery = null;
-                    PointData[]? nextPoints = null;
+                    Func<CancellationToken, PreviewResult>? next = null;
                     CancellationTokenSource? nextCts = null;
                     int nextVersion = 0;
 
@@ -116,12 +129,10 @@ namespace CloudScope.Selection
                         {
                             _running = false;
 
-                            if (!_disposed && _pendingQuery != null && _pendingPoints != null)
+                            if (!_disposed && _pendingWork != null)
                             {
-                                nextQuery = _pendingQuery;
-                                nextPoints = _pendingPoints;
-                                _pendingQuery = null;
-                                _pendingPoints = null;
+                                next = _pendingWork;
+                                _pendingWork = null;
                                 (nextVersion, nextCts) = BeginRunLocked();
                             }
                         }
@@ -130,17 +141,17 @@ namespace CloudScope.Selection
                     if (shouldDispose)
                         cts.Dispose();
 
-                    if (nextQuery != null && nextPoints != null && nextCts != null)
-                        RunAsync(nextQuery, nextPoints, nextVersion, nextCts);
+                    if (next != null && nextCts != null)
+                        RunAsync(next, nextVersion, nextCts);
                 }
             }, CancellationToken.None);
         }
 
-        public bool TryTakeLatest(out IReadOnlyList<int>? indices)
+        public bool TryTakeLatest(out PreviewResult? result)
         {
             lock (_gate)
             {
-                indices = _latest;
+                result = _latest;
                 if (!_dirty)
                     return false;
 
@@ -155,8 +166,7 @@ namespace CloudScope.Selection
             {
                 _cts?.Cancel();
                 _cts = null;
-                _pendingQuery = null;
-                _pendingPoints = null;
+                _pendingWork = null;
                 _running = false;
                 _version++;
                 if (_latest != null)
@@ -174,8 +184,7 @@ namespace CloudScope.Selection
                 _cts?.Cancel();
                 _cts?.Dispose();
                 _cts = null;
-                _pendingQuery = null;
-                _pendingPoints = null;
+                _pendingWork = null;
                 _disposed = true;
                 _running = false;
             }

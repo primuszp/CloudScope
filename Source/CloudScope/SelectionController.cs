@@ -3,8 +3,10 @@ using CloudScope.Library.Enums;
 using CloudScope.Loading;
 using CloudScope.Rendering;
 using CloudScope.Selection;
+using CloudScope.Store;
 using OpenTK.Mathematics;
 using System.Linq;
+using System.Threading;
 
 namespace CloudScope
 {
@@ -30,6 +32,20 @@ namespace CloudScope
         private int[]? _viewToSource;            // visible index → source index
         private PointCloudAttributes? _attributes;
         private string _lasFilePath    = "";
+
+        /// <summary>
+        /// Set while streamed clouds are on screen, in place of the in-memory arrays.
+        /// </summary>
+        /// <remarks>
+        /// A store has no <c>PointData[]</c> behind it, so the volume is resolved against the
+        /// cell tree instead. Everything past that point is the same: the label manager and
+        /// the highlight renderer are keyed by a position in the small array of points a
+        /// selection actually caught, and the durable 64-bit identity travels beside it.
+        /// </remarks>
+        private StreamedSelectionSource? _streamed;
+
+        /// <summary>Points from the most recent streamed preview, which own no cloud.</summary>
+        private PointData[]? _previewPoints;
 
         public SelectionController(Action labelsChanged, Action<string>? log = null)
         {
@@ -65,9 +81,30 @@ namespace CloudScope
             return (semantic * 0.35f) + (instance * 0.65f);
         }
 
-        public PointData[]? Points => _points;
+        public PointData[]? Points => _points ?? _previewPoints;
         /// <summary>Full source-order points; highlights are keyed by source index.</summary>
-        public PointData[]? SourcePoints => _sourcePoints;
+        /// <remarks>
+        /// While streaming there is no such array, so it is the points selections have caught
+        /// — which is exactly the set the highlight renderer has anything to draw for.
+        /// </remarks>
+        public PointData[]? SourcePoints => _streamed is null ? _sourcePoints : _streamed.LabelPoints;
+
+        /// <summary>
+        /// The store-file identity of each labelled point, or null for an in-memory cloud.
+        /// </summary>
+        /// <remarks>
+        /// Labels are keyed by array position for the renderer's sake; this is what those keys
+        /// mean in the file, and so what has to be written out for a label to outlive the
+        /// session.
+        /// </remarks>
+        public IReadOnlyList<PointRef>? LabelRefs => _streamed?.LabelRefs;
+
+        /// <summary>Switches selection over to the streamed clouds, or back off them.</summary>
+        public void SetStreamedSource(IReadOnlyList<PointTileLayer>? layers)
+        {
+            _streamed = layers is { Count: > 0 } ? new StreamedSelectionSource(layers) : null;
+            _previewPoints = null;
+        }
         public PointCloudAttributes? Attributes => _attributes;
         public bool HasActiveSelection => ActiveTool.IsActive || ActiveTool.IsEditing;
 
@@ -93,6 +130,8 @@ namespace CloudScope
             foreach (ISelectionTool tool in _tools.Values)
                 tool.Cancel();
             _labelManager.ClearAll();
+            _streamed?.Clear();
+            _previewPoints = null;
             _points = null;
             _sourcePoints = null;
             _viewToSource = null;
@@ -113,10 +152,29 @@ namespace CloudScope
         /// </summary>
         public string FitActiveToolToSelection(bool useGround)
         {
-            if (_points == null || !ActiveTool.IsEditing)
+            if (!ActiveTool.IsEditing)
                 return "No active selection to fit.";
 
-            var viewIdx = ActiveTool.CreateQuery().Resolve(_points);
+            // Fitting reads the points back out of the store when there is no array, which is
+            // the same query the selection itself runs.
+            PointData[]? points = _points;
+            IReadOnlyList<int> viewIdx;
+            if (points != null)
+            {
+                viewIdx = ActiveTool.CreateQuery().Resolve(points);
+            }
+            else if (_streamed != null)
+            {
+                SelectionPreviewWorker.PreviewResult found =
+                    _streamed.ResolvePreview(ActiveTool.CreateQuery(), CancellationToken.None);
+                points = found.Points;
+                viewIdx = found.Indices;
+            }
+            else
+            {
+                return "No active selection to fit.";
+            }
+
             if (viewIdx.Count == 0)
                 return "No points inside the selection volume.";
 
@@ -343,15 +401,27 @@ namespace CloudScope
 
         public void UpdatePreview(float dt)
         {
-            bool active = Mode == InteractionMode.Label && ActiveTool.HasVolume;
-            if (active && _points != null)
+            bool active = Mode == InteractionMode.Label && ActiveTool.HasVolume
+                && (_points != null || _streamed != null);
+            if (active)
             {
                 _previewWasActive = true;
                 _previewTimer += dt;
                 if (_previewTimer >= PreviewInterval)
                 {
                     _previewTimer = 0f;
-                    _previewWorker.Request(ActiveTool.CreateQuery(), _points);
+                    if (_points != null)
+                    {
+                        _previewWorker.Request(ActiveTool.CreateQuery(), _points);
+                    }
+                    else
+                    {
+                        // The volume is captured now, so a gizmo moved while the query is
+                        // running does not change the answer underneath it.
+                        IPointSelectionQuery query = ActiveTool.CreateQuery();
+                        StreamedSelectionSource streamed = _streamed!;
+                        _previewWorker.Request(token => streamed.ResolvePreview(query, token));
+                    }
                 }
             }
             else if (_previewWasActive)
@@ -362,7 +432,19 @@ namespace CloudScope
             }
         }
 
-        public bool TryTakePreview(out IReadOnlyList<int>? indices) => _previewWorker.TryTakeLatest(out indices);
+        public bool TryTakePreview(out IReadOnlyList<int>? indices)
+        {
+            if (!_previewWorker.TryTakeLatest(out SelectionPreviewWorker.PreviewResult? result))
+            {
+                indices = result?.Indices;
+                return false;
+            }
+
+            // A streamed preview brings its own points along, since there is no cloud to index.
+            _previewPoints = _points == null ? result?.Points : null;
+            indices = result?.Indices;
+            return true;
+        }
 
         public bool KeyDown(ViewerKey key, bool ctrl)
         {
@@ -411,9 +493,11 @@ namespace CloudScope
                 return;
             }
 
-            if (_points != null)
+            if (_points != null || _streamed != null)
             {
-                var selected = MapToSource(ActiveTool.CreateQuery().Resolve(_points));
+                IReadOnlyCollection<int> selected = _points != null
+                    ? MapToSource(ActiveTool.CreateQuery().Resolve(_points))
+                    : (IReadOnlyCollection<int>)_streamed!.ResolveAndRemember(ActiveTool.CreateQuery());
                 if (selected.Count > 0)
                 {
                     var annotation = new PointAnnotation(_currentLabel, _currentInstanceId);
@@ -517,10 +601,33 @@ namespace CloudScope
             return true;
         }
 
-        public bool SaveLabels() => !string.IsNullOrEmpty(_lasFilePath) && SaveLabelsCore();
+        public bool SaveLabels()
+        {
+            if (_streamed is { } streamed && streamed.LabelDirectory.Length > 0)
+            {
+                // Labels for a streamed cloud are keyed by the store's own point indices, so
+                // they go beside the store rather than beside a LAS that may not be there.
+                PointTileLabelFile.Save(
+                    streamed.LabelDirectory, streamed.LabelRefs, _labelManager.AllAnnotations);
+                return true;
+            }
+
+            return !string.IsNullOrEmpty(_lasFilePath) && SaveLabelsCore();
+        }
 
         public string SaveLabelsToLas()
         {
+            if (_streamed != null)
+            {
+                // A store records where a point sits in its own point file, not which record
+                // of the LAS it was read from, and the builder reorders points into cells - so
+                // there is nothing here to map a label back onto a LAS record. Giving a store
+                // that column would cost eight bytes a point, which is sixteen gigabytes at
+                // two billion, and is a format decision rather than something to guess at.
+                return "Labels on a streamed cloud have no LAS record to write back to. "
+                    + "SAVELABELS writes them beside the store instead.";
+            }
+
             if (string.IsNullOrEmpty(_lasFilePath))
                 return "No source file is associated with the viewer.";
 
@@ -537,7 +644,20 @@ namespace CloudScope
             return $"Wrote class codes for {written:N0} points to {System.IO.Path.GetFileName(dest)}.";
         }
 
-        public bool LoadLabels() => !string.IsNullOrEmpty(_lasFilePath) && LabelFileIO.Load(_lasFilePath, _labelManager);
+        public bool LoadLabels()
+        {
+            if (_streamed is not { } streamed || streamed.LabelDirectory.Length == 0)
+                return !string.IsNullOrEmpty(_lasFilePath) && LabelFileIO.Load(_lasFilePath, _labelManager);
+
+            var saved = PointTileLabelFile.Load(streamed.LabelDirectory);
+            if (saved.Count == 0)
+                return false;
+
+            foreach ((int index, PointAnnotation annotation) in streamed.Restore(saved))
+                _labelManager.ApplyAnnotation(new[] { index }, annotation);
+
+            return true;
+        }
 
         public void ClearLabels() => _labelManager.ClearAll();
 

@@ -223,6 +223,20 @@ public sealed class PointTileStore : IDisposable
             MemoryMarshal.AsBytes(destination[..node.PointCount]));
     }
 
+    /// <summary>Copies a run of the point file starting at an absolute point index.</summary>
+    /// <remarks>
+    /// Cells are the unit the renderer reads in; this is for the other direction, where a
+    /// caller already holds point indices — a saved selection, a label — and needs the points
+    /// back without knowing which cell they landed in.
+    /// </remarks>
+    public void ReadPoints(long firstPoint, Span<GpuPointVertex> destination)
+    {
+        if (firstPoint < 0 || firstPoint + destination.Length > Header.PointCount)
+            throw new ArgumentOutOfRangeException(nameof(firstPoint));
+
+        ReadInto(_pointView, firstPoint * GpuPointVertex.Stride, MemoryMarshal.AsBytes(destination));
+    }
+
     /// <summary>Copies one cell's attributes, when the store carries them.</summary>
     public bool ReadAttributes(in PointTileNode node, Span<GpuPointAttribute> destination)
     {

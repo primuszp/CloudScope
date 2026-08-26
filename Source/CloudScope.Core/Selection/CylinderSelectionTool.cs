@@ -291,29 +291,38 @@ namespace CloudScope.Selection
                 _halfHeight = halfHeight;
             }
 
-            public IReadOnlyList<int> Resolve(PointData[] points, CancellationToken cancellationToken = default)
+            public bool IsEmpty => _r2 < 1e-8f || _halfHeight < 1e-4f;
+
+            /// <summary>
+            /// The cylinder's extent along each world axis: the caps' offset along the axis
+            /// plus the disc's radius in the plane perpendicular to it.
+            /// </summary>
+            public void GetBounds(out Vector3 min, out Vector3 max)
             {
-                if (_r2 < 1e-8f || _halfHeight < 1e-4f) return Array.Empty<int>();
-
-                var list = new List<int>(capacity: 256);
-                for (int i = 0; i < points.Length; i++)
-                {
-                    if ((i & 4095) == 0)
-                        cancellationToken.ThrowIfCancellationRequested();
-
-                    float dx = points[i].X - _cx;
-                    float dy = points[i].Y - _cy;
-                    float dz = points[i].Z - _cz;
-
-                    float h = dx * _ax + dy * _ay + dz * _az;
-                    if (MathF.Abs(h) > _halfHeight) continue;
-
-                    float radial2 = dx * dx + dy * dy + dz * dz - h * h;
-                    if (radial2 <= _r2) list.Add(i);
-                }
-
-                return list;
+                float radius = MathF.Sqrt(_r2);
+                float ex = MathF.Abs(_ax) * _halfHeight + radius * MathF.Sqrt(MathF.Max(0f, 1f - _ax * _ax));
+                float ey = MathF.Abs(_ay) * _halfHeight + radius * MathF.Sqrt(MathF.Max(0f, 1f - _ay * _ay));
+                float ez = MathF.Abs(_az) * _halfHeight + radius * MathF.Sqrt(MathF.Max(0f, 1f - _az * _az));
+                var center = new Vector3(_cx, _cy, _cz);
+                var extent = new Vector3(ex, ey, ez);
+                min = center - extent;
+                max = center + extent;
             }
+
+            public bool Contains(float x, float y, float z)
+            {
+                float dx = x - _cx;
+                float dy = y - _cy;
+                float dz = z - _cz;
+
+                float h = dx * _ax + dy * _ay + dz * _az;
+                if (MathF.Abs(h) > _halfHeight) return false;
+
+                return dx * dx + dy * dy + dz * dz - h * h <= _r2;
+            }
+
+            public IReadOnlyList<int> Resolve(PointData[] points, CancellationToken cancellationToken = default)
+                => PointSelectionQuery.Resolve(this, points, cancellationToken);
         }
     }
 }
