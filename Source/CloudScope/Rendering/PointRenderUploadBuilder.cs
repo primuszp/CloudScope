@@ -6,8 +6,16 @@ internal static class PointRenderUploadBuilder
 {
     public const int DefaultPointsPerChunk = 1_000_000;
 
-    /// <summary>Converts a run of the cloud into the packed vertices the GPU stores.</summary>
-    public static void FillPoints(
+    /// <summary>
+    /// Converts a run of the cloud into the packed vertices the GPU stores.
+    /// </summary>
+    /// <remarks>
+    /// The upload order scatters the reads across the whole point array, so this is bound by
+    /// memory latency rather than by arithmetic: at a hundred million points a single thread
+    /// spends most of a minute waiting on cache misses. Splitting the run across cores
+    /// overlaps those misses, which is where nearly all of the speed-up comes from.
+    /// </remarks>
+    public static unsafe void FillPoints(
         PointCloudRenderData data,
         Span<GpuPointVertex> destination,
         int pointOffset = 0,
@@ -17,11 +25,43 @@ internal static class PointRenderUploadBuilder
             throw new ArgumentOutOfRangeException(nameof(pointOffset));
 
         PointData[] points = data.Points;
-        for (int i = 0; i < destination.Length; i++)
+        int length = destination.Length;
+        fixed (GpuPointVertex* target = destination)
         {
-            PointData point = points[ResolveViewIndex(data, pointOffset + i, uploadOrder)];
-            destination[i] = new GpuPointVertex(point.X, point.Y, point.Z, point.R, point.G, point.B);
+            GpuPointVertex* output = target;
+            ForEachPartition(length, (start, end) =>
+            {
+                for (int i = start; i < end; i++)
+                {
+                    PointData point = points[ResolveViewIndex(data, pointOffset + i, uploadOrder)];
+                    output[i] = new GpuPointVertex(point.X, point.Y, point.Z, point.R, point.G, point.B);
+                }
+            });
         }
+    }
+
+    /// <summary>
+    /// Runs <paramref name="body"/> over disjoint slices of <c>[0, length)</c>, in parallel
+    /// once the run is large enough to pay for the threads.
+    /// </summary>
+    internal static void ForEachPartition(int length, Action<int, int> body)
+    {
+        const int MinimumParallelLength = 1 << 16;
+        if (length <= MinimumParallelLength)
+        {
+            body(0, length);
+            return;
+        }
+
+        int partitions = Math.Min(Environment.ProcessorCount, Math.Max(1, length / MinimumParallelLength));
+        int perPartition = (length + partitions - 1) / partitions;
+        Parallel.For(0, partitions, partition =>
+        {
+            int start = partition * perPartition;
+            int end = Math.Min(start + perPartition, length);
+            if (start < end)
+                body(start, end);
+        });
     }
 
     /// <summary>The index into <see cref="PointCloudRenderData.Points"/> drawn at this slot.</summary>

@@ -232,6 +232,27 @@ namespace CloudScope.Platform.Metal.Rendering
 
         // ── Private ───────────────────────────────────────────────────────────────
 
+        /// <summary>
+        /// Storage mode for the cloud's buffers.
+        /// </summary>
+        /// <remarks>
+        /// On a unified-memory device the CPU and the GPU read the same pages, so a shared
+        /// buffer is written once; a managed one keeps a second copy on the GPU side and pays
+        /// for a synchronize after every write. At a hundred million points that second copy
+        /// is gigabytes of memory and seconds of load time for nothing.
+        /// </remarks>
+        private static MTLResourceOptions CloudStorageMode(MTLDevice device) =>
+            device.HasUnifiedMemory
+                ? MTLResourceOptions.ResourceStorageModeShared
+                : MTLResourceOptions.ResourceStorageModeManaged;
+
+        /// <summary>Publishes CPU writes to the GPU; only a managed buffer needs telling.</summary>
+        private static void MarkUploaded(MTLDevice device, MTLBuffer buffer, ulong byteSize)
+        {
+            if (!device.HasUnifiedMemory)
+                buffer.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
+        }
+
         private unsafe void UploadToGpu(PointCloudRenderData data, int residentCount, int[]? uploadOrder)
         {
             if (residentCount <= 0) return;
@@ -247,10 +268,10 @@ namespace CloudScope.Platform.Metal.Rendering
                 int count = PointRenderUploadBuilder.GetChunkPointCount(residentCount, chunk, PointsPerChunk);
                 ulong byteSize = (ulong)(count * PointStride);
 
-                var buffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
+                var buffer = device.NewBuffer(byteSize, CloudStorageMode(device));
                 var destination = new Span<GpuPointVertex>(buffer.Contents.ToPointer(), count);
                 PointRenderUploadBuilder.FillPoints(data, destination, pointOffset, uploadOrder);
-                buffer.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
+                MarkUploaded(device, buffer, byteSize);
 
                 _pointChunks[chunk] = buffer;
                 _chunkCounts[chunk] = count;
@@ -272,12 +293,12 @@ namespace CloudScope.Platform.Metal.Rendering
                 int count = PointRenderUploadBuilder.GetChunkPointCount(residentCount, chunk, PointsPerChunk);
                 ulong byteSize = (ulong)(count * AttributeStride);
 
-                var buffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
+                var buffer = device.NewBuffer(byteSize, CloudStorageMode(device));
                 var dst = (GpuPointAttribute*)buffer.Contents.ToPointer();
                 PointRenderAttributeBuilder.Fill(
                     data, new Span<GpuPointAttribute>(dst, count), pointOffset, uploadOrder);
 
-                buffer.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
+                MarkUploaded(device, buffer, byteSize);
                 _attributeChunks[chunk] = buffer;
             }
         }
