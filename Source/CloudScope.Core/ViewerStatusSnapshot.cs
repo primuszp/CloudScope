@@ -53,6 +53,18 @@ public readonly record struct ViewerStatusSnapshot
 
     public float Fps { get; init; }
 
+    /// <summary>Whether the viewer wants the label registry shown. Shells project it; the
+    /// LABELS command is the only thing that sets it, so both shells agree on what it means.</summary>
+    public bool LabelWindowVisible { get; init; }
+
+    /// <summary>Whether the viewer wants the expanded command history shown.</summary>
+    public bool CommandHistoryVisible { get; init; }
+
+    /// <summary>Percentage of a load in progress, or -1 when nothing is loading.</summary>
+    public int LoadProgress { get; init; } = -1;
+
+    public bool IsLoading => LoadProgress >= 0;
+
     public bool HasCloud => LoadedCount > 0;
 
     public string InstanceText => CurrentInstanceId is int id ? id.ToString() : "none";

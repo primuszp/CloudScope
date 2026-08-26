@@ -126,13 +126,28 @@ cancels stops the rest.
 
 ## Menus and shells
 
+There is one interpreter. A shell adds no commands, implements none of its own, and
+intercepts nothing on its way to the runtime: what it contributes is the platform's UI.
+
 `CommandMenu` is the single menu definition. Every entry is a command string, so a menu can
 only do what the user could type. The Avalonia shell projects it into a native or classic
 menu; the full-screen ImGui shell renders it as a menu bar.
 
-The Avalonia shell answers a `PromptFileStep` with the platform file dialog, and echoes
-prompts answered by a viewport pick onto its command line through
-`ICommandOutputSource.OutputProduced`.
+What a shell does contribute:
+
+- **A file dialog** when a command asks for a path. The Avalonia shell sees a pending
+  `PromptFileStep` and offers the platform picker; typing the path does the same thing, so
+  nothing a dialog can reach is closed to a script.
+- **Windows for viewer state that asks to be shown.** `LABELS` and `HISTORY` set a flag on the
+  viewer; the shell opens and closes its own windows to match, and closing one by hand issues
+  the command that turns the flag off. The viewer stays the only writer.
+- **A place to print output nobody submitted.** A load finishing, or a viewport pick answering
+  a prompt, arrives through `ICommandOutputSource.OutputProduced` and is echoed on the command
+  line like a typed answer.
+
+`OPEN` reads on a background thread and uploads on the next frame, so it returns immediately
+and no shell needs a loading path of its own to stay responsive. `ViewerStatusSnapshot`
+carries the progress for the status bar.
 
 ## Keeping it honest
 

@@ -220,6 +220,26 @@ namespace CloudScope
             _selection.LoadPointCloud(_dataset.ViewPoints, _dataset.ViewToSource, _dataset.SourcePoints, _dataset.Attributes);
         }
 
+        /// <summary>
+        /// Work handed back from a background thread, run on the next frame. A cloud is read
+        /// off the UI thread but uploaded on the one that owns the graphics context.
+        /// </summary>
+        private readonly System.Collections.Concurrent.ConcurrentQueue<Action> _pendingWork = new();
+
+        /// <summary>
+        /// Output produced without a command being submitted — a load finishing. Shells route
+        /// it to the command line, so a background result is reported where a typed one is.
+        /// </summary>
+        public event Action<string>? BackgroundMessage;
+
+        /// <summary>Percentage of a load in progress, or -1 when nothing is loading.</summary>
+        public int LoadProgress { get; private set; } = -1;
+
+        /// <summary>
+        /// Reads a LAS or LAZ file and shows it. The read happens on a background thread and
+        /// the upload on the next frame, so the command returns at once and no shell has to
+        /// own a loading path of its own to keep its window responsive.
+        /// </summary>
         public string OpenPointCloud(string path, long maxPoints = 0)
         {
             if (string.IsNullOrWhiteSpace(path))
@@ -228,14 +248,43 @@ namespace CloudScope
             if (!File.Exists(path))
                 return $"File not found: {path}";
 
-            var sw = Stopwatch.StartNew();
-            using var reader = new LasReader(path);
-            LoadedPointCloud cloud = PointCloudLoader.Load(reader, maxPoints);
-            LoadPointCloud(cloud.ToDataset());
-            SetLasFilePath(path);
-            sw.Stop();
+            if (LoadProgress >= 0)
+                return "A point cloud is already loading.";
 
-            return $"Loaded {cloud.LoadedCount:N0} points from {Path.GetFileName(path)} ({sw.Elapsed.TotalSeconds:0.0}s).";
+            LoadProgress = 0;
+            string name = Path.GetFileName(path);
+
+            _ = Task.Run(() =>
+            {
+                var sw = Stopwatch.StartNew();
+                try
+                {
+                    var progress = new Progress<int>(percent => LoadProgress = percent);
+                    using var reader = new LasReader(path);
+                    LoadedPointCloud cloud = PointCloudLoader.Load(reader, maxPoints, progress: progress);
+                    PointCloudDataset dataset = cloud.ToDataset();
+                    sw.Stop();
+
+                    _pendingWork.Enqueue(() =>
+                    {
+                        LoadPointCloud(dataset);
+                        SetLasFilePath(path);
+                        LoadProgress = -1;
+                        BackgroundMessage?.Invoke(
+                            $"Loaded {cloud.LoadedCount:N0} points from {name} ({sw.Elapsed.TotalSeconds:0.0}s).");
+                    });
+                }
+                catch (Exception ex)
+                {
+                    _pendingWork.Enqueue(() =>
+                    {
+                        LoadProgress = -1;
+                        BackgroundMessage?.Invoke($"Load failed: {ex.Message}");
+                    });
+                }
+            });
+
+            return $"Reading {name}...";
         }
 
         /// <summary>
@@ -468,7 +517,10 @@ namespace CloudScope
             ViewName = ActiveViewport.Camera.IsPerspective && _viewportLayout == ViewportLayoutKind.SinglePerspective
                 ? "Perspective"
                 : DescribeViewportView(_auxiliaryViewportView),
-            Fps = _smoothedFps
+            Fps = _smoothedFps,
+            LabelWindowVisible = LabelWindowVisible,
+            CommandHistoryVisible = CommandHistoryVisible,
+            LoadProgress = LoadProgress
         };
 
         /// <summary>
@@ -836,6 +888,9 @@ namespace CloudScope
 
         public bool UpdateFrame(float dt, IViewerKeyboard keyboard)
         {
+            while (_pendingWork.TryDequeue(out Action? work))
+                work();
+
             if (dt > 0f)
                 _smoothedFps = _smoothedFps <= 0f ? 1f / dt : _smoothedFps * 0.9f + 0.1f / dt;
 
