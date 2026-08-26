@@ -119,7 +119,9 @@ namespace CloudScope.Platform.Metal
 
                         var cmdBuf = _commandQueue.Value.CommandBuffer();
                         _renderBackend.PrepareFrame(descriptor, drawable, cmdBuf);
-                        _controller.RenderFrame(0);
+                        // The real elapsed time, not zero: the frame diagnostics average over
+                        // a second of it, so passing zero left the Metal backend unmeasurable.
+                        _controller.RenderFrame(dt);
                         if (_controller.NeedsContinuousFrames)
                             RequestRedraw();
                     }

@@ -1,6 +1,7 @@
 using CloudScope.Selection;
 using CloudScope.Commands;
 using CloudScope.Loading;
+using CloudScope.Store;
 using System.Globalization;
 
 namespace CloudScope.Ui.Commands;
@@ -226,6 +227,87 @@ public sealed class ViewerCommands : ICommandCancellationHandler
             return CommandResult.Continue(Value("Enter LAS file path:"), error);
 
         return CommandResult.End(context.GetTarget<ViewerController>().OpenPointCloud(path, maxPoints));
+    }
+
+    [CommandMethod("OPENSTORE", Flags = CommandFlags.NoUndoMarker)]
+    public CommandResult OpenStore(CommandContext context)
+    {
+        string directory = CommandText.Unquote(context.Input.Trim());
+        if (directory.Length == 0)
+            return CommandResult.Continue(Value("Enter point tile store directory:"), "");
+
+        return CommandResult.End(context.GetTarget<ViewerController>().OpenPointTileStore(directory));
+    }
+
+    [CommandMethod("INDEX", Flags = CommandFlags.NoUndoMarker)]
+    public CommandResult Index(CommandContext context)
+    {
+        if (!TryParseIndexArguments(context.Input, out string lasPath, out string outputDirectory, out string error))
+            return CommandResult.Continue(Value("Enter LAS file and store directory:"), error);
+
+        if (!File.Exists(lasPath))
+            return CommandResult.End($"File not found: {lasPath}");
+
+        // The build streams the file three times and never holds more than one chunk, so its
+        // cost is the disk's, not the machine's memory.
+        PointTileBuildReport report = PointTileStoreBuilder.Build(lasPath, outputDirectory);
+        return CommandResult.End(
+            $"Indexed {report.SourcePoints:N0} points into {report.NodeCount:N0} cells "
+            + $"({report.Total.TotalSeconds:0.0}s). Open it with OPENSTORE.");
+    }
+
+    /// <summary>
+    /// Splits <c>INDEX &lt;las&gt; [store directory]</c>. Both may be quoted.
+    /// </summary>
+    /// <remarks>
+    /// Not shared with OPEN's parser: there a second argument is a point limit, here it is a
+    /// path, and a directory name that happens not to be a number would be reported as a bad
+    /// count.
+    /// </remarks>
+    private static bool TryParseIndexArguments(
+        string input, out string lasPath, out string outputDirectory, out string error)
+    {
+        lasPath = "";
+        outputDirectory = "";
+        error = "";
+
+        string trimmed = input.Trim();
+        if (trimmed.Length == 0)
+            return false;
+
+        string remaining;
+        if (trimmed[0] == '"')
+        {
+            int endQuote = trimmed.IndexOf('"', 1);
+            if (endQuote < 0)
+            {
+                error = "Missing closing quote in file path.";
+                return false;
+            }
+
+            lasPath = trimmed[1..endQuote];
+            remaining = trimmed[(endQuote + 1)..].Trim();
+        }
+        else
+        {
+            string[] parts = trimmed.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            lasPath = parts[0];
+            remaining = parts.Length == 2 ? parts[1] : "";
+        }
+
+        if (string.IsNullOrWhiteSpace(lasPath))
+        {
+            error = "INDEX requires a LAS file path.";
+            return false;
+        }
+
+        // Defaulting the store to sit beside the file it came from is what makes INDEX a
+        // one-argument command in practice.
+        outputDirectory = CommandText.Unquote(remaining);
+        if (outputDirectory.Length == 0)
+            outputDirectory = Path.ChangeExtension(lasPath, null) + ".cctiles";
+
+        return true;
     }
 
     [CommandMethod("ZOOM", "Z", Flags = CommandFlags.NoUndoMarker)]

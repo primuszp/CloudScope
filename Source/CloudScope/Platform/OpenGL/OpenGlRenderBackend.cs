@@ -9,6 +9,7 @@ namespace CloudScope.Platform.OpenGL
         public RenderBackendKind Kind => RenderBackendKind.OpenGL;
 
         public IPointCloudRenderer CreatePointCloudRenderer() => new OpenGlPointCloudRenderer();
+        public IPointTileCloudRenderer CreateStreamingPointCloudRenderer() => new OpenGlStreamingPointCloudRenderer();
 
         public IHighlightRenderer CreateHighlightRenderer() => new OpenGlHighlightRenderer();
 
