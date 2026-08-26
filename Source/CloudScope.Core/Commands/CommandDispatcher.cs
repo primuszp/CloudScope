@@ -24,6 +24,9 @@ public sealed class CommandDispatcher : ICommandExecutor
     public IReadOnlyCollection<CommandDescriptor> Commands =>
         _executors.SelectMany(executor => executor.Commands).ToArray();
 
+    public IReadOnlyCollection<SystemVariable> Variables =>
+        _executors.SelectMany(executor => executor.Variables).ToArray();
+
     public bool TryGetCommand(string name, out CommandDescriptor command)
     {
         foreach (ICommandExecutor executor in _executors)

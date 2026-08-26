@@ -1,7 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
-using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Layout;
@@ -23,46 +22,26 @@ public sealed class CommandLineControl : UserControl
     private readonly CommandLineSession _session;
     private readonly Func<string, Task> _submit;
 
-    private readonly ItemsControl _historyList = new();
-    private readonly ScrollViewer _historyScroll;
-    private readonly WrapPanel _keywordPanel = new() { Orientation = Orientation.Horizontal };
-    private readonly TextBlock _promptText = new() { VerticalAlignment = VerticalAlignment.Center };
+    private readonly CommandTranscript _transcript;
+    private readonly WrapPanel _promptPanel = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBox _input = new();
     private readonly Popup _completionPopup = new();
     private readonly ListBox _completionList = new();
 
-    private readonly global::System.Collections.ObjectModel.ObservableCollection<CommandLineEntry> _entries = [];
     private IReadOnlyList<CommandCompletion> _completions = [];
     private string _completionPrefix = "";
     private bool _suppressInlineSuggestion;
-    private long _syncedTotal;
 
     public CommandLineControl(CommandLineSession session, Func<string, Task> submit)
     {
         _session = session;
         _submit = submit;
 
-        _historyList.ItemsSource = _entries;
-        _historyList.ItemTemplate = new FuncDataTemplate<CommandLineEntry>((entry, _) =>
-            new SelectableTextBlock
-            {
-                Text = entry?.Text ?? "",
-                TextWrapping = TextWrapping.Wrap,
-                FontSize = 12,
-                FontFamily = MonoFont,
-                Foreground = BrushFor(entry?.Kind ?? CommandEntryKind.Output)
-            });
+        _transcript = new CommandTranscript(session);
+        _transcript.CommandRecalled += Stage;
 
-        _historyScroll = new ScrollViewer
-        {
-            Content = _historyList,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Padding = new Thickness(10, 4, 10, 4)
-        };
-
-        _promptText.Classes.Add("prompt");
         _input.Classes.Add("commandInput");
+        _input.MinWidth = 220;
         _input.PlaceholderText = "Type a command — Tab completes, ↑ recalls, F2 shows history";
         _input.KeyDown += OnInputKeyDown;
         _input.TextChanged += (_, _) =>
@@ -81,8 +60,12 @@ public sealed class CommandLineControl : UserControl
             MinWidth = 320,
             MaxHeight = 220
         };
+        // The list belongs directly above the text being typed, left-aligned with it, the way
+        // AutoCAD's suggestion list sits over the prompt — not floating off the input's end.
         _completionPopup.PlacementTarget = _input;
-        _completionPopup.Placement = PlacementMode.Top;
+        _completionPopup.Placement = PlacementMode.AnchorAndGravity;
+        _completionPopup.PlacementAnchor = global::Avalonia.Controls.Primitives.PopupPositioning.PopupAnchor.TopLeft;
+        _completionPopup.PlacementGravity = global::Avalonia.Controls.Primitives.PopupPositioning.PopupGravity.TopRight;
         _completionPopup.HorizontalOffset = 0;
         _completionPopup.IsLightDismissEnabled = false;
 
@@ -100,11 +83,11 @@ public sealed class CommandLineControl : UserControl
         var recentCommands = new MenuItem { Header = "Recent commands" };
         var recentInput = new MenuItem { Header = "Recent input" };
 
-        var copy = new MenuItem { Header = "Copy history" };
+        var copy = new MenuItem { Header = "Copy" };
         copy.Click += async (_, _) =>
         {
             if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
-                await clipboard.SetTextAsync(_session.HistoryText);
+                await clipboard.SetTextAsync(_transcript.SelectedOrAllText);
         };
 
         var clear = new MenuItem { Header = "Clear history" };
@@ -155,6 +138,22 @@ public sealed class CommandLineControl : UserControl
         _input.CaretIndex = _input.Text?.Length ?? 0;
     }
 
+    /// <summary>
+    /// Takes a character typed while the command line did not have focus: the input takes
+    /// focus and the character lands in it, so a command started from the viewport is not
+    /// missing its first letter.
+    /// </summary>
+    public void BeginTyping(string text)
+    {
+        string current = _input.Text ?? "";
+        int caret = IsKeyboardFocusWithin ? Math.Clamp(_input.CaretIndex, 0, current.Length) : current.Length;
+
+        _input.Text = current[..caret] + text + current[caret..];
+        _input.Focus();
+        _input.CaretIndex = caret + text.Length;
+        RefreshCompletions();
+    }
+
     /// <summary>Puts a command in the input without submitting it, as menus and toolbars do.</summary>
     public void Stage(string command)
     {
@@ -166,44 +165,11 @@ public sealed class CommandLineControl : UserControl
     /// <summary>Redraws prompt, keywords and history after the session state changed.</summary>
     public void Refresh()
     {
-        _promptText.Text = _session.Prompt;
-        SyncHistory();
-        RebuildKeywords();
-        ScrollHistoryToEnd();
+        RebuildPrompt();
+        _transcript.Sync();
     }
 
     public void Clear() => _input.Text = "";
-
-    // Append only what is new. Rebuilding the transcript would re-template every visible
-    // row on every command, which is the one thing a command line must never do.
-    private void SyncHistory()
-    {
-        long total = _session.TotalEntries;
-        if (total == _syncedTotal)
-            return;
-
-        IReadOnlyList<CommandLineEntry> history = _session.History;
-        long added = total - _syncedTotal;
-        if (added >= history.Count || _syncedTotal > total)
-        {
-            // More lines arrived than the session keeps (or it was cleared): resync fully.
-            _entries.Clear();
-            foreach (CommandLineEntry entry in history)
-                _entries.Add(entry);
-        }
-        else
-        {
-            for (int i = history.Count - (int)added; i < history.Count; i++)
-                _entries.Add(history[i]);
-
-            while (_entries.Count > _session.HistoryLimit)
-                _entries.RemoveAt(0);
-        }
-
-        _syncedTotal = total;
-    }
-
-    private static readonly FontFamily MonoFont = new(global::CloudScope.Ui.UiPalette.MonoFontStack);
 
     private Control BuildLayout()
     {
@@ -223,78 +189,81 @@ public sealed class CommandLineControl : UserControl
         {
             ColumnDefinitions = new ColumnDefinitions("Auto,*"),
             Margin = new Thickness(10, 2, 10, 4),
-            Children = { _promptText, _input }
+            Children = { _promptPanel, _input }
         };
         Grid.SetColumn(_input, 1);
 
         var promptBorder = new Border
         {
             BorderThickness = new Thickness(2, 1, 0, 0),
-            Child = new StackPanel
-            {
-                Children =
-                {
-                    new Border { Child = _keywordPanel, Margin = new Thickness(10, 4, 10, 0) },
-                    promptRow,
-                    _completionPopup
-                }
-            }
+            Child = new StackPanel { Children = { promptRow, _completionPopup } }
         };
         promptBorder[!BorderBrushProperty] = ResourceBinding("CsAccent");
         promptBorder[!BackgroundProperty] = ResourceBinding("CsSurface");
 
         var root = new Grid { RowDefinitions = new RowDefinitions("22,*,Auto") };
         root.Children.Add(header);
-        root.Children.Add(_historyScroll);
+        root.Children.Add(_transcript);
         root.Children.Add(promptBorder);
-        Grid.SetRow(_historyScroll, 1);
+        Grid.SetRow(_transcript, 1);
         Grid.SetRow(promptBorder, 2);
         return root;
     }
 
-    // Prompt keywords are buttons: clicking one is exactly the same as typing it.
-    private void RebuildKeywords()
+    // The prompt is laid out where AutoCAD writes it: the keywords are clickable inside the
+    // "[Box/Cylinder/Sphere]" of the prompt line itself, rather than repeated on a row of
+    // their own above a prompt that already lists them.
+    private void RebuildPrompt()
     {
-        _keywordPanel.Children.Clear();
-        PromptOptions? options = _session.ActiveOptions;
-        if (options == null || options.Keywords.Count == 0)
-        {
-            _keywordPanel.IsVisible = false;
-            return;
-        }
+        _promptPanel.Children.Clear();
 
-        _keywordPanel.IsVisible = true;
-        foreach (Keyword keyword in options.Keywords)
+        foreach (PromptSegment segment in PromptLayout.Split(_session.Prompt, _session.ActiveOptions))
         {
-            bool isDefault = string.Equals(keyword.GlobalName, options.DefaultKeyword, StringComparison.OrdinalIgnoreCase);
-            var button = new Button
+            if (segment.Kind == PromptSegmentKind.Text)
             {
-                Content = BuildKeywordText(keyword),
-                Classes = { "keywordLink" },
-                Tag = keyword.GlobalName
-            };
+                _promptPanel.Children.Add(new TextBlock
+                {
+                    Text = segment.Text,
+                    Classes = { "prompt" },
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+                continue;
+            }
 
-            if (isDefault)
-                button.Classes.Add("defaultKeyword");
-
-            if (keyword.Abbreviation.Length > 0)
-                ToolTip.SetTip(button, $"Type {keyword.Abbreviation}");
-
-            button.Click += (_, _) => SubmitText(keyword.GlobalName);
-            _keywordPanel.Children.Add(button);
+            _promptPanel.Children.Add(BuildKeywordButton(segment));
         }
+    }
+
+    private Button BuildKeywordButton(PromptSegment segment)
+    {
+        Keyword keyword = segment.Keyword!;
+        var button = new Button
+        {
+            Content = BuildKeywordText(keyword),
+            Classes = { "keywordLink" },
+            Tag = keyword.GlobalName
+        };
+
+        if (segment.IsDefault)
+            button.Classes.Add("defaultKeyword");
+
+        if (keyword.Abbreviation.Length > 0)
+            ToolTip.SetTip(button, $"Type {keyword.Abbreviation}");
+
+        button.Click += (_, _) => SubmitText(keyword.GlobalName);
+        return button;
     }
 
     // AutoCAD underlines the capitalised letters of a keyword to show what may be typed
     // instead of the whole word ("ReTurn" accepts "RT").
     private static TextBlock BuildKeywordText(Keyword keyword)
     {
-        var block = new TextBlock { FontSize = 11 };
-        foreach (KeywordSegment segment in keyword.DisplaySegments)
+        var block = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
+        foreach (KeywordSegment part in keyword.DisplaySegments)
         {
-            block.Inlines?.Add(new Run(segment.Text)
+            block.Inlines?.Add(new Run(part.Text)
             {
-                TextDecorations = segment.IsAbbreviation ? TextDecorations.Underline : null
+                TextDecorations = part.IsAbbreviation ? TextDecorations.Underline : null
             });
         }
 
@@ -471,32 +440,6 @@ public sealed class CommandLineControl : UserControl
         _completions = [];
         _completionPrefix = (_input.Text ?? "").Trim();
     }
-
-    // Only follow the tail when the user is already reading the tail — never yank the view
-    // away from history they scrolled back to.
-    private void ScrollHistoryToEnd()
-    {
-        bool atBottom = _historyScroll.Offset.Y >= _historyScroll.Extent.Height - _historyScroll.Viewport.Height - 4;
-        _historyList.InvalidateMeasure();
-        if (atBottom)
-            Dispatcher.UIThread.Post(() => _historyScroll.ScrollToEnd(), DispatcherPriority.Background);
-    }
-
-    // One frozen brush per kind: history lines are re-templated often and a new brush per
-    // line would allocate for every visible row.
-    private static readonly Dictionary<CommandEntryKind, IBrush> EntryBrushes =
-        Enum.GetValues<CommandEntryKind>().ToDictionary(
-            kind => kind,
-            kind =>
-            {
-                uint color = global::CloudScope.Ui.UiPalette.EntryColor(kind);
-                return (IBrush)new SolidColorBrush(Color.FromRgb(
-                    global::CloudScope.Ui.UiPalette.R(color),
-                    global::CloudScope.Ui.UiPalette.G(color),
-                    global::CloudScope.Ui.UiPalette.B(color))).ToImmutable();
-            });
-
-    private static IBrush BrushFor(CommandEntryKind kind) => EntryBrushes[kind];
 
     private static global::Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension ResourceBinding(string key) =>
         new global::Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension(key);

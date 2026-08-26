@@ -31,6 +31,13 @@ public interface ICommandExecutor
     /// </summary>
     PromptOptions? ActiveOptions => null;
 
+    /// <summary>
+    /// System variables this executor's target names. Autocomplete offers them the way they
+    /// have to be typed — as an argument to SETVAR — since a bare variable name is not a
+    /// command the runtime could run.
+    /// </summary>
+    IReadOnlyCollection<SystemVariable> Variables => [];
+
     bool IsTransparentCommand(string name);
 
     /// <summary>

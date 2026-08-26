@@ -9,7 +9,10 @@ public enum CompletionKind
     Command,
 
     /// <summary>An alias of a command.</summary>
-    Alias
+    Alias,
+
+    /// <summary>A system variable, offered as the command that reads and writes it.</summary>
+    Variable
 }
 
 /// <summary>
@@ -26,16 +29,29 @@ public sealed record CommandCompletion(CompletionKind Kind, string Insert, strin
 /// </summary>
 public static class CommandCompletionSource
 {
+    /// <summary>
+    /// The commands that take a system variable as their argument. Typing one of them and a
+    /// partial name completes against the variable table rather than the command table, which
+    /// is the only place a variable name is a valid thing to type.
+    /// </summary>
+    private static readonly string[] VariableCommands = ["SETVAR", "SET", "GETVAR"];
+
     public static IReadOnlyList<CommandCompletion> Complete(
         string prefix,
         PromptOptions? activeOptions,
         IReadOnlyCollection<string>? knownCommandNames,
         Func<string, string>? resolveGlobalName = null,
-        int limit = 12)
+        int limit = 12,
+        IReadOnlyCollection<SystemVariable>? variables = null,
+        IReadOnlyCollection<string>? recentCommands = null)
     {
         string typed = prefix.Trim();
         if (typed.Length == 0)
             return [];
+
+        // "SETVAR pt" is asking about variables, not commands.
+        if (SplitVariableArgument(typed) is { } argument)
+            return CompleteVariables(argument.Command, argument.Partial, variables, limit);
 
         var results = new List<(int Rank, int Length, CommandCompletion Completion)>();
 
@@ -68,12 +84,26 @@ public static class CommandCompletionSource
             string globalName = resolveGlobalName?.Invoke(name) ?? "";
             bool isAlias = globalName.Length > 0 && !globalName.Equals(name, StringComparison.OrdinalIgnoreCase);
 
-            results.Add((CommandRank + (isAlias ? AliasRank : 0) + match, name.Length,
+            results.Add((CommandRank + (isAlias ? AliasRank : 0) + match + RecentBonus(name, recentCommands),
+                name.Length,
                 new CommandCompletion(
                     isAlias ? CompletionKind.Alias : CompletionKind.Command,
                     name,
                     name,
                     isAlias ? $"alias of {globalName}" : "command")));
+        }
+
+        // A variable is offered as the command that would read it, because that is what the
+        // user has to type: a bare variable name at the command prompt is not a command.
+        foreach (SystemVariable variable in variables ?? [])
+        {
+            int match = Match(variable.Name, typed);
+            if (match < 0)
+                continue;
+
+            results.Add((VariableRank + match, variable.Name.Length,
+                new CommandCompletion(CompletionKind.Variable, $"SETVAR {variable.Name}", variable.Name,
+                    $"variable · {variable.Description}")));
         }
 
         return results
@@ -89,8 +119,55 @@ public static class CommandCompletionSource
     // any mid-word match, because someone typing "z" wants ZOOM, not POINTSIZE. Within a
     // match quality, prompt keywords (0) beat commands (100), which beat aliases (150).
     private const int CommandRank = 100;
+    private const int VariableRank = 125;
     private const int AliasRank = 50;
     private const int ContainsPenalty = 1000;
+
+    // Recency reorders candidates within their group without ever promoting one past a better
+    // match: what someone ran a minute ago is what they most likely want again.
+    private static int RecentBonus(string name, IReadOnlyCollection<string>? recentCommands)
+    {
+        if (recentCommands == null)
+            return 0;
+
+        int index = 0;
+        foreach (string recent in recentCommands)
+        {
+            if (recent.Equals(name, StringComparison.OrdinalIgnoreCase))
+                return -(20 - Math.Min(index, 10));
+
+            index++;
+        }
+
+        return 0;
+    }
+
+    private static (string Command, string Partial)? SplitVariableArgument(string typed)
+    {
+        int space = typed.IndexOf(' ');
+        if (space < 0)
+            return null;
+
+        string command = typed[..space];
+        foreach (string name in VariableCommands)
+            if (command.Equals(name, StringComparison.OrdinalIgnoreCase))
+                return (command.ToUpperInvariant(), typed[(space + 1)..].TrimStart());
+
+        return null;
+    }
+
+    private static IReadOnlyList<CommandCompletion> CompleteVariables(
+        string command, string partial, IReadOnlyCollection<SystemVariable>? variables, int limit) =>
+        (variables ?? [])
+            .Select(variable => (Rank: partial.Length == 0 ? 0 : Match(variable.Name, partial), Variable: variable))
+            .Where(entry => entry.Rank >= 0)
+            .OrderBy(entry => entry.Rank)
+            .ThenBy(entry => entry.Variable.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(limit)
+            .Select(entry => new CommandCompletion(CompletionKind.Variable,
+                $"{command} {entry.Variable.Name}", entry.Variable.Name,
+                $"{entry.Variable.Value} · {entry.Variable.Description}"))
+            .ToArray();
 
     private static int Match(string candidate, string typed)
     {
