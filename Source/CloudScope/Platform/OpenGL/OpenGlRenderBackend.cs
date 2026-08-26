@@ -19,9 +19,10 @@ namespace CloudScope.Platform.OpenGL
 
         public IDepthPicker CreateDepthPicker() => new OpenGlDepthPicker();
 
-        public void InitializeFrameState()
+        public void Initialize()
         {
-            GL.ClearColor(0.08f, 0.08f, 0.12f, 1f);
+            (float r, float g, float b, float a) = RenderPalette.Background;
+            GL.ClearColor(r, g, b, a);
             GL.Enable(EnableCap.DepthTest);
             GL.Enable(EnableCap.ProgramPointSize);
             GL.Enable(EnableCap.Blend);

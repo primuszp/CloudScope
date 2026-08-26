@@ -13,6 +13,9 @@ namespace CloudScope.Platform.Metal.Rendering
     [SupportedOSPlatform("macos")]
     internal sealed class MetalHighlightRenderer : IHighlightRenderer
     {
+        private readonly MetalRenderContext _context;
+
+        public MetalHighlightRenderer(MetalRenderContext context) => _context = context;
 
         private MTLRenderPipelineState _pipeline;
         private MTLDepthStencilState _depthState;
@@ -57,11 +60,11 @@ namespace CloudScope.Platform.Metal.Rendering
 
         public void Dispose()
         {
-            Release(ref _uniformsBuffer);
-            Release(ref _highlightBuffer);
-            Release(ref _previewBuffer);
-            Release(_pipeline.NativePtr);
-            Release(_depthState.NativePtr);
+            MetalResources.Release(ref _uniformsBuffer);
+            MetalResources.Release(ref _highlightBuffer);
+            MetalResources.Release(ref _previewBuffer);
+            MetalResources.Release(_pipeline.NativePtr);
+            MetalResources.Release(_depthState.NativePtr);
             _pipeline = default;
             _depthState = default;
             _scratch = Array.Empty<PointData>();
@@ -77,7 +80,7 @@ namespace CloudScope.Platform.Metal.Rendering
             if (_pipeline.NativePtr != IntPtr.Zero)
                 return;
 
-            var device = MetalFrameContext.Device;
+            var device = _context.Device;
             _pipeline    = MetalShaderLibrary.CreatePointPipeline(device, MTLPixelFormat.BGRA8Unorm, MTLPixelFormat.Depth32Float);
             _depthState  = MetalShaderLibrary.CreateDepthState(device, depthWrite: false);
             _uniformsBuffer = device.NewBuffer(
@@ -118,12 +121,12 @@ namespace CloudScope.Platform.Metal.Rendering
         {
             if (count == 0) return;
             ulong byteSize = (ulong)(count * 24);
-            var device = MetalFrameContext.Device;
+            var device = _context.Device;
 
             if (existingBuffer.NativePtr == IntPtr.Zero || existingBuffer.Length < byteSize)
             {
                 if (existingBuffer.NativePtr != IntPtr.Zero)
-                    NativeRelease(existingBuffer.NativePtr);
+                    MetalResources.Release(existingBuffer.NativePtr);
                 existingBuffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
             }
 
@@ -138,23 +141,5 @@ namespace CloudScope.Platform.Metal.Rendering
                 _scratch = new PointData[count];
             return _scratch;
         }
-
-        private static void Release(ref MTLBuffer buffer)
-        {
-            if (buffer.NativePtr == IntPtr.Zero)
-                return;
-
-            Release(buffer.NativePtr);
-            buffer = default;
-        }
-
-        private static void Release(IntPtr nativePtr)
-        {
-            if (nativePtr != IntPtr.Zero)
-                NativeRelease(nativePtr);
-        }
-
-        [System.Runtime.InteropServices.DllImport("libobjc.dylib", EntryPoint = "objc_release")]
-        private static extern void NativeRelease(IntPtr obj);
     }
 }

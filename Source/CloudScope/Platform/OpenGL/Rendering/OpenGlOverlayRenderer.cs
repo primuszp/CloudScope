@@ -6,7 +6,7 @@ using CloudScope.Rendering;
 
 namespace CloudScope.Platform.OpenGL.Rendering
 {
-    public sealed class OpenGlOverlayRenderer : IOverlayRenderer
+    internal sealed class OpenGlOverlayRenderer : IOverlayRenderer
     {
         private int _lineShader = -1, _sphereShader = -1;
         private int _uViewLine, _uProjLine;
@@ -14,12 +14,20 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private int _uAlphaLine, _uAlphaSphere;
 
         private int _pivotVao = -1, _pivotVbo = -1, _pivotVertexCount;
+        private PivotLineBatch[] _pivotBatches = Array.Empty<PivotLineBatch>();
+        private readonly OpenGlWideLineRenderer _wideLines = new();
         private int _sphereVao = -1, _sphereVbo = -1;
         private int _crosshairVao = -1, _crosshairVbo = -1;
 
         private readonly float[] _crossData = new float[24];
         private readonly float[] _shadowData = new float[24];
         private readonly float[] _indData = new float[24];
+
+        /// <summary>Interleaved position + color vertices, as the overlay buffers store them.</summary>
+        private const int PivotVertexStride = 6 * sizeof(float);
+
+        /// <summary>Pixel width of the selection-mode indicator cross.</summary>
+        private const float ModeIndicatorWidth = 2.5f;
 
         private const string VertSrc = @"
 #version 330 core
@@ -79,12 +87,13 @@ void main()
 
         public void Initialize()
         {
-            _lineShader = BuildShader(VertSrc, LineFragSrc);
+            _lineShader = OpenGlShaderCompiler.CreateProgram(VertSrc, LineFragSrc, "overlay");
             _uViewLine = GL.GetUniformLocation(_lineShader, "view");
             _uProjLine = GL.GetUniformLocation(_lineShader, "projection");
             _uAlphaLine = GL.GetUniformLocation(_lineShader, "uAlpha");
 
-            _sphereShader = BuildShader(VertSrc, SphereFragSrc);
+            _wideLines.EnsureResources();
+            _sphereShader = OpenGlShaderCompiler.CreateProgram(VertSrc, SphereFragSrc, "overlay");
             _uViewSphere = GL.GetUniformLocation(_sphereShader, "view");
             _uProjSphere = GL.GetUniformLocation(_sphereShader, "projection");
             _uPointSizeSphere = GL.GetUniformLocation(_sphereShader, "pointSize");
@@ -114,19 +123,43 @@ void main()
             GL.UniformMatrix4(_uProjLine, false, ref proj);
             GL.BindVertexArray(_pivotVao);
 
+            // The wide-line shader carries one color per draw, so the indicator is drawn
+            // batch by batch — the same split the Metal overlay renderer uses.
+            Matrix4 pivotMvp = mv * proj;
+            float lineWidth = 1f + eff;
+
             GL.Enable(EnableCap.DepthTest);
             GL.DepthMask(false);
             GL.Uniform1(_uAlphaLine, eff);
-            GL.LineWidth(1f + eff);
-            GL.DrawArrays(PrimitiveType.Lines, 0, _pivotVertexCount);
+            DrawPivotBatches(ref pivotMvp, eff, lineWidth);
 
             GL.Disable(EnableCap.DepthTest);
             GL.Uniform1(_uAlphaLine, eff * 0.20f);
-            GL.LineWidth(1.0f);
-            GL.DrawArrays(PrimitiveType.Lines, 0, _pivotVertexCount);
+            DrawPivotBatches(ref pivotMvp, eff * 0.20f, LineWidth.NativeMax);
 
             GL.DepthMask(true);
             RenderPivotSphere(ref view, ref proj, pivot, spherePx, eff);
+        }
+
+        private void DrawPivotBatches(ref Matrix4 mvp, float alpha, float widthPixels)
+        {
+            if (!LineWidth.NeedsExpansion(widthPixels))
+            {
+                GL.LineWidth(widthPixels);
+                GL.DrawArrays(PrimitiveType.Lines, 0, _pivotVertexCount);
+                return;
+            }
+
+            int firstVertex = 0;
+            foreach (PivotLineBatch batch in _pivotBatches)
+            {
+                _wideLines.Draw(_pivotVbo, firstVertex, batch.VertexCount, ref mvp,
+                    new Vector4(batch.Color, alpha), widthPixels, PivotVertexStride);
+                firstVertex += batch.VertexCount;
+            }
+
+            GL.UseProgram(_lineShader);
+            GL.BindVertexArray(_pivotVao);
         }
 
         public void RenderCenterCrosshair(IRenderFrameData frameData, int width, int height, float alpha)
@@ -195,8 +228,9 @@ void main()
             GL.BindVertexArray(_crosshairVao);
             GL.BindBuffer(BufferTarget.ArrayBuffer, _crosshairVbo);
             GL.BufferData(BufferTarget.ArrayBuffer, _indData.Length * sizeof(float), _indData, BufferUsageHint.DynamicDraw);
-            GL.LineWidth(2.5f);
-            GL.DrawArrays(PrimitiveType.Lines, 0, 4);
+            Matrix4 screenSpace = Matrix4.Identity;
+            _wideLines.Draw(_crosshairVbo, 0, 4, ref screenSpace, new Vector4(color, 0.9f),
+                ModeIndicatorWidth, PivotVertexStride);
             GL.Enable(EnableCap.DepthTest);
         }
 
@@ -204,7 +238,8 @@ void main()
         {
             if (_pivotVao != -1) return;
 
-            PointData[] pivotData = PivotIndicatorGeometry.BuildColoredVertices(PivotIndicatorGeometry.BuildBatches());
+            _pivotBatches = PivotIndicatorGeometry.BuildBatches();
+            PointData[] pivotData = PivotIndicatorGeometry.BuildColoredVertices(_pivotBatches);
             _pivotVertexCount = pivotData.Length;
 
             _pivotVao = GL.GenVertexArray();
@@ -268,6 +303,7 @@ void main()
 
         public void Dispose()
         {
+            _wideLines.Dispose();
             if (_pivotVao != -1) GL.DeleteVertexArray(_pivotVao);
             if (_pivotVbo != -1) GL.DeleteBuffer(_pivotVbo);
             if (_sphereVao != -1) GL.DeleteVertexArray(_sphereVao);
@@ -278,37 +314,5 @@ void main()
             if (_sphereShader != -1) GL.DeleteProgram(_sphereShader);
         }
 
-        private static int BuildShader(string vertSrc, string fragSrc)
-        {
-            int v = GL.CreateShader(ShaderType.VertexShader);
-            GL.ShaderSource(v, vertSrc);
-            GL.CompileShader(v);
-            CheckShader(v, "vertex");
-
-            int f = GL.CreateShader(ShaderType.FragmentShader);
-            GL.ShaderSource(f, fragSrc);
-            GL.CompileShader(f);
-            CheckShader(f, "fragment");
-
-            int prog = GL.CreateProgram();
-            GL.AttachShader(prog, v);
-            GL.AttachShader(prog, f);
-            GL.LinkProgram(prog);
-
-            GL.GetProgram(prog, GetProgramParameterName.LinkStatus, out int ok);
-            if (ok == 0)
-                throw new InvalidOperationException("Shader link:\n" + GL.GetProgramInfoLog(prog));
-
-            GL.DeleteShader(v);
-            GL.DeleteShader(f);
-            return prog;
-        }
-
-        private static void CheckShader(int shader, string name)
-        {
-            GL.GetShader(shader, ShaderParameter.CompileStatus, out int ok);
-            if (ok == 0)
-                throw new InvalidOperationException($"{name} shader:\n" + GL.GetShaderInfoLog(shader));
-        }
     }
 }

@@ -10,7 +10,15 @@ namespace CloudScope.Platform.Metal.Rendering
     [SupportedOSPlatform("macos")]
     internal sealed class MetalOverlayRenderer : IOverlayRenderer
     {
-        private readonly MetalPrimitiveRenderer _renderer = new();
+
+        private readonly MetalRenderContext _context;
+
+        public MetalOverlayRenderer(MetalRenderContext context)
+        {
+            _context = context;
+            _renderer = new MetalPrimitiveRenderer(context);
+        }
+        private readonly MetalPrimitiveRenderer _renderer;
         private MTLBuffer _crosshairBuffer;
         private MTLBuffer _modeBuffer;
         private MTLBuffer[] _pivotBuffers = Array.Empty<MTLBuffer>();
@@ -22,6 +30,9 @@ namespace CloudScope.Platform.Metal.Rendering
         private MTLBuffer _pivotPointBuffer;
         private MTLBuffer _pivotPointUniforms;
 
+        /// <summary>Pixel width of the selection-mode indicator cross; matches the OpenGL overlay.</summary>
+        private const float ModeIndicatorWidth = 2.5f;
+
         public void Initialize()
         {
             _renderer.EnsureResources();
@@ -29,7 +40,7 @@ namespace CloudScope.Platform.Metal.Rendering
             _pivotBuffers = new MTLBuffer[_pivotBatches.Length];
             for (int i = 0; i < _pivotBatches.Length; i++)
                 _pivotBuffers[i] = _renderer.CreateStaticBuffer(_pivotBatches[i].Positions);
-            var device = MetalFrameContext.Device;
+            var device = _context.Device;
             _pivotPointPipeline = MetalShaderLibrary.CreatePivotPointPipeline(
                 device, MTLPixelFormat.BGRA8Unorm, MTLPixelFormat.Depth32Float);
             _pivotPointDepthState = MetalShaderLibrary.CreateDepthState(device, depthWrite: false);
@@ -55,9 +66,11 @@ namespace CloudScope.Platform.Metal.Rendering
             {
                 PivotLineBatch batch = _pivotBatches[i];
                 Vector4 color = new(batch.Color, alpha);
-                _renderer.Draw(_pivotBuffers[i], batch.VertexCount, MTLPrimitiveType.Line, mvp, color, depthTest: true);
+                _renderer.Draw(_pivotBuffers[i], batch.VertexCount, MTLPrimitiveType.Line, mvp, color,
+                    depthTest: true, lineWidthPixels: 1f + alpha);
                 color.W = alpha * 0.20f;
-                _renderer.Draw(_pivotBuffers[i], batch.VertexCount, MTLPrimitiveType.Line, mvp, color, depthTest: false);
+                _renderer.Draw(_pivotBuffers[i], batch.VertexCount, MTLPrimitiveType.Line, mvp, color,
+                    depthTest: false, lineWidthPixels: LineWidth.NativeMax);
             }
             RenderPivotPoint(frame, ref view, ref proj, pivot, 11f + 11f * fade + flash * 14f, alpha);
         }
@@ -86,21 +99,21 @@ namespace CloudScope.Platform.Metal.Rendering
             Vector3 rgb = OverlayLayout.ModeColor(toolType);
             Vector4 color = new(rgb, 0.9f);
             _renderer.Draw(_modeBuffer, 4, MTLPrimitiveType.Line,
-                Matrix4.Identity, color, depthTest: false);
+                Matrix4.Identity, color, depthTest: false, lineWidthPixels: ModeIndicatorWidth);
         }
 
         public void Dispose()
         {
-            MetalPrimitiveRenderer.Release(ref _crosshairBuffer);
-            MetalPrimitiveRenderer.Release(ref _modeBuffer);
+            MetalResources.Release(ref _crosshairBuffer);
+            MetalResources.Release(ref _modeBuffer);
             for (int i = 0; i < _pivotBuffers.Length; i++)
-                MetalPrimitiveRenderer.Release(ref _pivotBuffers[i]);
+                MetalResources.Release(ref _pivotBuffers[i]);
             _pivotBuffers = Array.Empty<MTLBuffer>();
             _pivotBatches = Array.Empty<PivotLineBatch>();
-            MetalPrimitiveRenderer.Release(ref _pivotPointBuffer);
-            MetalPrimitiveRenderer.Release(ref _pivotPointUniforms);
-            Release(_pivotPointPipeline.NativePtr);
-            Release(_pivotPointDepthState.NativePtr);
+            MetalResources.Release(ref _pivotPointBuffer);
+            MetalResources.Release(ref _pivotPointUniforms);
+            MetalResources.Release(_pivotPointPipeline.NativePtr);
+            MetalResources.Release(_pivotPointDepthState.NativePtr);
             _pivotPointPipeline = default;
             _pivotPointDepthState = default;
             _renderer.Dispose();
@@ -118,7 +131,7 @@ namespace CloudScope.Platform.Metal.Rendering
         {
             var point = new PointData { R = 1f, G = 0.92f, B = 0.2f };
             ulong byteSize = (ulong)Unsafe.SizeOf<PointData>();
-            MTLBuffer buffer = MetalFrameContext.Device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
+            MTLBuffer buffer = _context.Device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
             Buffer.MemoryCopy(&point, buffer.Contents.ToPointer(), byteSize, byteSize);
             buffer.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
             return buffer;
@@ -144,14 +157,5 @@ namespace CloudScope.Platform.Metal.Rendering
             encoder.SetVertexBuffer(_pivotPointUniforms, 0, 1);
             encoder.DrawPrimitives(MTLPrimitiveType.Point, 0, 1);
         }
-
-        private static void Release(IntPtr nativePtr)
-        {
-            if (nativePtr != IntPtr.Zero)
-                NativeRelease(nativePtr);
-        }
-
-        [System.Runtime.InteropServices.DllImport("libobjc.dylib", EntryPoint = "objc_release")]
-        private static extern void NativeRelease(IntPtr obj);
     }
 }

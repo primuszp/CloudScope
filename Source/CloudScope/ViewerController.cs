@@ -58,7 +58,7 @@ namespace CloudScope
 
         public void Load()
         {
-            _frameLifecycle.InitializeFrameState();
+            _frameLifecycle.Initialize();
             _pointRenderer.Initialize();
             _overlayRenderer.Initialize();
             UpdateViewportLayout();
@@ -500,7 +500,11 @@ namespace CloudScope
                 var proj = viewport.Camera.GetProjectionMatrix();
 
                 Breadcrumb("point-render");
-                int drawCount = _pointRenderer.Render(frameData, ref view, ref proj, viewport.Input.PointSize, viewport.Camera.Hvs, _cloudRadius);
+                var renderView = new PointRenderView(
+                    view, proj,
+                    viewport.Bounds.Width, viewport.Bounds.Height,
+                    viewport.Input.PointSize);
+                int drawCount = _pointRenderer.Render(frameData, in renderView);
                 totalDrawCount += drawCount;
 
                 Breadcrumb("highlight");

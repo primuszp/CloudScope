@@ -2,6 +2,7 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.Versioning;
 using CloudScope.Platform.Metal.ObjC;
+using CloudScope.Rendering;
 using OpenTK.Mathematics;
 using SharpMetal.Foundation;
 using SharpMetal.Metal;
@@ -11,11 +12,17 @@ namespace CloudScope.Platform.Metal.Rendering
     [SupportedOSPlatform("macos")]
     internal sealed class MetalPrimitiveRenderer : IDisposable
     {
+
+        private readonly MetalRenderContext _context;
+
+        public MetalPrimitiveRenderer(MetalRenderContext context) => _context = context;
         private const int UniformStride = 256;
+        private const int VertexByteSize = 3 * sizeof(float);
         private const int DrawsPerFrame = 512;
         private const int BufferedFrameCount = 3;
         private MetalFrameState? _frame;
         private MTLRenderPipelineState _pipeline;
+        private MTLRenderPipelineState _wideLinePipeline;
         private MTLDepthStencilState _depthOn;
         private MTLDepthStencilState _depthOff;
         private MTLBuffer _uniformsBuffer;
@@ -40,11 +47,12 @@ namespace CloudScope.Platform.Metal.Rendering
             if (_initialized)
                 return;
 
-            var device = MetalFrameContext.Device;
+            var device = _context.Device;
             var colorFmt = MTLPixelFormat.BGRA8Unorm;
             var depthFmt = MTLPixelFormat.Depth32Float;
 
             _pipeline = MetalShaderLibrary.CreateColorPipeline(device, colorFmt, depthFmt);
+            _wideLinePipeline = MetalShaderLibrary.CreateWideLinePipeline(device, colorFmt, depthFmt);
             _depthOn  = MetalShaderLibrary.CreateDepthState(device, depthWrite: false);
             _depthOff = CreateDepthAlwaysState(device);
 
@@ -62,7 +70,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 return default;
 
             ulong byteSize = (ulong)(vertices.Length * sizeof(float));
-            var buf = MetalFrameContext.Device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
+            var buf = _context.Device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
             fixed (float* src = vertices)
                 Buffer.MemoryCopy(src, buf.Contents.ToPointer(), byteSize, byteSize);
             buf.DidModifyRange(new NSRange { location = 0, length = buf.Length });
@@ -78,8 +86,8 @@ namespace CloudScope.Platform.Metal.Rendering
             if (buffer.NativePtr == IntPtr.Zero || buffer.Length < byteSize)
             {
                 if (buffer.NativePtr != IntPtr.Zero)
-                    NativeRelease(buffer.NativePtr);
-                buffer = MetalFrameContext.Device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
+                    MetalResources.Release(buffer.NativePtr);
+                buffer = _context.Device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
             }
 
             fixed (float* src = vertices)
@@ -87,11 +95,17 @@ namespace CloudScope.Platform.Metal.Rendering
             buffer.DidModifyRange(new NSRange { location = 0, length = byteSize });
         }
 
+        /// <param name="lineWidthPixels">
+        /// Width for <see cref="MTLPrimitiveType.Line"/> draws. Metal has no line width, so
+        /// anything wider than a pixel is expanded into screen-space quads by the shader
+        /// (see <see cref="LineWidth"/>).
+        /// </param>
         public void Draw(
             MTLBuffer vertexBuffer, int vertexCount,
             MTLPrimitiveType primitiveType,
             Matrix4 mvp, Vector4 color, bool depthTest,
-            int firstVertex = 0)
+            int firstVertex = 0,
+            float lineWidthPixels = LineWidth.NativeMax)
         {
             if (vertexBuffer.NativePtr == IntPtr.Zero || vertexCount <= 0 || !_initialized)
                 return;
@@ -111,32 +125,49 @@ namespace CloudScope.Platform.Metal.Rendering
                 offset = (ulong)_uniformOffset * stride;
             }
 
+            bool expandLines = primitiveType == MTLPrimitiveType.Line
+                && LineWidth.NeedsExpansion(lineWidthPixels);
+            (int viewportWidth, int viewportHeight) = _context.ViewportSize;
+
             unsafe
             {
                 byte* ptr = (byte*)_uniformsBuffer.Contents.ToPointer();
-                var uniforms = new MetalColorUniforms(mvp, color);
+                var uniforms = new MetalColorUniforms(mvp, color,
+                    new Vector4(viewportWidth, viewportHeight, lineWidthPixels, 0f));
                 Buffer.MemoryCopy(&uniforms, ptr + offset, Unsafe.SizeOf<MetalColorUniforms>(), Unsafe.SizeOf<MetalColorUniforms>());
             }
             _uniformOffset++;
 
-            encoder.SetRenderPipelineState(_pipeline);
+            encoder.SetRenderPipelineState(expandLines ? _wideLinePipeline : _pipeline);
             encoder.SetDepthStencilState(depthTest ? _depthOn : _depthOff);
-            encoder.SetVertexBuffer(vertexBuffer, 0, 0);
-            encoder.SetVertexBuffer(_uniformsBuffer, offset, 1);
-            // ColorUniforms is consumed by both color_vertex and color_fragment.
+            // ColorUniforms is consumed by both the vertex and the fragment function.
             // Binding only the vertex stage leaves the fragment color undefined,
             // making all primitive-based gizmos and line overlays disappear.
+            encoder.SetVertexBuffer(_uniformsBuffer, offset, 1);
             encoder.SetFragmentBuffer(_uniformsBuffer, offset, 1);
+
+            if (expandLines)
+            {
+                // The shader indexes the buffer per instance, so the first vertex is applied
+                // as a byte offset on the binding instead of a vertex start.
+                encoder.SetVertexBuffer(vertexBuffer, (ulong)(firstVertex * VertexByteSize), 0);
+                encoder.DrawPrimitives(MTLPrimitiveType.TriangleStrip, 0, 4, (ulong)(vertexCount / 2));
+                return;
+            }
+
+            encoder.SetVertexBuffer(vertexBuffer, 0, 0);
             encoder.DrawPrimitives(primitiveType, (ulong)firstVertex, (ulong)vertexCount);
         }
 
         public void Dispose()
         {
-            Release(ref _uniformsBuffer);
-            Release(_pipeline.NativePtr);
-            Release(_depthOn.NativePtr);
-            Release(_depthOff.NativePtr);
+            MetalResources.Release(ref _uniformsBuffer);
+            MetalResources.Release(_pipeline.NativePtr);
+            MetalResources.Release(_wideLinePipeline.NativePtr);
+            MetalResources.Release(_depthOn.NativePtr);
+            MetalResources.Release(_depthOff.NativePtr);
             _pipeline = default;
+            _wideLinePipeline = default;
             _depthOn = default;
             _depthOff = default;
             _initialized = false;
@@ -148,24 +179,6 @@ namespace CloudScope.Platform.Metal.Rendering
             desc.DepthCompareFunction = MTLCompareFunction.Always;
             desc.IsDepthWriteEnabled = false;
             return device.NewDepthStencilState(desc);
-        }
-
-        [System.Runtime.InteropServices.DllImport("libobjc.dylib", EntryPoint = "objc_release")]
-        private static extern void NativeRelease(IntPtr obj);
-
-        public static void Release(ref MTLBuffer buffer)
-        {
-            if (buffer.NativePtr == IntPtr.Zero)
-                return;
-
-            Release(buffer.NativePtr);
-            buffer = default;
-        }
-
-        private static void Release(IntPtr nativePtr)
-        {
-            if (nativePtr != IntPtr.Zero)
-                NativeRelease(nativePtr);
         }
     }
 }
