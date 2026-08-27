@@ -21,7 +21,15 @@ public sealed class CommandLineControl : UserControl
     private readonly Func<string, Task> _submit;
 
     private readonly CommandTranscript _transcript;
-    private readonly TextBox _input = new();
+    private readonly TextBox _input = new()
+    {
+        // Local values deliberately override the Fluent theme's focused TextBox state.
+        // The CAD command line must not turn dark or acquire an accent outline on focus.
+        Background = Brushes.Transparent,
+        BorderBrush = Brushes.Transparent,
+        BorderThickness = new Thickness(0),
+        FocusAdorner = null
+    };
     private readonly Popup _completionPopup = new();
     private readonly ListBox _completionList = new();
 
