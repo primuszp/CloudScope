@@ -13,9 +13,10 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private int _uViewSphere, _uProjSphere, _uPointSizeSphere;
         private int _uAlphaLine, _uAlphaSphere;
 
-        private int _pivotVao = -1, _pivotVbo = -1, _pivotVertexCount;
+        private int[] _pivotVbos = Array.Empty<int>();
         private PivotLineBatch[] _pivotBatches = Array.Empty<PivotLineBatch>();
         private readonly OpenGlWideLineRenderer _wideLines = new();
+        private readonly OpenGlSmoothPolylineRenderer _smoothLines = new();
         private int _sphereVao = -1, _sphereVbo = -1;
         private int _crosshairVao = -1, _crosshairVbo = -1;
 
@@ -121,10 +122,6 @@ void main()
             GL.UseProgram(_lineShader);
             GL.UniformMatrix4(_uViewLine, false, ref mv);
             GL.UniformMatrix4(_uProjLine, false, ref proj);
-            GL.BindVertexArray(_pivotVao);
-
-            // The wide-line shader carries one color per draw, so the indicator is drawn
-            // batch by batch — the same split the Metal overlay renderer uses.
             Matrix4 pivotMvp = mv * proj;
             float lineWidth = 1f + eff;
 
@@ -133,9 +130,11 @@ void main()
             GL.Uniform1(_uAlphaLine, eff);
             DrawPivotBatches(ref pivotMvp, eff, lineWidth);
 
-            GL.Disable(EnableCap.DepthTest);
+            GL.Enable(EnableCap.DepthTest);
+            GL.DepthFunc(DepthFunction.Greater);
             GL.Uniform1(_uAlphaLine, eff * 0.20f);
             DrawPivotBatches(ref pivotMvp, eff * 0.20f, LineWidth.NativeMax);
+            GL.DepthFunc(DepthFunction.Less);
 
             GL.DepthMask(true);
             RenderPivotSphere(ref view, ref proj, pivot, spherePx, eff);
@@ -143,23 +142,23 @@ void main()
 
         private void DrawPivotBatches(ref Matrix4 mvp, float alpha, float widthPixels)
         {
-            if (!LineWidth.NeedsExpansion(widthPixels))
+            for (int i = 0; i < _pivotBatches.Length; i++)
             {
-                GL.LineWidth(widthPixels);
-                GL.DrawArrays(PrimitiveType.Lines, 0, _pivotVertexCount);
-                return;
-            }
-
-            int firstVertex = 0;
-            foreach (PivotLineBatch batch in _pivotBatches)
-            {
-                _wideLines.Draw(_pivotVbo, firstVertex, batch.VertexCount, ref mvp,
-                    new Vector4(batch.Color, alpha), widthPixels, PivotVertexStride);
-                firstVertex += batch.VertexCount;
+                PivotLineBatch batch = _pivotBatches[i];
+                if (batch.IsClosedLoop)
+                {
+                    int vertexCount = (batch.PointCount + 1) * 2;
+                    _smoothLines.Draw(_pivotVbos[i], 0, vertexCount, ref mvp,
+                        new Vector4(batch.Color, alpha), widthPixels);
+                }
+                else
+                {
+                    _wideLines.Draw(_pivotVbos[i], 0, batch.PointCount, ref mvp,
+                        new Vector4(batch.Color, alpha), widthPixels);
+                }
             }
 
             GL.UseProgram(_lineShader);
-            GL.BindVertexArray(_pivotVao);
         }
 
         public void RenderCenterCrosshair(IRenderFrameData frameData, int width, int height, float alpha)
@@ -236,21 +235,20 @@ void main()
 
         private void EnsurePivotResources()
         {
-            if (_pivotVao != -1) return;
+            if (_pivotVbos.Length > 0) return;
 
             _pivotBatches = PivotIndicatorGeometry.BuildBatches();
-            PointData[] pivotData = PivotIndicatorGeometry.BuildColoredVertices(_pivotBatches);
-            _pivotVertexCount = pivotData.Length;
-
-            _pivotVao = GL.GenVertexArray();
-            _pivotVbo = GL.GenBuffer();
-            GL.BindVertexArray(_pivotVao);
-            GL.BindBuffer(BufferTarget.ArrayBuffer, _pivotVbo);
-            GL.BufferData(BufferTarget.ArrayBuffer, pivotData.Length * 24, pivotData, BufferUsageHint.StaticDraw);
-            GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 24, 0);
-            GL.EnableVertexAttribArray(0);
-            GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, 24, 12);
-            GL.EnableVertexAttribArray(1);
+            _pivotVbos = new int[_pivotBatches.Length];
+            for (int i = 0; i < _pivotBatches.Length; i++)
+            {
+                PivotLineBatch batch = _pivotBatches[i];
+                float[] vertices = batch.IsClosedLoop
+                    ? PivotIndicatorGeometry.BuildSmoothLoopVertices(batch.Positions)
+                    : batch.Positions;
+                _pivotVbos[i] = GL.GenBuffer();
+                GL.BindBuffer(BufferTarget.ArrayBuffer, _pivotVbos[i]);
+                GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * sizeof(float), vertices, BufferUsageHint.StaticDraw);
+            }
         }
 
         private void RenderPivotSphere(ref Matrix4 view, ref Matrix4 proj, Vector3 pivot, float spherePx, float alpha)
@@ -304,8 +302,9 @@ void main()
         public void Dispose()
         {
             _wideLines.Dispose();
-            if (_pivotVao != -1) GL.DeleteVertexArray(_pivotVao);
-            if (_pivotVbo != -1) GL.DeleteBuffer(_pivotVbo);
+            _smoothLines.Dispose();
+            foreach (int pivotVbo in _pivotVbos)
+                if (pivotVbo != -1) GL.DeleteBuffer(pivotVbo);
             if (_sphereVao != -1) GL.DeleteVertexArray(_sphereVao);
             if (_sphereVbo != -1) GL.DeleteBuffer(_sphereVbo);
             if (_crosshairVao != -1) GL.DeleteVertexArray(_crosshairVao);
