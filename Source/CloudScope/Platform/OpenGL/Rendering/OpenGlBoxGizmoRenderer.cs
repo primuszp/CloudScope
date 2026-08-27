@@ -214,7 +214,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
         private void RenderRings(BoxSelectionTool box, OrbitCamera cam)
         {
-            const int N      = 64;
+            const int N      = 512;
             float     radius = box.RingRadius;
             Matrix3   invRot = Matrix3.Transpose(Matrix3.CreateFromQuaternion(box.Rotation));
             float     vpW    = cam.ViewportWidth, vpH = cam.ViewportHeight;

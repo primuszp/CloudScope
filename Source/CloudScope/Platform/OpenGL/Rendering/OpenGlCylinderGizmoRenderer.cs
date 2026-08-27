@@ -24,7 +24,8 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private int _circVao = -1, _circVbo = -1;
 
         private int _fillVertCount;
-        private const int CapSeg = 128;
+        // Dense enough that the cap and wireframe remain smooth on Retina/4K displays.
+        private const int CapSeg = 512;
         private const int LatSeg = 12;
 
         // ── Public entry point ────────────────────────────────────────────────
@@ -74,7 +75,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
             var (cx, cy, behind) = cam.WorldToScreen(cyl.Center);
             if (behind) return;
 
-            const int N = 64;
+            const int N = 512;
             int vc = 0;
             float pnx = 0, pny = 0; bool pok = false;
 
@@ -203,7 +204,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
         private void RenderRings(CylinderSelectionTool cyl, OrbitCamera cam)
         {
-            const int N    = 64;
+            const int N    = 512;
             float     rad  = cyl.RingRadius;
             Matrix3   invR = Matrix3.Transpose(Matrix3.CreateFromQuaternion(cyl.Rotation));
             float     vpW  = cam.ViewportWidth, vpH = cam.ViewportHeight;

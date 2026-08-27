@@ -171,7 +171,7 @@ namespace CloudScope.Platform.Metal.Rendering
         private MTLBuffer _faceBuffer;
         private MTLBuffer _placementFillBuffer;
         private MTLBuffer _placementLineBuffer;
-        private readonly float[] _ringBuf = new float[64 * 6];
+        private readonly float[] _ringBuf = new float[512 * 6];
 
         public override void Render(IRenderFrameData frameData, ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera camera)
         {
@@ -291,7 +291,7 @@ namespace CloudScope.Platform.Metal.Rendering
 
         private void RenderRings(BoxSelectionTool box, OrbitCamera camera)
         {
-            const int segmentCount = 64;
+            const int segmentCount = 512;
             float radius = box.RingRadius;
             Matrix3 invRot = Matrix3.Transpose(Matrix3.CreateFromQuaternion(box.Rotation));
 
@@ -364,7 +364,8 @@ namespace CloudScope.Platform.Metal.Rendering
     {
         public MetalSphereGizmoRenderer(MetalRenderContext context) : base(context) { }
 
-        private const int Seg = 128;
+        // Keep the polygonal approximation below a pixel even for large Retina/4K gizmos.
+        private const int Seg = 512;
         private const int Lat = 16;
         private const int Lon = 32;
 
@@ -488,12 +489,13 @@ namespace CloudScope.Platform.Metal.Rendering
     {
         public MetalCylinderGizmoRenderer(MetalRenderContext context) : base(context) { }
 
-        private const int CapSeg = 128;
+        // Dense enough that the circular wireframe remains visually analytic at 4K.
+        private const int CapSeg = 512;
         private const int LatSeg = 12;
 
         private MTLBuffer _fillBuffer;
         private MTLBuffer _wireBuffer;
-        private float[] _ringBuf = new float[64 * 6];
+        private float[] _ringBuf = new float[512 * 6];
         private int _fillVertexCount;
         private int _wireVertexCount;
 
@@ -593,7 +595,7 @@ namespace CloudScope.Platform.Metal.Rendering
             var (cx, cy, centerBehind) = camera.WorldToScreen(cyl.Center);
             if (centerBehind) return;
 
-            const int n = 64;
+            const int n = 512;
             int write = 0;
             float prevX = 0f, prevY = 0f;
             bool prevOk = false;
@@ -639,7 +641,7 @@ namespace CloudScope.Platform.Metal.Rendering
 
         private void RenderRings(CylinderSelectionTool cyl, OrbitCamera camera)
         {
-            const int n = 64;
+            const int n = 512;
             float radius = cyl.RingRadius;
             Matrix3 invRot = Matrix3.Transpose(Matrix3.CreateFromQuaternion(cyl.Rotation));
             for (int axis = 0; axis < 3; axis++)
