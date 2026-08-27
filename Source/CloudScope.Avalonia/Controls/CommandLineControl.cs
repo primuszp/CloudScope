@@ -4,7 +4,6 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Media;
-using Avalonia.Threading;
 using CloudScope.Commands;
 
 namespace CloudScope.Avalonia.Controls;
@@ -36,7 +35,6 @@ public sealed class CommandLineControl : UserControl
     private IReadOnlyList<CommandCompletion> _completions = [];
     private string _completionPrefix = "";
     private string _promptPrefix = "";
-    private bool _suppressInlineSuggestion;
     private bool _settingInput;
     private bool _clampingSelection;
 
@@ -88,8 +86,7 @@ public sealed class CommandLineControl : UserControl
                 return;
             }
 
-            if (!_suppressInlineSuggestion)
-                RefreshCompletions();
+            RefreshCompletions();
         };
 
         _completionList.Background = Brushes.White;
@@ -237,6 +234,8 @@ public sealed class CommandLineControl : UserControl
             Background = new SolidColorBrush(Color.FromRgb(184, 184, 184)),
             BorderBrush = new SolidColorBrush(Color.FromRgb(145, 145, 145)),
             BorderThickness = new Thickness(0, 0, 1, 0),
+            ClipToBounds = true,
+            Padding = new Thickness(1, 0, 1, 2),
             Child = new StackPanel
             {
                 VerticalAlignment = global::Avalonia.Layout.VerticalAlignment.Bottom,
@@ -262,7 +261,7 @@ public sealed class CommandLineControl : UserControl
         content.Children.Add(inputBorder);
         Grid.SetRow(inputBorder, 1);
 
-        var root = new Grid { ColumnDefinitions = new ColumnDefinitions("23,*") };
+        var root = new Grid { ColumnDefinitions = new ColumnDefinitions("24,*") };
         root.Children.Add(rail);
         root.Children.Add(content);
         Grid.SetColumn(content, 1);
@@ -339,20 +338,11 @@ public sealed class CommandLineControl : UserControl
                 return;
 
             case Key.Back:
-                if (BackspaceInlineSuggestion())
-                {
-                    e.Handled = true;
-                    return;
-                }
-
                 if (_input.CaretIndex <= _promptPrefix.Length)
                 {
                     e.Handled = true;
                     return;
                 }
-
-                // Do not immediately put back what Backspace just removed.
-                SuppressCompletionForDeletion();
                 return;
 
             case Key.Delete:
@@ -361,7 +351,6 @@ public sealed class CommandLineControl : UserControl
                     e.Handled = true;
                     return;
                 }
-                SuppressCompletionForDeletion();
                 return;
 
             case Key.Escape:
@@ -418,45 +407,6 @@ public sealed class CommandLineControl : UserControl
         }
     }
 
-    private void SuppressCompletionForDeletion()
-    {
-        _suppressInlineSuggestion = true;
-        Dispatcher.UIThread.Post(() =>
-        {
-            _suppressInlineSuggestion = false;
-            _completionPopup.IsOpen = false;
-            _completions = [];
-            _completionPrefix = InputText.Trim();
-        }, DispatcherPriority.Input);
-    }
-
-    /// <summary>
-    /// Backspace over an inline completion acts on the typed prefix, not merely on the
-    /// selected suggestion tail. For example, "OP[EN]" becomes "O" in one key press.
-    /// </summary>
-    private bool BackspaceInlineSuggestion()
-    {
-        int selectionStart = Math.Min(_input.SelectionStart, _input.SelectionEnd);
-        int selectionEnd = Math.Max(_input.SelectionStart, _input.SelectionEnd);
-        int typedEnd = _promptPrefix.Length + _completionPrefix.Length;
-
-        if (!_completionPopup.IsOpen || _completions.Count == 0 ||
-            selectionStart != typedEnd ||
-            selectionEnd != (_input.Text ?? "").Length ||
-            selectionEnd <= selectionStart)
-            return false;
-
-        string reduced = _completionPrefix.Length > 0
-            ? _completionPrefix[..^1]
-            : "";
-
-        _completionPopup.IsOpen = false;
-        _completions = [];
-        _completionPrefix = reduced;
-        SetInput(reduced, caretAtEnd: true);
-        return true;
-    }
-
     private void SetInput(string text)
     {
         SetInput(text, caretAtEnd: true);
@@ -484,6 +434,16 @@ public sealed class CommandLineControl : UserControl
             return;
 
         _completionPrefix = typed;
+
+        // Suggestions live only in the popup. Injecting the best candidate into the TextBox
+        // as selected text makes Backspace fight the autocomplete and can trap the input in
+        // a re-suggestion loop. Tab or Enter still accepts the selected candidate.
+        if (typed.Length == 0)
+        {
+            DismissCompletions();
+            return;
+        }
+
         _completions = _session.Complete(typed);
 
         if (_completions.Count == 0)
@@ -495,33 +455,6 @@ public sealed class CommandLineControl : UserControl
         _completionList.ItemsSource = _completions.Select(c => $"{c.Display}   ({c.Detail})").ToArray();
         _completionList.SelectedIndex = 0;
         _completionPopup.IsOpen = true;
-        ApplyInlineSuggestion(typed);
-    }
-
-    // The best candidate's remainder is inserted as selected text, so typing over it replaces
-    // it and Enter accepts it — AutoCAD's inline autocomplete.
-    private void ApplyInlineSuggestion(string typed)
-    {
-        if (_suppressInlineSuggestion || typed.Length == 0)
-            return;
-
-        string best = _completions[0].Insert;
-        if (best.Length <= typed.Length ||
-            !best.StartsWith(typed, StringComparison.OrdinalIgnoreCase))
-            return;
-
-        _suppressInlineSuggestion = true;
-        try
-        {
-            SetInput(typed + best[typed.Length..], caretAtEnd: true);
-            _input.SelectionStart = _promptPrefix.Length + typed.Length;
-            _input.SelectionEnd = _promptPrefix.Length + best.Length;
-            _completionPrefix = typed;
-        }
-        finally
-        {
-            _suppressInlineSuggestion = false;
-        }
     }
 
     private void CycleCompletion(int direction)

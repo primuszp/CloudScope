@@ -68,9 +68,14 @@
       <Setter Property="Foreground" Value="#333333" />
       <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
       <Setter Property="FontSize" Value="13" />
-      <Setter Property="Width" Value="22" />
-      <Setter Property="Height" Value="20" />
+      <Setter Property="Width" Value="20" />
+      <Setter Property="Height" Value="18" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
       <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
     </Style>
     <Style Selector="Button.commandRailButton:pointerover /template/ ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource CsAccentDim}" />
@@ -153,14 +158,16 @@
       </Border>
     </Grid>
 
-    <GridSplitter x:Name="CommandLineSplitter" Grid.Row="3" Height="4" VerticalAlignment="Top"
-                  Background="{DynamicResource CsBorder}" ResizeDirection="Rows" />
-
     <Border x:Name="CommandLineBorder" Grid.Row="3" MinHeight="48"
             Background="{DynamicResource CsSurface}"
             BorderBrush="{DynamicResource CsBorder}" BorderThickness="0,1,0,1">
       <ContentControl x:Name="CommandLineHost" />
     </Border>
+
+    <!-- Declared after the command panel so it stays above it and receives the drag. -->
+    <GridSplitter x:Name="CommandLineSplitter" Grid.Row="3" Height="6" VerticalAlignment="Top"
+                  Background="Transparent" Cursor="SizeNorthSouth" ResizeDirection="Rows"
+                  ZIndex="10" />
 
     <Border Grid.Row="4" Background="{DynamicResource CsAccentDim}">
       <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto">
