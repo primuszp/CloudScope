@@ -38,6 +38,7 @@ public sealed class CommandLineControl : UserControl
     private string _promptPrefix = "";
     private bool _suppressInlineSuggestion;
     private bool _settingInput;
+    private bool _clampingSelection;
 
     public CommandLineControl(CommandLineSession session, Func<string, Task> submit)
     {
@@ -62,6 +63,13 @@ public sealed class CommandLineControl : UserControl
 
         _input.Classes.Add("commandInput");
         _input.KeyDown += OnInputKeyDown;
+        _input.PropertyChanged += (_, change) =>
+        {
+            if (change.Property == TextBox.SelectionStartProperty ||
+                change.Property == TextBox.SelectionEndProperty ||
+                change.Property == TextBox.CaretIndexProperty)
+                ClampSelectionToAnswer();
+        };
         _input.TextChanged += (_, _) =>
         {
             if (_settingInput)
@@ -280,9 +288,37 @@ public sealed class CommandLineControl : UserControl
         try
         {
             _input.Text = _promptPrefix + text;
-            _input.CaretIndex = _promptPrefix.Length + Math.Clamp(caret, 0, text.Length);
+            int absoluteCaret = _promptPrefix.Length + Math.Clamp(caret, 0, text.Length);
+            _input.SelectionStart = absoluteCaret;
+            _input.SelectionEnd = absoluteCaret;
+            _input.CaretIndex = absoluteCaret;
         }
         finally { _settingInput = false; }
+    }
+
+    /// <summary>
+    /// The prompt and answer share one native TextBox for the right visual and editing feel,
+    /// but only the answer is user-selectable. This also constrains Ctrl+A and mouse drags.
+    /// </summary>
+    private void ClampSelectionToAnswer()
+    {
+        if (_clampingSelection || _settingInput)
+            return;
+
+        int firstEditable = Math.Min(_promptPrefix.Length, (_input.Text ?? "").Length);
+        if (_input.SelectionStart >= firstEditable &&
+            _input.SelectionEnd >= firstEditable &&
+            _input.CaretIndex >= firstEditable)
+            return;
+
+        _clampingSelection = true;
+        try
+        {
+            _input.SelectionStart = Math.Max(firstEditable, _input.SelectionStart);
+            _input.SelectionEnd = Math.Max(firstEditable, _input.SelectionEnd);
+            _input.CaretIndex = Math.Max(firstEditable, _input.CaretIndex);
+        }
+        finally { _clampingSelection = false; }
     }
 
     private void OnInputKeyDown(object? sender, KeyEventArgs e)
@@ -303,20 +339,29 @@ public sealed class CommandLineControl : UserControl
                 return;
 
             case Key.Back:
+                if (BackspaceInlineSuggestion())
+                {
+                    e.Handled = true;
+                    return;
+                }
+
+                if (_input.CaretIndex <= _promptPrefix.Length)
+                {
+                    e.Handled = true;
+                    return;
+                }
+
+                // Do not immediately put back what Backspace just removed.
+                SuppressCompletionForDeletion();
+                return;
+
             case Key.Delete:
-                if (e.Key == Key.Back && _input.CaretIndex <= _promptPrefix.Length)
+                if (_input.CaretIndex < _promptPrefix.Length)
                 {
                     e.Handled = true;
                     return;
                 }
-                if (e.Key == Key.Delete && _input.CaretIndex < _promptPrefix.Length)
-                {
-                    e.Handled = true;
-                    return;
-                }
-                // Backspacing past a suggestion must delete, not re-suggest the same text.
-                _suppressInlineSuggestion = true;
-                Dispatcher.UIThread.Post(() => _suppressInlineSuggestion = false, DispatcherPriority.Input);
+                SuppressCompletionForDeletion();
                 return;
 
             case Key.Escape:
@@ -371,6 +416,45 @@ public sealed class CommandLineControl : UserControl
                 e.Handled = true;
                 return;
         }
+    }
+
+    private void SuppressCompletionForDeletion()
+    {
+        _suppressInlineSuggestion = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _suppressInlineSuggestion = false;
+            _completionPopup.IsOpen = false;
+            _completions = [];
+            _completionPrefix = InputText.Trim();
+        }, DispatcherPriority.Input);
+    }
+
+    /// <summary>
+    /// Backspace over an inline completion acts on the typed prefix, not merely on the
+    /// selected suggestion tail. For example, "OP[EN]" becomes "O" in one key press.
+    /// </summary>
+    private bool BackspaceInlineSuggestion()
+    {
+        int selectionStart = Math.Min(_input.SelectionStart, _input.SelectionEnd);
+        int selectionEnd = Math.Max(_input.SelectionStart, _input.SelectionEnd);
+        int typedEnd = _promptPrefix.Length + _completionPrefix.Length;
+
+        if (!_completionPopup.IsOpen || _completions.Count == 0 ||
+            selectionStart != typedEnd ||
+            selectionEnd != (_input.Text ?? "").Length ||
+            selectionEnd <= selectionStart)
+            return false;
+
+        string reduced = _completionPrefix.Length > 0
+            ? _completionPrefix[..^1]
+            : "";
+
+        _completionPopup.IsOpen = false;
+        _completions = [];
+        _completionPrefix = reduced;
+        SetInput(reduced, caretAtEnd: true);
+        return true;
     }
 
     private void SetInput(string text)
