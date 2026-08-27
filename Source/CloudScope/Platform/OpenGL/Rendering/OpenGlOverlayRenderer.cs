@@ -70,11 +70,14 @@ void main()
 {
     vec2 p = gl_PointCoord * 2.0 - vec2(1.0);
     float r2 = dot(p, p);
-    if (r2 > 1.0) discard;
+    float radius = sqrt(r2);
+    float feather = max(fwidth(radius), 0.001);
+    float coverage = 1.0 - smoothstep(1.0 - feather, 1.0, radius);
+    if (coverage <= 0.0) discard;
 
-    float edge = smoothstep(0.85, 1.0, sqrt(r2));
+    float edge = smoothstep(0.85, 1.0, radius);
 
-    float z = sqrt(1.0 - r2);
+    float z = sqrt(max(1.0 - r2, 0.0));
     vec3 normal = vec3(p.x, -p.y, z);
     vec3 lightDir = normalize(vec3(1.0, 1.5, 1.0));
     float diff = max(dot(normal, lightDir), 0.25);
@@ -82,7 +85,7 @@ void main()
     vec3 core  = vec3(1.0, 0.92, 0.2) * diff;
     vec3 glow  = vec3(1.0, 0.7, 0.0);
     vec3 color = mix(core, glow, edge);
-    FragColor  = vec4(color, uAlpha);
+    FragColor  = vec4(color, uAlpha * coverage);
 }
 ";
 
