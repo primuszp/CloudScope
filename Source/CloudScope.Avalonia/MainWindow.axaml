@@ -143,9 +143,9 @@
     <GridSplitter x:Name="CommandLineSplitter" Grid.Row="3" Height="4" VerticalAlignment="Top"
                   Background="{DynamicResource CsBorder}" ResizeDirection="Rows" />
 
-    <Border x:Name="CommandLineBorder" Grid.Row="3" Margin="0,4,0,0" MinHeight="120"
-            Background="{DynamicResource CsSurfaceDeep}"
-            BorderBrush="{DynamicResource CsBorder}" BorderThickness="0,1,0,1">
+    <Border x:Name="CommandLineBorder" Grid.Row="3" MinHeight="120"
+            Background="{DynamicResource CsSurface}"
+            BorderThickness="0">
       <ContentControl x:Name="CommandLineHost" />
     </Border>
 

@@ -364,7 +364,7 @@ namespace CloudScope.Platform.Metal.Rendering
     {
         public MetalSphereGizmoRenderer(MetalRenderContext context) : base(context) { }
 
-        private const int Seg = 64;
+        private const int Seg = 128;
         private const int Lat = 16;
         private const int Lon = 32;
 
@@ -488,7 +488,7 @@ namespace CloudScope.Platform.Metal.Rendering
     {
         public MetalCylinderGizmoRenderer(MetalRenderContext context) : base(context) { }
 
-        private const int CapSeg = 64;
+        private const int CapSeg = 128;
         private const int LatSeg = 12;
 
         private MTLBuffer _fillBuffer;

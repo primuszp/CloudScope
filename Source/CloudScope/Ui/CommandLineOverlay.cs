@@ -332,7 +332,7 @@ namespace CloudScope.Ui
             ImGui.SetNextWindowPos(new Vector2(0f, top), floating ? ImGuiCond.FirstUseEver : ImGuiCond.Always);
             ImGui.SetNextWindowSize(new Vector2(width, height), floating ? ImGuiCond.FirstUseEver : ImGuiCond.Always);
             ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(10f * _scale, 6f * _scale));
-            ImGui.PushStyleColor(ImGuiCol.WindowBg, ImGuiTheme.SurfaceDeep);
+            ImGui.PushStyleColor(ImGuiCol.WindowBg, ImGuiTheme.Surface);
             ImGui.Begin(floating ? "Command" : "##CloudScopeCommandLine",
                 floating ? ImGuiWindowFlags.NoSavedSettings : FixedPanelFlags);
 
