@@ -13,8 +13,10 @@ namespace CloudScope.Platform.OpenGL.Rendering
     /// </summary>
     internal abstract class OpenGlGizmoRendererBase : ISelectionGizmoRenderer
     {
+        protected const int SmoothRingSegments = 128;
         protected int _shader = -1, _uMVP, _uColor;
         private readonly OpenGlWideLineRenderer _wideLines = new();
+        private readonly OpenGlSmoothPolylineRenderer _smoothLines = new();
         private Matrix4 _currentMvp = Matrix4.Identity;
         protected int _dynVao = -1, _dynVbo = -1;
         private   int _axisVao = -1, _axisVbo = -1;
@@ -24,7 +26,8 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private readonly float[] _diamondOutlineBuf = new float[15]; // 5 verts
         private readonly float[] _lineBuf           = new float[6];  // 2-vert line
         private readonly float[] _arrowBuf          = new float[9];  // 3-vert arrowhead
-        protected        float[] _ringSegBuf        = new float[64 * 6]; // ring segments (N=64)
+        protected        float[] _ringSegBuf        = new float[SmoothRingSegments * 3];
+        private          float[] _smoothLoopBuf      = new float[(SmoothRingSegments + 1) * 2 * 9];
 
         // 3-D cone arrowhead buffers
         private const int ConeSeg = 12;
@@ -139,6 +142,49 @@ void main() { FragColor = uColor; }
         /// <summary>Draws a line list previously uploaded with <see cref="Dyn"/>.</summary>
         protected void DrawDynamicLines(int firstVertex, int vertexCount, Vector4 color, float widthPixels)
             => DrawLines(_dynVbo, firstVertex, vertexCount, color, widthPixels);
+
+        /// <summary>
+        /// Draws unique points as one closed, joined ribbon. Unlike a line list this creates
+        /// no independently rasterized segment ends, matching the smooth pivot-ring path.
+        /// </summary>
+        protected void DrawDynamicSmoothLoop(float[] points, int pointCount, Vector4 color, float widthPixels)
+        {
+            if (pointCount < 3)
+                return;
+
+            int vertexCount = (pointCount + 1) * 2;
+            int floatCount = vertexCount * 9;
+            if (_smoothLoopBuf.Length < floatCount)
+                Array.Resize(ref _smoothLoopBuf, floatCount);
+
+            int write = 0;
+            for (int point = 0; point <= pointCount; point++)
+            {
+                int previous = (point + pointCount - 1) % pointCount;
+                int current = point % pointCount;
+                int next = (point + 1) % pointCount;
+                for (int side = 0; side < 2; side++)
+                {
+                    CopyRingPoint(points, previous, _smoothLoopBuf, ref write);
+                    CopyRingPoint(points, current, _smoothLoopBuf, ref write);
+                    CopyRingPoint(points, next, _smoothLoopBuf, ref write);
+                }
+            }
+
+            Dyn(_smoothLoopBuf, floatCount);
+            _smoothLines.Draw(_dynVbo, 0, vertexCount, ref _currentMvp, color, widthPixels);
+            GL.UseProgram(_shader);
+            GL.BindVertexArray(_dynVao);
+            GL.BindBuffer(BufferTarget.ArrayBuffer, _dynVbo);
+        }
+
+        private static void CopyRingPoint(float[] source, int point, float[] destination, ref int write)
+        {
+            int read = point * 3;
+            destination[write++] = source[read];
+            destination[write++] = source[read + 1];
+            destination[write++] = source[read + 2];
+        }
 
         // ── NDC conversion ────────────────────────────────────────────────────
 
@@ -368,6 +414,7 @@ void main() { FragColor = uColor; }
         public virtual void Dispose()
         {
             _wideLines.Dispose();
+            _smoothLines.Dispose();
             if (_shader  != -1) { GL.DeleteProgram(_shader);                                _shader  = -1; }
             if (_dynVao  != -1) { GL.DeleteVertexArray(_dynVao);  GL.DeleteBuffer(_dynVbo); _dynVao  = -1; }
             if (_axisVao != -1) { GL.DeleteVertexArray(_axisVao); GL.DeleteBuffer(_axisVbo); _axisVao = -1; }
