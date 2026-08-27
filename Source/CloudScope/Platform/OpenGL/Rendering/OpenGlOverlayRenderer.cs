@@ -23,6 +23,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private readonly float[] _crossData = new float[24];
         private readonly float[] _shadowData = new float[24];
         private readonly float[] _indData = new float[24];
+        private readonly float[] _viewportBorderData = new float[30];
 
         /// <summary>Interleaved position + color vertices, as the overlay buffers store them.</summary>
         private const int PivotVertexStride = 6 * sizeof(float);
@@ -234,6 +235,46 @@ void main()
             _wideLines.Draw(_crosshairVbo, 0, 4, ref screenSpace, new Vector4(color, 0.9f),
                 ModeIndicatorWidth, PivotVertexStride);
             GL.Enable(EnableCap.DepthTest);
+        }
+
+        public void RenderViewportBorder(IRenderFrameData frameData, int width, int height, bool active)
+        {
+            EnsureCrosshairResources();
+            float insetX = 1f / Math.Max(width, 1);
+            float insetY = 1f / Math.Max(height, 1);
+            float left = -1f + insetX, right = 1f - insetX;
+            float bottom = -1f + insetY, top = 1f - insetY;
+            Vector3 color = active ? new Vector3(0.10f, 0.72f, 1f) : new Vector3(0.34f, 0.37f, 0.41f);
+            WriteBorderVertex(0, left, top, color);
+            WriteBorderVertex(1, right, top, color);
+            WriteBorderVertex(2, right, bottom, color);
+            WriteBorderVertex(3, left, bottom, color);
+            WriteBorderVertex(4, left, top, color);
+
+            GL.BindVertexArray(_crosshairVao);
+            GL.BindBuffer(BufferTarget.ArrayBuffer, _crosshairVbo);
+            GL.BufferData(BufferTarget.ArrayBuffer, _viewportBorderData.Length * sizeof(float),
+                _viewportBorderData, BufferUsageHint.DynamicDraw);
+            GL.UseProgram(_lineShader);
+            Matrix4 identity = Matrix4.Identity;
+            GL.UniformMatrix4(_uViewLine, false, ref identity);
+            GL.UniformMatrix4(_uProjLine, false, ref identity);
+            GL.Uniform1(_uAlphaLine, active ? 1f : 0.9f);
+            GL.Disable(EnableCap.DepthTest);
+            GL.LineWidth(1f);
+            GL.DrawArrays(PrimitiveType.LineStrip, 0, 5);
+            GL.Enable(EnableCap.DepthTest);
+        }
+
+        private void WriteBorderVertex(int vertex, float x, float y, Vector3 color)
+        {
+            int i = vertex * 6;
+            _viewportBorderData[i] = x;
+            _viewportBorderData[i + 1] = y;
+            _viewportBorderData[i + 2] = 0f;
+            _viewportBorderData[i + 3] = color.X;
+            _viewportBorderData[i + 4] = color.Y;
+            _viewportBorderData[i + 5] = color.Z;
         }
 
         private void EnsurePivotResources()

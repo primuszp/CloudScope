@@ -123,6 +123,8 @@ public static class CommandMenu
                 CommandMenuEntry.Action("Single", "VPORTS Single Top"),
                 CommandMenuEntry.Action("Two vertical", "VPORTS Two Vertical Top"),
                 CommandMenuEntry.Action("Two horizontal", "VPORTS Two Horizontal Top"),
+                CommandMenuEntry.Action("Four tiled", "VPORTS 4 Top"),
+                CommandMenuEntry.Action("Nine tiled", "VPORTS 9 Top"),
                 CommandMenuEntry.Action("Previous", "VPORTS PRevious Top")),
             CommandMenuEntry.Submenu("Color by",
                 CommandMenuEntry.Action("RGB", "COLORBY Rgb", requiresCloud: true),

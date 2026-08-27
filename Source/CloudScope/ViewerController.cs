@@ -63,11 +63,12 @@ namespace CloudScope
             _highlightRenderer = renderBackend.CreateHighlightRenderer();
             _selectionGizmoRenderers = renderBackend.CreateSelectionGizmoRenderers();
             _selection = new SelectionController(_highlightRenderer.MarkDirty);
-            _viewports =
-            [
-                new ViewportState(ViewportKind.Perspective3D, new OrbitCamera(), new CameraInputController()),
-                new ViewportState(ViewportKind.Top2D, new OrbitCamera(), new CameraInputController())
-            ];
+            _viewports = Enumerable.Range(0, 9)
+                .Select(index => new ViewportState(
+                    index == 0 ? ViewportKind.Perspective3D : ViewportKind.Top2D,
+                    new OrbitCamera(),
+                    new CameraInputController()))
+                .ToArray();
 
             foreach (ViewportState viewport in _viewports)
                 viewport.Camera.SetDepthPicker(new ViewportDepthPicker(renderBackend.CreateDepthPicker(), () => viewport.Bounds, () => _height));
@@ -1065,6 +1066,9 @@ namespace CloudScope
 
                 if (_selection.Mode == InteractionMode.Label)
                     _overlayRenderer.RenderModeIndicator(frameData, viewport.Bounds.Width, viewport.Bounds.Height, _selection.ActiveTool.ToolType);
+
+                _overlayRenderer.RenderViewportBorder(frameData, viewport.Bounds.Width, viewport.Bounds.Height,
+                    ReferenceEquals(viewport, ActiveViewport));
             }
 
             int loadedCount = StoredPointCount ?? _dataset?.LoadedCount ?? _pointRenderer.PointCount;
@@ -1157,12 +1161,10 @@ namespace CloudScope
 
         private IEnumerable<ViewportState> ActiveViewports()
         {
-            return _viewportLayout switch
-            {
-                ViewportLayoutKind.TwoVertical or ViewportLayoutKind.TwoHorizontal => _viewports,
-                ViewportLayoutKind.SingleTop => [_viewports[1]],
-                _ => [_viewports[0]]
-            };
+            if (_viewportLayout == ViewportLayoutKind.SingleTop)
+                return [_viewports[1]];
+
+            return _viewports.Take(LayoutViewportCount(_viewportLayout));
         }
 
         private void UpdateViewportLayout()
@@ -1190,6 +1192,17 @@ namespace CloudScope
                     SetViewportBounds(_viewports[1], new ViewportBounds(left, top + halfHeight, safeWidth, safeHeight - halfHeight));
                     _activeViewportIndex = Math.Clamp(_activeViewportIndex, 0, 1);
                     break;
+                case ViewportLayoutKind.Three:
+                case ViewportLayoutKind.Four:
+                case ViewportLayoutKind.Five:
+                case ViewportLayoutKind.Six:
+                case ViewportLayoutKind.Seven:
+                case ViewportLayoutKind.Eight:
+                case ViewportLayoutKind.Nine:
+                    int count = LayoutViewportCount(_viewportLayout);
+                    SetGridViewportBounds(count, left, top, safeWidth, safeHeight);
+                    _activeViewportIndex = Math.Clamp(_activeViewportIndex, 0, count - 1);
+                    break;
                 default:
                     SetViewportBounds(_viewports[0], new ViewportBounds(left, top, safeWidth, safeHeight));
                     _activeViewportIndex = 0;
@@ -1208,6 +1221,48 @@ namespace CloudScope
 
             _forceAuxiliaryViewRefresh = false;
         }
+
+        /// <summary>
+        /// Covers the complete drawing area with a balanced row-major grid. The final row
+        /// expands its cells instead of leaving an unused black rectangle.
+        /// </summary>
+        private void SetGridViewportBounds(int count, int left, int top, int width, int height)
+        {
+            int columns = (int)Math.Ceiling(Math.Sqrt(count));
+            int rows = (int)Math.Ceiling(count / (double)columns);
+            int baseCellsPerRow = count / rows;
+            int rowsWithExtraCell = count % rows;
+            int viewportIndex = 0;
+            int y = top;
+
+            for (int row = 0; row < rows; row++)
+            {
+                int rowHeight = height / rows + (row < height % rows ? 1 : 0);
+                int cells = baseCellsPerRow + (row < rowsWithExtraCell ? 1 : 0);
+                int x = left;
+                for (int column = 0; column < cells; column++)
+                {
+                    int cellWidth = width / cells + (column < width % cells ? 1 : 0);
+                    SetViewportBounds(_viewports[viewportIndex++],
+                        new ViewportBounds(x, y, cellWidth, rowHeight));
+                    x += cellWidth;
+                }
+                y += rowHeight;
+            }
+        }
+
+        private static int LayoutViewportCount(ViewportLayoutKind layout) => layout switch
+        {
+            ViewportLayoutKind.TwoVertical or ViewportLayoutKind.TwoHorizontal => 2,
+            ViewportLayoutKind.Three => 3,
+            ViewportLayoutKind.Four => 4,
+            ViewportLayoutKind.Five => 5,
+            ViewportLayoutKind.Six => 6,
+            ViewportLayoutKind.Seven => 7,
+            ViewportLayoutKind.Eight => 8,
+            ViewportLayoutKind.Nine => 9,
+            _ => 1
+        };
 
         private static void SetViewportBounds(ViewportState viewport, ViewportBounds bounds)
         {
@@ -1274,6 +1329,13 @@ namespace CloudScope
             ViewportLayoutKind.SingleTop => "Single auxiliary",
             ViewportLayoutKind.TwoVertical => "Two vertical, Perspective + auxiliary",
             ViewportLayoutKind.TwoHorizontal => "Two horizontal, Perspective + auxiliary",
+            ViewportLayoutKind.Three => "Three tiled viewports",
+            ViewportLayoutKind.Four => "Four tiled viewports",
+            ViewportLayoutKind.Five => "Five tiled viewports",
+            ViewportLayoutKind.Six => "Six tiled viewports",
+            ViewportLayoutKind.Seven => "Seven tiled viewports",
+            ViewportLayoutKind.Eight => "Eight tiled viewports",
+            ViewportLayoutKind.Nine => "Nine tiled viewports",
             _ => "Single perspective"
         };
 
@@ -1333,6 +1395,13 @@ namespace CloudScope
         SingleTop,
         TwoVertical,
         TwoHorizontal,
+        Three,
+        Four,
+        Five,
+        Six,
+        Seven,
+        Eight,
+        Nine,
         Previous
     }
 

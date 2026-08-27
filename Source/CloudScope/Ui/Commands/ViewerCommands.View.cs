@@ -429,7 +429,7 @@ public sealed partial class ViewerCommands
     [CommandMethod("VPORTS", "VP", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.View, Scope = CommandScope.Viewer,
         Summary = "Splits the drawing area into viewports.",
-        Syntax = "VPORTS [Single/Two/Plan/PRevious] [Vertical/Horizontal] [view]")]
+        Syntax = "VPORTS [Single/2/3/4/5/6/7/8/9/Plan/PRevious] [Vertical/Horizontal] [view]")]
     public IEnumerable<PromptStep> Viewports(CommandContext context)
     {
         var viewer = context.GetTarget<ViewerController>();
@@ -437,7 +437,7 @@ public sealed partial class ViewerCommands
 
         PromptStep layout = ed
             .GetKeywords(
-                $"Enter viewport layout [Single/Two/Plan/PRevious] <{DescribeLayout(_lastViewportLayout)}>:",
+                $"Enter viewport layout [Single/2/3/4/5/6/7/8/9/Plan/PRevious] <{DescribeLayout(_lastViewportLayout)}>:",
                 ViewportLayoutKeywords)
             .WithDefaultKeyword(DescribeLayoutKeyword(_lastViewportLayout));
         yield return layout;
@@ -455,7 +455,7 @@ public sealed partial class ViewerCommands
             case "PREVIOUS":
                 kind = ViewportLayoutKind.Previous;
                 break;
-            default:
+            case "TWO":
                 PromptStep arrangement = ed
                     .GetKeywords(
                         $"Enter two viewport arrangement [Vertical/Horizontal] "
@@ -471,6 +471,15 @@ public sealed partial class ViewerCommands
                     : ViewportLayoutKind.TwoVertical;
                 _lastViewportArrangement = kind;
                 break;
+            case "THREE": kind = ViewportLayoutKind.Three; break;
+            case "FOUR": kind = ViewportLayoutKind.Four; break;
+            case "FIVE": kind = ViewportLayoutKind.Five; break;
+            case "SIX": kind = ViewportLayoutKind.Six; break;
+            case "SEVEN": kind = ViewportLayoutKind.Seven; break;
+            case "EIGHT": kind = ViewportLayoutKind.Eight; break;
+            case "NINE": kind = ViewportLayoutKind.Nine; break;
+            default:
+                yield break;
         }
 
         PromptStep view = ed
@@ -504,6 +513,13 @@ public sealed partial class ViewerCommands
     {
         ViewportLayoutKind.SingleTop => "Plan",
         ViewportLayoutKind.TwoVertical or ViewportLayoutKind.TwoHorizontal => "Two",
+        ViewportLayoutKind.Three => "Three",
+        ViewportLayoutKind.Four => "Four",
+        ViewportLayoutKind.Five => "Five",
+        ViewportLayoutKind.Six => "Six",
+        ViewportLayoutKind.Seven => "Seven",
+        ViewportLayoutKind.Eight => "Eight",
+        ViewportLayoutKind.Nine => "Nine",
         ViewportLayoutKind.Previous => "PRevious",
         _ => "Single"
     };
@@ -512,6 +528,13 @@ public sealed partial class ViewerCommands
     {
         ViewportLayoutKind.SingleTop => "PLAN",
         ViewportLayoutKind.TwoVertical or ViewportLayoutKind.TwoHorizontal => "TWO",
+        ViewportLayoutKind.Three => "THREE",
+        ViewportLayoutKind.Four => "FOUR",
+        ViewportLayoutKind.Five => "FIVE",
+        ViewportLayoutKind.Six => "SIX",
+        ViewportLayoutKind.Seven => "SEVEN",
+        ViewportLayoutKind.Eight => "EIGHT",
+        ViewportLayoutKind.Nine => "NINE",
         ViewportLayoutKind.Previous => "PREVIOUS",
         _ => "SINGLE"
     };
