@@ -15,9 +15,9 @@ public sealed class CommandLineWindow : Window
     {
         Title = "Command";
         Width = 900;
-        Height = 220;
+        Height = 120;
         MinWidth = 420;
-        MinHeight = 120;
+        MinHeight = 72;
         ShowInTaskbar = false;
 
         // Acrylic where the platform has it, an opaque panel where it does not — a floating

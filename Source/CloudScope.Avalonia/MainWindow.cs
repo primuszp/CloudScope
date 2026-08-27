@@ -331,16 +331,22 @@ public sealed partial class MainWindow : Window
 
     // The command window keeps the height the user dragged it to, and the input history
     // survives a restart, so the tool behaves like a workspace rather than a dialog.
-    private const double CommandLineChromeHeight = 62;
+    private const double CommandLineChromeHeight = 34;
     private const double CommandLineTextLineHeight = 17;
 
     private void BuildCommandLine()
     {
         _commandLine = new CommandLineControl(_commandSession, ExecuteCommandAsync);
         _commandLine.HistoryRequested += () => RunCommandFromUi("HISTORY");
+        _commandLine.CloseRequested += () => RunCommandFromUi("COMMANDLINEHIDE");
         _commandLineHost.Content = _commandLine;
 
         _commandSession.SeedInputHistory(_settings.RecentInput);
+        if (_settings.CommandLineLayoutVersion < 1)
+        {
+            _settings.HeightInLines = 1;
+            _settings.CommandLineLayoutVersion = 1;
+        }
         _workspaceGrid.RowDefinitions[3].Height = new GridLength(
             Math.Clamp(_settings.HeightInLines, 1, 20) * CommandLineTextLineHeight + CommandLineChromeHeight);
         _contentGrid.ColumnDefinitions[2].Width = new GridLength(Math.Clamp(_settings.InspectorWidth, 180, 640));
@@ -375,7 +381,7 @@ public sealed partial class MainWindow : Window
     }
 
     private bool _commandLineVisible = true;
-    private double _hiddenCommandLineHeight = 180;
+    private double _hiddenCommandLineHeight = 56;
     private CommandLineWindow? _floatingCommandLine;
 
     /// <summary>
