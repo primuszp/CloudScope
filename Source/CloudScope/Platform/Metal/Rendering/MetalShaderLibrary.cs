@@ -119,14 +119,17 @@ fragment float4 pivot_point_fragment(VertexOut in [[stage_in]], float2 pointCoor
 {
     float2 p = pointCoord * 2.0 - 1.0;
     float radiusSquared = dot(p, p);
-    if (radiusSquared > 1.0) discard_fragment();
-    float edge = smoothstep(0.85, 1.0, sqrt(radiusSquared));
-    float z = sqrt(1.0 - radiusSquared);
+    float radius = sqrt(radiusSquared);
+    float feather = max(fwidth(radius), 0.001);
+    float coverage = 1.0 - smoothstep(1.0 - feather, 1.0, radius);
+    if (coverage <= 0.0) discard_fragment();
+    float edge = smoothstep(0.85, 1.0, radius);
+    float z = sqrt(max(1.0 - radiusSquared, 0.0));
     float3 normal = float3(p.x, -p.y, z);
     float diffuse = max(dot(normal, normalize(float3(1.0, 1.5, 1.0))), 0.25);
     float3 core = float3(1.0, 0.92, 0.2) * diffuse;
     float3 glow = float3(1.0, 0.7, 0.0);
-    return float4(mix(core, glow, edge), in.alpha);
+    return float4(mix(core, glow, edge), in.alpha * coverage);
 }";
 
         /// <summary>
