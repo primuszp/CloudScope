@@ -393,7 +393,8 @@ namespace CloudScope.Platform.Metal.Rendering
                 Renderer.DrawSmoothPolyline(_circleBuffer, CircleVertexCount, mvp,
                     new Vector4(0.25f, 0.85f, 0.95f, 0.85f), depthTest: true, lineWidthPixels: 2f, firstVertex: offset);
                 Renderer.DrawSmoothPolyline(_circleBuffer, CircleVertexCount, mvp,
-                    new Vector4(0.25f, 0.85f, 0.95f, 0.18f), depthTest: false, lineWidthPixels: LineWidth.NativeMax, firstVertex: offset);
+                    new Vector4(0.25f, 0.85f, 0.95f, 0.18f), depthTest: true, lineWidthPixels: LineWidth.NativeMax,
+                    firstVertex: offset, occludedOnly: true);
             }
             RenderHandles(sphere, camera);
         }

@@ -83,8 +83,13 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 GL.Enable(EnableCap.DepthTest);
                 _smoothCircles.Draw(_circVbo, offset, CircleVertexCount, ref mvp, c with { W = 0.80f }, 2.0f);
 
-                GL.Disable(EnableCap.DepthTest);
+                // Draw the faint guide only where scene depth actually occludes the ring.
+                // Drawing it unconditionally over the solid stroke created a second, thin
+                // contour around the entire circle and made the edge look noisy.
+                GL.Enable(EnableCap.DepthTest);
+                GL.DepthFunc(DepthFunction.Greater);
                 _smoothCircles.Draw(_circVbo, offset, CircleVertexCount, ref mvp, c with { W = 0.18f }, 1.0f);
+                GL.DepthFunc(DepthFunction.Less);
             }
 
             GL.DepthMask(true);
