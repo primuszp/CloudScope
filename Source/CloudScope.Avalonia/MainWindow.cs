@@ -295,7 +295,7 @@ public sealed partial class MainWindow : Window
 
     private void BuildInspector()
     {
-        AddInspectorGroup("GENERAL", "File", "Points", "Filter");
+        AddInspectorGroup("GENERAL", "File", "Points", "Filter", "Section");
         AddInspectorGroup("VIEW", "Projection", "View", "Layout", "FPS");
         AddInspectorGroup("DISPLAY", "Color by", "Point size");
         AddInspectorGroup("LABELING", "Mode", "Tool", "State", "Label", "Instance");
@@ -657,6 +657,7 @@ public sealed partial class MainWindow : Window
         SetValue("File", status.SourceName.Length > 0 ? status.SourceName : "—");
         SetValue("Points", status.HasCloud ? status.PointCountText : "—");
         SetValue("Filter", status.Filter.Length > 0 ? status.Filter : "None");
+        SetValue("Section", status.CrossSection.Length > 0 ? status.CrossSection : "None");
         SetValue("Projection", status.ProjectionText);
         SetValue("View", status.ViewName);
         SetValue("Layout", status.ViewportLayout);

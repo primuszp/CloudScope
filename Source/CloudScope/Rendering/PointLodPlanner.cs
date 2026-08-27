@@ -56,6 +56,9 @@ internal static class PointLodPlanner
             if (node.Count <= 0)
                 continue;
 
+            if (!view.Section.IntersectsAabb(node.Min, node.Max))
+                continue;
+
             if (!TryProject(node, ref viewProjection, view.ViewportWidth, view.ViewportHeight,
                     out float screenArea, out float depth))
                 continue;

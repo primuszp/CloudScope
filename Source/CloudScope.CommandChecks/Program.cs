@@ -7,6 +7,7 @@
 
 using CloudScope.Commands;
 using CloudScope.Ui.Commands;
+using CloudScope.Sections;
 using OpenTK.Mathematics;
 
 int failures = 0;
@@ -242,6 +243,21 @@ Check("undo takes a count", value == 0, value.ToString());
 history.BeginMark("C"); history.Record(new DelegateUndoAction("inc", () => value--, () => value++)); value++;
 history.Rollback();
 Check("rollback reverses a cancelled command", value == 0, value.ToString());
+
+// ---------- 5. Cross-section geometry and orthographic camera ----------
+var section = new SectionDefinition(1, "XS1", new Vector3(0f, 0f, 2f), new Vector3(10f, 0f, 4f), 2f);
+SectionClip clip = section.ToClip();
+Check("section keeps a point in the slab", clip.Contains(new Vector3(5f, 0.9f, 100f)));
+Check("section rejects width overflow", !clip.Contains(new Vector3(5f, 1.1f, 3f)));
+Check("section rejects length overflow", !clip.Contains(new Vector3(10.1f, 0f, 3f)));
+Check("section intersects a crossing cell", clip.IntersectsAabb(new Vector3(4f, 0.5f, -10f), new Vector3(6f, 2f, 10f)));
+Check("section rejects a remote cell", !clip.IntersectsAabb(new Vector3(20f, 20f, -10f), new Vector3(21f, 21f, 10f)));
+
+var sectionCamera = new CloudScope.OrbitCamera();
+sectionCamera.SetOrthographicSectionView(section.Start, section.End, flipped: false, cloudRadius: 50f);
+Check("section camera is orthographic", !sectionCamera.IsPerspective);
+Check("section camera keeps Z vertical", Vector3.Dot(sectionCamera.CameraUp, Vector3.UnitZ) > 0.999f);
+Check("section camera follows baseline", Vector3.Dot(sectionCamera.CameraRight, Vector3.UnitX) > 0.999f);
 
 Console.WriteLine();
 Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : $"{failures} CHECK(S) FAILED");

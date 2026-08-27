@@ -2,6 +2,7 @@ using System.Runtime.Versioning;
 using System.Runtime.CompilerServices;
 using CloudScope.Rendering;
 using CloudScope.Selection;
+using CloudScope.Sections;
 using OpenTK.Mathematics;
 using SharpMetal.Metal;
 
@@ -27,6 +28,8 @@ namespace CloudScope.Platform.Metal.Rendering
         private readonly float[] _crosshairVertices = new float[12];
         private readonly float[] _modeVertices = new float[12];
         private readonly float[] _viewportBorderVertices = new float[15];
+        private readonly float[] _sectionGuideVertices = new float[48];
+        private MTLBuffer _sectionGuideBuffer;
         private MTLRenderPipelineState _pivotPointPipeline;
         private MTLDepthStencilState _pivotPointDepthState;
         private MTLBuffer _pivotPointBuffer;
@@ -143,11 +146,57 @@ namespace CloudScope.Platform.Metal.Rendering
                 Matrix4.Identity, color, depthTest: false);
         }
 
+        public void RenderSectionGuide(
+            IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj, SectionDefinition section)
+        {
+            if (frameData is not MetalFrameState frame) return;
+            _renderer.SetFrame(frame);
+            Vector3 normal = section.Normal;
+            Vector3 along = section.Along;
+            float halfWidth = section.Width * 0.5f;
+            Vector3 s0 = section.Start + normal * halfWidth;
+            Vector3 s1 = section.Start - normal * halfWidth;
+            Vector3 e0 = section.End + normal * halfWidth;
+            Vector3 e1 = section.End - normal * halfWidth;
+            int vertex = 0;
+            AddSectionSegment(ref vertex, s0, e0);
+            AddSectionSegment(ref vertex, e0, e1);
+            AddSectionSegment(ref vertex, e1, s1);
+            AddSectionSegment(ref vertex, s1, s0);
+            AddSectionSegment(ref vertex, section.Start, section.End);
+
+            float arrowLength = MathF.Max(section.Width, section.Length * 0.08f);
+            Vector3 tip = section.Center + normal * arrowLength;
+            AddSectionSegment(ref vertex, section.Center, tip);
+            AddSectionSegment(ref vertex, tip, tip - normal * arrowLength * 0.32f + along * arrowLength * 0.22f);
+            AddSectionSegment(ref vertex, tip, tip - normal * arrowLength * 0.32f - along * arrowLength * 0.22f);
+
+            _renderer.UpdateBuffer(ref _sectionGuideBuffer, _sectionGuideVertices);
+            _renderer.Draw(_sectionGuideBuffer, vertex, MTLPrimitiveType.Line,
+                view * proj, new Vector4(1f, 0.72f, 0.12f, 0.95f), depthTest: false,
+                lineWidthPixels: 2f);
+        }
+
+        private void AddSectionSegment(ref int vertex, Vector3 start, Vector3 end)
+        {
+            WriteSectionVertex(vertex++, start);
+            WriteSectionVertex(vertex++, end);
+        }
+
+        private void WriteSectionVertex(int vertex, Vector3 point)
+        {
+            int i = vertex * 3;
+            _sectionGuideVertices[i] = point.X;
+            _sectionGuideVertices[i + 1] = point.Y;
+            _sectionGuideVertices[i + 2] = point.Z;
+        }
+
         public void Dispose()
         {
             MetalResources.Release(ref _crosshairBuffer);
             MetalResources.Release(ref _modeBuffer);
             MetalResources.Release(ref _viewportBorderBuffer);
+            MetalResources.Release(ref _sectionGuideBuffer);
             for (int i = 0; i < _pivotBuffers.Length; i++)
                 MetalResources.Release(ref _pivotBuffers[i]);
             _pivotBuffers = Array.Empty<MTLBuffer>();

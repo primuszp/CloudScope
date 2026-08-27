@@ -1,4 +1,5 @@
 using OpenTK.Mathematics;
+using CloudScope.Sections;
 
 namespace CloudScope.Rendering;
 
@@ -15,4 +16,5 @@ public readonly record struct PointRenderView(
     Matrix4 Projection,
     int ViewportWidth,
     int ViewportHeight,
-    float PointSize);
+    float PointSize,
+    SectionClip Section = default);

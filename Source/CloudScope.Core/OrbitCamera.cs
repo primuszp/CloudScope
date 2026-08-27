@@ -369,6 +369,28 @@ namespace CloudScope
             CalcViewVolume();
         }
 
+        /// <summary>
+        /// Uses this same orbit camera in orthographic mode for a vertical cross-section.
+        /// Screen X follows the picked baseline and screen Y remains world Z.
+        /// </summary>
+        public void SetOrthographicSectionView(Vector3 start, Vector3 end, bool flipped, float cloudRadius = 50f)
+        {
+            Vector2 direction = new(end.X - start.X, end.Y - start.Y);
+            if (direction.LengthSquared < 1e-10f)
+                return;
+
+            _sceneRadius = cloudRadius > 0 ? cloudRadius : 50f;
+            _vang = 0.0;
+            _az = MathF.Atan2(direction.Y, direction.X) * 180f / MathF.PI + (flipped ? 180f : 0f);
+            _el = 90f;
+            _hvs = _sceneRadius;
+            _trn = new Vector3((start.X + end.X) * 0.5f, (start.Y + end.Y) * 0.5f, 0f);
+            _orbitPivot = _trn;
+            _txActive = false;
+            RebuildRot();
+            CalcViewVolume();
+        }
+
         public void ResetView(float cloudRadius = 50f)
         {
             _sceneRadius = cloudRadius > 0 ? cloudRadius : 50f;

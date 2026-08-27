@@ -4,6 +4,7 @@ using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using CloudScope.Labeling;
 using CloudScope.Rendering;
+using CloudScope.Sections;
 
 namespace CloudScope.Platform.OpenGL.Rendering
 {
@@ -18,6 +19,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private int _pvao = -1, _pvbo = -1;  // preview buffer (points inside active box)
         private int _shader = -1;
         private int _uView, _uProj, _uPointSize;
+        private int _uSectionEnabled, _uSectionCenter, _uSectionAlong, _uSectionNormal, _uSectionHalfSize;
         private int _highlightCount;
         private int _previewCount;
         private bool _dirty = true;
@@ -34,8 +36,25 @@ out vec3 vColor;
 uniform mat4 view;
 uniform mat4 projection;
 uniform float pointSize;
+uniform bool sectionEnabled;
+uniform vec3 sectionCenter;
+uniform vec3 sectionAlong;
+uniform vec3 sectionNormal;
+uniform vec2 sectionHalfSize;
 void main()
 {
+    if (sectionEnabled)
+    {
+        vec3 delta = aPos - sectionCenter;
+        if (abs(dot(delta, sectionAlong)) > sectionHalfSize.x
+            || abs(dot(delta, sectionNormal)) > sectionHalfSize.y)
+        {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            gl_PointSize = 0.0;
+            vColor = vec3(0.0);
+            return;
+        }
+    }
     gl_Position  = projection * view * vec4(aPos, 1.0);
     gl_PointSize = pointSize;
     vColor = aCol;
@@ -75,13 +94,15 @@ void main()
         }
 
         /// <summary>Render the box-selection preview highlight pass.</summary>
-        public void RenderPreview(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj, float pointSize)
+        public void RenderPreview(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj,
+            float pointSize, SectionClip section = default)
         {
             if (_previewCount == 0 || _shader == -1) return;
             GL.UseProgram(_shader);
             GL.UniformMatrix4(_uView, false, ref view);
             GL.UniformMatrix4(_uProj, false, ref proj);
             GL.Uniform1(_uPointSize, pointSize + 2f);
+            ApplySection(section);
             GL.BindVertexArray(_pvao);
             GL.Enable(EnableCap.DepthTest);
             GL.DepthMask(false);
@@ -97,7 +118,7 @@ void main()
         /// </summary>
         public void Render(IRenderFrameData frameData, PointData[] points, LabelManager labels,
                            Func<PointAnnotation, Vector3> annotationColor,
-                           ref Matrix4 view, ref Matrix4 proj, float pointSize)
+                           ref Matrix4 view, ref Matrix4 proj, float pointSize, SectionClip section = default)
         {
             if (labels.Count == 0 && !_dirty) return;
 
@@ -115,6 +136,7 @@ void main()
             GL.UniformMatrix4(_uView, false, ref view);
             GL.UniformMatrix4(_uProj, false, ref proj);
             GL.Uniform1(_uPointSize, pointSize + 2f);  // slightly larger to stand out
+            ApplySection(section);
 
             GL.BindVertexArray(_vao);
 
@@ -166,6 +188,11 @@ void main()
             _uView      = GL.GetUniformLocation(_shader, "view");
             _uProj      = GL.GetUniformLocation(_shader, "projection");
             _uPointSize = GL.GetUniformLocation(_shader, "pointSize");
+            _uSectionEnabled = GL.GetUniformLocation(_shader, "sectionEnabled");
+            _uSectionCenter = GL.GetUniformLocation(_shader, "sectionCenter");
+            _uSectionAlong = GL.GetUniformLocation(_shader, "sectionAlong");
+            _uSectionNormal = GL.GetUniformLocation(_shader, "sectionNormal");
+            _uSectionHalfSize = GL.GetUniformLocation(_shader, "sectionHalfSize");
 
             _vao = GL.GenVertexArray();
             _vbo = GL.GenBuffer();
@@ -185,6 +212,16 @@ void main()
             GL.EnableVertexAttribArray(0);
             GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, 24, 12);
             GL.EnableVertexAttribArray(1);
+        }
+
+        private void ApplySection(in SectionClip section)
+        {
+            GL.Uniform1(_uSectionEnabled, section.Enabled ? 1 : 0);
+            if (!section.Enabled) return;
+            GL.Uniform3(_uSectionCenter, section.Center);
+            GL.Uniform3(_uSectionAlong, section.Along);
+            GL.Uniform3(_uSectionNormal, section.Normal);
+            GL.Uniform2(_uSectionHalfSize, section.HalfLength, section.HalfWidth);
         }
 
         public void Dispose()

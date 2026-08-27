@@ -260,6 +260,7 @@ namespace CloudScope.Ui
                 Property("File", status.SourceName.Length > 0 ? status.SourceName : "—");
                 Property("Points", status.PointCountText);
                 Property("Filter", status.Filter.Length > 0 ? status.Filter : "None");
+                Property("Section", status.CrossSection.Length > 0 ? status.CrossSection : "None");
             }
 
             if (ImGui.CollapsingHeader("View", ImGuiTreeNodeFlags.DefaultOpen))

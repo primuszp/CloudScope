@@ -24,6 +24,7 @@ public sealed partial class ViewerCommands
             $"Source        {(status.SourceName.Length > 0 ? status.SourceName : "(none)")}"
             + Environment.NewLine + $"Points        {status.PointCountText}"
             + Environment.NewLine + $"Filter        {(status.Filter.Length > 0 ? status.Filter : "None")}"
+            + Environment.NewLine + $"Cross-section {(status.CrossSection.Length > 0 ? status.CrossSection : "None")}"
             + Environment.NewLine + $"Colour by     {status.ColorSource}"
             + Environment.NewLine + $"Mode          {status.Mode} / {status.ActiveTool}"
             + Environment.NewLine + $"Label         {status.CurrentLabel} (instance {status.InstanceText})"
