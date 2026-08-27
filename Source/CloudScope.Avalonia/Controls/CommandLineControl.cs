@@ -25,7 +25,7 @@ public sealed class CommandLineControl : UserControl
     {
         // Local values deliberately override the Fluent theme's focused TextBox state.
         // The CAD command line must not turn dark or acquire an accent outline on focus.
-        Background = Brushes.Transparent,
+        Background = Brushes.White,
         BorderBrush = Brushes.Transparent,
         BorderThickness = new Thickness(0),
         FocusAdorner = null
@@ -43,6 +43,19 @@ public sealed class CommandLineControl : UserControl
     {
         _session = session;
         _submit = submit;
+
+        // Fluent styles the TextBox's internal PART_BorderElement directly for hover and
+        // focus, bypassing the outer control values. Override those theme resources at the
+        // TextBox itself so every state remains the same plain white CAD input line. Keeping
+        // this local also makes it work after the control is moved into the floating window.
+        _input.Resources["TextControlBackground"] = Brushes.White;
+        _input.Resources["TextControlBackgroundPointerOver"] = Brushes.White;
+        _input.Resources["TextControlBackgroundFocused"] = Brushes.White;
+        _input.Resources["TextControlBorderBrush"] = Brushes.Transparent;
+        _input.Resources["TextControlBorderBrushPointerOver"] = Brushes.Transparent;
+        _input.Resources["TextControlBorderBrushFocused"] = Brushes.Transparent;
+        _input.Resources["TextControlBorderThemeThickness"] = new Thickness(0);
+        _input.Resources["TextControlBorderThemeThicknessFocused"] = new Thickness(0);
 
         _transcript = new CommandTranscript(session, cadPalette: true);
         _transcript.CommandRecalled += Stage;
