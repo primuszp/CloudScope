@@ -323,6 +323,11 @@ namespace CloudScope.Selection
             }
         }
 
+        public override void ScaleBy(float factor)
+        {
+            HalfExtents = Vector3.ComponentMax(HalfExtents * factor, new Vector3(0.001f));
+        }
+
         public override void AdjustScale(float delta)
         {
             if (!IsEditing) return;
@@ -372,30 +377,38 @@ namespace CloudScope.Selection
                 _cx = center.X; _cy = center.Y; _cz = center.Z;
             }
 
-            public IReadOnlyList<int> Resolve(PointData[] points, CancellationToken cancellationToken = default)
+            public bool IsEmpty => _hx < 1e-4f || _hy < 1e-4f || _hz < 1e-4f;
+
+            /// <summary>
+            /// The rotated box's extent along each world axis, which is the sum of its own
+            /// half extents projected onto that axis.
+            /// </summary>
+            public void GetBounds(out Vector3 min, out Vector3 max)
             {
-                if (_hx < 1e-4f || _hy < 1e-4f || _hz < 1e-4f)
-                    return Array.Empty<int>();
-
-                var list = new List<int>();
-                for (int i = 0; i < points.Length; i++)
-                {
-                    if ((i & 4095) == 0)
-                        cancellationToken.ThrowIfCancellationRequested();
-
-                    float dx = points[i].X - _cx;
-                    float dy = points[i].Y - _cy;
-                    float dz = points[i].Z - _cz;
-                    float lx = _r00 * dx + _r01 * dy + _r02 * dz;
-                    if (MathF.Abs(lx) > _hx) continue;
-                    float ly = _r10 * dx + _r11 * dy + _r12 * dz;
-                    if (MathF.Abs(ly) > _hy) continue;
-                    float lz = _r20 * dx + _r21 * dy + _r22 * dz;
-                    if (MathF.Abs(lz) <= _hz) list.Add(i);
-                }
-
-                return list;
+                float ex = MathF.Abs(_r00) * _hx + MathF.Abs(_r10) * _hy + MathF.Abs(_r20) * _hz;
+                float ey = MathF.Abs(_r01) * _hx + MathF.Abs(_r11) * _hy + MathF.Abs(_r21) * _hz;
+                float ez = MathF.Abs(_r02) * _hx + MathF.Abs(_r12) * _hy + MathF.Abs(_r22) * _hz;
+                var center = new Vector3(_cx, _cy, _cz);
+                var extent = new Vector3(ex, ey, ez);
+                min = center - extent;
+                max = center + extent;
             }
+
+            public bool Contains(float x, float y, float z)
+            {
+                float dx = x - _cx;
+                float dy = y - _cy;
+                float dz = z - _cz;
+                float lx = _r00 * dx + _r01 * dy + _r02 * dz;
+                if (MathF.Abs(lx) > _hx) return false;
+                float ly = _r10 * dx + _r11 * dy + _r12 * dz;
+                if (MathF.Abs(ly) > _hy) return false;
+                float lz = _r20 * dx + _r21 * dy + _r22 * dz;
+                return MathF.Abs(lz) <= _hz;
+            }
+
+            public IReadOnlyList<int> Resolve(PointData[] points, CancellationToken cancellationToken = default)
+                => PointSelectionQuery.Resolve(this, points, cancellationToken);
         }
 
         // ── Renderer helpers ─────────────────────────────────────────────────

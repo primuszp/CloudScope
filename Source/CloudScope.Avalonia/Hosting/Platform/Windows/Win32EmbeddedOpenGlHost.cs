@@ -5,11 +5,11 @@ using CloudScope.Avalonia.Hosting;
 
 namespace CloudScope.Avalonia.Hosting.Platform.Windows;
 
-public sealed unsafe class Win32EmbeddedOpenTkNativeHost : EmbeddedOpenTkNativeHostBase
+public sealed unsafe class Win32EmbeddedOpenGlHost : EmbeddedOpenGlNativeHostBase
 {
     private IntPtr _hwnd;
 
-    public Win32EmbeddedOpenTkNativeHost(HostController hostController) : base(hostController)
+    public Win32EmbeddedOpenGlHost(HostController hostController) : base(hostController)
     {
     }
 

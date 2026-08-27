@@ -12,7 +12,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
     /// with distinct label colors and a slightly larger point size.
     /// Rebuilds its GPU buffer whenever <see cref="LabelManager.LabelsChanged"/> fires.
     /// </summary>
-    public sealed class OpenGlHighlightRenderer : IHighlightRenderer
+    internal sealed class OpenGlHighlightRenderer : IHighlightRenderer
     {
         private int _vao = -1, _vbo = -1;
         private int _pvao = -1, _pvbo = -1;  // preview buffer (points inside active box)
@@ -161,14 +161,7 @@ void main()
         {
             if (_shader != -1) return;
 
-            int v = GL.CreateShader(ShaderType.VertexShader);
-            GL.ShaderSource(v, VertSrc); GL.CompileShader(v);
-            int f = GL.CreateShader(ShaderType.FragmentShader);
-            GL.ShaderSource(f, FragSrc); GL.CompileShader(f);
-            _shader = GL.CreateProgram();
-            GL.AttachShader(_shader, v); GL.AttachShader(_shader, f);
-            GL.LinkProgram(_shader);
-            GL.DeleteShader(v); GL.DeleteShader(f);
+            _shader = OpenGlShaderCompiler.CreateProgram(VertSrc, FragSrc, "highlight");
 
             _uView      = GL.GetUniformLocation(_shader, "view");
             _uProj      = GL.GetUniformLocation(_shader, "projection");

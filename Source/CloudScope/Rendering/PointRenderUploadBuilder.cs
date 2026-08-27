@@ -1,4 +1,3 @@
-using OpenTK.Mathematics;
 using System.Buffers;
 
 namespace CloudScope.Rendering;
@@ -6,94 +5,76 @@ namespace CloudScope.Rendering;
 internal static class PointRenderUploadBuilder
 {
     public const int DefaultPointsPerChunk = 1_000_000;
-    private const int SpatialGridResolution = 4;
-    private const int SpatialCellCount = SpatialGridResolution * SpatialGridResolution * SpatialGridResolution;
 
-    public static void FillPoints(
+    /// <summary>
+    /// Converts a run of the cloud into the packed vertices the GPU stores.
+    /// </summary>
+    /// <remarks>
+    /// The upload order scatters the reads across the whole point array, so this is bound by
+    /// memory latency rather than by arithmetic: at a hundred million points a single thread
+    /// spends most of a minute waiting on cache misses. Splitting the run across cores
+    /// overlaps those misses, which is where nearly all of the speed-up comes from.
+    /// </remarks>
+    public static unsafe void FillPoints(
         PointCloudRenderData data,
-        Span<PointData> destination,
+        Span<GpuPointVertex> destination,
         int pointOffset = 0,
         int[]? uploadOrder = null)
     {
         if (pointOffset < 0 || pointOffset + destination.Length > data.Count)
             throw new ArgumentOutOfRangeException(nameof(pointOffset));
 
-        if (uploadOrder is not null)
+        PointData[] points = data.Points;
+        int length = destination.Length;
+        fixed (GpuPointVertex* target = destination)
         {
-            for (int i = 0; i < destination.Length; i++)
-                destination[i] = data.Points[uploadOrder[pointOffset + i]];
-            return;
+            GpuPointVertex* output = target;
+            ForEachPartition(length, (start, end) =>
+            {
+                for (int i = start; i < end; i++)
+                {
+                    PointData point = points[ResolveViewIndex(data, pointOffset + i, uploadOrder)];
+                    output[i] = new GpuPointVertex(point.X, point.Y, point.Z, point.R, point.G, point.B);
+                }
+            });
         }
-
-        if (data.RenderOrder is not { Count: > 0 } renderOrder)
-        {
-            data.Points.AsSpan(pointOffset, destination.Length).CopyTo(destination);
-            return;
-        }
-
-        for (int i = 0; i < destination.Length; i++)
-            destination[i] = data.Points[renderOrder.Resolve(pointOffset + i)];
     }
 
-    public static PointSpatialUploadLayout BuildSpatialLayout(PointCloudRenderData data, int pointCount)
+    /// <summary>
+    /// Runs <paramref name="body"/> over disjoint slices of <c>[0, length)</c>, in parallel
+    /// once the run is large enough to pay for the threads.
+    /// </summary>
+    internal static void ForEachPartition(int length, Action<int, int> body)
     {
-        if (pointCount <= 0)
-            return PointSpatialUploadLayout.Empty;
-
-        Vector3 cloudMin = new(float.PositiveInfinity);
-        Vector3 cloudMax = new(float.NegativeInfinity);
-        for (int i = 0; i < pointCount; i++)
+        const int MinimumParallelLength = 1 << 16;
+        if (length <= MinimumParallelLength)
         {
-            PointData point = data.Points[ResolveViewIndex(data, i)];
-            Vector3 position = new(point.X, point.Y, point.Z);
-            cloudMin = Vector3.ComponentMin(cloudMin, position);
-            cloudMax = Vector3.ComponentMax(cloudMax, position);
+            body(0, length);
+            return;
         }
 
-        var counts = new int[SpatialCellCount];
-        for (int i = 0; i < pointCount; i++)
+        int partitions = Math.Min(Environment.ProcessorCount, Math.Max(1, length / MinimumParallelLength));
+        int perPartition = (length + partitions - 1) / partitions;
+        Parallel.For(0, partitions, partition =>
         {
-            PointData point = data.Points[ResolveViewIndex(data, i)];
-            counts[GetCell(point, cloudMin, cloudMax)]++;
-        }
-
-        var offsets = new int[SpatialCellCount];
-        var cursors = new int[SpatialCellCount];
-        int runningOffset = 0;
-        for (int cell = 0; cell < SpatialCellCount; cell++)
-        {
-            offsets[cell] = runningOffset;
-            cursors[cell] = runningOffset;
-            runningOffset += counts[cell];
-        }
-
-        int[] uploadOrder = ArrayPool<int>.Shared.Rent(pointCount);
-        var cellMin = new Vector3[SpatialCellCount];
-        var cellMax = new Vector3[SpatialCellCount];
-        Array.Fill(cellMin, new Vector3(float.PositiveInfinity));
-        Array.Fill(cellMax, new Vector3(float.NegativeInfinity));
-        for (int i = 0; i < pointCount; i++)
-        {
-            int viewIndex = ResolveViewIndex(data, i);
-            PointData point = data.Points[viewIndex];
-            int cell = GetCell(point, cloudMin, cloudMax);
-            uploadOrder[cursors[cell]++] = viewIndex;
-            Vector3 position = new(point.X, point.Y, point.Z);
-            cellMin[cell] = Vector3.ComponentMin(cellMin[cell], position);
-            cellMax[cell] = Vector3.ComponentMax(cellMax[cell], position);
-        }
-
-        var chunks = new PointRenderChunk[counts.Count(count => count > 0)];
-        int chunkIndex = 0;
-        for (int cell = 0; cell < SpatialCellCount; cell++)
-        {
-            if (counts[cell] == 0)
-                continue;
-            chunks[chunkIndex++] = new PointRenderChunk(offsets[cell], counts[cell], cellMin[cell], cellMax[cell]);
-        }
-
-        return new PointSpatialUploadLayout(uploadOrder, pointCount, chunks);
+            int start = partition * perPartition;
+            int end = Math.Min(start + perPartition, length);
+            if (start < end)
+                body(start, end);
+        });
     }
+
+    /// <summary>The index into <see cref="PointCloudRenderData.Points"/> drawn at this slot.</summary>
+    internal static int ResolveViewIndex(PointCloudRenderData data, int orderedIndex, int[]? uploadOrder)
+    {
+        if (uploadOrder is not null)
+            return uploadOrder[orderedIndex];
+
+        return data.RenderOrder is { Count: > 0 } renderOrder
+            ? renderOrder.Resolve(orderedIndex)
+            : orderedIndex;
+    }
+
 
     public static int GetChunkCount(int pointCount, int pointsPerChunk = DefaultPointsPerChunk)
     {
@@ -115,48 +96,6 @@ internal static class PointRenderUploadBuilder
         return Math.Min(pointsPerChunk, pointCount - chunkIndex * pointsPerChunk);
     }
 
-    private static int ResolveViewIndex(PointCloudRenderData data, int orderedIndex) =>
-        data.RenderOrder is { Count: > 0 } renderOrder ? renderOrder.Resolve(orderedIndex) : orderedIndex;
 
-    private static int GetCell(PointData point, Vector3 min, Vector3 max)
-    {
-        int x = GetAxisCell(point.X, min.X, max.X);
-        int y = GetAxisCell(point.Y, min.Y, max.Y);
-        int z = GetAxisCell(point.Z, min.Z, max.Z);
-        return x + SpatialGridResolution * (y + SpatialGridResolution * z);
-    }
-
-    private static int GetAxisCell(float value, float min, float max)
-    {
-        float span = max - min;
-        if (!(span > 0f) || !float.IsFinite(span))
-            return 0;
-        int cell = (int)((value - min) / span * SpatialGridResolution);
-        return Math.Clamp(cell, 0, SpatialGridResolution - 1);
-    }
 }
 
-internal sealed class PointSpatialUploadLayout : IDisposable
-{
-    public static PointSpatialUploadLayout Empty { get; } = new(null, 0, Array.Empty<PointRenderChunk>());
-
-    private int[]? _uploadOrder;
-
-    public PointSpatialUploadLayout(int[]? uploadOrder, int count, PointRenderChunk[] chunks)
-    {
-        _uploadOrder = uploadOrder;
-        Count = count;
-        Chunks = chunks;
-    }
-
-    public int[]? UploadOrder => _uploadOrder;
-    public int Count { get; }
-    public PointRenderChunk[] Chunks { get; }
-
-    public void Dispose()
-    {
-        int[]? uploadOrder = Interlocked.Exchange(ref _uploadOrder, null);
-        if (uploadOrder is not null)
-            ArrayPool<int>.Shared.Return(uploadOrder);
-    }
-}

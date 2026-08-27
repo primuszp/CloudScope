@@ -35,7 +35,7 @@ public sealed class LabelRegistryWindow : Window
         define.Click += (_, _) => DefineFromInputs();
 
         var saveLas = new Button { Content = "Save labels to LAS" };
-        saveLas.Click += (_, _) => { _run("SAVELABELS LAS"); };
+        saveLas.Click += (_, _) => { _run("SAVELABELS Las"); };
 
         var root = new StackPanel { Margin = new global::Avalonia.Thickness(12), Spacing = 10 };
         root.Children.Add(new TextBlock

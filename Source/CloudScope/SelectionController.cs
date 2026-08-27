@@ -3,8 +3,10 @@ using CloudScope.Library.Enums;
 using CloudScope.Loading;
 using CloudScope.Rendering;
 using CloudScope.Selection;
+using CloudScope.Store;
 using OpenTK.Mathematics;
 using System.Linq;
+using System.Threading;
 
 namespace CloudScope
 {
@@ -30,6 +32,20 @@ namespace CloudScope
         private int[]? _viewToSource;            // visible index → source index
         private PointCloudAttributes? _attributes;
         private string _lasFilePath    = "";
+
+        /// <summary>
+        /// Set while streamed clouds are on screen, in place of the in-memory arrays.
+        /// </summary>
+        /// <remarks>
+        /// A store has no <c>PointData[]</c> behind it, so the volume is resolved against the
+        /// cell tree instead. Everything past that point is the same: the label manager and
+        /// the highlight renderer are keyed by a position in the small array of points a
+        /// selection actually caught, and the durable 64-bit identity travels beside it.
+        /// </remarks>
+        private StreamedSelectionSource? _streamed;
+
+        /// <summary>Points from the most recent streamed preview, which own no cloud.</summary>
+        private PointData[]? _previewPoints;
 
         public SelectionController(Action labelsChanged, Action<string>? log = null)
         {
@@ -65,9 +81,30 @@ namespace CloudScope
             return (semantic * 0.35f) + (instance * 0.65f);
         }
 
-        public PointData[]? Points => _points;
+        public PointData[]? Points => _points ?? _previewPoints;
         /// <summary>Full source-order points; highlights are keyed by source index.</summary>
-        public PointData[]? SourcePoints => _sourcePoints;
+        /// <remarks>
+        /// While streaming there is no such array, so it is the points selections have caught
+        /// — which is exactly the set the highlight renderer has anything to draw for.
+        /// </remarks>
+        public PointData[]? SourcePoints => _streamed is null ? _sourcePoints : _streamed.LabelPoints;
+
+        /// <summary>
+        /// The store-file identity of each labelled point, or null for an in-memory cloud.
+        /// </summary>
+        /// <remarks>
+        /// Labels are keyed by array position for the renderer's sake; this is what those keys
+        /// mean in the file, and so what has to be written out for a label to outlive the
+        /// session.
+        /// </remarks>
+        public IReadOnlyList<PointRef>? LabelRefs => _streamed?.LabelRefs;
+
+        /// <summary>Switches selection over to the streamed clouds, or back off them.</summary>
+        public void SetStreamedSource(IReadOnlyList<PointTileLayer>? layers)
+        {
+            _streamed = layers is { Count: > 0 } ? new StreamedSelectionSource(layers) : null;
+            _previewPoints = null;
+        }
         public PointCloudAttributes? Attributes => _attributes;
         public bool HasActiveSelection => ActiveTool.IsActive || ActiveTool.IsEditing;
 
@@ -93,6 +130,8 @@ namespace CloudScope
             foreach (ISelectionTool tool in _tools.Values)
                 tool.Cancel();
             _labelManager.ClearAll();
+            _streamed?.Clear();
+            _previewPoints = null;
             _points = null;
             _sourcePoints = null;
             _viewToSource = null;
@@ -107,16 +146,69 @@ namespace CloudScope
         public void SetViewConstraint(GripViewConstraint constraint) => ActiveTool.ViewConstraint = constraint;
 
         /// <summary>
+        /// Moves the active selection volume by a displacement. This is the typed counterpart of
+        /// the grip drag: the same tool state, reached by a number instead of a gesture.
+        /// </summary>
+        public string MoveActiveSelection(Vector3 displacement)
+        {
+            if (!HasActiveSelection) return "No active selection.";
+            ActiveTool.Center += displacement;
+            RequestPreview();
+            return $"Moved by {displacement.X:0.###},{displacement.Y:0.###},{displacement.Z:0.###}.";
+        }
+
+        /// <summary>Rotates the active selection volume around a world axis, in degrees.</summary>
+        public string RotateActiveSelection(float degrees, int axis)
+        {
+            if (!HasActiveSelection) return "No active selection.";
+            if (!ActiveTool.HasVolume) return "The active selection tool cannot be rotated.";
+
+            Vector3 direction = axis switch { 0 => Vector3.UnitX, 1 => Vector3.UnitY, _ => Vector3.UnitZ };
+            var delta = Quaternion.FromAxisAngle(direction, MathHelper.DegreesToRadians(degrees));
+            ActiveTool.Rotation = delta * ActiveTool.Rotation;
+            RequestPreview();
+            return $"Rotated {degrees:0.###}° about {(axis switch { 0 => "X", 1 => "Y", _ => "Z" })}.";
+        }
+
+        /// <summary>Scales the active selection volume by a factor.</summary>
+        public string ScaleActiveSelection(float factor)
+        {
+            if (!HasActiveSelection) return "No active selection.";
+            ActiveTool.ScaleBy(factor);
+            RequestPreview();
+            return $"Scaled by {factor:0.###}.";
+        }
+
+        /// <summary>
         /// Fit the active tool's primitive tightly to the points currently inside its volume.
         /// Height comes from the fitted OBB by default, or from the average surrounding ground
         /// (class 2) level up to the cluster top when <paramref name="useGround"/> is set.
         /// </summary>
         public string FitActiveToolToSelection(bool useGround)
         {
-            if (_points == null || !ActiveTool.IsEditing)
+            if (!ActiveTool.IsEditing)
                 return "No active selection to fit.";
 
-            var viewIdx = ActiveTool.CreateQuery().Resolve(_points);
+            // Fitting reads the points back out of the store when there is no array, which is
+            // the same query the selection itself runs.
+            PointData[]? points = _points;
+            IReadOnlyList<int> viewIdx;
+            if (points != null)
+            {
+                viewIdx = ActiveTool.CreateQuery().Resolve(points);
+            }
+            else if (_streamed != null)
+            {
+                SelectionPreviewWorker.PreviewResult found =
+                    _streamed.ResolvePreview(ActiveTool.CreateQuery(), CancellationToken.None);
+                points = found.Points;
+                viewIdx = found.Indices;
+            }
+            else
+            {
+                return "No active selection to fit.";
+            }
+
             if (viewIdx.Count == 0)
                 return "No points inside the selection volume.";
 
@@ -341,17 +433,35 @@ namespace CloudScope
             return false;
         }
 
+        /// <summary>
+        /// Makes the next frame recompute the preview instead of waiting out the poll interval,
+        /// so a typed MOVE or SCALE shows its result as promptly as a dragged one.
+        /// </summary>
+        private void RequestPreview() => _previewTimer = PreviewInterval;
+
         public void UpdatePreview(float dt)
         {
-            bool active = Mode == InteractionMode.Label && ActiveTool.HasVolume;
-            if (active && _points != null)
+            bool active = Mode == InteractionMode.Label && ActiveTool.HasVolume
+                && (_points != null || _streamed != null);
+            if (active)
             {
                 _previewWasActive = true;
                 _previewTimer += dt;
                 if (_previewTimer >= PreviewInterval)
                 {
                     _previewTimer = 0f;
-                    _previewWorker.Request(ActiveTool.CreateQuery(), _points);
+                    if (_points != null)
+                    {
+                        _previewWorker.Request(ActiveTool.CreateQuery(), _points);
+                    }
+                    else
+                    {
+                        // The volume is captured now, so a gizmo moved while the query is
+                        // running does not change the answer underneath it.
+                        IPointSelectionQuery query = ActiveTool.CreateQuery();
+                        StreamedSelectionSource streamed = _streamed!;
+                        _previewWorker.Request(token => streamed.ResolvePreview(query, token));
+                    }
                 }
             }
             else if (_previewWasActive)
@@ -362,7 +472,19 @@ namespace CloudScope
             }
         }
 
-        public bool TryTakePreview(out IReadOnlyList<int>? indices) => _previewWorker.TryTakeLatest(out indices);
+        public bool TryTakePreview(out IReadOnlyList<int>? indices)
+        {
+            if (!_previewWorker.TryTakeLatest(out SelectionPreviewWorker.PreviewResult? result))
+            {
+                indices = result?.Indices;
+                return false;
+            }
+
+            // A streamed preview brings its own points along, since there is no cloud to index.
+            _previewPoints = _points == null ? result?.Points : null;
+            indices = result?.Indices;
+            return true;
+        }
 
         public bool KeyDown(ViewerKey key, bool ctrl)
         {
@@ -411,9 +533,11 @@ namespace CloudScope
                 return;
             }
 
-            if (_points != null)
+            if (_points != null || _streamed != null)
             {
-                var selected = MapToSource(ActiveTool.CreateQuery().Resolve(_points));
+                IReadOnlyCollection<int> selected = _points != null
+                    ? MapToSource(ActiveTool.CreateQuery().Resolve(_points))
+                    : (IReadOnlyCollection<int>)_streamed!.ResolveAndRemember(ActiveTool.CreateQuery());
                 if (selected.Count > 0)
                 {
                     var annotation = new PointAnnotation(_currentLabel, _currentInstanceId);
@@ -517,10 +641,25 @@ namespace CloudScope
             return true;
         }
 
-        public bool SaveLabels() => !string.IsNullOrEmpty(_lasFilePath) && SaveLabelsCore();
+        public bool SaveLabels(string? destinationPath = null)
+        {
+            if (_streamed is { } streamed && streamed.LabelDirectory.Length > 0)
+            {
+                // Labels for a streamed cloud are keyed by the store's own point indices, so
+                // they go beside the store rather than beside a LAS that may not be there.
+                PointTileLabelFile.Save(
+                    streamed.LabelDirectory, streamed.LabelRefs, _labelManager.AllAnnotations);
+                return true;
+            }
+
+            return !string.IsNullOrEmpty(_lasFilePath) && SaveLabelsCore(destinationPath);
+        }
 
         public string SaveLabelsToLas()
         {
+            if (_streamed is { } streamed)
+                return SaveStreamedLabelsToLas(streamed);
+
             if (string.IsNullOrEmpty(_lasFilePath))
                 return "No source file is associated with the viewer.";
 
@@ -537,13 +676,122 @@ namespace CloudScope
             return $"Wrote class codes for {written:N0} points to {System.IO.Path.GetFileName(dest)}.";
         }
 
-        public bool LoadLabels() => !string.IsNullOrEmpty(_lasFilePath) && LabelFileIO.Load(_lasFilePath, _labelManager);
+        /// <summary>
+        /// Writes class codes for a streamed cloud into copies of the LAS files it was built
+        /// from.
+        /// </summary>
+        /// <remarks>
+        /// Only possible when the store was indexed with the source column: the builder
+        /// reorders points into cells, so without it nothing connects a stored point back to
+        /// the record it came from.
+        /// </remarks>
+        private string SaveStreamedLabelsToLas(StreamedSelectionSource streamed)
+        {
+            Dictionary<string, Dictionary<int, byte>> byFile =
+                streamed.MapToSourceRecords(_labelManager.AllAnnotations, _registry.CodeFor);
+            if (byFile.Count == 0)
+            {
+                return "Nothing to write back. The store needs the source column "
+                    + "(INDEX ... Source) and the labels need class codes.";
+            }
+
+            var written = new List<string>();
+            foreach ((string sourcePath, Dictionary<int, byte> map) in byFile)
+            {
+                if (!System.IO.File.Exists(sourcePath))
+                {
+                    written.Add($"{System.IO.Path.GetFileName(sourcePath)}: source file is missing");
+                    continue;
+                }
+
+                string dest = LasClassificationWriter.DefaultDestinationPath(sourcePath);
+                int count = LasClassificationWriter.Write(sourcePath, dest, map);
+                written.Add($"{count:N0} points to {System.IO.Path.GetFileName(dest)}");
+            }
+
+            return "Wrote class codes for " + string.Join("; ", written) + ".";
+        }
+
+        public bool LoadLabels(string? sourcePath = null)
+        {
+            if (_streamed is not { } streamed || streamed.LabelDirectory.Length == 0)
+                return !string.IsNullOrEmpty(_lasFilePath) && LabelFileIO.Load(_lasFilePath, _labelManager, sourcePath);
+
+            var saved = PointTileLabelFile.Load(streamed.LabelDirectory);
+            if (saved.Count == 0)
+                return false;
+
+            foreach ((int index, PointAnnotation annotation) in streamed.Restore(saved))
+                _labelManager.ApplyAnnotation(new[] { index }, annotation);
+
+            return true;
+        }
 
         public void ClearLabels() => _labelManager.ClearAll();
 
-        private bool SaveLabelsCore()
+        /// <summary>
+        /// Removes the labels of every point inside the active selection volume. This is the
+        /// counterpart of <see cref="ConfirmActiveSelection"/> and resolves the volume the
+        /// same way, so an erase covers exactly what a label would have covered.
+        /// </summary>
+        public string RemoveActiveSelectionLabels()
         {
-            LabelFileIO.Save(_lasFilePath, _labelManager);
+            if (!ActiveTool.IsEditing || !ActiveTool.HasVolume)
+                return "No active selection to erase.";
+
+            if (_points == null && _streamed == null)
+                return "No point cloud is loaded.";
+
+            IReadOnlyCollection<int> selected = _points != null
+                ? MapToSource(ActiveTool.CreateQuery().Resolve(_points))
+                : (IReadOnlyCollection<int>)_streamed!.ResolveAndRemember(ActiveTool.CreateQuery());
+
+            if (selected.Count == 0)
+                return "No points in selection volume.";
+
+            int labelled = selected.Count(index => _labelManager.GetAnnotation(index) != null);
+            _labelManager.RemoveLabels(selected);
+            ActiveTool.Confirm();
+            _pendingAction = EditAction.None;
+            Mode = InteractionMode.Navigate;
+            SetRestingInteractionState();
+            return $"Erased labels from {labelled:N0} of {selected.Count:N0} points  (total: {_labelManager.Count}).";
+        }
+
+        /// <summary>Points and instances per label, for LABELSTAT.</summary>
+        public string DescribeLabelStatistics()
+        {
+            if (_labelManager.Count == 0)
+                return "No points are labelled.";
+
+            var byLabel = new Dictionary<string, (int Points, HashSet<int> Instances)>(StringComparer.Ordinal);
+            foreach ((_, PointAnnotation annotation) in _labelManager.AllAnnotations)
+            {
+                if (!byLabel.TryGetValue(annotation.LabelName, out var entry))
+                    entry = (0, []);
+
+                entry.Points++;
+                if (annotation.InstanceId is int id) entry.Instances.Add(id);
+                byLabel[annotation.LabelName] = entry;
+            }
+
+            IEnumerable<string> lines = byLabel
+                .OrderByDescending(pair => pair.Value.Points)
+                .Select(pair =>
+                {
+                    string instances = pair.Value.Instances.Count > 0
+                        ? $", {pair.Value.Instances.Count:N0} instance(s)"
+                        : "";
+                    return $"  {pair.Key}: {pair.Value.Points:N0} points{instances}";
+                });
+
+            return $"{_labelManager.Count:N0} labelled points in {byLabel.Count} label(s):"
+                 + Environment.NewLine + string.Join(Environment.NewLine, lines);
+        }
+
+        private bool SaveLabelsCore(string? destinationPath)
+        {
+            LabelFileIO.Save(_lasFilePath, _labelManager, destinationPath);
             return true;
         }
 

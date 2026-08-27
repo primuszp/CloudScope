@@ -4,12 +4,11 @@ using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using OpenTK.Windowing.GraphicsLibraryFramework;
-using CloudScope.Platform.OpenGL;
 using CloudScope.Rendering;
 using CloudScope.Ui;
 using CloudScope.Loading;
 
-namespace CloudScope
+namespace CloudScope.Platform.OpenGL
 {
     /// <summary>
     /// OpenTK/GameWindow host. It adapts OpenTK lifecycle and input events to

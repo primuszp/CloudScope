@@ -95,6 +95,12 @@ namespace CloudScope.Selection
         public abstract void   OnMouseUp(int mx, int my, OrbitCamera camera);
         public abstract void   UpdateHandleDrag(int mx, int my, OrbitCamera cam);
         public abstract void   AdjustScale(float delta);
+
+        /// <summary>
+        /// Multiplies the tool's dimensions. Unlike <see cref="AdjustScale"/> this is absolute
+        /// and does not require an edit gesture to be in progress, so SCALE can take a number.
+        /// </summary>
+        public abstract void   ScaleBy(float factor);
         public abstract IPointSelectionQuery CreateQuery();
 
         protected GripDescriptor ActiveGrip => _activeGrip;

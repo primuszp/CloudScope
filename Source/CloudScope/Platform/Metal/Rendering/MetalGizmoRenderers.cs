@@ -11,8 +11,13 @@ namespace CloudScope.Platform.Metal.Rendering
     internal abstract class MetalGizmoRendererBase : ISelectionGizmoRenderer
     {
         private const int BufferedFrameCount = 3;
+
+        /// <summary>Widths mirror the OpenGL gizmo renderers so both backends look alike.</summary>
+        private const float AxisLineWidth = 1.5f;
         private const int DynamicBuffersPerFrame = 64;
-        protected readonly MetalPrimitiveRenderer Renderer = new();
+        protected readonly MetalPrimitiveRenderer Renderer;
+
+        protected MetalGizmoRendererBase(MetalRenderContext context) => Renderer = new MetalPrimitiveRenderer(context);
         private MTLBuffer _axisBuffer;
         private readonly MTLBuffer[] _dynamicBuffers = new MTLBuffer[BufferedFrameCount * DynamicBuffersPerFrame];
         private MetalFrameState? _dynamicFrame;
@@ -61,7 +66,8 @@ namespace CloudScope.Platform.Metal.Rendering
         {
             EnsureBase();
             for (int axis = 0; axis < 3; axis++)
-                Renderer.Draw(_axisBuffer, 2, MTLPrimitiveType.Line, mvp, AxisColor[axis], depthTest: false, firstVertex: axis * 2);
+                Renderer.Draw(_axisBuffer, 2, MTLPrimitiveType.Line, mvp, AxisColor[axis], depthTest: false,
+                    firstVertex: axis * 2, lineWidthPixels: AxisLineWidth);
         }
 
         protected static (float x, float y) ScreenToNdc(float sx, float sy, float width, float height)
@@ -72,11 +78,15 @@ namespace CloudScope.Platform.Metal.Rendering
         private readonly float[] _lineBuf    = new float[6];
         private readonly float[] _arrowBuf   = new float[9];
         private readonly float[] _diamondBuf = new float[18];
-        protected void DrawLine(float x0, float y0, float x1, float y1, Vector4 color)
+        protected void DrawLine(float x0, float y0, float x1, float y1, Vector4 color,
+            float lineWidthPixels = LineWidth.NativeMax)
         {
             _lineBuf[0] = x0; _lineBuf[1] = y0; _lineBuf[2] = 0f;
             _lineBuf[3] = x1; _lineBuf[4] = y1; _lineBuf[5] = 0f;
-            DrawDynamic(_lineBuf, 2, MTLPrimitiveType.Line, color);
+            // Halo first, then the core line, matching the OpenGL arrow shafts.
+            DrawDynamic(_lineBuf, 2, MTLPrimitiveType.Line, color with { W = color.W * 0.35f },
+                lineWidthPixels + 3f);
+            DrawDynamic(_lineBuf, 2, MTLPrimitiveType.Line, color, lineWidthPixels);
         }
 
         protected void DrawArrowHead(float tipX, float tipY, float fromX, float fromY, float size, Vector4 color)
@@ -102,7 +112,8 @@ namespace CloudScope.Platform.Metal.Rendering
             DrawDynamic(_diamondBuf, 6, MTLPrimitiveType.Triangle, color);
         }
 
-        protected void DrawDynamic(float[] vertices, int vertexCount, MTLPrimitiveType primitive, Vector4 color)
+        protected void DrawDynamic(float[] vertices, int vertexCount, MTLPrimitiveType primitive, Vector4 color,
+            float lineWidthPixels = LineWidth.NativeMax)
         {
             // Every encoded Metal draw must retain its own vertex contents until the
             // command buffer completes. Reusing one buffer here made rotation rings
@@ -111,14 +122,15 @@ namespace CloudScope.Platform.Metal.Rendering
             int bufferIndex = _dynamicFrameIndex * DynamicBuffersPerFrame + drawInFrame;
             ref MTLBuffer dynamicBuffer = ref _dynamicBuffers[bufferIndex];
             Renderer.UpdateBuffer(ref dynamicBuffer, vertices);
-            Renderer.Draw(dynamicBuffer, vertexCount, primitive, Matrix4.Identity, color, depthTest: false);
+            Renderer.Draw(dynamicBuffer, vertexCount, primitive, Matrix4.Identity, color, depthTest: false,
+                lineWidthPixels: lineWidthPixels);
         }
 
         public virtual void Dispose()
         {
-            MetalPrimitiveRenderer.Release(ref _axisBuffer);
+            MetalResources.Release(ref _axisBuffer);
             for (int i = 0; i < _dynamicBuffers.Length; i++)
-                MetalPrimitiveRenderer.Release(ref _dynamicBuffers[i]);
+                MetalResources.Release(ref _dynamicBuffers[i]);
             Renderer.Dispose();
         }
     }
@@ -126,6 +138,8 @@ namespace CloudScope.Platform.Metal.Rendering
     [SupportedOSPlatform("macos")]
     internal sealed class MetalBoxGizmoRenderer : MetalGizmoRendererBase, IBoxSelectionGizmoRenderer
     {
+        public MetalBoxGizmoRenderer(MetalRenderContext context) : base(context) { }
+
         private static readonly float[] Edges =
         {
             -1,-1,-1,  1,-1,-1,   1,-1,-1,  1, 1,-1,
@@ -168,8 +182,10 @@ namespace CloudScope.Platform.Metal.Rendering
             for (int face = 0; face < FaceColors.Length; face++)
                 Renderer.Draw(_faceBuffer, 6, MTLPrimitiveType.Triangle, mvp, FaceColors[face], depthTest: true, firstVertex: face * 6);
             RenderAxis(mvp);
-            Renderer.Draw(_edgeBuffer, 24, MTLPrimitiveType.Line, mvp, new Vector4(0f, 0.8f, 1f, 0.8f),  depthTest: true);
-            Renderer.Draw(_edgeBuffer, 24, MTLPrimitiveType.Line, mvp, new Vector4(0f, 0.8f, 1f, 0.18f), depthTest: false);
+            Renderer.Draw(_edgeBuffer, 24, MTLPrimitiveType.Line, mvp, new Vector4(0f, 0.8f, 1f, 0.8f),
+                depthTest: true, lineWidthPixels: 1.5f);
+            Renderer.Draw(_edgeBuffer, 24, MTLPrimitiveType.Line, mvp, new Vector4(0f, 0.8f, 1f, 0.18f),
+                depthTest: false, lineWidthPixels: LineWidth.NativeMax);
             RenderFaceArrows(box, camera);
             RenderCornerHandles(box, camera);
             RenderRings(box, camera);
@@ -198,15 +214,16 @@ namespace CloudScope.Platform.Metal.Rendering
                 nx1,ny1,0f, nx0,ny1,0f, nx0,ny1,0f, nx0,ny0,0f,
             });
             Renderer.Draw(_placementLineBuffer, 8, MTLPrimitiveType.Line,
-                Matrix4.Identity, new Vector4(0f, 0.82f, 1f, 0.9f), depthTest: false);
+                Matrix4.Identity, new Vector4(0f, 0.82f, 1f, 0.9f), depthTest: false,
+                lineWidthPixels: 1.5f);
         }
 
         public override void Dispose()
         {
-            MetalPrimitiveRenderer.Release(ref _edgeBuffer);
-            MetalPrimitiveRenderer.Release(ref _faceBuffer);
-            MetalPrimitiveRenderer.Release(ref _placementFillBuffer);
-            MetalPrimitiveRenderer.Release(ref _placementLineBuffer);
+            MetalResources.Release(ref _edgeBuffer);
+            MetalResources.Release(ref _faceBuffer);
+            MetalResources.Release(ref _placementFillBuffer);
+            MetalResources.Release(ref _placementLineBuffer);
             base.Dispose();
         }
 
@@ -246,7 +263,7 @@ namespace CloudScope.Platform.Metal.Rendering
                     i == box.ActiveHandle);
                 Vector4 color = style.Color;
 
-                DrawLine(fnx, fny, tnx, tny, color);
+                DrawLine(fnx, fny, tnx, tny, color, style.LineWidth);
                 DrawDiamond(fnx, fny, 4f / camera.ViewportWidth, 4f / camera.ViewportHeight, color);
                 DrawArrowHead(tnx, tny, fnx, fny, 0.013f, color);
             }
@@ -313,7 +330,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 bool active = box.ActiveHandle == 15 + axis;
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveRing(hovered, AxisColor[axis], active);
                 Vector4 color = style.Color;
-                DrawDynamic(_ringBuf, write / 3, MTLPrimitiveType.Line, color);
+                DrawDynamic(_ringBuf, write / 3, MTLPrimitiveType.Line, color, style.LineWidth);
             }
         }
 
@@ -336,7 +353,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 grip,
                 box.HoveredHandle == grip.Index,
                 box.ActiveHandle == grip.Index);
-            DrawLine(fnx, fny, tnx, tny, style.Color);
+            DrawLine(fnx, fny, tnx, tny, style.Color, style.LineWidth);
             DrawArrowHead(tnx, tny, fnx, fny, 0.02f, style.Color with { W = 1f });
         }
 
@@ -345,6 +362,8 @@ namespace CloudScope.Platform.Metal.Rendering
     [SupportedOSPlatform("macos")]
     internal sealed class MetalSphereGizmoRenderer : MetalGizmoRendererBase
     {
+        public MetalSphereGizmoRenderer(MetalRenderContext context) : base(context) { }
+
         private const int Seg = 64;
         private const int Lat = 16;
         private const int Lon = 32;
@@ -368,9 +387,9 @@ namespace CloudScope.Platform.Metal.Rendering
                 new Vector4(0.30f, 0.60f, 0.95f, 0.07f), depthTest: true);
             RenderAxis(mvp);
             Renderer.Draw(_circleBuffer, _circleVertexCount, MTLPrimitiveType.Line, mvp,
-                new Vector4(0.25f, 0.85f, 0.95f, 0.85f), depthTest: true);
+                new Vector4(0.25f, 0.85f, 0.95f, 0.85f), depthTest: true, lineWidthPixels: 2f);
             Renderer.Draw(_circleBuffer, _circleVertexCount, MTLPrimitiveType.Line, mvp,
-                new Vector4(0.25f, 0.85f, 0.95f, 0.18f), depthTest: false);
+                new Vector4(0.25f, 0.85f, 0.95f, 0.18f), depthTest: false, lineWidthPixels: LineWidth.NativeMax);
             RenderHandles(sphere, camera);
         }
 
@@ -458,8 +477,8 @@ namespace CloudScope.Platform.Metal.Rendering
 
         public override void Dispose()
         {
-            MetalPrimitiveRenderer.Release(ref _fillBuffer);
-            MetalPrimitiveRenderer.Release(ref _circleBuffer);
+            MetalResources.Release(ref _fillBuffer);
+            MetalResources.Release(ref _circleBuffer);
             base.Dispose();
         }
     }
@@ -467,6 +486,8 @@ namespace CloudScope.Platform.Metal.Rendering
     [SupportedOSPlatform("macos")]
     internal sealed class MetalCylinderGizmoRenderer : MetalGizmoRendererBase
     {
+        public MetalCylinderGizmoRenderer(MetalRenderContext context) : base(context) { }
+
         private const int CapSeg = 64;
         private const int LatSeg = 12;
 
@@ -498,9 +519,9 @@ namespace CloudScope.Platform.Metal.Rendering
                 new Vector4(0.30f, 0.60f, 0.95f, 0.07f), depthTest: true);
             RenderAxis(mvp);
             Renderer.Draw(_wireBuffer, _wireVertexCount, MTLPrimitiveType.Line, mvp,
-                new Vector4(0.25f, 0.85f, 0.95f, 0.85f), depthTest: true);
+                new Vector4(0.25f, 0.85f, 0.95f, 0.85f), depthTest: true, lineWidthPixels: 1.8f);
             Renderer.Draw(_wireBuffer, _wireVertexCount, MTLPrimitiveType.Line, mvp,
-                new Vector4(0.25f, 0.85f, 0.95f, 0.18f), depthTest: false);
+                new Vector4(0.25f, 0.85f, 0.95f, 0.18f), depthTest: false, lineWidthPixels: LineWidth.NativeMax);
             RenderExtrudeArrow(cyl, camera);
             RenderRings(cyl, camera);
             RenderHandles(cyl, camera);
@@ -592,7 +613,7 @@ namespace CloudScope.Platform.Metal.Rendering
             }
             if (write == 0) return;
 
-            DrawDynamic(_ringBuf, write / 3, MTLPrimitiveType.Line, new Vector4(0.25f, 0.85f, 0.95f, 0.90f));
+            DrawDynamic(_ringBuf, write / 3, MTLPrimitiveType.Line, new Vector4(0.25f, 0.85f, 0.95f, 0.90f), 2f);
             var (cnx, cny) = ScreenToNdc(cx, cy, camera.ViewportWidth, camera.ViewportHeight);
             DrawDiamond(cnx, cny, 6f / camera.ViewportWidth, 6f / camera.ViewportHeight, new Vector4(0.3f, 1f, 0.45f, 0.9f));
         }
@@ -612,7 +633,7 @@ namespace CloudScope.Platform.Metal.Rendering
             GripDescriptor grip = cyl.GetGrip(1);
             bool hovered = cyl.TryGetGrip(cyl.HoveredHandle, out GripDescriptor hoveredPrimary) && hoveredPrimary.IsPrimary;
             GripVisualDescriptor style = GripVisualStyleResolver.ResolvePointGrip(grip, hovered, cyl.ActiveHandle == grip.Index);
-            DrawLine(fnx, fny, tnx, tny, style.Color);
+            DrawLine(fnx, fny, tnx, tny, style.Color, style.LineWidth);
             DrawArrowHead(tnx, tny, fnx, fny, 0.02f, style.Color with { W = 1f });
         }
 
@@ -657,7 +678,7 @@ namespace CloudScope.Platform.Metal.Rendering
                     && activeGrip.Kind == GripKind.RotationRing
                     && activeGrip.Axis == axis;
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveRing(hovered, AxisColor[axis], active);
-                DrawDynamic(_ringBuf, write / 3, MTLPrimitiveType.Line, style.Color);
+                DrawDynamic(_ringBuf, write / 3, MTLPrimitiveType.Line, style.Color, style.LineWidth);
             }
         }
 
@@ -687,8 +708,8 @@ namespace CloudScope.Platform.Metal.Rendering
 
         public override void Dispose()
         {
-            MetalPrimitiveRenderer.Release(ref _fillBuffer);
-            MetalPrimitiveRenderer.Release(ref _wireBuffer);
+            MetalResources.Release(ref _fillBuffer);
+            MetalResources.Release(ref _wireBuffer);
             base.Dispose();
         }
     }

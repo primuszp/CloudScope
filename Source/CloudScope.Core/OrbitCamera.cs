@@ -425,6 +425,62 @@ namespace CloudScope
         }
 
         /// <summary>Immediately stops any in-progress transition (call on mouse down).</summary>
+        /// <summary>
+        /// Orbits by an explicit number of degrees, as the ORBIT command asks for, rather than
+        /// by a mouse delta scaled with <see cref="RotationSpeed"/>.
+        /// </summary>
+        public void OrbitBy(float azimuthDegrees, float elevationDegrees)
+        {
+            Vector3 pivotView = WorldToView(_orbitPivot, _vtw);
+            _az += azimuthDegrees;
+            _el += elevationDegrees;
+            if (ConstrainElev) _el = Math.Clamp(_el, -89f, 89f);
+            RebuildRot();
+            _trn = _orbitPivot - MulDir(pivotView, _vtw);
+        }
+
+        /// <summary>
+        /// Pans by a pixel offset. The depth is picked at the viewport centre first, so a typed
+        /// pan moves the scene by the same amount a drag of that length would.
+        /// </summary>
+        public void PanPixels(int dx, int dy)
+        {
+            PickDepthWindow(_vpW / 2, _vpH / 2);
+            Pan(0, 0, dx, dy);
+        }
+
+        /// <summary>Everything needed to return to this view later; what VIEW Save stores.</summary>
+        public readonly record struct CameraState(
+            float Azimuth,
+            float Elevation,
+            double HalfViewSize,
+            Vector3 Translation,
+            Vector3 Pivot,
+            double ViewAngle);
+
+        public CameraState SaveState() => new(_az, _el, _hvs, _trn, _orbitPivot, _vang);
+
+        public void RestoreState(CameraState state, bool animate = true)
+        {
+            _vang = state.ViewAngle;
+            CalcViewVolume();
+
+            if (animate)
+            {
+                BeginTransition(state.Azimuth, state.Elevation, state.HalfViewSize,
+                    state.Translation, state.Pivot, constrainTargetElevation: false);
+                return;
+            }
+
+            _az = state.Azimuth;
+            _el = state.Elevation;
+            _hvs = Math.Max(state.HalfViewSize, 0.001);
+            _trn = state.Translation;
+            _orbitPivot = state.Pivot;
+            RebuildRot();
+            CalcViewVolume();
+        }
+
         public void CancelTransition() => _txActive = false;
 
         /// <summary>True while a smooth fly-to animation is in progress.</summary>

@@ -11,9 +11,11 @@ namespace CloudScope.Platform.OpenGL.Rendering
     /// shader, dynamic VAO, shared axis-line geometry, and screen-space draw helpers.
     /// Concrete renderers call EnsureBaseResources() on first use.
     /// </summary>
-    public abstract class OpenGlGizmoRendererBase : ISelectionGizmoRenderer
+    internal abstract class OpenGlGizmoRendererBase : ISelectionGizmoRenderer
     {
         protected int _shader = -1, _uMVP, _uColor;
+        private readonly OpenGlWideLineRenderer _wideLines = new();
+        private Matrix4 _currentMvp = Matrix4.Identity;
         protected int _dynVao = -1, _dynVbo = -1;
         private   int _axisVao = -1, _axisVbo = -1;
 
@@ -63,14 +65,7 @@ void main() { FragColor = uColor; }
         {
             if (_shader != -1) return;
 
-            int v = GL.CreateShader(ShaderType.VertexShader);
-            GL.ShaderSource(v, VertSrc); GL.CompileShader(v);
-            int f = GL.CreateShader(ShaderType.FragmentShader);
-            GL.ShaderSource(f, FragSrc); GL.CompileShader(f);
-            _shader = GL.CreateProgram();
-            GL.AttachShader(_shader, v); GL.AttachShader(_shader, f);
-            GL.LinkProgram(_shader);
-            GL.DeleteShader(v); GL.DeleteShader(f);
+            _shader = OpenGlShaderCompiler.CreateProgram(VertSrc, FragSrc, "gizmo");
             _uMVP   = GL.GetUniformLocation(_shader, "uMVP");
             _uColor = GL.GetUniformLocation(_shader, "uColor");
 
@@ -82,6 +77,7 @@ void main() { FragColor = uColor; }
             GL.EnableVertexAttribArray(0);
 
             MakeStaticVao(ref _axisVao, ref _axisVbo, AxisLineData);
+            _wideLines.EnsureResources();
         }
 
         // ── Static VAO helper ─────────────────────────────────────────────────
@@ -110,6 +106,40 @@ void main() { FragColor = uColor; }
         protected void SetColor(float r, float g, float b, float a) => GL.Uniform4(_uColor, r, g, b, a);
         protected void SetColor(Vector4 c) => GL.Uniform4(_uColor, c.X, c.Y, c.Z, c.W);
 
+        // ── Lines ─────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Sets the transform for the following draws. It is remembered so that
+        /// <see cref="DrawLines"/> can hand the same matrix to the wide-line shader.
+        /// </summary>
+        protected void SetMvp(ref Matrix4 mvp)
+        {
+            _currentMvp = mvp;
+            SetMvp(ref mvp);
+        }
+
+        /// <summary>
+        /// Draws a line list from <paramref name="vbo"/> at a real pixel width. Widths above
+        /// one pixel go through the quad-expanding shader, because core-profile OpenGL will
+        /// not widen native lines (see <see cref="LineWidth"/>).
+        /// </summary>
+        protected void DrawLines(int vbo, int firstVertex, int vertexCount, Vector4 color, float widthPixels, int vertexStride = 3 * sizeof(float))
+        {
+            if (LineWidth.NeedsExpansion(widthPixels))
+            {
+                _wideLines.Draw(vbo, firstVertex, vertexCount, ref _currentMvp, color, widthPixels, vertexStride);
+                return;
+            }
+
+            SetColor(color);
+            GL.LineWidth(widthPixels);
+            GL.DrawArrays(PrimitiveType.Lines, firstVertex, vertexCount);
+        }
+
+        /// <summary>Draws a line list previously uploaded with <see cref="Dyn"/>.</summary>
+        protected void DrawDynamicLines(int firstVertex, int vertexCount, Vector4 color, float widthPixels)
+            => DrawLines(_dynVbo, firstVertex, vertexCount, color, widthPixels);
+
         // ── NDC conversion ────────────────────────────────────────────────────
 
         protected static (float nx, float ny) ScreenToNdc(float sx, float sy, float vpW, float vpH)
@@ -122,7 +152,7 @@ void main() { FragColor = uColor; }
         {
             Matrix4 id = Matrix4.Identity;
             GL.UseProgram(_shader);
-            GL.UniformMatrix4(_uMVP, false, ref id);
+            SetMvp(ref id);
             GL.Disable(EnableCap.DepthTest);
             GL.DepthMask(false);
         }
@@ -167,7 +197,7 @@ void main() { FragColor = uColor; }
         protected void BeginWorldSpaceOverlay(ref Matrix4 vp)
         {
             GL.UseProgram(_shader);
-            GL.UniformMatrix4(_uMVP, false, ref vp);
+            SetMvp(ref vp);
             GL.Disable(EnableCap.DepthTest);
             GL.DepthMask(false);
         }
@@ -213,18 +243,14 @@ void main() { FragColor = uColor; }
                 var (cnx, cny) = ScreenToNdc(cbSx,    cbSy,    vpW, vpH);
 
                 Matrix4 id = Matrix4.Identity;
-                GL.UniformMatrix4(_uMVP, false, ref id);
+                SetMvp(ref id);
 
                 DrawLine(snx, sny, cnx, cny);
-                SetColor(color with { W = 0.28f });
-                GL.LineWidth(lineWidth + 3f);
-                GL.DrawArrays(PrimitiveType.Lines, 0, 2);
-                SetColor(color with { W = 0.95f });
-                GL.LineWidth(lineWidth);
-                GL.DrawArrays(PrimitiveType.Lines, 0, 2);
+                DrawDynamicLines(0, 2, color with { W = 0.28f }, lineWidth + 3f);
+                DrawDynamicLines(0, 2, color with { W = 0.95f }, lineWidth);
 
                 // Restore VP matrix for world-space cone
-                GL.UniformMatrix4(_uMVP, false, ref vp);
+                SetMvp(ref vp);
             }
 
             // Build two perpendicular vectors for the cone base circle
@@ -278,14 +304,8 @@ void main() { FragColor = uColor; }
             var (tnx, tny) = ScreenToNdc(tipX, tipY, viewportWidth, viewportHeight);
 
             DrawLine(snx, sny, tnx, tny);
-            SetColor(color with { W = 0.35f });
-            GL.LineWidth(lineWidth + 3f);
-            GL.DrawArrays(PrimitiveType.Lines, 0, 2);
-
-            DrawLine(snx, sny, tnx, tny);
-            SetColor(color with { W = 1f });
-            GL.LineWidth(lineWidth);
-            GL.DrawArrays(PrimitiveType.Lines, 0, 2);
+            DrawDynamicLines(0, 2, color with { W = 0.35f }, lineWidth + 3f);
+            DrawDynamicLines(0, 2, color with { W = 1f }, lineWidth);
 
             DrawDiamondFill(snx, sny, 5f / viewportWidth, 5f / viewportHeight, color with { W = 1f });
             DrawArrowHead(tnx, tny, snx, sny, 0.022f, color with { W = 1f });
@@ -329,14 +349,13 @@ void main() { FragColor = uColor; }
         {
             GL.UseProgram(_shader);
             GL.BindVertexArray(_axisVao);
-            GL.UniformMatrix4(_uMVP, false, ref mvp);
+            SetMvp(ref mvp);
             GL.Disable(EnableCap.DepthTest);
             GL.DepthMask(false);
-            GL.LineWidth(1.5f);
             for (int ax = 0; ax < 3; ax++)
             {
-                SetColor(AxisColor[ax].X, AxisColor[ax].Y, AxisColor[ax].Z, 0.65f);
-                GL.DrawArrays(PrimitiveType.Lines, ax * 2, 2);
+                Vector4 axisColor = AxisColor[ax] with { W = 0.65f };
+                DrawLines(_axisVbo, ax * 2, 2, axisColor, 1.5f);
             }
             GL.DepthMask(true);
             GL.Enable(EnableCap.DepthTest);
@@ -348,6 +367,7 @@ void main() { FragColor = uColor; }
 
         public virtual void Dispose()
         {
+            _wideLines.Dispose();
             if (_shader  != -1) { GL.DeleteProgram(_shader);                                _shader  = -1; }
             if (_dynVao  != -1) { GL.DeleteVertexArray(_dynVao);  GL.DeleteBuffer(_dynVbo); _dynVao  = -1; }
             if (_axisVao != -1) { GL.DeleteVertexArray(_axisVao); GL.DeleteBuffer(_axisVbo); _axisVao = -1; }

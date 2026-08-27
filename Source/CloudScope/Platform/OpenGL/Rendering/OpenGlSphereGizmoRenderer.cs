@@ -15,7 +15,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
     ///   3. Three great-circle rings       (axis-colored, depth-tested + ghost)
     ///   4. Handle diamonds                (center=green, poles=white, hover=yellow)
     /// </summary>
-    public sealed class OpenGlSphereGizmoRenderer : OpenGlGizmoRendererBase
+    internal sealed class OpenGlSphereGizmoRenderer : OpenGlGizmoRendererBase
     {
         private int _fillVao = -1, _fillVbo = -1;
         private int _circVao = -1, _circVbo = -1;
@@ -55,7 +55,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private void RenderFill(Matrix4 mvp)
         {
             GL.UseProgram(_shader);
-            GL.UniformMatrix4(_uMVP, false, ref mvp);
+            SetMvp(ref mvp);
             GL.BindVertexArray(_fillVao);
             GL.Enable(EnableCap.DepthTest);
             GL.DepthMask(false);
@@ -70,7 +70,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private void RenderCircles(Matrix4 mvp)
         {
             GL.UseProgram(_shader);
-            GL.UniformMatrix4(_uMVP, false, ref mvp);
+            SetMvp(ref mvp);
             GL.BindVertexArray(_circVao);
             GL.DepthMask(false);
 
@@ -80,14 +80,10 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 int offset = ax * Seg * 2;
 
                 GL.Enable(EnableCap.DepthTest);
-                SetColor(c.X, c.Y, c.Z, 0.80f);
-                GL.LineWidth(2.0f);
-                GL.DrawArrays(PrimitiveType.Lines, offset, Seg * 2);
+                DrawLines(_circVbo, offset, Seg * 2, c with { W = 0.80f }, 2.0f);
 
                 GL.Disable(EnableCap.DepthTest);
-                SetColor(c.X, c.Y, c.Z, 0.18f);
-                GL.LineWidth(1.0f);
-                GL.DrawArrays(PrimitiveType.Lines, offset, Seg * 2);
+                DrawLines(_circVbo, offset, Seg * 2, c with { W = 0.18f }, 1.0f);
             }
 
             GL.DepthMask(true);
