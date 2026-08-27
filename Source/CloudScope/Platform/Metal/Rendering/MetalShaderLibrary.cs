@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using SharpMetal.Metal;
 using OpenTK.Mathematics;
+using CloudScope.Sections;
 
 namespace CloudScope.Platform.Metal
 {
@@ -15,15 +16,24 @@ namespace CloudScope.Platform.Metal
 
         /// <summary>Multiplied into the point's own color; white leaves it unchanged.</summary>
         private readonly Vector4 tint;
+        private readonly Vector4 sectionCenter;
+        private readonly Vector4 sectionAlong;
+        private readonly Vector4 sectionNormal;
+        private readonly Vector4 sectionHalfSize;
 
         public MetalPointUniforms(
-            Matrix4 view, Matrix4 projection, float pointSize, float alpha = 1f, Vector3? layerTint = null)
+            Matrix4 view, Matrix4 projection, float pointSize, float alpha = 1f,
+            Vector3? layerTint = null, SectionClip section = default)
         {
             this.view = view;
             this.projection = projection;
             point = new Vector4(pointSize, alpha, 0f, 0f);
             Vector3 rgb = layerTint ?? Vector3.One;
             tint = new Vector4(rgb.X, rgb.Y, rgb.Z, 1f);
+            sectionCenter = new Vector4(section.Center, section.Enabled ? 1f : 0f);
+            sectionAlong = new Vector4(section.Along, 0f);
+            sectionNormal = new Vector4(section.Normal, 0f);
+            sectionHalfSize = new Vector4(section.HalfLength, section.HalfWidth, 0f, 0f);
         }
     }
 
@@ -36,15 +46,24 @@ namespace CloudScope.Platform.Metal
 
         /// <summary>Multiplied into the point's own color; white leaves it unchanged.</summary>
         private readonly Vector4 tint;
+        private readonly Vector4 sectionCenter;
+        private readonly Vector4 sectionAlong;
+        private readonly Vector4 sectionNormal;
+        private readonly Vector4 sectionHalfSize;
 
         public MetalAttributePointUniforms(
-            Matrix4 view, Matrix4 projection, float pointSize, int colorSource, Vector3? layerTint = null)
+            Matrix4 view, Matrix4 projection, float pointSize, int colorSource,
+            Vector3? layerTint = null, SectionClip section = default)
         {
             this.view = view;
             this.projection = projection;
             point = new Vector4(pointSize, colorSource, 0f, 0f);
             Vector3 rgb = layerTint ?? Vector3.One;
             tint = new Vector4(rgb.X, rgb.Y, rgb.Z, 1f);
+            sectionCenter = new Vector4(section.Center, section.Enabled ? 1f : 0f);
+            sectionAlong = new Vector4(section.Along, 0f);
+            sectionNormal = new Vector4(section.Normal, 0f);
+            sectionHalfSize = new Vector4(section.HalfLength, section.HalfWidth, 0f, 0f);
         }
     }
 
@@ -100,7 +119,11 @@ namespace CloudScope.Platform.Metal
 using namespace metal;
 
 struct PointVertex { packed_float3 position; packed_float3 color; };
-struct PointUniforms { float4x4 view; float4x4 projection; float4 point; float4 tint; };
+struct PointUniforms
+{
+    float4x4 view; float4x4 projection; float4 point; float4 tint;
+    float4 sectionCenter; float4 sectionAlong; float4 sectionNormal; float4 sectionHalfSize;
+};
 struct VertexOut { float4 position [[position]]; float point_size [[point_size]]; float alpha; };
 
 vertex VertexOut pivot_point_vertex(
@@ -141,7 +164,11 @@ fragment float4 pivot_point_fragment(VertexOut in [[stage_in]], float2 pointCoor
 using namespace metal;
 
 struct PointVertex { packed_float3 position; packed_float3 color; };
-struct PointUniforms { float4x4 view; float4x4 projection; float4 point; float4 tint; };
+struct PointUniforms
+{
+    float4x4 view; float4x4 projection; float4 point; float4 tint;
+    float4 sectionCenter; float4 sectionAlong; float4 sectionNormal; float4 sectionHalfSize;
+};
 struct VertexOut { float4 position [[position]]; float point_size [[point_size]]; float3 color; };
 
 vertex VertexOut point_vertex(
@@ -151,6 +178,18 @@ vertex VertexOut point_vertex(
 {
     PointVertex p = points[vertexId];
     VertexOut out;
+    if (uniforms.sectionCenter.w > 0.5)
+    {
+        float3 delta = float3(p.position) - uniforms.sectionCenter.xyz;
+        if (abs(dot(delta, uniforms.sectionAlong.xyz)) > uniforms.sectionHalfSize.x
+            || abs(dot(delta, uniforms.sectionNormal.xyz)) > uniforms.sectionHalfSize.y)
+        {
+            out.position = float4(2.0, 2.0, 2.0, 1.0);
+            out.point_size = 0.0;
+            out.color = float3(0.0);
+            return out;
+        }
+    }
     out.position = uniforms.projection * uniforms.view * float4(p.position, 1.0);
     out.point_size = uniforms.point.x;
     out.color = p.color;
@@ -171,7 +210,11 @@ fragment float4 point_fragment(VertexOut in [[stage_in]])
 using namespace metal;
 
 struct PackedPointVertex { packed_float3 position; uchar4 color; };
-struct PointUniforms { float4x4 view; float4x4 projection; float4 point; float4 tint; };
+struct PointUniforms
+{
+    float4x4 view; float4x4 projection; float4 point; float4 tint;
+    float4 sectionCenter; float4 sectionAlong; float4 sectionNormal; float4 sectionHalfSize;
+};
 struct VertexOut { float4 position [[position]]; float point_size [[point_size]]; float3 color; };
 
 vertex VertexOut packed_point_vertex(
@@ -181,6 +224,18 @@ vertex VertexOut packed_point_vertex(
 {
     PackedPointVertex p = points[vertexId];
     VertexOut out;
+    if (uniforms.sectionCenter.w > 0.5)
+    {
+        float3 delta = float3(p.position) - uniforms.sectionCenter.xyz;
+        if (abs(dot(delta, uniforms.sectionAlong.xyz)) > uniforms.sectionHalfSize.x
+            || abs(dot(delta, uniforms.sectionNormal.xyz)) > uniforms.sectionHalfSize.y)
+        {
+            out.position = float4(2.0, 2.0, 2.0, 1.0);
+            out.point_size = 0.0;
+            out.color = float3(0.0);
+            return out;
+        }
+    }
     out.position = uniforms.projection * uniforms.view * float4(p.position, 1.0);
     out.point_size = uniforms.point.x;
     out.color = float3(p.color.rgb) / 255.0 * uniforms.tint.rgb;
@@ -208,7 +263,11 @@ struct PointAttributes
     ushort padding;
 };
 struct PaletteColor { float r; float g; float b; };
-struct AttributePointUniforms { float4x4 view; float4x4 projection; float4 point; float4 tint; };
+struct AttributePointUniforms
+{
+    float4x4 view; float4x4 projection; float4 point; float4 tint;
+    float4 sectionCenter; float4 sectionAlong; float4 sectionNormal; float4 sectionHalfSize;
+};
 struct VertexOut { float4 position [[position]]; float point_size [[point_size]]; float3 color; };
 
 float3 paletteColor(const device PaletteColor* palette, uint index)
@@ -241,6 +300,18 @@ vertex VertexOut attribute_point_vertex(
     int colorSource = int(uniforms.point.y);
 
     VertexOut out;
+    if (uniforms.sectionCenter.w > 0.5)
+    {
+        float3 delta = float3(p.position) - uniforms.sectionCenter.xyz;
+        if (abs(dot(delta, uniforms.sectionAlong.xyz)) > uniforms.sectionHalfSize.x
+            || abs(dot(delta, uniforms.sectionNormal.xyz)) > uniforms.sectionHalfSize.y)
+        {
+            out.position = float4(2.0, 2.0, 2.0, 1.0);
+            out.point_size = 0.0;
+            out.color = float3(0.0);
+            return out;
+        }
+    }
     out.position = uniforms.projection * uniforms.view * float4(p.position, 1.0);
     out.point_size = uniforms.point.x;
     if (colorSource == 0)

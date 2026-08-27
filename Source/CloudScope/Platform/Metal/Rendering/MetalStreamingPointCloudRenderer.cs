@@ -256,7 +256,7 @@ namespace CloudScope.Platform.Metal.Rendering
                         attributeUniformBuffer,
                         new MetalAttributePointUniforms(
                             view, projection, renderView.PointSize,
-                            PointRenderAttributeBuilder.MapColorSource(_colorSource), tint));
+                            PointRenderAttributeBuilder.MapColorSource(_colorSource), tint, renderView.Section));
                     encoder.SetVertexBuffer(attributeUniformBuffer, 0, 1);
                     encoder.SetVertexBuffer(_classPaletteBuffer, 0, 3);
                 }
@@ -265,7 +265,7 @@ namespace CloudScope.Platform.Metal.Rendering
                     MTLBuffer uniformBuffer = _uniformBuffers[_uniformBufferIndex];
                     MetalBufferWriter.Write(
                         uniformBuffer,
-                        new MetalPointUniforms(view, projection, renderView.PointSize, 1f, tint));
+                        new MetalPointUniforms(view, projection, renderView.PointSize, 1f, tint, renderView.Section));
                     encoder.SetVertexBuffer(uniformBuffer, 0, 1);
                 }
 

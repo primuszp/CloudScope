@@ -36,6 +36,11 @@ uniform int colorSource;
 uniform bool hasAttributes;
 uniform vec3 classPalette[256];
 uniform vec3 layerTint;
+uniform bool sectionEnabled;
+uniform vec3 sectionCenter;
+uniform vec3 sectionAlong;
+uniform vec3 sectionNormal;
+uniform vec2 sectionHalfSize;
 
 vec3 gradientColor(float t)
 {
@@ -51,6 +56,19 @@ vec3 heightColor(float z)
 
 void main()
 {
+    if (sectionEnabled)
+    {
+        vec3 sectionDelta = aPos - sectionCenter;
+        if (abs(dot(sectionDelta, sectionAlong)) > sectionHalfSize.x
+            || abs(dot(sectionDelta, sectionNormal)) > sectionHalfSize.y)
+        {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            gl_PointSize = 0.0;
+            vColor = vec3(0.0);
+            return;
+        }
+    }
+
     gl_Position  = projection * view * vec4(aPos, 1.0);
     gl_PointSize = pointSize;
     if (!hasAttributes)
@@ -89,6 +107,7 @@ void main()
 
         private int _shader = -1;
         private int _uView, _uProj, _uPointSize, _uColorSource, _uHasAttributes, _uLayerTint;
+        private int _uSectionEnabled, _uSectionCenter, _uSectionAlong, _uSectionNormal, _uSectionHalfSize;
 
         public void Initialize()
         {
@@ -99,6 +118,11 @@ void main()
             _uColorSource = GL.GetUniformLocation(_shader, "colorSource");
             _uHasAttributes = GL.GetUniformLocation(_shader, "hasAttributes");
             _uLayerTint = GL.GetUniformLocation(_shader, "layerTint");
+            _uSectionEnabled = GL.GetUniformLocation(_shader, "sectionEnabled");
+            _uSectionCenter = GL.GetUniformLocation(_shader, "sectionCenter");
+            _uSectionAlong = GL.GetUniformLocation(_shader, "sectionAlong");
+            _uSectionNormal = GL.GetUniformLocation(_shader, "sectionNormal");
+            _uSectionHalfSize = GL.GetUniformLocation(_shader, "sectionHalfSize");
             UploadClassPalette();
         }
 
@@ -113,6 +137,14 @@ void main()
             GL.Uniform1(_uPointSize, renderView.PointSize);
             GL.Uniform1(_uColorSource, PointRenderAttributeBuilder.MapColorSource(colorSource));
             GL.Uniform1(_uHasAttributes, hasAttributes ? 1 : 0);
+            GL.Uniform1(_uSectionEnabled, renderView.Section.Enabled ? 1 : 0);
+            if (renderView.Section.Enabled)
+            {
+                GL.Uniform3(_uSectionCenter, renderView.Section.Center);
+                GL.Uniform3(_uSectionAlong, renderView.Section.Along);
+                GL.Uniform3(_uSectionNormal, renderView.Section.Normal);
+                GL.Uniform2(_uSectionHalfSize, renderView.Section.HalfLength, renderView.Section.HalfWidth);
+            }
             SetLayerTint(Vector3.One);
         }
 

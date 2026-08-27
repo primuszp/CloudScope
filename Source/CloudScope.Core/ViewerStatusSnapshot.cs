@@ -33,6 +33,9 @@ public readonly record struct ViewerStatusSnapshot
     /// <summary>Description of the active point filter, empty when none.</summary>
     public string Filter { get; init; } = "";
 
+    /// <summary>Active cross-section description, empty when section display is off.</summary>
+    public string CrossSection { get; init; } = "";
+
     public InteractionMode Mode { get; init; } = InteractionMode.Navigate;
     public SelectionToolType ActiveTool { get; init; } = SelectionToolType.Box;
     public SelectionInteractionState InteractionState { get; init; } = SelectionInteractionState.Navigate;

@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.Versioning;
 using CloudScope.Labeling;
 using CloudScope.Rendering;
+using CloudScope.Sections;
 using OpenTK.Mathematics;
 using SharpMetal.Foundation;
 using SharpMetal.Metal;
@@ -44,10 +45,13 @@ namespace CloudScope.Platform.Metal.Rendering
             BuildBuffer(ref _previewBuffer, data, count);
         }
 
-        public void RenderPreview(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj, float pointSize)
-            => RenderBuffer(frameData, _previewBuffer, _previewCount, ref view, ref proj, pointSize + 2f);
+        public void RenderPreview(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj,
+            float pointSize, SectionClip section = default)
+            => RenderBuffer(frameData, _previewBuffer, _previewCount, ref view, ref proj, pointSize + 2f, section);
 
-        public void Render(IRenderFrameData frameData, PointData[] points, LabelManager labels, Func<PointAnnotation, Vector3> annotationColor, ref Matrix4 view, ref Matrix4 proj, float pointSize)
+        public void Render(IRenderFrameData frameData, PointData[] points, LabelManager labels,
+            Func<PointAnnotation, Vector3> annotationColor, ref Matrix4 view, ref Matrix4 proj,
+            float pointSize, SectionClip section = default)
         {
             EnsureResources();
             if (_dirty)
@@ -55,7 +59,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 RebuildHighlightBuffer(points, labels, annotationColor);
                 _dirty = false;
             }
-            RenderBuffer(frameData, _highlightBuffer, _highlightCount, ref view, ref proj, pointSize + 2f);
+            RenderBuffer(frameData, _highlightBuffer, _highlightCount, ref view, ref proj, pointSize + 2f, section);
         }
 
         public void Dispose()
@@ -98,12 +102,13 @@ namespace CloudScope.Platform.Metal.Rendering
         }
 
         private void RenderBuffer(IRenderFrameData frameData, MTLBuffer buffer, int count,
-            ref Matrix4 view, ref Matrix4 proj, float pointSize)
+            ref Matrix4 view, ref Matrix4 proj, float pointSize, SectionClip section)
         {
             if (count == 0 || buffer.NativePtr == IntPtr.Zero || _pipeline.NativePtr == IntPtr.Zero)
                 return;
 
-            MetalBufferWriter.Write(_uniformsBuffer, new MetalPointUniforms(view, proj, pointSize));
+            MetalBufferWriter.Write(_uniformsBuffer,
+                new MetalPointUniforms(view, proj, pointSize, section: section));
 
             var encoder = frameData is MetalFrameState frame
                 ? frame.RenderCommandEncoder

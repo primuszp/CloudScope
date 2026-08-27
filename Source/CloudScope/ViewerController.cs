@@ -8,6 +8,7 @@ using OpenTK.Mathematics;
 using CloudScope.Selection;
 using CloudScope.Rendering;
 using CloudScope.Store;
+using CloudScope.Sections;
 
 namespace CloudScope
 {
@@ -31,6 +32,8 @@ namespace CloudScope
         private bool _forceAuxiliaryViewRefresh;
         private float _cloudRadius = 50f;
         private PointCloudDataset? _dataset;
+        private SectionDefinition? _crossSection;
+        private int _nextSectionId = 1;
 
         /// <summary>
         /// The on-disk clouds being streamed, empty when the resident path is drawing.
@@ -194,6 +197,7 @@ namespace CloudScope
 
         public void LoadPointCloud(PointData[] pts, float cloudRadius = 50f)
         {
+            DiscardCrossSection();
             CloseLayers();
             _dataset = null;
             _cloudRadius = cloudRadius;
@@ -205,6 +209,7 @@ namespace CloudScope
 
         public void LoadPointCloud(PointCloudDataset dataset)
         {
+            DiscardCrossSection();
             CloseLayers();
             _dataset = dataset;
             _cloudRadius = dataset.Radius;
@@ -326,6 +331,7 @@ namespace CloudScope
 
             if (replace)
             {
+                DiscardCrossSection();
                 // The resident path owns the frame while it holds points, so it is emptied.
                 CloseLayers();
                 _pointRenderer.Upload(PointCloudRenderData.Empty);
@@ -506,6 +512,9 @@ namespace CloudScope
             LoadedCount = StoredPointCount ?? _dataset?.LoadedCount ?? _pointRenderer.PointCount,
             VisibleCount = StoredPointCount ?? _dataset?.VisibleCount ?? _pointRenderer.PointCount,
             Filter = _dataset is { FilterDescription: not "None" } filtered ? filtered.FilterDescription : "",
+            CrossSection = _crossSection is { } section
+                ? $"{section.Name}, width {section.Width:0.###}"
+                : "",
             Mode = _selection.Mode,
             ActiveTool = _selection.ActiveTool.ToolType,
             InteractionState = _selection.InteractionState,
@@ -516,9 +525,11 @@ namespace CloudScope
             PointSize = ActiveViewport.Input.PointSize,
             IsPerspective = ActiveViewport.Camera.IsPerspective,
             ViewportLayout = DescribeViewportLayout(_viewportLayout),
-            ViewName = ActiveViewport.Camera.IsPerspective && _viewportLayout == ViewportLayoutKind.SinglePerspective
-                ? "Perspective"
-                : DescribeViewportView(_auxiliaryViewportView),
+            ViewName = ActiveViewport.SectionMode == SectionDisplayMode.Profile && _crossSection is { } activeSection
+                ? $"Cross-section {activeSection.Name}"
+                : ActiveViewport.Camera.IsPerspective && _viewportLayout == ViewportLayoutKind.SinglePerspective
+                    ? "Perspective"
+                    : DescribeViewportView(_auxiliaryViewportView),
             Fps = _smoothedFps,
             LabelWindowVisible = LabelWindowVisible,
             CommandHistoryVisible = CommandHistoryVisible,
@@ -543,6 +554,7 @@ namespace CloudScope
 
         public void Reset()
         {
+            DiscardCrossSection();
             CloseLayers();
             _cloudRadius = 50f;
             _dataset = null;
@@ -884,7 +896,110 @@ namespace CloudScope
             }
 
             UpdateViewportLayout();
+            ApplySectionCameras();
             return $"Viewport layout: {DescribeViewportLayout(_viewportLayout)}. View: {DescribeViewportView(_auxiliaryViewportView)}.";
+        }
+
+        public bool HasCrossSection => _crossSection.HasValue;
+
+        public string CrossSectionDescription => _crossSection is { } section
+            ? $"{section.Name}: length {section.Length:0.###}, width {section.Width:0.###}"
+            : "No cross-section.";
+
+        public string CreateCrossSection(Vector3 start, Vector3 end, float width)
+        {
+            float length = new Vector2(end.X - start.X, end.Y - start.Y).Length;
+            if (length < 0.001f)
+                return "Cross-section baseline is too short.";
+            if (!float.IsFinite(width) || width < 0.001f)
+                return "Cross-section width must be positive.";
+
+            // A section baseline is horizontal even when its two depth picks landed on
+            // terrain at slightly different elevations. Z remains the profile's vertical axis.
+            float baselineZ = (start.Z + end.Z) * 0.5f;
+            start.Z = baselineZ;
+            end.Z = baselineZ;
+
+            SectionStateSnapshot before = CaptureSectionState();
+            var section = new SectionDefinition(_nextSectionId++, $"XS{_nextSectionId - 1}", start, end, width);
+            _crossSection = section;
+
+            foreach (ViewportState viewport in _viewports)
+                viewport.SectionMode = SectionDisplayMode.None;
+
+            int activeCount = LayoutViewportCount(_viewportLayout);
+            if (_viewportLayout == ViewportLayoutKind.SingleTop || activeCount == 1)
+            {
+                _previousViewportLayout = _viewportLayout;
+                _viewportLayout = ViewportLayoutKind.TwoVertical;
+                _forceAuxiliaryViewRefresh = false;
+                UpdateViewportLayout();
+                _viewports[0].SectionMode = SectionDisplayMode.PlanGuide;
+                _viewports[1].SectionMode = SectionDisplayMode.Profile;
+                _activeViewportIndex = 1;
+            }
+            else
+            {
+                int planIndex = Math.Clamp(_activeViewportIndex, 0, activeCount - 1);
+                int profileIndex = (planIndex + 1) % activeCount;
+                _viewports[planIndex].SectionMode = SectionDisplayMode.PlanGuide;
+                _viewports[profileIndex].SectionMode = SectionDisplayMode.Profile;
+                _activeViewportIndex = profileIndex;
+            }
+
+            ApplySectionCameras();
+            RecordSectionChange(before, CaptureSectionState());
+            return $"Cross-section {section.Name} created. Length {section.Length:0.###}, width {section.Width:0.###}.";
+        }
+
+        public string ClearCrossSection()
+        {
+            if (_crossSection is null)
+                return "No cross-section to clear.";
+
+            SectionStateSnapshot before = CaptureSectionState();
+            _crossSection = null;
+            foreach (ViewportState viewport in _viewports)
+                viewport.SectionMode = SectionDisplayMode.None;
+            RecordSectionChange(before, CaptureSectionState());
+            return "Cross-section cleared.";
+        }
+
+        public string FlipCrossSection()
+        {
+            if (_crossSection is not { } section)
+                return "No cross-section to flip.";
+
+            SectionStateSnapshot before = CaptureSectionState();
+            _crossSection = section with { Flipped = !section.Flipped };
+            ApplySectionCameras();
+            RecordSectionChange(before, CaptureSectionState());
+            return $"Cross-section {section.Name} view direction flipped.";
+        }
+
+        public string SetCrossSectionWidth(float width)
+        {
+            if (_crossSection is not { } section)
+                return "No cross-section to edit.";
+            if (!float.IsFinite(width) || width < 0.001f)
+                return "Cross-section width must be positive.";
+
+            SectionStateSnapshot before = CaptureSectionState();
+            _crossSection = section with { Width = width };
+            RecordSectionChange(before, CaptureSectionState());
+            return $"Cross-section {section.Name} width: {width:0.###}.";
+        }
+
+        public string ShowCrossSectionInActiveViewport()
+        {
+            if (_crossSection is null)
+                return "No cross-section to display.";
+
+            SectionStateSnapshot before = CaptureSectionState();
+            ActiveViewport.SectionMode = SectionDisplayMode.Profile;
+            ApplySectionCamera(ActiveViewport);
+            RecordSectionChange(before, CaptureSectionState());
+            return "Active viewport now shows the cross-section profile.";
         }
 
         public bool SaveLabels(string? destinationPath = null) => _selection.SaveLabels(destinationPath);
@@ -923,6 +1038,7 @@ namespace CloudScope
                 shouldClose |= viewportShouldClose;
             }
 
+            _selection.SetSectionClip(SectionClipFor(ActiveViewport));
             _selection.UpdatePreview(dt);
             return shouldClose || CloseRequested;
         }
@@ -947,6 +1063,7 @@ namespace CloudScope
 
             _pointerCaptureViewport = viewport;
             _selection.SetViewConstraint(ConstraintFor(viewport));
+            _selection.SetSectionClip(SectionClipFor(viewport));
             if (button == ViewerMouseButton.Left)
             {
                 bool toolConsumed = _selection.MouseDownLeft(localX, localY, camera);
@@ -958,7 +1075,7 @@ namespace CloudScope
                     toolConsumed,
                     _selection.Mode == InteractionMode.Label && _selection.ActiveTool.HasVolume,
                     _selection.ActiveTool.Center,
-                    allowRotate: true);
+                    allowRotate: viewport.SectionMode != SectionDisplayMode.Profile);
             }
             if (button != ViewerMouseButton.Left)
                 viewport.Input.MouseDown(button, localX, localY, camera, false, false, Vector3.Zero);
@@ -970,6 +1087,7 @@ namespace CloudScope
             GetViewportLocal(viewport, mx, my, out int localX, out int localY);
 
             _selection.SetViewConstraint(ConstraintFor(viewport));
+            _selection.SetSectionClip(SectionClipFor(viewport));
             if (button == ViewerMouseButton.Left) _selection.MouseUpLeft(localX, localY, viewport.Camera);
             viewport.Input.MouseUp(button);
             _pointerCaptureViewport = null;
@@ -991,6 +1109,7 @@ namespace CloudScope
             }
 
             _selection.SetViewConstraint(ConstraintFor(viewport));
+            _selection.SetSectionClip(SectionClipFor(viewport));
             _selection.MouseMove(localX, localY, viewport.Camera);
             viewport.Input.MouseMove(localX, localY, viewport.Camera);
         }
@@ -1024,12 +1143,14 @@ namespace CloudScope
                 ApplyRenderViewport(viewport);
                 var view = viewport.Camera.GetViewMatrix();
                 var proj = viewport.Camera.GetProjectionMatrix();
+                SectionClip sectionClip = SectionClipFor(viewport);
 
                 Breadcrumb("point-render");
                 var renderView = new PointRenderView(
                     view, proj,
                     viewport.Bounds.Width, viewport.Bounds.Height,
-                    viewport.Input.PointSize);
+                    viewport.Input.PointSize,
+                    sectionClip);
                 int drawCount = _layers.Count == 0
                     ? _pointRenderer.Render(frameData, in renderView)
                     : _streamingRenderer.Render(frameData, in renderView);
@@ -1037,12 +1158,13 @@ namespace CloudScope
 
                 Breadcrumb("highlight");
                 if (_selection.SourcePoints != null && _selection.Labels.Count > 0)
-                    _highlightRenderer.Render(frameData, _selection.SourcePoints, _selection.Labels, _selection.ResolveAnnotationColor, ref view, ref proj, viewport.Input.PointSize);
+                    _highlightRenderer.Render(frameData, _selection.SourcePoints, _selection.Labels,
+                        _selection.ResolveAnnotationColor, ref view, ref proj, viewport.Input.PointSize, sectionClip);
 
                 Breadcrumb("preview");
                 if (_selection.TryTakePreview(out var previewIndices))
                     _highlightRenderer.UpdatePreview(_selection.Points, previewIndices);
-                _highlightRenderer.RenderPreview(frameData, ref view, ref proj, viewport.Input.PointSize);
+                _highlightRenderer.RenderPreview(frameData, ref view, ref proj, viewport.Input.PointSize, sectionClip);
 
                 if (_selection.Mode == InteractionMode.Label)
                 {
@@ -1066,6 +1188,9 @@ namespace CloudScope
 
                 if (_selection.Mode == InteractionMode.Label)
                     _overlayRenderer.RenderModeIndicator(frameData, viewport.Bounds.Width, viewport.Bounds.Height, _selection.ActiveTool.ToolType);
+
+                if (_crossSection is { } section && viewport.SectionMode == SectionDisplayMode.PlanGuide)
+                    _overlayRenderer.RenderSectionGuide(frameData, ref view, ref proj, section);
 
                 _overlayRenderer.RenderViewportBorder(frameData, viewport.Bounds.Width, viewport.Bounds.Height,
                     ReferenceEquals(viewport, ActiveViewport));
@@ -1284,6 +1409,62 @@ namespace CloudScope
             viewport.Camera.FitToCloud(_cloudRadius);
         }
 
+        private void ApplySectionCameras()
+        {
+            foreach (ViewportState viewport in ActiveViewports())
+                ApplySectionCamera(viewport);
+        }
+
+        private SectionClip SectionClipFor(ViewportState viewport) =>
+            _crossSection is { } section && viewport.SectionMode == SectionDisplayMode.Profile
+                ? section.ToClip()
+                : SectionClip.None;
+
+        private void ApplySectionCamera(ViewportState viewport)
+        {
+            if (_crossSection is not { } section || viewport.SectionMode != SectionDisplayMode.Profile)
+                return;
+
+            viewport.Camera.SetOrthographicSectionView(
+                section.Start, section.End, section.Flipped, _cloudRadius);
+        }
+
+        private SectionStateSnapshot CaptureSectionState() => new(
+            _crossSection,
+            _viewportLayout,
+            _previousViewportLayout,
+            _activeViewportIndex,
+            _viewports.Select(viewport => viewport.SectionMode).ToArray());
+
+        private void RestoreSectionState(SectionStateSnapshot snapshot)
+        {
+            _crossSection = snapshot.Section;
+            _viewportLayout = snapshot.Layout;
+            _previousViewportLayout = snapshot.PreviousLayout;
+            _activeViewportIndex = snapshot.ActiveViewportIndex;
+            for (int i = 0; i < _viewports.Length; i++)
+                _viewports[i].SectionMode = i < snapshot.Modes.Length
+                    ? snapshot.Modes[i]
+                    : SectionDisplayMode.None;
+            _forceAuxiliaryViewRefresh = false;
+            UpdateViewportLayout();
+            ApplySectionCameras();
+        }
+
+        private void RecordSectionChange(SectionStateSnapshot before, SectionStateSnapshot after) =>
+            UndoHistory.Record(new DelegateUndoAction(
+                "Cross-section",
+                () => RestoreSectionState(before),
+                () => RestoreSectionState(after)));
+
+        private void DiscardCrossSection()
+        {
+            _crossSection = null;
+            foreach (ViewportState viewport in _viewports)
+                viewport.SectionMode = SectionDisplayMode.None;
+            _selection.SetSectionClip(SectionClip.None);
+        }
+
         private void ApplyRenderViewport(ViewportState viewport)
         {
             int y = Math.Max(0, _height - viewport.Bounds.Y - viewport.Bounds.Height);
@@ -1357,7 +1538,15 @@ namespace CloudScope
             public CameraInputController Input { get; } = input;
             public ViewportBounds Bounds { get; set; } = new(0, 0, 1, 1);
             public bool IsInitialized { get; set; }
+            public SectionDisplayMode SectionMode { get; set; }
         }
+
+        private readonly record struct SectionStateSnapshot(
+            SectionDefinition? Section,
+            ViewportLayoutKind Layout,
+            ViewportLayoutKind PreviousLayout,
+            int ActiveViewportIndex,
+            SectionDisplayMode[] Modes);
 
         /// <summary>Framebuffer edges reserved for shell panels, in physical pixels.</summary>
         private readonly record struct ViewportInset(int Left, int Top, int Right, int Bottom);

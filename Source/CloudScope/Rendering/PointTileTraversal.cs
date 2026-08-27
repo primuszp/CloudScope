@@ -82,7 +82,8 @@ internal static class PointTileTraversal
             PointTileNode[] layerNodes = layer.Store.Nodes;
             foreach (int root in layer.Roots)
             {
-                if (TryProject(layerNodes[root], ref viewProjection, view.ViewportWidth, view.ViewportHeight,
+                if (IntersectsSection(layerNodes[root], view.Section)
+                    && TryProject(layerNodes[root], ref viewProjection, view.ViewportWidth, view.ViewportHeight,
                         out float rootArea, out float rootDepth))
                     heap.Push(layerIndex, root, rootDepth, rootArea);
             }
@@ -116,7 +117,8 @@ internal static class PointTileTraversal
                 int childIndex = node.FirstChild + child;
                 if ((uint)childIndex >= (uint)nodes.Length)
                     continue;
-                if (TryProject(nodes[childIndex], ref viewProjection, view.ViewportWidth, view.ViewportHeight,
+                if (IntersectsSection(nodes[childIndex], view.Section)
+                    && TryProject(nodes[childIndex], ref viewProjection, view.ViewportWidth, view.ViewportHeight,
                         out float childArea, out float childDepth))
                     heap.Push(layer, childIndex, childDepth, childArea);
             }
@@ -124,6 +126,11 @@ internal static class PointTileTraversal
 
         return count;
     }
+
+    private static bool IntersectsSection(in PointTileNode node, in CloudScope.Sections.SectionClip section) =>
+        section.IntersectsAabb(
+            new Vector3(node.MinX, node.MinY, node.MinZ),
+            new Vector3(node.MaxX, node.MaxY, node.MaxZ));
 
     /// <summary>
     /// Projects a cell's bounds and reports the pixel area it covers plus a depth to order by,

@@ -2,6 +2,7 @@ using System;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using CloudScope.Selection;
+using CloudScope.Sections;
 using CloudScope.Rendering;
 
 namespace CloudScope.Platform.OpenGL.Rendering
@@ -24,6 +25,8 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private readonly float[] _shadowData = new float[24];
         private readonly float[] _indData = new float[24];
         private readonly float[] _viewportBorderData = new float[30];
+        private readonly float[] _sectionGuideVertices = new float[48];
+        private int _sectionGuideVbo = -1;
 
         /// <summary>Interleaved position + color vertices, as the overlay buffers store them.</summary>
         private const int PivotVertexStride = 6 * sizeof(float);
@@ -266,6 +269,55 @@ void main()
             GL.Enable(EnableCap.DepthTest);
         }
 
+        public void RenderSectionGuide(
+            IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj, SectionDefinition section)
+        {
+            Vector3 normal = section.Normal;
+            Vector3 along = section.Along;
+            float halfWidth = section.Width * 0.5f;
+            Vector3 s0 = section.Start + normal * halfWidth;
+            Vector3 s1 = section.Start - normal * halfWidth;
+            Vector3 e0 = section.End + normal * halfWidth;
+            Vector3 e1 = section.End - normal * halfWidth;
+            int vertex = 0;
+            AddSectionSegment(ref vertex, s0, e0);
+            AddSectionSegment(ref vertex, e0, e1);
+            AddSectionSegment(ref vertex, e1, s1);
+            AddSectionSegment(ref vertex, s1, s0);
+            AddSectionSegment(ref vertex, section.Start, section.End);
+
+            float arrowLength = MathF.Max(section.Width, section.Length * 0.08f);
+            Vector3 tip = section.Center + normal * arrowLength;
+            AddSectionSegment(ref vertex, section.Center, tip);
+            AddSectionSegment(ref vertex, tip, tip - normal * arrowLength * 0.32f + along * arrowLength * 0.22f);
+            AddSectionSegment(ref vertex, tip, tip - normal * arrowLength * 0.32f - along * arrowLength * 0.22f);
+
+            if (_sectionGuideVbo == -1)
+                _sectionGuideVbo = GL.GenBuffer();
+            GL.BindBuffer(BufferTarget.ArrayBuffer, _sectionGuideVbo);
+            GL.BufferData(BufferTarget.ArrayBuffer, _sectionGuideVertices.Length * sizeof(float),
+                _sectionGuideVertices, BufferUsageHint.DynamicDraw);
+            Matrix4 mvp = view * proj;
+            GL.Disable(EnableCap.DepthTest);
+            _wideLines.Draw(_sectionGuideVbo, 0, vertex, ref mvp,
+                new Vector4(1f, 0.72f, 0.12f, 0.95f), 2f);
+            GL.Enable(EnableCap.DepthTest);
+        }
+
+        private void AddSectionSegment(ref int vertex, Vector3 start, Vector3 end)
+        {
+            WriteSectionVertex(vertex++, start);
+            WriteSectionVertex(vertex++, end);
+        }
+
+        private void WriteSectionVertex(int vertex, Vector3 point)
+        {
+            int i = vertex * 3;
+            _sectionGuideVertices[i] = point.X;
+            _sectionGuideVertices[i + 1] = point.Y;
+            _sectionGuideVertices[i + 2] = point.Z;
+        }
+
         private void WriteBorderVertex(int vertex, float x, float y, Vector3 color)
         {
             int i = vertex * 6;
@@ -346,6 +398,11 @@ void main()
         public void Dispose()
         {
             _wideLines.Dispose();
+            if (_sectionGuideVbo != -1)
+            {
+                GL.DeleteBuffer(_sectionGuideVbo);
+                _sectionGuideVbo = -1;
+            }
             _smoothLines.Dispose();
             foreach (int pivotVbo in _pivotVbos)
                 if (pivotVbo != -1) GL.DeleteBuffer(pivotVbo);

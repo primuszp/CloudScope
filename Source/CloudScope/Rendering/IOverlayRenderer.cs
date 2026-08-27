@@ -1,6 +1,7 @@
 using System;
 using OpenTK.Mathematics;
 using CloudScope.Selection;
+using CloudScope.Sections;
 
 namespace CloudScope.Rendering
 {
@@ -11,5 +12,6 @@ namespace CloudScope.Rendering
         void RenderCenterCrosshair(IRenderFrameData frameData, int width, int height, float alpha);
         void RenderModeIndicator(IRenderFrameData frameData, int width, int height, SelectionToolType toolType);
         void RenderViewportBorder(IRenderFrameData frameData, int width, int height, bool active);
+        void RenderSectionGuide(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj, SectionDefinition section);
     }
 }

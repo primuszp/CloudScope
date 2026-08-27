@@ -4,6 +4,7 @@ using CloudScope.Loading;
 using CloudScope.Rendering;
 using CloudScope.Selection;
 using CloudScope.Store;
+using CloudScope.Sections;
 using OpenTK.Mathematics;
 using System.Linq;
 using System.Threading;
@@ -32,6 +33,7 @@ namespace CloudScope
         private int[]? _viewToSource;            // visible index → source index
         private PointCloudAttributes? _attributes;
         private string _lasFilePath    = "";
+        private SectionClip _sectionClip;
 
         /// <summary>
         /// Set while streamed clouds are on screen, in place of the in-memory arrays.
@@ -88,6 +90,14 @@ namespace CloudScope
         /// — which is exactly the set the highlight renderer has anything to draw for.
         /// </remarks>
         public PointData[]? SourcePoints => _streamed is null ? _sourcePoints : _streamed.LabelPoints;
+
+        public void SetSectionClip(SectionClip sectionClip) => _sectionClip = sectionClip;
+
+        private IPointSelectionQuery CreateActiveQuery()
+        {
+            IPointSelectionQuery query = ActiveTool.CreateQuery();
+            return _sectionClip.Enabled ? new SectionSelectionQuery(query, _sectionClip) : query;
+        }
 
         /// <summary>
         /// The store-file identity of each labelled point, or null for an in-memory cloud.
@@ -195,12 +205,12 @@ namespace CloudScope
             IReadOnlyList<int> viewIdx;
             if (points != null)
             {
-                viewIdx = ActiveTool.CreateQuery().Resolve(points);
+                viewIdx = CreateActiveQuery().Resolve(points);
             }
             else if (_streamed != null)
             {
                 SelectionPreviewWorker.PreviewResult found =
-                    _streamed.ResolvePreview(ActiveTool.CreateQuery(), CancellationToken.None);
+                    _streamed.ResolvePreview(CreateActiveQuery(), CancellationToken.None);
                 points = found.Points;
                 viewIdx = found.Indices;
             }
@@ -452,13 +462,13 @@ namespace CloudScope
                     _previewTimer = 0f;
                     if (_points != null)
                     {
-                        _previewWorker.Request(ActiveTool.CreateQuery(), _points);
+                        _previewWorker.Request(CreateActiveQuery(), _points);
                     }
                     else
                     {
                         // The volume is captured now, so a gizmo moved while the query is
                         // running does not change the answer underneath it.
-                        IPointSelectionQuery query = ActiveTool.CreateQuery();
+                        IPointSelectionQuery query = CreateActiveQuery();
                         StreamedSelectionSource streamed = _streamed!;
                         _previewWorker.Request(token => streamed.ResolvePreview(query, token));
                     }
@@ -536,8 +546,8 @@ namespace CloudScope
             if (_points != null || _streamed != null)
             {
                 IReadOnlyCollection<int> selected = _points != null
-                    ? MapToSource(ActiveTool.CreateQuery().Resolve(_points))
-                    : (IReadOnlyCollection<int>)_streamed!.ResolveAndRemember(ActiveTool.CreateQuery());
+                    ? MapToSource(CreateActiveQuery().Resolve(_points))
+                    : (IReadOnlyCollection<int>)_streamed!.ResolveAndRemember(CreateActiveQuery());
                 if (selected.Count > 0)
                 {
                     var annotation = new PointAnnotation(_currentLabel, _currentInstanceId);
@@ -743,8 +753,8 @@ namespace CloudScope
                 return "No point cloud is loaded.";
 
             IReadOnlyCollection<int> selected = _points != null
-                ? MapToSource(ActiveTool.CreateQuery().Resolve(_points))
-                : (IReadOnlyCollection<int>)_streamed!.ResolveAndRemember(ActiveTool.CreateQuery());
+                ? MapToSource(CreateActiveQuery().Resolve(_points))
+                : (IReadOnlyCollection<int>)_streamed!.ResolveAndRemember(CreateActiveQuery());
 
             if (selected.Count == 0)
                 return "No points in selection volume.";
