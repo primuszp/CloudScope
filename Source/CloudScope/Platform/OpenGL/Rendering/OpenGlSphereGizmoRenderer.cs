@@ -21,7 +21,9 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private int _circVao = -1, _circVbo = -1;
 
         private int _fillVertCount;
-        private const int Seg = 128;
+        // At 512 sides the projected-circle deviation stays well below one pixel even on
+        // Retina/4K displays. This is cheap: rings are instanced screen-space quads.
+        private const int Seg = 512;
         private const int Lat = 16;
         private const int Lon = 32;
 

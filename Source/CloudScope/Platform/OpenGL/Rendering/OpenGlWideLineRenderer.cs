@@ -65,10 +65,10 @@ void main()
     vec2  direction = length2 > 1e-12 ? delta * inversesqrt(length2) : vec2(1.0, 0.0);
     vec2  normal = vec2(-direction.y, direction.x);
 
-    // The short extension makes neighbouring line-list quads overlap at a join instead of
-    // exposing a hairline crack when a circle or ring bends between two segments.
-    float endpointSign = atStart ? -1.0 : 1.0;
-    vec2 offsetNdc = (normal * side + direction * endpointSign) * (uWidth * 0.5) / halfViewport;
+    // Do not extend the quad along the segment. Overlapping transparent segments make
+    // closed rings brighter at every join (a scalloped / beaded circumference).
+    // Gizmo circles use sufficiently fine tessellation that their endpoints meet cleanly.
+    vec2 offsetNdc = normal * side * (uWidth * 0.5) / halfViewport;
     gl_Position = vec4(clipHere.xy + offsetNdc * clipHere.w, clipHere.z, clipHere.w);
     vSide = side;
 }

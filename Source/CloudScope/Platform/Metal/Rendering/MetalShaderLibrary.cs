@@ -340,11 +340,10 @@ vertex ColorVertexOut wide_line_vertex(
     float2 direction = length2 > 1e-12 ? delta * rsqrt(length2) : float2(1.0, 0.0);
     float2 normal = float2(-direction.y, direction.x);
 
-    // Adjacent line-list quads overlap slightly at their endpoints.  This eliminates
-    // hairline cracks at circle/ring segments without relying on unsupported line widths.
-    float endpointSign = atStart ? -1.0 : 1.0;
-    float2 offsetNdc = (normal * side + direction * endpointSign)
-        * (uniforms.line.z * 0.5) / halfViewport;
+    // Do not overlap transparent line-list quads at their endpoints. Such overlap makes
+    // a closed ring brighter at every join, which reads as a scalloped circumference.
+    // The circle meshes are deliberately dense, so their endpoints meet without a seam.
+    float2 offsetNdc = normal * side * (uniforms.line.z * 0.5) / halfViewport;
     out.position = float4(clipHere.xy + offsetNdc * clipHere.w, clipHere.z, clipHere.w);
     out.side = side;
     return out;
