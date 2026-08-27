@@ -15,7 +15,7 @@ public sealed class CommandLineWindow : Window
     {
         Title = "Command";
         Width = 900;
-        Height = 120;
+        Height = 150;
         MinWidth = 420;
         MinHeight = 72;
         ShowInTaskbar = false;

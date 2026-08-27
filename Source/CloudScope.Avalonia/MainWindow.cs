@@ -342,10 +342,10 @@ public sealed partial class MainWindow : Window
         _commandLineHost.Content = _commandLine;
 
         _commandSession.SeedInputHistory(_settings.RecentInput);
-        if (_settings.CommandLineLayoutVersion < 1)
+        if (_settings.CommandLineLayoutVersion < 2)
         {
-            _settings.HeightInLines = 1;
-            _settings.CommandLineLayoutVersion = 1;
+            _settings.HeightInLines = 3;
+            _settings.CommandLineLayoutVersion = 2;
         }
         _workspaceGrid.RowDefinitions[3].Height = new GridLength(
             Math.Clamp(_settings.HeightInLines, 1, 20) * CommandLineTextLineHeight + CommandLineChromeHeight);
@@ -381,7 +381,7 @@ public sealed partial class MainWindow : Window
     }
 
     private bool _commandLineVisible = true;
-    private double _hiddenCommandLineHeight = 56;
+    private double _hiddenCommandLineHeight = 70;
     private CommandLineWindow? _floatingCommandLine;
 
     /// <summary>
