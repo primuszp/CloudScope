@@ -93,6 +93,7 @@ namespace CloudScope.Platform.Metal.ObjC
         public MTLPixelFormat ColorPixelFormat { set => ObjectiveC.objc_msgSend(NativePtr, new Selector("setColorPixelFormat:"), value); }
         public MTLPixelFormat DepthStencilPixelFormat { set => ObjectiveC.objc_msgSend(NativePtr, new Selector("setDepthStencilPixelFormat:"), value); }
         public MTLClearColor ClearColor { set => ObjectiveC.objc_msgSend(NativePtr, new Selector("setClearColor:"), value); }
+        public ulong SampleCount { set => ObjectiveC.objc_msgSend(NativePtr, new Selector("setSampleCount:"), value, 0); }
         public MTKViewDelegate? Delegate { set => ObjectiveC.objc_msgSend(NativePtr, "setDelegate:", value?.NativePtr ?? IntPtr.Zero); }
         public bool FramebufferOnly { set => ObjectiveC.objc_msgSend(NativePtr, "setFramebufferOnly:", value); }
         public bool Paused { set => ObjectiveC.objc_msgSend(NativePtr, "setPaused:", value); }

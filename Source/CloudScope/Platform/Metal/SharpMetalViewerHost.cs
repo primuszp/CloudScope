@@ -61,6 +61,7 @@ namespace CloudScope.Platform.Metal
                 {
                     ColorPixelFormat        = MTLPixelFormat.BGRA8Unorm,
                     DepthStencilPixelFormat = MTLPixelFormat.Depth32Float,
+                    SampleCount             = (ulong)_renderBackend.SampleCount,
                     ClearColor              = MetalClearColor.FromPalette(),
                     FramebufferOnly         = false,
                     Paused                  = true,

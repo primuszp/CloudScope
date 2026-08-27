@@ -26,6 +26,7 @@ namespace CloudScope.Platform.OpenGL
             GL.ClearColor(r, g, b, a);
             GL.Enable(EnableCap.DepthTest);
             GL.Enable(EnableCap.ProgramPointSize);
+            GL.Enable(EnableCap.Multisample);
             GL.Enable(EnableCap.Blend);
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
         }

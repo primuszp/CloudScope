@@ -13,7 +13,7 @@ namespace CloudScope.Platform.Metal
     [SupportedOSPlatform("macos")]
     internal sealed class MetalRenderContext
     {
-        public MetalRenderContext(MTLDevice device, MTLCommandQueue commandQueue)
+        public MetalRenderContext(MTLDevice device, MTLCommandQueue commandQueue, int sampleCount)
         {
             if (device.NativePtr == IntPtr.Zero)
                 throw new ArgumentException("A Metal device is required.", nameof(device));
@@ -22,14 +22,19 @@ namespace CloudScope.Platform.Metal
 
             Device = device;
             CommandQueue = commandQueue;
+            SampleCount = Math.Max(sampleCount, 1);
         }
 
         public MTLDevice Device { get; }
 
         public MTLCommandQueue CommandQueue { get; }
 
+        /// <summary>Raster samples shared by every Metal pipeline and render attachment.</summary>
+        public int SampleCount { get; }
+
         /// <summary>The depth attachment of the frame last rendered, for depth picking.</summary>
         public MTLTexture DepthTexture { get; private set; }
+        private MTLTexture _resolvedDepthTexture;
 
         /// <summary>Size of the active viewport in pixels, for screen-space shader math.</summary>
         public (int Width, int Height) ViewportSize { get; private set; } = (1, 1);
@@ -47,6 +52,28 @@ namespace CloudScope.Platform.Metal
         }
 
         public void SetDepthTexture(MTLTexture texture) => DepthTexture = texture;
+
+        /// <summary>
+        /// Gets a single-sample depth target matching the current drawable. A multisample depth
+        /// attachment cannot be copied directly for picking, so the render pass resolves into
+        /// this texture at the end of the frame.
+        /// </summary>
+        public MTLTexture EnsureDepthResolveTexture(int width, int height, MTLPixelFormat format)
+        {
+            if (_resolvedDepthTexture.NativePtr != IntPtr.Zero
+                && _resolvedDepthTexture.Width == (ulong)width
+                && _resolvedDepthTexture.Height == (ulong)height
+                && _resolvedDepthTexture.PixelFormat == format)
+                return _resolvedDepthTexture;
+
+            MetalResources.Release(_resolvedDepthTexture.NativePtr);
+            _resolvedDepthTexture = default;
+            var descriptor = MTLTextureDescriptor.Texture2DDescriptor(format, (ulong)width, (ulong)height, false);
+            descriptor.Usage = MTLTextureUsage.RenderTarget | MTLTextureUsage.ShaderRead;
+            descriptor.StorageMode = MTLStorageMode.Private;
+            _resolvedDepthTexture = Device.NewTexture(descriptor);
+            return _resolvedDepthTexture;
+        }
 
         public void SetViewportSize(int width, int height)
         {

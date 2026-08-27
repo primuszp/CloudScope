@@ -51,8 +51,8 @@ namespace CloudScope.Platform.Metal.Rendering
             var colorFmt = MTLPixelFormat.BGRA8Unorm;
             var depthFmt = MTLPixelFormat.Depth32Float;
 
-            _pipeline = MetalShaderLibrary.CreateColorPipeline(device, colorFmt, depthFmt);
-            _wideLinePipeline = MetalShaderLibrary.CreateWideLinePipeline(device, colorFmt, depthFmt);
+            _pipeline = MetalShaderLibrary.CreateColorPipeline(device, colorFmt, depthFmt, _context.SampleCount);
+            _wideLinePipeline = MetalShaderLibrary.CreateWideLinePipeline(device, colorFmt, depthFmt, _context.SampleCount);
             _depthOn  = MetalShaderLibrary.CreateDepthState(device, depthWrite: false);
             _depthOff = CreateDepthAlwaysState(device);
 

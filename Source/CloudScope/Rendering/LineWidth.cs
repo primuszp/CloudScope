@@ -4,19 +4,22 @@ namespace CloudScope.Rendering
     /// Line thickness rules shared by the backends.
     /// </summary>
     /// <remarks>
-    /// A width above one pixel cannot be drawn with native lines: OpenGL core profile only
-    /// guarantees 1.0 (macOS reports exactly [1, 1] and rejects anything wider, while Windows
-    /// drivers usually accept more), and Metal has no line width at all. Anything wider is
-    /// therefore drawn as a screen-space quad per segment, expanded in the vertex shader —
-    /// the same technique three.js's Line2 and Filament use. This keeps gizmos identical on
-    /// Windows, macOS, OpenGL and Metal.
+    /// Native line support is not suitable for gizmos: OpenGL core profile only guarantees
+    /// 1.0 (macOS reports exactly [1, 1]) and Metal has no configurable line width. Every
+    /// gizmo line is therefore a screen-space quad expanded in the vertex shader — the same
+    /// technique used by three.js's Line2 and Filament. This keeps antialiasing and thickness
+    /// identical on Windows, macOS, OpenGL and Metal.
     /// </remarks>
     public static class LineWidth
     {
         /// <summary>The widest line native line rendering is allowed to draw.</summary>
         public const float NativeMax = 1.0f;
 
-        /// <summary>True when <paramref name="widthPixels"/> needs the quad-expanded path.</summary>
-        public static bool NeedsExpansion(float widthPixels) => widthPixels > NativeMax + 0.01f;
+    /// <summary>
+    /// Gizmo lines always use the quad-expanded path. This deliberately includes 1 px lines:
+    /// macOS core OpenGL only guarantees that one native width, and native rasterisation makes
+    /// the ghost pass look visibly different from the antialiased wide pass.
+    /// </summary>
+    public static bool NeedsExpansion(float widthPixels) => widthPixels > 0f;
     }
 }

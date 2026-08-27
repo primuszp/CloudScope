@@ -60,6 +60,10 @@ namespace CloudScope.Platform.OpenGL
                 Title = "CloudScope - Point Cloud Viewer",
                 APIVersion = new Version(3, 3),
                 Profile = ContextProfile.Core,
+                // Core OpenGL on macOS guarantees only a one-pixel native line. Request
+                // framebuffer MSAA for all geometry; gizmo lines additionally use their
+                // shader-based coverage path, so quality degrades gracefully if unavailable.
+                NumberOfSamples = 4,
                 StartVisible = startVisible,
             })
         {

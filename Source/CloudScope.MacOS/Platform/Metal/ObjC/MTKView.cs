@@ -40,6 +40,14 @@ namespace CloudScope.Platform.Metal.ObjC
             set => ObjectiveC.objc_msgSend(NativePtr, new Selector("setClearColor:"), value);
         }
 
+        /// <summary>Number of raster samples used by the view's render pass.</summary>
+        public ulong SampleCount
+        {
+            // SharpMetal exposes the NSUInteger sender as a two-NSUInteger overload;
+            // Objective-C ignores the unused trailing argument for this one-argument setter.
+            set => ObjectiveC.objc_msgSend(NativePtr, new Selector("setSampleCount:"), value, 0);
+        }
+
         public MTKViewDelegate? Delegate
         {
             set => ObjectiveC.objc_msgSend(NativePtr, "setDelegate:", value?.NativePtr ?? IntPtr.Zero);

@@ -81,7 +81,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 return;
 
             var device = _context.Device;
-            _pipeline    = MetalShaderLibrary.CreatePointPipeline(device, MTLPixelFormat.BGRA8Unorm, MTLPixelFormat.Depth32Float);
+            _pipeline    = MetalShaderLibrary.CreatePointPipeline(device, MTLPixelFormat.BGRA8Unorm, MTLPixelFormat.Depth32Float, _context.SampleCount);
             _depthState  = MetalShaderLibrary.CreateDepthState(device, depthWrite: false);
             _uniformsBuffer = device.NewBuffer(
                 (ulong)Unsafe.SizeOf<MetalPointUniforms>(),

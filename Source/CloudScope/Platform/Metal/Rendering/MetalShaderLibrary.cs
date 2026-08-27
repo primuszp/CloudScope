@@ -286,19 +286,19 @@ fragment float4 color_fragment(ColorVertexOut in [[stage_in]], constant ColorUni
 }";
 
         public static MTLRenderPipelineState CreatePointPipeline(
-            MTLDevice device, MTLPixelFormat colorFormat, MTLPixelFormat depthFormat)
+            MTLDevice device, MTLPixelFormat colorFormat, MTLPixelFormat depthFormat, int sampleCount = 1)
             => CreatePipeline(device, PointShaderSource, "point_vertex", "point_fragment",
-                colorFormat, depthFormat, blend: false);
+                colorFormat, depthFormat, blend: false, sampleCount);
 
         public static MTLRenderPipelineState CreatePackedPointPipeline(
-            MTLDevice device, MTLPixelFormat colorFormat, MTLPixelFormat depthFormat)
+            MTLDevice device, MTLPixelFormat colorFormat, MTLPixelFormat depthFormat, int sampleCount = 1)
             => CreatePipeline(device, PackedPointShaderSource, "packed_point_vertex", "packed_point_fragment",
-                colorFormat, depthFormat, blend: false);
+                colorFormat, depthFormat, blend: false, sampleCount);
 
         public static MTLRenderPipelineState CreateAttributePointPipeline(
-            MTLDevice device, MTLPixelFormat colorFormat, MTLPixelFormat depthFormat)
+            MTLDevice device, MTLPixelFormat colorFormat, MTLPixelFormat depthFormat, int sampleCount = 1)
             => CreatePipeline(device, AttributePointShaderSource, "attribute_point_vertex", "attribute_point_fragment",
-                colorFormat, depthFormat, blend: false);
+                colorFormat, depthFormat, blend: false, sampleCount);
 
         private const string WideLineShaderSource =
 @"#include <metal_stdlib>
@@ -359,19 +359,19 @@ fragment float4 wide_line_fragment(ColorVertexOut in [[stage_in]], constant Colo
 }";
 
         public static MTLRenderPipelineState CreateWideLinePipeline(
-            MTLDevice device, MTLPixelFormat colorFormat, MTLPixelFormat depthFormat)
+            MTLDevice device, MTLPixelFormat colorFormat, MTLPixelFormat depthFormat, int sampleCount = 1)
             => CreatePipeline(device, WideLineShaderSource, "wide_line_vertex", "wide_line_fragment",
-                colorFormat, depthFormat, blend: true);
+                colorFormat, depthFormat, blend: true, sampleCount);
 
         public static MTLRenderPipelineState CreateColorPipeline(
-            MTLDevice device, MTLPixelFormat colorFormat, MTLPixelFormat depthFormat)
+            MTLDevice device, MTLPixelFormat colorFormat, MTLPixelFormat depthFormat, int sampleCount = 1)
             => CreatePipeline(device, ColorShaderSource, "color_vertex", "color_fragment",
-                colorFormat, depthFormat, blend: true);
+                colorFormat, depthFormat, blend: true, sampleCount);
 
         public static MTLRenderPipelineState CreatePivotPointPipeline(
-            MTLDevice device, MTLPixelFormat colorFormat, MTLPixelFormat depthFormat)
+            MTLDevice device, MTLPixelFormat colorFormat, MTLPixelFormat depthFormat, int sampleCount = 1)
             => CreatePipeline(device, PivotPointShaderSource, "pivot_point_vertex", "pivot_point_fragment",
-                colorFormat, depthFormat, blend: true);
+                colorFormat, depthFormat, blend: true, sampleCount);
 
         public static MTLDepthStencilState CreateDepthState(MTLDevice device, bool depthWrite)
         {
@@ -383,7 +383,7 @@ fragment float4 wide_line_fragment(ColorVertexOut in [[stage_in]], constant Colo
 
         private static MTLRenderPipelineState CreatePipeline(
             MTLDevice device, string source, string vertFn, string fragFn,
-            MTLPixelFormat colorFormat, MTLPixelFormat depthFormat, bool blend)
+            MTLPixelFormat colorFormat, MTLPixelFormat depthFormat, bool blend, int sampleCount)
         {
             // Use the synchronous overload to avoid a potential deadlock when called
             // from the main thread (OnDidFinishLaunching → Load → Initialize).
@@ -399,6 +399,7 @@ fragment float4 wide_line_fragment(ColorVertexOut in [[stage_in]], constant Colo
             desc.VertexFunction = vert;
             desc.FragmentFunction = frag;
             desc.DepthAttachmentPixelFormat = depthFormat;
+            desc.RasterSampleCount = (ulong)Math.Max(sampleCount, 1);
 
             var ca = desc.ColorAttachments.Object(0);
             ca.PixelFormat = colorFormat;
