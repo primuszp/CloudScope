@@ -145,7 +145,7 @@
 
     <Border x:Name="CommandLineBorder" Grid.Row="3" MinHeight="120"
             Background="{DynamicResource CsSurface}"
-            BorderThickness="0">
+            BorderBrush="{DynamicResource CsBorder}" BorderThickness="0,1,0,1">
       <ContentControl x:Name="CommandLineHost" />
     </Border>
 
