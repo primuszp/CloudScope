@@ -191,12 +191,9 @@ public sealed class CommandLineControl : UserControl
     {
         var promptBorder = new Border
         {
-            BorderThickness = new Thickness(0, 1, 0, 0),
             Padding = new Thickness(10, 3, 10, 4),
             Child = _input
         };
-        promptBorder[!BorderBrushProperty] = ResourceBinding("CsBorder");
-        promptBorder[!BackgroundProperty] = ResourceBinding("CsSurfaceDeep");
 
         var root = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };
         root.Children.Add(_transcript);

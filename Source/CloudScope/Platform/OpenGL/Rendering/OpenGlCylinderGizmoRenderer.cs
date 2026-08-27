@@ -24,7 +24,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private int _circVao = -1, _circVbo = -1;
 
         private int _fillVertCount;
-        private const int CapSeg = 64;
+        private const int CapSeg = 128;
         private const int LatSeg = 12;
 
         // ── Public entry point ────────────────────────────────────────────────

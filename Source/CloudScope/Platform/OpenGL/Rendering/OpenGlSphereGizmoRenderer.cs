@@ -21,7 +21,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private int _circVao = -1, _circVbo = -1;
 
         private int _fillVertCount;
-        private const int Seg = 64;
+        private const int Seg = 128;
         private const int Lat = 16;
         private const int Lon = 32;
 
