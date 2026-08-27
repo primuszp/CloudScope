@@ -436,10 +436,11 @@ fragment float4 smooth_polyline_fragment(ColorVertexOut in [[stage_in]], constan
             => CreatePipeline(device, PivotPointShaderSource, "pivot_point_vertex", "pivot_point_fragment",
                 colorFormat, depthFormat, blend: true, sampleCount);
 
-        public static MTLDepthStencilState CreateDepthState(MTLDevice device, bool depthWrite)
+        public static MTLDepthStencilState CreateDepthState(
+            MTLDevice device, bool depthWrite, MTLCompareFunction compareFunction = MTLCompareFunction.LessEqual)
         {
             var desc = new MTLDepthStencilDescriptor();
-            desc.DepthCompareFunction = MTLCompareFunction.LessEqual;
+            desc.DepthCompareFunction = compareFunction;
             desc.IsDepthWriteEnabled = depthWrite;
             return device.NewDepthStencilState(desc);
         }

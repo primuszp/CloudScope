@@ -25,6 +25,7 @@ namespace CloudScope.Platform.Metal.Rendering
         private MTLRenderPipelineState _wideLinePipeline;
         private MTLRenderPipelineState _smoothPolylinePipeline;
         private MTLDepthStencilState _depthOn;
+        private MTLDepthStencilState _depthBehind;
         private MTLDepthStencilState _depthOff;
         private MTLBuffer _uniformsBuffer;
         private int _uniformOffset;
@@ -56,6 +57,7 @@ namespace CloudScope.Platform.Metal.Rendering
             _wideLinePipeline = MetalShaderLibrary.CreateWideLinePipeline(device, colorFmt, depthFmt, _context.SampleCount);
             _smoothPolylinePipeline = MetalShaderLibrary.CreateSmoothPolylinePipeline(device, colorFmt, depthFmt, _context.SampleCount);
             _depthOn  = MetalShaderLibrary.CreateDepthState(device, depthWrite: false);
+            _depthBehind = MetalShaderLibrary.CreateDepthState(device, depthWrite: false, MTLCompareFunction.Greater);
             _depthOff = CreateDepthAlwaysState(device);
 
             _uniformsBuffer = device.NewBuffer(
@@ -168,7 +170,7 @@ namespace CloudScope.Platform.Metal.Rendering
         /// </summary>
         public void DrawSmoothPolyline(
             MTLBuffer vertexBuffer, int vertexCount, Matrix4 mvp, Vector4 color,
-            bool depthTest, float lineWidthPixels, int firstVertex = 0)
+            bool depthTest, float lineWidthPixels, int firstVertex = 0, bool occludedOnly = false)
         {
             if (vertexBuffer.NativePtr == IntPtr.Zero || vertexCount < 4 || !_initialized)
                 return;
@@ -197,7 +199,7 @@ namespace CloudScope.Platform.Metal.Rendering
             _uniformOffset++;
 
             encoder.SetRenderPipelineState(_smoothPolylinePipeline);
-            encoder.SetDepthStencilState(depthTest ? _depthOn : _depthOff);
+            encoder.SetDepthStencilState(occludedOnly ? _depthBehind : depthTest ? _depthOn : _depthOff);
             encoder.SetVertexBuffer(vertexBuffer, 0, 0);
             encoder.SetVertexBuffer(_uniformsBuffer, offset, 1);
             encoder.SetFragmentBuffer(_uniformsBuffer, offset, 1);
@@ -211,11 +213,13 @@ namespace CloudScope.Platform.Metal.Rendering
             MetalResources.Release(_wideLinePipeline.NativePtr);
             MetalResources.Release(_smoothPolylinePipeline.NativePtr);
             MetalResources.Release(_depthOn.NativePtr);
+            MetalResources.Release(_depthBehind.NativePtr);
             MetalResources.Release(_depthOff.NativePtr);
             _pipeline = default;
             _wideLinePipeline = default;
             _smoothPolylinePipeline = default;
             _depthOn = default;
+            _depthBehind = default;
             _depthOff = default;
             _initialized = false;
         }
