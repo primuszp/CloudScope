@@ -55,8 +55,8 @@
     <Style Selector="TextBox.commandInput">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Foreground" Value="{DynamicResource CsText}" />
-      <Setter Property="CaretBrush" Value="{DynamicResource CsAccent}" />
+      <Setter Property="Foreground" Value="#111111" />
+      <Setter Property="CaretBrush" Value="#111111" />
       <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
       <Setter Property="FontSize" Value="12" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -65,7 +65,7 @@
     <Style Selector="Button.commandRailButton">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
+      <Setter Property="Foreground" Value="#333333" />
       <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
       <Setter Property="FontSize" Value="13" />
       <Setter Property="Width" Value="22" />
@@ -116,7 +116,7 @@
     </Style>
   </Window.Styles>
 
-  <Grid x:Name="WorkspaceGrid" RowDefinitions="30,Auto,*,56,24">
+  <Grid x:Name="WorkspaceGrid" RowDefinitions="30,Auto,*,70,24">
     <!-- Row 0 is collapsed on macOS, where the menu lives in the system menu bar. -->
     <Menu x:Name="MainMenuBar" Grid.Row="0" />
 

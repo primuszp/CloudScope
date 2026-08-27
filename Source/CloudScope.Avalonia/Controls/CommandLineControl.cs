@@ -21,13 +21,13 @@ public sealed class CommandLineControl : UserControl
     private readonly Func<string, Task> _submit;
 
     private readonly CommandTranscript _transcript;
-    private readonly TextBlock _prompt = new();
     private readonly TextBox _input = new();
     private readonly Popup _completionPopup = new();
     private readonly ListBox _completionList = new();
 
     private IReadOnlyList<CommandCompletion> _completions = [];
     private string _completionPrefix = "";
+    private string _promptPrefix = "";
     private bool _suppressInlineSuggestion;
     private bool _settingInput;
 
@@ -36,29 +36,41 @@ public sealed class CommandLineControl : UserControl
         _session = session;
         _submit = submit;
 
-        _transcript = new CommandTranscript(session);
+        _transcript = new CommandTranscript(session, cadPalette: true);
         _transcript.CommandRecalled += Stage;
 
         _input.Classes.Add("commandInput");
-        _input.PlaceholderText = "Type a command";
         _input.KeyDown += OnInputKeyDown;
         _input.TextChanged += (_, _) =>
         {
             if (_settingInput)
                 return;
 
+            // The whole live line is one TextBox, like AutoCAD. The prompt is a protected
+            // prefix: edits may affect only the answer after it.
+            string displayed = _input.Text ?? "";
+            if (!displayed.StartsWith(_promptPrefix, StringComparison.Ordinal))
+            {
+                int prefixAt = displayed.IndexOf(_promptPrefix, StringComparison.Ordinal);
+                string editedInput = prefixAt >= 0
+                    ? displayed.Remove(prefixAt, _promptPrefix.Length)
+                    : displayed.TrimStart();
+                SetInput(editedInput, caretAtEnd: true);
+                return;
+            }
+
             if (!_suppressInlineSuggestion)
                 RefreshCompletions();
         };
 
-        _prompt.Classes.Add("prompt");
-        _prompt.VerticalAlignment = global::Avalonia.Layout.VerticalAlignment.Center;
+        _completionList.Background = Brushes.White;
+        _completionList.Foreground = Brushes.Black;
 
         _completionList.DoubleTapped += (_, _) => AcceptCompletion(submitAfter: true);
         _completionPopup.Child = new Border
         {
-            [!BackgroundProperty] = ResourceBinding("CsSurfaceDeep"),
-            [!BorderBrushProperty] = ResourceBinding("CsBorder"),
+            Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.FromRgb(145, 145, 145)),
             BorderThickness = new Thickness(1),
             Child = _completionList,
             MinWidth = 320,
@@ -154,7 +166,7 @@ public sealed class CommandLineControl : UserControl
     {
         string current = InputText;
         int caret = IsKeyboardFocusWithin
-            ? Math.Clamp(_input.CaretIndex, 0, current.Length)
+            ? Math.Clamp(_input.CaretIndex - _promptPrefix.Length, 0, current.Length)
             : current.Length;
 
         SetInput(current[..caret] + text + current[caret..], caret + text.Length);
@@ -193,8 +205,8 @@ public sealed class CommandLineControl : UserControl
 
         var rail = new Border
         {
-            [!BackgroundProperty] = ResourceBinding("CsSurfaceDeep"),
-            [!BorderBrushProperty] = ResourceBinding("CsBorder"),
+            Background = new SolidColorBrush(Color.FromRgb(184, 184, 184)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(145, 145, 145)),
             BorderThickness = new Thickness(0, 0, 1, 0),
             Child = new StackPanel
             {
@@ -203,22 +215,21 @@ public sealed class CommandLineControl : UserControl
             }
         };
 
-        var inputGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
-        inputGrid.Children.Add(_prompt);
-        inputGrid.Children.Add(_input);
-        Grid.SetColumn(_input, 1);
-
         var inputBorder = new Border
         {
-            [!BackgroundProperty] = ResourceBinding("CsSurfaceAlt"),
-            [!BorderBrushProperty] = ResourceBinding("CsBorder"),
+            Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.FromRgb(145, 145, 145)),
             BorderThickness = new Thickness(0, 1, 0, 0),
-            Padding = new Thickness(7, 2, 8, 3),
-            Child = inputGrid
+            Padding = new Thickness(7, 1, 8, 2),
+            Child = _input
         };
 
         var content = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };
-        content.Children.Add(_transcript);
+        content.Children.Add(new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(199, 199, 199)),
+            Child = _transcript
+        });
         content.Children.Add(inputBorder);
         Grid.SetRow(inputBorder, 1);
 
@@ -229,12 +240,15 @@ public sealed class CommandLineControl : UserControl
         return root;
     }
 
-    private string InputText => _input.Text ?? "";
+    private string InputText => (_input.Text ?? "").StartsWith(_promptPrefix, StringComparison.Ordinal)
+        ? (_input.Text ?? "")[_promptPrefix.Length..]
+        : "";
 
     private void SetPromptPrefix()
     {
-        _prompt.Text = _session.Prompt.TrimEnd();
-        _prompt.Margin = new Thickness(0, 0, string.IsNullOrEmpty(_prompt.Text) ? 0 : 6, 0);
+        string input = InputText;
+        _promptPrefix = _session.Prompt.TrimEnd() + " ";
+        SetInput(input, caretAtEnd: true);
     }
 
     private void SetInput(string text, bool caretAtEnd) => SetInput(text, caretAtEnd ? text.Length : 0);
@@ -244,8 +258,8 @@ public sealed class CommandLineControl : UserControl
         _settingInput = true;
         try
         {
-            _input.Text = text;
-            _input.CaretIndex = Math.Clamp(caret, 0, text.Length);
+            _input.Text = _promptPrefix + text;
+            _input.CaretIndex = _promptPrefix.Length + Math.Clamp(caret, 0, text.Length);
         }
         finally { _settingInput = false; }
     }
@@ -255,21 +269,26 @@ public sealed class CommandLineControl : UserControl
         switch (e.Key)
         {
             case Key.Home:
-                _input.CaretIndex = 0;
+                _input.CaretIndex = _promptPrefix.Length;
                 e.Handled = true;
                 return;
 
             case Key.Left:
-                if (_input.CaretIndex <= 0)
+                if (_input.CaretIndex <= _promptPrefix.Length)
                 {
-                    _input.CaretIndex = 0;
+                    _input.CaretIndex = _promptPrefix.Length;
                     e.Handled = true;
                 }
                 return;
 
             case Key.Back:
             case Key.Delete:
-                if (e.Key == Key.Back && _input.CaretIndex <= 0)
+                if (e.Key == Key.Back && _input.CaretIndex <= _promptPrefix.Length)
+                {
+                    e.Handled = true;
+                    return;
+                }
+                if (e.Key == Key.Delete && _input.CaretIndex < _promptPrefix.Length)
                 {
                     e.Handled = true;
                     return;
@@ -390,8 +409,8 @@ public sealed class CommandLineControl : UserControl
         try
         {
             SetInput(typed + best[typed.Length..], caretAtEnd: true);
-            _input.SelectionStart = typed.Length;
-            _input.SelectionEnd = best.Length;
+            _input.SelectionStart = _promptPrefix.Length + typed.Length;
+            _input.SelectionEnd = _promptPrefix.Length + best.Length;
             _completionPrefix = typed;
         }
         finally
@@ -437,6 +456,4 @@ public sealed class CommandLineControl : UserControl
         _completionPrefix = InputText.Trim();
     }
 
-    private static global::Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension ResourceBinding(string key) =>
-        new global::Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension(key);
 }
