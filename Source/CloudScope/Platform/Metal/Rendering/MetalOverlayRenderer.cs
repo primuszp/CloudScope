@@ -21,10 +21,12 @@ namespace CloudScope.Platform.Metal.Rendering
         private readonly MetalPrimitiveRenderer _renderer;
         private MTLBuffer _crosshairBuffer;
         private MTLBuffer _modeBuffer;
+        private MTLBuffer _viewportBorderBuffer;
         private MTLBuffer[] _pivotBuffers = Array.Empty<MTLBuffer>();
         private PivotLineBatch[] _pivotBatches = Array.Empty<PivotLineBatch>();
         private readonly float[] _crosshairVertices = new float[12];
         private readonly float[] _modeVertices = new float[12];
+        private readonly float[] _viewportBorderVertices = new float[15];
         private MTLRenderPipelineState _pivotPointPipeline;
         private MTLDepthStencilState _pivotPointDepthState;
         private MTLBuffer _pivotPointBuffer;
@@ -120,10 +122,32 @@ namespace CloudScope.Platform.Metal.Rendering
                 Matrix4.Identity, color, depthTest: false, lineWidthPixels: ModeIndicatorWidth);
         }
 
+        public void RenderViewportBorder(IRenderFrameData frameData, int width, int height, bool active)
+        {
+            if (frameData is not MetalFrameState frame) return;
+            _renderer.SetFrame(frame);
+            float insetX = 1f / System.Math.Max(width, 1);
+            float insetY = 1f / System.Math.Max(height, 1);
+            float left = -1f + insetX, right = 1f - insetX;
+            float bottom = -1f + insetY, top = 1f - insetY;
+            WriteBorderVertex(_viewportBorderVertices, 0, left, top);
+            WriteBorderVertex(_viewportBorderVertices, 1, right, top);
+            WriteBorderVertex(_viewportBorderVertices, 2, right, bottom);
+            WriteBorderVertex(_viewportBorderVertices, 3, left, bottom);
+            WriteBorderVertex(_viewportBorderVertices, 4, left, top);
+            _renderer.UpdateBuffer(ref _viewportBorderBuffer, _viewportBorderVertices);
+            Vector4 color = active
+                ? new Vector4(0.10f, 0.72f, 1f, 1f)
+                : new Vector4(0.34f, 0.37f, 0.41f, 0.9f);
+            _renderer.Draw(_viewportBorderBuffer, 5, MTLPrimitiveType.LineStrip,
+                Matrix4.Identity, color, depthTest: false);
+        }
+
         public void Dispose()
         {
             MetalResources.Release(ref _crosshairBuffer);
             MetalResources.Release(ref _modeBuffer);
+            MetalResources.Release(ref _viewportBorderBuffer);
             for (int i = 0; i < _pivotBuffers.Length; i++)
                 MetalResources.Release(ref _pivotBuffers[i]);
             _pivotBuffers = Array.Empty<MTLBuffer>();
@@ -143,6 +167,14 @@ namespace CloudScope.Platform.Metal.Rendering
             vertices[3] = center.X + extent.X; vertices[4] = center.Y; vertices[5] = 0f;
             vertices[6] = center.X; vertices[7] = center.Y - extent.Y; vertices[8] = 0f;
             vertices[9] = center.X; vertices[10] = center.Y + extent.Y; vertices[11] = 0f;
+        }
+
+        private static void WriteBorderVertex(float[] vertices, int vertex, float x, float y)
+        {
+            int i = vertex * 3;
+            vertices[i] = x;
+            vertices[i + 1] = y;
+            vertices[i + 2] = 0f;
         }
 
         private unsafe MTLBuffer CreatePivotPointBuffer()

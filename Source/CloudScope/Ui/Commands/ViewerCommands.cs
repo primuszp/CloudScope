@@ -104,7 +104,13 @@ public sealed partial class ViewerCommands
     [
         new("SINGLE", "Single"),
         new("TWO", "Two", "2"),
+        new("THREE", "Three", "3"),
         new("FOUR", "Four", "4"),
+        new("FIVE", "Five", "5"),
+        new("SIX", "Six", "6"),
+        new("SEVEN", "Seven", "7"),
+        new("EIGHT", "Eight", "8"),
+        new("NINE", "Nine", "9"),
         new("PLAN", "Plan", "TOP"),
         new("PREVIOUS", "PRevious")
     ];
