@@ -19,6 +19,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
     {
         private int _fillVao = -1, _fillVbo = -1;
         private int _circVao = -1, _circVbo = -1;
+        private readonly OpenGlSmoothPolylineRenderer _smoothCircles = new();
 
         private int _fillVertCount;
         // At 512 sides the projected-circle deviation stays well below one pixel even on
@@ -26,6 +27,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private const int Seg = 512;
         private const int Lat = 16;
         private const int Lon = 32;
+        private const int CircleVertexCount = (Seg + 1) * 2;
 
         // ── Public entry point ────────────────────────────────────────────────
 
@@ -71,21 +73,18 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
         private void RenderCircles(Matrix4 mvp)
         {
-            GL.UseProgram(_shader);
-            SetMvp(ref mvp);
-            GL.BindVertexArray(_circVao);
             GL.DepthMask(false);
 
             for (int ax = 0; ax < 3; ax++)
             {
                 var c      = AxisColor[ax];
-                int offset = ax * Seg * 2;
+                int offset = ax * CircleVertexCount;
 
                 GL.Enable(EnableCap.DepthTest);
-                DrawLines(_circVbo, offset, Seg * 2, c with { W = 0.80f }, 2.0f);
+                _smoothCircles.Draw(_circVbo, offset, CircleVertexCount, ref mvp, c with { W = 0.80f }, 2.0f);
 
                 GL.Disable(EnableCap.DepthTest);
-                DrawLines(_circVbo, offset, Seg * 2, c with { W = 0.18f }, 1.0f);
+                _smoothCircles.Draw(_circVbo, offset, CircleVertexCount, ref mvp, c with { W = 0.18f }, 1.0f);
             }
 
             GL.DepthMask(true);
@@ -170,34 +169,44 @@ namespace CloudScope.Platform.OpenGL.Rendering
             MakeStaticVao(ref _fillVao, ref _fillVbo, fill);
 
             // 3 great-circle rings
-            float[] circ = new float[3 * Seg * 2 * 3];
+            float[] circ = new float[3 * CircleVertexCount * 9];
             int ci = 0;
-            float step = MathF.Tau / Seg;
-            for (int s = 0; s < Seg; s++)
-            {
-                float a1 = s * step, a2 = (s + 1) * step;
-                circ[ci++]=0f; circ[ci++]=MathF.Cos(a1); circ[ci++]=MathF.Sin(a1);
-                circ[ci++]=0f; circ[ci++]=MathF.Cos(a2); circ[ci++]=MathF.Sin(a2);
-            }
-            for (int s = 0; s < Seg; s++)
-            {
-                float a1 = s * step, a2 = (s + 1) * step;
-                circ[ci++]=MathF.Cos(a1); circ[ci++]=0f; circ[ci++]=MathF.Sin(a1);
-                circ[ci++]=MathF.Cos(a2); circ[ci++]=0f; circ[ci++]=MathF.Sin(a2);
-            }
-            for (int s = 0; s < Seg; s++)
-            {
-                float a1 = s * step, a2 = (s + 1) * step;
-                circ[ci++]=MathF.Cos(a1); circ[ci++]=MathF.Sin(a1); circ[ci++]=0f;
-                circ[ci++]=MathF.Cos(a2); circ[ci++]=MathF.Sin(a2); circ[ci++]=0f;
-            }
+            AddCircleLoop(circ, ref ci, 0);
+            AddCircleLoop(circ, ref ci, 1);
+            AddCircleLoop(circ, ref ci, 2);
             MakeStaticVao(ref _circVao, ref _circVbo, circ);
+        }
+
+        private static void AddCircleLoop(float[] data, ref int i, int axis)
+        {
+            for (int point = 0; point <= Seg; point++)
+            {
+                int previous = (point + Seg - 1) % Seg;
+                int current = point % Seg;
+                int next = (point + 1) % Seg;
+                for (int side = 0; side < 2; side++)
+                {
+                    AddCirclePoint(data, ref i, axis, previous);
+                    AddCirclePoint(data, ref i, axis, current);
+                    AddCirclePoint(data, ref i, axis, next);
+                }
+            }
+        }
+
+        private static void AddCirclePoint(float[] data, ref int i, int axis, int point)
+        {
+            float angle = point * MathF.Tau / Seg;
+            float c = MathF.Cos(angle), s = MathF.Sin(angle);
+            if (axis == 0) { data[i++] = 0f; data[i++] = c; data[i++] = s; }
+            else if (axis == 1) { data[i++] = c; data[i++] = 0f; data[i++] = s; }
+            else { data[i++] = c; data[i++] = s; data[i++] = 0f; }
         }
 
         public override void Dispose()
         {
             if (_fillVao != -1) { GL.DeleteVertexArray(_fillVao); GL.DeleteBuffer(_fillVbo); _fillVao = -1; }
             if (_circVao != -1) { GL.DeleteVertexArray(_circVao); GL.DeleteBuffer(_circVbo); _circVao = -1; }
+            _smoothCircles.Dispose();
             base.Dispose();
         }
     }

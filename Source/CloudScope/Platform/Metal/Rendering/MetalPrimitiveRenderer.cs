@@ -23,6 +23,7 @@ namespace CloudScope.Platform.Metal.Rendering
         private MetalFrameState? _frame;
         private MTLRenderPipelineState _pipeline;
         private MTLRenderPipelineState _wideLinePipeline;
+        private MTLRenderPipelineState _smoothPolylinePipeline;
         private MTLDepthStencilState _depthOn;
         private MTLDepthStencilState _depthOff;
         private MTLBuffer _uniformsBuffer;
@@ -53,6 +54,7 @@ namespace CloudScope.Platform.Metal.Rendering
 
             _pipeline = MetalShaderLibrary.CreateColorPipeline(device, colorFmt, depthFmt, _context.SampleCount);
             _wideLinePipeline = MetalShaderLibrary.CreateWideLinePipeline(device, colorFmt, depthFmt, _context.SampleCount);
+            _smoothPolylinePipeline = MetalShaderLibrary.CreateSmoothPolylinePipeline(device, colorFmt, depthFmt, _context.SampleCount);
             _depthOn  = MetalShaderLibrary.CreateDepthState(device, depthWrite: false);
             _depthOff = CreateDepthAlwaysState(device);
 
@@ -159,15 +161,60 @@ namespace CloudScope.Platform.Metal.Rendering
             encoder.DrawPrimitives(primitiveType, (ulong)firstVertex, (ulong)vertexCount);
         }
 
+        /// <summary>
+        /// Draws a continuous, miter-joined screen-space ribbon. Each input vertex contains
+        /// previous/current/next <c>float3</c> positions (nine floats) and adjacent sides are
+        /// duplicated, producing a single triangle strip without line-segment overlap.
+        /// </summary>
+        public void DrawSmoothPolyline(
+            MTLBuffer vertexBuffer, int vertexCount, Matrix4 mvp, Vector4 color,
+            bool depthTest, float lineWidthPixels, int firstVertex = 0)
+        {
+            if (vertexBuffer.NativePtr == IntPtr.Zero || vertexCount < 4 || !_initialized)
+                return;
+
+            var encoder = _frame?.RenderCommandEncoder ?? default;
+            if (encoder.NativePtr == IntPtr.Zero)
+                return;
+
+            ulong stride = UniformStride;
+            ulong offset = (ulong)_uniformOffset * stride;
+            int frameRegionEnd = (_bufferedFrameIndex + 1) * DrawsPerFrame;
+            if (_uniformOffset >= frameRegionEnd || offset + stride > _uniformsBuffer.Length)
+            {
+                _uniformOffset = frameRegionEnd - 1;
+                offset = (ulong)_uniformOffset * stride;
+            }
+
+            (int viewportWidth, int viewportHeight) = _context.ViewportSize;
+            unsafe
+            {
+                byte* ptr = (byte*)_uniformsBuffer.Contents.ToPointer();
+                var uniforms = new MetalColorUniforms(mvp, color,
+                    new Vector4(viewportWidth, viewportHeight, lineWidthPixels, 0f));
+                Buffer.MemoryCopy(&uniforms, ptr + offset, Unsafe.SizeOf<MetalColorUniforms>(), Unsafe.SizeOf<MetalColorUniforms>());
+            }
+            _uniformOffset++;
+
+            encoder.SetRenderPipelineState(_smoothPolylinePipeline);
+            encoder.SetDepthStencilState(depthTest ? _depthOn : _depthOff);
+            encoder.SetVertexBuffer(vertexBuffer, 0, 0);
+            encoder.SetVertexBuffer(_uniformsBuffer, offset, 1);
+            encoder.SetFragmentBuffer(_uniformsBuffer, offset, 1);
+            encoder.DrawPrimitives(MTLPrimitiveType.TriangleStrip, (ulong)firstVertex, (ulong)vertexCount);
+        }
+
         public void Dispose()
         {
             MetalResources.Release(ref _uniformsBuffer);
             MetalResources.Release(_pipeline.NativePtr);
             MetalResources.Release(_wideLinePipeline.NativePtr);
+            MetalResources.Release(_smoothPolylinePipeline.NativePtr);
             MetalResources.Release(_depthOn.NativePtr);
             MetalResources.Release(_depthOff.NativePtr);
             _pipeline = default;
             _wideLinePipeline = default;
+            _smoothPolylinePipeline = default;
             _depthOn = default;
             _depthOff = default;
             _initialized = false;
