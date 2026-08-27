@@ -39,13 +39,7 @@ namespace CloudScope.Platform.Metal.Rendering
             _pivotBatches = PivotIndicatorGeometry.BuildBatches();
             _pivotBuffers = new MTLBuffer[_pivotBatches.Length];
             for (int i = 0; i < _pivotBatches.Length; i++)
-            {
-                PivotLineBatch batch = _pivotBatches[i];
-                float[] vertices = batch.IsClosedLoop
-                    ? PivotIndicatorGeometry.BuildSmoothLoopVertices(batch.Positions)
-                    : batch.Positions;
-                _pivotBuffers[i] = _renderer.CreateStaticBuffer(vertices);
-            }
+                _pivotBuffers[i] = _renderer.CreateStaticBuffer(_pivotBatches[i].Positions);
             var device = _context.Device;
             _pivotPointPipeline = MetalShaderLibrary.CreatePivotPointPipeline(
                 device, MTLPixelFormat.BGRA8Unorm, MTLPixelFormat.Depth32Float, _context.SampleCount);
@@ -72,23 +66,11 @@ namespace CloudScope.Platform.Metal.Rendering
             {
                 PivotLineBatch batch = _pivotBatches[i];
                 Vector4 color = new(batch.Color, alpha);
-                if (batch.IsClosedLoop)
-                {
-                    int vertexCount = (batch.PointCount + 1) * 2;
-                    _renderer.DrawSmoothPolyline(_pivotBuffers[i], vertexCount, mvp, color,
-                        depthTest: true, lineWidthPixels: 1f + alpha);
-                    color.W = alpha * 0.20f;
-                    _renderer.DrawSmoothPolyline(_pivotBuffers[i], vertexCount, mvp, color,
-                        depthTest: true, lineWidthPixels: LineWidth.NativeMax, occludedOnly: true);
-                }
-                else
-                {
-                    _renderer.Draw(_pivotBuffers[i], batch.PointCount, MTLPrimitiveType.Line, mvp, color,
-                        depthTest: true, lineWidthPixels: 1f + alpha);
-                    color.W = alpha * 0.20f;
-                    _renderer.Draw(_pivotBuffers[i], batch.PointCount, MTLPrimitiveType.Line, mvp, color,
-                        depthTest: false, lineWidthPixels: LineWidth.NativeMax);
-                }
+                _renderer.Draw(_pivotBuffers[i], batch.VertexCount, MTLPrimitiveType.Line, mvp, color,
+                    depthTest: true, lineWidthPixels: 1f + alpha);
+                color.W = alpha * 0.20f;
+                _renderer.Draw(_pivotBuffers[i], batch.VertexCount, MTLPrimitiveType.Line, mvp, color,
+                    depthTest: false, lineWidthPixels: LineWidth.NativeMax);
             }
             RenderPivotPoint(frame, ref view, ref proj, pivot, 11f + 11f * fade + flash * 14f, alpha);
         }
