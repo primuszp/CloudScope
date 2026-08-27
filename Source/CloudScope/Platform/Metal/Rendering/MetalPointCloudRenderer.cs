@@ -11,10 +11,14 @@ namespace CloudScope.Platform.Metal.Rendering
     [SupportedOSPlatform("macos")]
     internal sealed class MetalPointCloudRenderer : IPointCloudRenderer
     {
-        private const int PointStride = 24; // 6 floats
-        private const int AttributeStride = 28; // 7 floats
+
+        private readonly MetalRenderContext _context;
+
+        public MetalPointCloudRenderer(MetalRenderContext context) => _context = context;
+        private const int PointStride = GpuPointVertex.Stride;
+        private const int AttributeStride = GpuPointAttribute.Stride;
         private const int PointsPerChunk = PointRenderUploadBuilder.DefaultPointsPerChunk;
-        private static readonly PointRenderLimits Limits = PointRenderLimits.Load("METAL");
+        private static PointRenderLimits Limits => PointRenderLimits.For("METAL");
 
         // Triple-buffered uniforms — CPU never blocks waiting for GPU to finish.
         private const int UniformBufferCount = 3;
@@ -33,8 +37,9 @@ namespace CloudScope.Platform.Metal.Rendering
         private bool _hasAttributes;
         private bool _hasSourceColors;
         private ColorSource _colorSource = ColorSource.Rgb;
-        private PointRenderChunk[] _chunks = Array.Empty<PointRenderChunk>();
+        private PointOctreeNode[] _nodes = Array.Empty<PointOctreeNode>();
         private PointDrawRange[] _drawRanges = Array.Empty<PointDrawRange>();
+        private PointLodScratch _lodScratch = new(0);
 
         // Data uploaded before Initialize() — deferred to first Initialize() call.
         private PointCloudRenderData? _pendingData;
@@ -45,9 +50,9 @@ namespace CloudScope.Platform.Metal.Rendering
 
         public void Initialize()
         {
-            var device = MetalFrameContext.Device;
+            var device = _context.Device;
 
-            _pipeline = MetalShaderLibrary.CreatePointPipeline(
+            _pipeline = MetalShaderLibrary.CreatePackedPointPipeline(
                 device, MTLPixelFormat.BGRA8Unorm, MTLPixelFormat.Depth32Float);
             _attributePipeline = MetalShaderLibrary.CreateAttributePointPipeline(
                 device, MTLPixelFormat.BGRA8Unorm, MTLPixelFormat.Depth32Float);
@@ -74,7 +79,7 @@ namespace CloudScope.Platform.Metal.Rendering
         public void Upload(PointCloudRenderData data)
         {
             int requestedCount = data.Count;
-            _pointCount = Math.Min(requestedCount, Limits.MaxResidentPoints);
+            _pointCount = Math.Min(requestedCount, ResolveResidentLimit(data.HasAttributes));
             _hasAttributes = data.HasAttributes;
             _hasSourceColors = data.HasSourceColors;
             _colorSource = data.ColorSource;
@@ -82,7 +87,7 @@ namespace CloudScope.Platform.Metal.Rendering
             ReleaseAttributeChunks();
 
             // Device not ready yet (called before Initialize / app.Run) — defer.
-            if (MetalFrameContext.Device.NativePtr == IntPtr.Zero)
+            if (_context.Device.NativePtr == IntPtr.Zero)
             {
                 _pendingData = data;
                 return;
@@ -91,9 +96,10 @@ namespace CloudScope.Platform.Metal.Rendering
             if (_pointCount == 0)
                 return;
 
-            using PointSpatialUploadLayout layout = PointRenderUploadBuilder.BuildSpatialLayout(data, _pointCount);
-            _chunks = layout.Chunks;
-            _drawRanges = new PointDrawRange[_chunks.Length];
+            using PointCloudOctreeLayout layout = PointCloudOctree.Build(data, _pointCount);
+            _nodes = layout.Nodes;
+            _drawRanges = new PointDrawRange[_nodes.Length];
+            _lodScratch = new PointLodScratch(_nodes.Length);
             UploadToGpu(data, _pointCount, layout.UploadOrder);
 
             if (_hasAttributes)
@@ -102,11 +108,27 @@ namespace CloudScope.Platform.Metal.Rendering
 
         public void UpdateColorSource(ColorSource source) => _colorSource = source;
 
-        public int Render(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 projection, float pointSize, double halfViewSize, float cloudRadius)
+        /// <summary>
+        /// How many points may stay in GPU memory. Metal reports what the device wants to keep
+        /// resident, so a cloud too large for the hardware is trimmed rather than left to fail
+        /// the allocation.
+        /// </summary>
+        private int ResolveResidentLimit(bool hasAttributes)
+        {
+            int bytesPerPoint = PointStride + (hasAttributes ? AttributeStride : 0);
+            long? working = _context.Device.NativePtr == IntPtr.Zero
+                ? null
+                : (long)_context.Device.RecommendedMaxWorkingSetSize;
+            return Limits.ResolveResidentLimit(working, bytesPerPoint);
+        }
+
+        public int Render(IRenderFrameData frameData, in PointRenderView renderView)
         {
             if (_pointCount <= 0 || _pointChunks.Length == 0 || _pipeline.NativePtr == IntPtr.Zero)
                 return 0;
 
+            Matrix4 view = renderView.View;
+            Matrix4 projection = renderView.Projection;
             if (float.IsNaN(view.M11) || float.IsNaN(projection.M11))
                 return 0;
 
@@ -115,15 +137,16 @@ namespace CloudScope.Platform.Metal.Rendering
                 || frame.RenderPassDescriptor.NativePtr == IntPtr.Zero)
                 return 0;
 
-            int drawCount = PointDrawBudget.Compute(
-                _pointCount,
-                halfViewSize,
-                cloudRadius,
-                Math.Min(Limits.MaxDrawPointsPerFrame, _pointCount));
+            int drawBudget = Limits.GetFrameBudget(_pointCount);
 
+            int rangeCount = PointLodPlanner.Plan(
+                _nodes, in renderView, drawBudget, _drawRanges, _lodScratch, out int drawnPointCount);
+            if (rangeCount == 0)
+                return 0;
+
+            float pointSize = renderView.PointSize;
             _uniformBufferIndex = (_uniformBufferIndex + 1) % UniformBufferCount;
             var uniformBuffer = _uniformBuffers[_uniformBufferIndex];
-            MetalBufferWriter.Write(uniformBuffer, new MetalPointUniforms(view, projection, pointSize));
 
             var encoder = frame.RenderCommandEncoder;
             if (encoder.NativePtr == IntPtr.Zero) return 0;
@@ -150,8 +173,9 @@ namespace CloudScope.Platform.Metal.Rendering
                 encoder.SetVertexBuffer(uniformBuffer, 0, 1);
             }
 
-            int rangeCount = PointChunkDrawPlanner.FillDrawRanges(
-                _chunks, ref view, ref projection, drawCount, _drawRanges, out int drawnPointCount);
+            // Ranges arrive nearest-first, so consecutive ones often land in the same buffer;
+            // rebinding only on a change saves a couple of thousand encoder calls per frame.
+            int boundChunk = -1;
             for (int i = 0; i < rangeCount; i++)
             {
                 PointDrawRange range = _drawRanges[i];
@@ -162,9 +186,14 @@ namespace CloudScope.Platform.Metal.Rendering
                     int bufferIndex = first / PointsPerChunk;
                     int firstInBuffer = first - bufferIndex * PointsPerChunk;
                     int count = Math.Min(remaining, _chunkCounts[bufferIndex] - firstInBuffer);
-                    encoder.SetVertexBuffer(_pointChunks[bufferIndex], 0, 0);
-                    if (useAttributePipeline)
-                        encoder.SetVertexBuffer(_attributeChunks[bufferIndex], 0, 2);
+                    if (bufferIndex != boundChunk)
+                    {
+                        encoder.SetVertexBuffer(_pointChunks[bufferIndex], 0, 0);
+                        if (useAttributePipeline)
+                            encoder.SetVertexBuffer(_attributeChunks[bufferIndex], 0, 2);
+                        boundChunk = bufferIndex;
+                    }
+
                     encoder.DrawPrimitives(MTLPrimitiveType.Point, (ulong)firstInBuffer, (ulong)count);
                     first += count;
                     remaining -= count;
@@ -180,33 +209,55 @@ namespace CloudScope.Platform.Metal.Rendering
             for (int i = 0; i < _uniformBuffers.Length; i++)
             {
                 if (_uniformBuffers[i].NativePtr != IntPtr.Zero)
-                    NativeRelease(_uniformBuffers[i].NativePtr);
+                    MetalResources.Release(_uniformBuffers[i].NativePtr);
                 _uniformBuffers[i] = default;
 
                 if (_attributeUniformBuffers[i].NativePtr != IntPtr.Zero)
-                    NativeRelease(_attributeUniformBuffers[i].NativePtr);
+                    MetalResources.Release(_attributeUniformBuffers[i].NativePtr);
                 _attributeUniformBuffers[i] = default;
             }
-            Release(_classPaletteBuffer.NativePtr);
-            Release(_pipeline.NativePtr);
-            Release(_attributePipeline.NativePtr);
-            Release(_depthState.NativePtr);
+            MetalResources.Release(_classPaletteBuffer.NativePtr);
+            MetalResources.Release(_pipeline.NativePtr);
+            MetalResources.Release(_attributePipeline.NativePtr);
+            MetalResources.Release(_depthState.NativePtr);
             _classPaletteBuffer = default;
             _pipeline = default;
             _attributePipeline = default;
             _depthState = default;
             _pendingData = null;
-            _chunks = Array.Empty<PointRenderChunk>();
+            _nodes = Array.Empty<PointOctreeNode>();
             _drawRanges = Array.Empty<PointDrawRange>();
+            _lodScratch = new PointLodScratch(0);
         }
 
         // ── Private ───────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Storage mode for the cloud's buffers.
+        /// </summary>
+        /// <remarks>
+        /// On a unified-memory device the CPU and the GPU read the same pages, so a shared
+        /// buffer is written once; a managed one keeps a second copy on the GPU side and pays
+        /// for a synchronize after every write. At a hundred million points that second copy
+        /// is gigabytes of memory and seconds of load time for nothing.
+        /// </remarks>
+        private static MTLResourceOptions CloudStorageMode(MTLDevice device) =>
+            device.HasUnifiedMemory
+                ? MTLResourceOptions.ResourceStorageModeShared
+                : MTLResourceOptions.ResourceStorageModeManaged;
+
+        /// <summary>Publishes CPU writes to the GPU; only a managed buffer needs telling.</summary>
+        private static void MarkUploaded(MTLDevice device, MTLBuffer buffer, ulong byteSize)
+        {
+            if (!device.HasUnifiedMemory)
+                buffer.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
+        }
 
         private unsafe void UploadToGpu(PointCloudRenderData data, int residentCount, int[]? uploadOrder)
         {
             if (residentCount <= 0) return;
 
-            var device = MetalFrameContext.Device;
+            var device = _context.Device;
             int chunkCount = PointRenderUploadBuilder.GetChunkCount(residentCount, PointsPerChunk);
             _pointChunks = new MTLBuffer[chunkCount];
             _chunkCounts = new int[chunkCount];
@@ -217,10 +268,10 @@ namespace CloudScope.Platform.Metal.Rendering
                 int count = PointRenderUploadBuilder.GetChunkPointCount(residentCount, chunk, PointsPerChunk);
                 ulong byteSize = (ulong)(count * PointStride);
 
-                var buffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
-                var destination = new Span<PointData>(buffer.Contents.ToPointer(), count);
+                var buffer = device.NewBuffer(byteSize, CloudStorageMode(device));
+                var destination = new Span<GpuPointVertex>(buffer.Contents.ToPointer(), count);
                 PointRenderUploadBuilder.FillPoints(data, destination, pointOffset, uploadOrder);
-                buffer.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
+                MarkUploaded(device, buffer, byteSize);
 
                 _pointChunks[chunk] = buffer;
                 _chunkCounts[chunk] = count;
@@ -232,7 +283,7 @@ namespace CloudScope.Platform.Metal.Rendering
             if (residentCount <= 0)
                 return;
 
-            var device = MetalFrameContext.Device;
+            var device = _context.Device;
             int chunkCount = PointRenderUploadBuilder.GetChunkCount(residentCount, PointsPerChunk);
             _attributeChunks = new MTLBuffer[chunkCount];
 
@@ -242,12 +293,12 @@ namespace CloudScope.Platform.Metal.Rendering
                 int count = PointRenderUploadBuilder.GetChunkPointCount(residentCount, chunk, PointsPerChunk);
                 ulong byteSize = (ulong)(count * AttributeStride);
 
-                var buffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
-                var dst = (PointRenderAttributeData*)buffer.Contents.ToPointer();
+                var buffer = device.NewBuffer(byteSize, CloudStorageMode(device));
+                var dst = (GpuPointAttribute*)buffer.Contents.ToPointer();
                 PointRenderAttributeBuilder.Fill(
-                    data, new Span<PointRenderAttributeData>(dst, count), pointOffset, uploadOrder);
+                    data, new Span<GpuPointAttribute>(dst, count), pointOffset, uploadOrder);
 
-                buffer.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
+                MarkUploaded(device, buffer, byteSize);
                 _attributeChunks[chunk] = buffer;
             }
         }
@@ -272,7 +323,7 @@ namespace CloudScope.Platform.Metal.Rendering
             foreach (var chunk in _pointChunks)
             {
                 if (chunk.NativePtr != IntPtr.Zero)
-                    NativeRelease(chunk.NativePtr);
+                    MetalResources.Release(chunk.NativePtr);
             }
             _pointChunks = Array.Empty<MTLBuffer>();
             _chunkCounts = Array.Empty<int>();
@@ -283,18 +334,9 @@ namespace CloudScope.Platform.Metal.Rendering
             foreach (var chunk in _attributeChunks)
             {
                 if (chunk.NativePtr != IntPtr.Zero)
-                    NativeRelease(chunk.NativePtr);
+                    MetalResources.Release(chunk.NativePtr);
             }
             _attributeChunks = Array.Empty<MTLBuffer>();
-        }
-
-        [System.Runtime.InteropServices.DllImport("libobjc.dylib", EntryPoint = "objc_release")]
-        private static extern void NativeRelease(IntPtr obj);
-
-        private static void Release(IntPtr nativePtr)
-        {
-            if (nativePtr != IntPtr.Zero)
-                NativeRelease(nativePtr);
         }
     }
 }

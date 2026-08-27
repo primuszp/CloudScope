@@ -21,6 +21,22 @@ public sealed class CommandDispatcher : ICommandExecutor
     public IReadOnlyCollection<string> KnownCommandNames =>
         _executors.SelectMany(executor => executor.KnownCommandNames).ToArray();
 
+    public IReadOnlyCollection<CommandDescriptor> Commands =>
+        _executors.SelectMany(executor => executor.Commands).ToArray();
+
+    public IReadOnlyCollection<SystemVariable> Variables =>
+        _executors.SelectMany(executor => executor.Variables).ToArray();
+
+    public bool TryGetCommand(string name, out CommandDescriptor command)
+    {
+        foreach (ICommandExecutor executor in _executors)
+            if (executor.TryGetCommand(name, out command))
+                return true;
+
+        command = null!;
+        return false;
+    }
+
     public void Register(ICommandExecutor executor)
     {
         string? conflict = FindShadowedName(executor);
@@ -73,6 +89,20 @@ public sealed class CommandDispatcher : ICommandExecutor
 
     public bool IsTransparentCommand(string name) =>
         _executors.Any(executor => executor.IsKnownCommand(name) && executor.IsTransparentCommand(name));
+
+    public PromptStep? ActiveStep => _activeExecutor?.ActiveStep;
+
+    public bool AwaitsPoint => _activeExecutor?.AwaitsPoint == true;
+
+    public PromptStep? PointPrompt => _activeExecutor?.PointPrompt;
+
+    public CommandResult SupplyPoint(OpenTK.Mathematics.Vector3 world, int screenX, int screenY)
+    {
+        if (_activeExecutor == null) return CommandResult.End();
+        CommandResult result = _activeExecutor.SupplyPoint(world, screenX, screenY);
+        TrackExecutorState(_activeExecutor, result);
+        return result;
+    }
 
     public CommandResult CancelActive()
     {

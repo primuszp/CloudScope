@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.Versioning;
+using CloudScope.Platform.OpenGL;
 using CloudScope.Rendering;
 
 namespace CloudScope
@@ -23,7 +24,7 @@ namespace CloudScope
                     "The Metal viewer host requires macOS. Use CLOUDSCOPE_RENDER_BACKEND=opengl on this platform.");
 
 #if ENABLE_SHARPMETAL
-            return new Platform.Metal.SharpMetalViewerHost(width, height, backend);
+            return new Platform.Metal.SharpMetalViewerHost(width, height, (Platform.Metal.MetalRenderBackend)backend);
 #else
             throw new PlatformNotSupportedException("This build was created without the SharpMetal viewer host.");
 #endif

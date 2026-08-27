@@ -16,7 +16,11 @@ namespace CloudScope.Labeling
         /// <summary>
         /// Save all labels to a JSON file next to the source LAS.
         /// </summary>
-        public static void Save(string lasFilePath, LabelManager manager)
+        /// <param name="destinationPath">
+        /// Explicit output path, or null to write "&lt;source&gt;.labels.json" beside the LAS.
+        /// SAVELABELS takes an optional path, and this is where it lands.
+        /// </param>
+        public static void Save(string lasFilePath, LabelManager manager, string? destinationPath = null)
         {
             // Invert: point→annotation  →  label→points[] and label→instance→points[].
             var grouped = new Dictionary<string, List<int>>();
@@ -69,7 +73,9 @@ namespace CloudScope.Labeling
                 WriteIndented = true
             });
 
-            string outPath = Path.ChangeExtension(lasFilePath, ".labels.json");
+            string outPath = string.IsNullOrWhiteSpace(destinationPath)
+                ? Path.ChangeExtension(lasFilePath, ".labels.json")
+                : destinationPath;
             File.WriteAllText(outPath, json);
             Console.WriteLine($"Labels saved: {outPath}  ({manager.Count} points)");
         }
@@ -77,9 +83,11 @@ namespace CloudScope.Labeling
         /// <summary>
         /// Load labels from a JSON file and apply them to the manager.
         /// </summary>
-        public static bool Load(string lasFilePath, LabelManager manager)
+        public static bool Load(string lasFilePath, LabelManager manager, string? sourcePath = null)
         {
-            string inPath = Path.ChangeExtension(lasFilePath, ".labels.json");
+            string inPath = string.IsNullOrWhiteSpace(sourcePath)
+                ? Path.ChangeExtension(lasFilePath, ".labels.json")
+                : sourcePath;
             if (!File.Exists(inPath))
             {
                 Console.WriteLine($"No label file found: {inPath}");

@@ -33,6 +33,13 @@ public sealed class CommandLineSession
     {
     }
 
+    /// <summary>
+    /// Raised whenever a line is added or the transcript is cleared. Shells that mirror the
+    /// history — the expanded history window — follow it instead of polling or offering a
+    /// "refresh" button for something that should never be stale.
+    /// </summary>
+    public event Action? HistoryChanged;
+
     public int HistoryLimit { get; }
     public string StagedText { get; private set; } = "";
     public string Prompt => _prompt();
@@ -60,11 +67,18 @@ public sealed class CommandLineSession
     /// Most recent distinct command names, newest first. This is AutoCAD's "Recent Commands"
     /// list: the first word of each input, without its arguments.
     /// </summary>
-    public IEnumerable<string> RecentCommands =>
+    public IEnumerable<string> RecentCommands => RecentCommandNames;
+
+    // Autocomplete asks for this on every keystroke, so the list is built once per submission
+    // rather than once per character typed.
+    private string[] RecentCommandNames => _recentCommands ??=
         Enumerable.Reverse(_inputHistory)
             .Select(CommandText.FirstWord)
             .Where(name => name.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase);
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private string[]? _recentCommands;
 
     /// <summary>Restores input history from a previous session.</summary>
     public void SeedInputHistory(IEnumerable<string> inputs)
@@ -77,6 +91,7 @@ public sealed class CommandLineSession
         }
 
         _historyCursor = _inputHistory.Count;
+        _recentCommands = null;
     }
 
     /// <summary>Snapshot of the input history, oldest first, for persisting between sessions.</summary>
@@ -87,6 +102,7 @@ public sealed class CommandLineSession
     {
         _history.Clear();
         TotalEntries = 0;
+        HistoryChanged?.Invoke();
     }
 
     public void Stage(string command) => StagedText = command;
@@ -94,14 +110,17 @@ public sealed class CommandLineSession
     /// <summary>Ranked completions for the text typed so far. Empty when nothing is typed.</summary>
     public IReadOnlyList<CommandCompletion> Complete(string prefix) =>
         CommandCompletionSource.Complete(prefix, ActiveOptions, _executor?.KnownCommandNames,
-            _executor != null ? _executor.ResolveGlobalName : null);
+            _executor != null ? _executor.ResolveGlobalName : null,
+            variables: _executor?.Variables,
+            recentCommands: RecentCommandNames);
 
     public CommandResult Submit(string? text = null) => Submit(text, _execute);
 
     public CommandResult Submit(string? text, Func<string, CommandResult> execute)
     {
         string command = text ?? StagedText;
-        AddHistory(command.Length == 0 ? "Command: <repeat>" : $"Command: {command.Trim()}", CommandEntryKind.Echo);
+        AddHistory(CommandLineEntry.EchoPrefix + (command.Length == 0 ? "<repeat>" : command.Trim()),
+            CommandEntryKind.Echo);
         Remember(command);
         CommandResult result = execute(command);
         if (!string.IsNullOrWhiteSpace(result.Message))
@@ -127,6 +146,7 @@ public sealed class CommandLineSession
         TotalEntries++;
         int excess = _history.Count - HistoryLimit;
         if (excess > 0) _history.RemoveRange(0, excess);
+        HistoryChanged?.Invoke();
     }
 
     public string HistoryText => string.Join(Environment.NewLine, _history.Select(entry => entry.Text));
@@ -146,5 +166,6 @@ public sealed class CommandLineSession
         int excess = _inputHistory.Count - 100;
         if (excess > 0) _inputHistory.RemoveRange(0, excess);
         _historyCursor = _inputHistory.Count;
+        _recentCommands = null;
     }
 }

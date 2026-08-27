@@ -7,11 +7,11 @@ using OpenTK.Mathematics;
 
 namespace CloudScope.Avalonia.Hosting;
 
-public abstract class EmbeddedOpenTkNativeHostBase : NativeControlHost, IEmbeddedOpenTkNativeHost
+public abstract class EmbeddedOpenGlNativeHostBase : NativeControlHost, IEmbeddedViewerHost
 {
     private DispatcherTimer? _pumpTimer;
 
-    protected EmbeddedOpenTkNativeHostBase(HostController hostController)
+    protected EmbeddedOpenGlNativeHostBase(HostController hostController)
     {
         Commands = new DelegatingCommandExecutor(
             () => Viewer?.Commands,
@@ -27,41 +27,6 @@ public abstract class EmbeddedOpenTkNativeHostBase : NativeControlHost, IEmbedde
     public IReadOnlyCollection<CloudScope.Labeling.LabelDefinition> LabelDefinitions => Viewer?.LabelDefinitions ?? System.Array.Empty<CloudScope.Labeling.LabelDefinition>();
     public string ActiveLabel => Viewer?.ActiveLabel ?? "";
     public int? ActiveInstanceId => Viewer?.ActiveInstanceId;
-
-    public void LoadPointCloud(PointData[] points, float radius, Action? completed = null)
-    {
-        EmbeddedOpenTkViewerHost? viewer = Viewer;
-        if (viewer == null)
-            return;
-
-        viewer.Enqueue(v =>
-        {
-            v.LoadPointCloud(points, radius);
-            completed?.Invoke();
-        });
-    }
-
-    public void LoadPointCloud(PointCloudDataset dataset, Action? completed = null)
-    {
-        EmbeddedOpenTkViewerHost? viewer = Viewer;
-        if (viewer == null)
-            return;
-
-        viewer.Enqueue(v =>
-        {
-            v.LoadPointCloud(dataset);
-            completed?.Invoke();
-        });
-    }
-
-    public void ResetViewer()
-    {
-        EmbeddedOpenTkViewerHost? viewer = Viewer;
-        if (viewer == null)
-            return;
-
-        viewer.Enqueue(v => v.Reset());
-    }
 
     public void ForwardKeyDown(ViewerKey key) => Viewer?.ForwardKeyDown(key);
 

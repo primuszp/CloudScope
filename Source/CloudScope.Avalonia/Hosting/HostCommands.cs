@@ -2,23 +2,24 @@ using CloudScope.Commands;
 
 namespace CloudScope.Avalonia.Hosting;
 
+/// <summary>
+/// Commands that act on the desktop shell rather than the viewer inside it. They share the
+/// viewer's command table through the dispatcher, so a name registered here cannot collide
+/// with a viewer command.
+/// </summary>
 internal sealed class HostCommands
 {
     private readonly HostController _host;
 
     public HostCommands(HostController host) => _host = host;
 
-    [CommandMethod("STATUS", Flags = CommandFlags.NoHistory | CommandFlags.NoUndoMarker | CommandFlags.Transparent)]
-    public CommandResult Status(CommandContext context) => CommandResult.End(_host.StatusText);
-
-    [CommandMethod("HOSTRESET", Flags = CommandFlags.NoUndoMarker)]
-    public CommandResult Reset(CommandContext context)
+    [CommandMethod("HOSTSTATUS", Flags = CommandFlags.NoHistory | CommandFlags.NoUndoMarker | CommandFlags.Transparent,
+        Group = CommandGroup.Inquiry, Scope = CommandScope.Application,
+        Summary = "Reports the shell's own status line.",
+        Syntax = "HOSTSTATUS")]
+    public IEnumerable<PromptStep> Status(CommandContext context)
     {
-        _host.PerformReset();
-        return CommandResult.End("Host controller reset.");
+        context.Editor.WriteMessage(_host.StatusText);
+        yield break;
     }
-
-    [CommandMethod("HOSTHELP", Flags = CommandFlags.NoHistory | CommandFlags.NoUndoMarker | CommandFlags.Transparent)]
-    public CommandResult HostHelp(CommandContext context) =>
-        CommandResult.End("Host commands: STATUS, HOSTRESET, HOSTHELP. Type HELP for viewer commands.");
 }

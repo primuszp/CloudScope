@@ -15,7 +15,7 @@ public sealed class ViewportInputHost : Border
         _hostController = hostController;
         Background = Brushes.Transparent;
         Focusable = true;
-        Child = EmbeddedOpenTkNativeHostFactory.Create(hostController);
+        Child = EmbeddedViewerHostFactory.Create(hostController);
 
         PointerPressed += (_, _) => Focus();
         KeyDown += OnKeyDown;

@@ -1,10 +1,9 @@
 using CloudScope.Commands;
 using CloudScope.Labeling;
-using CloudScope.Loading;
 
 namespace CloudScope.Avalonia.Hosting;
 
-public interface IEmbeddedOpenTkNativeHost
+public interface IEmbeddedViewerHost
 {
     string RendererName { get; }
 
@@ -19,9 +18,6 @@ public interface IEmbeddedOpenTkNativeHost
     IReadOnlyCollection<LabelDefinition> LabelDefinitions { get; }
     string ActiveLabel { get; }
     int? ActiveInstanceId { get; }
-    void LoadPointCloud(PointData[] points, float radius, Action? completed = null);
-    void LoadPointCloud(PointCloudDataset dataset, Action? completed = null);
-    void ResetViewer();
 
     void ForwardKeyDown(ViewerKey key);
     void ForwardKeyUp(ViewerKey key);

@@ -22,7 +22,7 @@ namespace CloudScope.Rendering
                 return RenderBackendKind.Metal;
 
 #if ENABLE_SHARPMETAL
-            // macOS-en Metal az alapértelmezett
+            // Metal is the default on macOS.
             if (OperatingSystem.IsMacOS())
                 return RenderBackendKind.Metal;
 #endif
@@ -47,7 +47,7 @@ namespace CloudScope.Rendering
 
         [SupportedOSPlatform("macos")]
 #if ENABLE_SHARPMETAL
-        private static IRenderBackend CreateMetal() => new MetalRenderBackend();
+        private static IRenderBackend CreateMetal() => MetalRenderBackend.CreateWithSystemDefaultDevice();
 #else
         private static IRenderBackend CreateMetal() =>
             throw new PlatformNotSupportedException("This build was created without the Metal backend.");

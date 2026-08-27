@@ -53,6 +53,33 @@ public readonly record struct ViewerStatusSnapshot
 
     public float Fps { get; init; }
 
+    /// <summary>Whether the viewer wants the label registry shown. Shells project it; the
+    /// LABELS command is the only thing that sets it, so both shells agree on what it means.</summary>
+    public bool LabelWindowVisible { get; init; }
+
+    /// <summary>Whether the viewer wants the expanded command history shown.</summary>
+    public bool CommandHistoryVisible { get; init; }
+
+    /// <summary>
+    /// Whether the docked command window is shown. It starts visible and only COMMANDLINE
+    /// and COMMANDLINEHIDE change it, so a shell never hides the command line on its own.
+    /// </summary>
+    public bool CommandLineVisible { get; init; } = true;
+
+    /// <summary>Whether the command window floats free of the workspace instead of docking.</summary>
+    public bool CommandLineFloating { get; init; }
+
+    /// <summary>
+    /// Whether the viewer has been asked to close (QUIT). A shell that owns its own window
+    /// closes it when it sees this; the GameWindow shell ends its loop on the same flag.
+    /// </summary>
+    public bool CloseRequested { get; init; }
+
+    /// <summary>Percentage of a load in progress, or -1 when nothing is loading.</summary>
+    public int LoadProgress { get; init; } = -1;
+
+    public bool IsLoading => LoadProgress >= 0;
+
     public bool HasCloud => LoadedCount > 0;
 
     public string InstanceText => CurrentInstanceId is int id ? id.ToString() : "none";

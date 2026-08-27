@@ -2,7 +2,6 @@ using System;
 using System.Runtime.Versioning;
 using CloudScope.Platform.Metal.Rendering;
 using CloudScope.Rendering;
-using SharpMetal.Foundation;
 using SharpMetal.Metal;
 using SharpMetal.QuartzCore;
 
@@ -11,25 +10,60 @@ namespace CloudScope.Platform.Metal
     [SupportedOSPlatform("macos")]
     public sealed class MetalRenderBackend : IRenderBackend
     {
+        private readonly MetalRenderContext _context;
+
+        /// <summary>Creates a backend that renders with the given device and queue.</summary>
+        public MetalRenderBackend(MTLDevice device, MTLCommandQueue commandQueue)
+        {
+            _context = new MetalRenderContext(device, commandQueue);
+        }
+
+        /// <summary>Creates a backend on the system default device, with a queue of its own.</summary>
+        public static MetalRenderBackend CreateWithSystemDefaultDevice()
+        {
+            MTLDevice device = MTLDevice.CreateSystemDefaultDevice();
+            if (device.NativePtr == IntPtr.Zero)
+                throw new InvalidOperationException("No Metal device is available.");
+
+            return new MetalRenderBackend(device, device.NewCommandQueue());
+        }
+
         public RenderBackendKind Kind => RenderBackendKind.Metal;
 
-        public IPointCloudRenderer  CreatePointCloudRenderer()  => new MetalPointCloudRenderer();
-        public IHighlightRenderer   CreateHighlightRenderer()   => new MetalHighlightRenderer();
-        public IOverlayRenderer     CreateOverlayRenderer()     => new MetalOverlayRenderer();
-        public SelectionGizmoRenderers CreateSelectionGizmoRenderers()
-            => MetalRendererFactory.CreateSelectionGizmoRenderers();
-        public IDepthPicker CreateDepthPicker() => new MetalDepthPicker();
+        /// <summary>The device this backend renders with; hosts create their view against it.</summary>
+        public MTLDevice Device => _context.Device;
 
-        public void InitializeFrameState()
+        public IPointCloudRenderer  CreatePointCloudRenderer()  => new MetalPointCloudRenderer(_context);
+        public IPointTileCloudRenderer CreateStreamingPointCloudRenderer() => new MetalStreamingPointCloudRenderer(_context);
+        public IHighlightRenderer   CreateHighlightRenderer()   => new MetalHighlightRenderer(_context);
+        public IOverlayRenderer     CreateOverlayRenderer()     => new MetalOverlayRenderer(_context);
+        public SelectionGizmoRenderers CreateSelectionGizmoRenderers()
+            => new(new MetalBoxGizmoRenderer(_context),
+                   new MetalSphereGizmoRenderer(_context),
+                   new MetalCylinderGizmoRenderer(_context));
+        public IDepthPicker CreateDepthPicker() => new MetalDepthPicker(_context);
+
+        public void Initialize()
         {
-            // Diagnostics removed.
+            // Metal carries depth test, blending and point size in the pipeline and
+            // depth-stencil states each renderer builds, so there is no global state to seed.
         }
+
+        /// <summary>
+        /// Hands the backend the drawable the host just acquired. The next
+        /// <see cref="BeginFrame"/> records into it.
+        /// </summary>
+        public void PrepareFrame(
+            MTLRenderPassDescriptor renderPassDescriptor,
+            CAMetalDrawable drawable,
+            MTLCommandBuffer commandBuffer)
+            => _context.BeginFrame(renderPassDescriptor, drawable, commandBuffer);
 
         public IRenderFrameSession BeginFrame()
         {
-            var frame = MetalFrameContext.CurrentFrame;
+            var frame = _context.CurrentFrame;
             if (frame == null || frame.RenderPassDescriptor.NativePtr == IntPtr.Zero)
-                return MetalFrameSession.Empty;
+                return new MetalFrameSession(_context, null);
 
             var da = frame.RenderPassDescriptor.DepthAttachment;
             if (da.NativePtr != IntPtr.Zero && da.Texture.NativePtr != IntPtr.Zero)
@@ -38,24 +72,26 @@ namespace CloudScope.Platform.Metal
                 // MTKView may default depth to DontCare, which permits Metal to discard
                 // it as soon as rendering completes, so explicitly preserve it.
                 da.StoreAction = MTLStoreAction.Store;
-                MetalFrameContext.SetDepthTexture(da.Texture);
+                _context.SetDepthTexture(da.Texture);
             }
 
             var cmdBuffer = frame.CommandBuffer;
-            if (cmdBuffer.NativePtr == IntPtr.Zero) return MetalFrameSession.Empty;
+            if (cmdBuffer.NativePtr == IntPtr.Zero)
+                return new MetalFrameSession(_context, null);
 
             var encoder = cmdBuffer.RenderCommandEncoder(frame.RenderPassDescriptor);
-            if (encoder.NativePtr == IntPtr.Zero) return MetalFrameSession.Empty;
+            if (encoder.NativePtr == IntPtr.Zero)
+                return new MetalFrameSession(_context, null);
 
-            MetalFrameContext.SetRenderCommandEncoder(encoder);
-            return new MetalFrameSession(frame);
+            _context.SetRenderCommandEncoder(encoder);
+            return new MetalFrameSession(_context, frame);
         }
 
         public void Resize(int width, int height) { }
 
         public void SetViewport(int x, int y, int width, int height)
         {
-            MetalFrameState? frame = MetalFrameContext.CurrentFrame;
+            MetalFrameState? frame = _context.CurrentFrame;
             if (frame == null || width <= 0 || height <= 0)
                 return;
 
@@ -69,6 +105,7 @@ namespace CloudScope.Platform.Metal
             int targetHeight = colorTexture.NativePtr == IntPtr.Zero ? height : checked((int)colorTexture.Height);
             int metalY = Math.Max(0, targetHeight - y - height);
 
+            _context.SetViewportSize(width, height);
             encoder.SetViewport(new MTLViewport
             {
                 originX = x,
@@ -89,13 +126,13 @@ namespace CloudScope.Platform.Metal
 
         private sealed class MetalFrameSession : IRenderFrameSession
         {
-            public static readonly MetalFrameSession Empty = new(default);
-
+            private readonly MetalRenderContext _context;
             private readonly MetalFrameState? _frame;
             private bool _disposed;
 
-            public MetalFrameSession(MetalFrameState? frame)
+            public MetalFrameSession(MetalRenderContext context, MetalFrameState? frame)
             {
+                _context = context;
                 _frame = frame;
             }
 
@@ -122,7 +159,7 @@ namespace CloudScope.Platform.Metal
                     cmdBuffer.Commit();
                 }
 
-                MetalFrameContext.End();
+                _context.EndFrame();
             }
         }
     }

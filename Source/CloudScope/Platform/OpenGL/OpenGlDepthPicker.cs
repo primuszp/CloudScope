@@ -3,7 +3,7 @@ using CloudScope.Rendering;
 
 namespace CloudScope.Platform.OpenGL
 {
-    public sealed class OpenGlDepthPicker : IDepthPicker
+    internal sealed class OpenGlDepthPicker : IDepthPicker
     {
         public float ReadDepth(int x, int y)
         {

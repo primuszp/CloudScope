@@ -17,12 +17,15 @@ namespace CloudScope.Selection
         bool      IsEditing { get; }   // Phase == Editing
         bool      HasVolume { get; }
 
-        Vector3 Center { get; }
+        Vector3 Center { get; set; }
         IReadOnlyList<GripDescriptor> Grips { get; }
 
         // ── View-constrained grips ────────────────────────────────────────────
         /// <summary>Active per-viewport grip view constraint (set before render/hit-test).</summary>
         GripViewConstraint ViewConstraint { get; set; }
+
+        /// <summary>Orientation of the volume; SCALE and ROTATE need it, gestures set it too.</summary>
+        Quaternion Rotation { get; set; }
         /// <summary>True when grip <paramref name="index"/> is shown/interactive under the current constraint.</summary>
         bool IsGripVisible(int index);
         /// <summary>Handle index of the center grip used for in-plane body translation.</summary>
@@ -54,6 +57,9 @@ namespace CloudScope.Selection
         void EndEdit();
 
         void AdjustScale(float delta);
+
+        /// <summary>Multiplies the tool's dimensions, for a typed SCALE factor.</summary>
+        void ScaleBy(float factor);
         void SetAxisConstraint(int axis);
 
         void Confirm();

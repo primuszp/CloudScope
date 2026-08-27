@@ -9,6 +9,10 @@ namespace CloudScope.Platform.Metal
     [SupportedOSPlatform("macos")]
     internal sealed class MetalDepthPicker : IDepthPicker
     {
+
+        private readonly MetalRenderContext _context;
+
+        public MetalDepthPicker(MetalRenderContext context) => _context = context;
         public float ReadDepth(int x, int y)
         {
             Span<float> one = stackalloc float[1];
@@ -28,7 +32,7 @@ namespace CloudScope.Platform.Metal
         private unsafe int ReadDepthWindow(int x, int y, int width, int height, Span<float> destination)
         {
             destination.Fill(1f);
-            var texture = MetalFrameContext.DepthTexture;
+            var texture = _context.DepthTexture;
             if (texture.NativePtr == IntPtr.Zero || width <= 0 || height <= 0)
             {
                 return 0;
@@ -54,12 +58,13 @@ namespace CloudScope.Platform.Metal
                 return 0;
             }
 
-            CopyDepthToDestination(texture, startX, startY, readW, readH, destination);
+            CopyDepthToDestination(_context, texture, startX, startY, readW, readH, destination);
 
             return count;
         }
 
         private static unsafe void CopyDepthToDestination(
+            MetalRenderContext context,
             MTLTexture texture,
             int startX,
             int startY,
@@ -67,13 +72,13 @@ namespace CloudScope.Platform.Metal
             int readH,
             Span<float> destination)
         {
-            var queue = MetalFrameContext.CommandQueue;
+            var queue = context.CommandQueue;
             if (queue.NativePtr == IntPtr.Zero)
                 return;
 
             ulong bytesPerRow = Align256((ulong)(readW * sizeof(float)));
             ulong byteSize = bytesPerRow * (ulong)readH;
-            var readback = MetalFrameContext.Device.NewBuffer(
+            var readback = context.Device.NewBuffer(
                 byteSize,
                 MTLResourceOptions.ResourceStorageModeShared);
             if (readback.NativePtr == IntPtr.Zero)
@@ -102,8 +107,10 @@ namespace CloudScope.Platform.Metal
                 {
                     for (int row = 0; row < readH; row++)
                     {
+                        // The blit copies rows top-down, but IDepthPicker hands back
+                        // bottom-up rows like glReadPixels, so the rows are reversed here.
                         float* src = (float*)(srcBase + (ulong)row * bytesPerRow);
-                        float* dst = dstBase + row * readW;
+                        float* dst = dstBase + (readH - 1 - row) * readW;
                         for (int col = 0; col < readW; col++)
                         {
                             // The shared camera supplies the established OpenGL projection
@@ -117,13 +124,10 @@ namespace CloudScope.Platform.Metal
             }
             finally
             {
-                NativeRelease(readback.NativePtr);
+                MetalResources.Release(readback.NativePtr);
             }
         }
 
         private static ulong Align256(ulong value) => (value + 255UL) & ~255UL;
-
-        [DllImport("libobjc.dylib", EntryPoint = "objc_release")]
-        private static extern void NativeRelease(IntPtr obj);
     }
 }

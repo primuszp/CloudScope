@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Avalonia;
 using Avalonia.Controls;
@@ -8,6 +7,7 @@ using Avalonia.Platform;
 using Avalonia.Threading;
 using CloudScope.Commands;
 using CloudScope.Loading;
+using CloudScope.Platform.MacOS;
 using CloudScope.Platform.MacOS.ObjC;
 using CloudScope.Platform.Metal;
 using CloudScope.Platform.Metal.ObjC;
@@ -21,11 +21,12 @@ namespace CloudScope.Avalonia.Hosting.Platform.MacOS;
 
 /// <summary>Embeds CloudScope's Metal renderer in Avalonia through a native MTKView.</summary>
 [SupportedOSPlatform("macos")]
-public sealed class MacOsEmbeddedMetalNativeHost : NativeControlHost, IEmbeddedOpenTkNativeHost
+public sealed class MacOsEmbeddedMetalHost : NativeControlHost, IEmbeddedViewerHost
 {
     private readonly ConcurrentQueue<Action> _actions = new();
-    private readonly ManualViewerKeyboard _keyboard = new();
+    private readonly ViewerKeyboardState _keyboard = new();
     private readonly Stopwatch _frameClock = new();
+    private MetalRenderBackend? _renderBackend;
     private ViewerController? _controller;
     private ViewerCommandDispatcher? _commands;
     private MTLCommandQueue? _commandQueue;
@@ -38,7 +39,7 @@ public sealed class MacOsEmbeddedMetalNativeHost : NativeControlHost, IEmbeddedO
     private int _lastMouseY;
     private bool _loaded;
 
-    public MacOsEmbeddedMetalNativeHost(HostController hostController)
+    public MacOsEmbeddedMetalHost(HostController hostController)
     {
         Commands = new DelegatingCommandExecutor(
             () => _commands,
@@ -64,20 +65,17 @@ public sealed class MacOsEmbeddedMetalNativeHost : NativeControlHost, IEmbeddedO
         ObjectiveC.LinkAppKit();
         ObjectiveC.LinkMetalKit();
 
-        var device = MTLDevice.CreateSystemDefaultDevice();
-        if (device.NativePtr == IntPtr.Zero)
-            throw new InvalidOperationException("No Metal device is available.");
-
+        _renderBackend = MetalRenderBackend.CreateWithSystemDefaultDevice();
+        MTLDevice device = _renderBackend.Device;
         _commandQueue = device.NewCommandQueue();
-        MetalFrameContext.Initialize(device, _commandQueue.Value);
-        _controller = new ViewerController(1280, 800, new MetalRenderBackend());
+        _controller = new ViewerController(1280, 800, _renderBackend);
         _commands = new ViewerCommandDispatcher(_controller);
 
         _view = new MTKEventView(new NSRect(0, 0, 1280, 800), device)
         {
             ColorPixelFormat = MTLPixelFormat.BGRA8Unorm,
             DepthStencilPixelFormat = MTLPixelFormat.Depth32Float,
-            ClearColor = new MTLClearColor { red = 0, green = 0, blue = 0, alpha = 1 },
+            ClearColor = MetalClearColor.FromPalette(),
             FramebufferOnly = false,
             Paused = true,
             EnableSetNeedsDisplay = true
@@ -102,13 +100,13 @@ public sealed class MacOsEmbeddedMetalNativeHost : NativeControlHost, IEmbeddedO
         _view.OnMouseUp_ = (button, x, y) => { RememberMouse(x, y); _controller?.MouseUp(button, x, y); RequestRedraw(); };
         _view.OnMouseMove_ = (x, y) => { RememberMouse(x, y); _controller?.MouseMove(x, y); RequestRedraw(); };
         _view.OnMouseWheel_ = (x, y, delta) => { RememberMouse(x, y); _controller?.MouseWheel(x, y, delta); RequestRedraw(); };
-        _view.OnKeyDown_ = code => ForwardKeyDown(MapMacKey(code));
-        _view.OnKeyUp_ = code => ForwardKeyUp(MapMacKey(code));
+        _view.OnKeyDown_ = code => ForwardKeyDown(MacKeyCodes.ToViewerKey(code));
+        _view.OnKeyUp_ = code => ForwardKeyUp(MacKeyCodes.ToViewerKey(code));
     }
 
     private void Draw(MTKView view)
     {
-        if (!_loaded || _controller == null || _commandQueue == null)
+        if (!_loaded || _controller == null || _commandQueue == null || _renderBackend == null)
             return;
 
         var descriptor = view.CurrentRenderPassDescriptor;
@@ -122,15 +120,9 @@ public sealed class MacOsEmbeddedMetalNativeHost : NativeControlHost, IEmbeddedO
         _controller.UpdateFrame(dt, _keyboard);
 
         var commandBuffer = _commandQueue.Value.CommandBuffer();
-        MetalFrameContext.Begin(view, descriptor, drawable, commandBuffer);
-        try
-        {
-            _controller.RenderFrame(dt);
-        }
-        finally
-        {
-            MetalFrameContext.End();
-        }
+        _renderBackend!.PrepareFrame(descriptor, drawable, commandBuffer);
+        // RenderFrame's frame session commits, presents and ends the frame on dispose.
+        _controller.RenderFrame(dt);
     }
 
     protected override void ArrangeCore(Rect finalRect)
@@ -141,7 +133,8 @@ public sealed class MacOsEmbeddedMetalNativeHost : NativeControlHost, IEmbeddedO
 
         int logicalWidth = Math.Max(1, (int)Math.Round(finalRect.Width));
         int logicalHeight = Math.Max(1, (int)Math.Round(finalRect.Height));
-        SetNativeViewSize(_view.NativePtr, logicalWidth, logicalHeight);
+        NSViewInterop.SetFrameSize(_view.NativePtr, logicalWidth, logicalHeight);
+        NSViewInterop.SetNeedsDisplay(_view.NativePtr);
         double scale = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
         ResizeDrawable(
             Math.Max(1, (int)Math.Round(logicalWidth * scale)),
@@ -160,16 +153,10 @@ public sealed class MacOsEmbeddedMetalNativeHost : NativeControlHost, IEmbeddedO
         _controller?.Dispose();
         _controller = null;
         _commands = null;
+        _renderBackend = null;
         base.DestroyNativeControlCore(control);
     }
 
-    public void LoadPointCloud(PointData[] points, float radius, Action? completed = null) =>
-        Enqueue(() => { _controller?.LoadPointCloud(points, radius); completed?.Invoke(); });
-
-    public void LoadPointCloud(PointCloudDataset dataset, Action? completed = null) =>
-        Enqueue(() => { _controller?.LoadPointCloud(dataset); completed?.Invoke(); });
-
-    public void ResetViewer() => Enqueue(() => _controller?.Reset());
     /// <summary>
     /// The Metal host renders on demand, so every command is followed by a redraw request —
     /// that side effect is the only reason this host wraps the dispatcher at all.
@@ -232,46 +219,5 @@ public sealed class MacOsEmbeddedMetalNativeHost : NativeControlHost, IEmbeddedO
         _view?.UpdateDrawableSize(width, height);
         _controller?.Resize(width, height);
         RequestRedraw();
-    }
-
-    private static void SetNativeViewSize(IntPtr view, int width, int height)
-    {
-        ObjcMsgSendSize(view, SelSetFrameSize, new NSSize(width, height));
-        ObjcMsgSendBool(view, SelSetNeedsDisplay, true);
-    }
-
-    private static ViewerKey MapMacKey(ushort code) => code switch
-    {
-        53 => ViewerKey.Escape, 49 => ViewerKey.Space, 36 => ViewerKey.Enter,
-        56 => ViewerKey.LeftShift, 60 => ViewerKey.RightShift,
-        59 => ViewerKey.LeftControl, 62 => ViewerKey.RightControl,
-        12 => ViewerKey.Q, 13 => ViewerKey.W, 14 => ViewerKey.E,
-        0 => ViewerKey.A, 1 => ViewerKey.S, 2 => ViewerKey.D,
-        69 => ViewerKey.KeyPadAdd, 78 => ViewerKey.KeyPadSubtract,
-        71 => ViewerKey.KeyPad7, 77 => ViewerKey.KeyPad3,
-        65 => ViewerKey.KeyPad1, 87 => ViewerKey.KeyPad5,
-        115 => ViewerKey.Home, 3 => ViewerKey.F,
-        _ => ViewerKey.Unknown
-    };
-
-    private static readonly IntPtr SelSetFrameSize = sel_registerName("setFrameSize:");
-    private static readonly IntPtr SelSetNeedsDisplay = sel_registerName("setNeedsDisplay:");
-
-    [DllImport("libobjc.dylib", EntryPoint = "sel_registerName")]
-    private static extern IntPtr sel_registerName(string selector);
-    [DllImport("libobjc.dylib", EntryPoint = "objc_msgSend")]
-    private static extern void ObjcMsgSendSize(IntPtr receiver, IntPtr selector, NSSize size);
-    [DllImport("libobjc.dylib", EntryPoint = "objc_msgSend")]
-    private static extern void ObjcMsgSendBool(IntPtr receiver, IntPtr selector, bool value);
-
-    private sealed class ManualViewerKeyboard : IViewerKeyboard
-    {
-        private readonly HashSet<ViewerKey> _down = [];
-        private readonly HashSet<ViewerKey> _pressed = [];
-        public bool HasAnyKeyDown => _down.Count > 0;
-        public void KeyDown(ViewerKey key) { if (_down.Add(key)) _pressed.Add(key); }
-        public void KeyUp(ViewerKey key) { _down.Remove(key); _pressed.Remove(key); }
-        public bool IsKeyDown(ViewerKey key) => _down.Contains(key);
-        public bool IsKeyPressed(ViewerKey key) => _pressed.Remove(key);
     }
 }
