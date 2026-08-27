@@ -106,7 +106,10 @@ void main()
 
             GL.UniformMatrix4(_uMvp, false, ref mvp);
             GL.Uniform4(_uColor, color.X, color.Y, color.Z, color.W);
-            GL.Uniform2(_uViewport, Math.Max(_viewport[2], 1), Math.Max(_viewport[3], 1));
+            // uViewport is a GLSL vec2. Keep these arguments floating-point so OpenTK
+            // dispatches glUniform2f; the integer overload is a GL type error and leaves
+            // the uniform at (0,0), expanding a pixel-wide ribbon across the whole screen.
+            GL.Uniform2(_uViewport, MathF.Max(_viewport[2], 1f), MathF.Max(_viewport[3], 1f));
             GL.Uniform1(_uWidth, widthPixels);
             GL.DrawArrays(PrimitiveType.TriangleStrip, firstVertex, vertexCount);
 
