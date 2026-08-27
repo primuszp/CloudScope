@@ -75,29 +75,32 @@ namespace CloudScope.Platform.OpenGL.Rendering
             var (cx, cy, behind) = cam.WorldToScreen(cyl.Center);
             if (behind) return;
 
-            const int N = 512;
-            int vc = 0;
-            float pnx = 0, pny = 0; bool pok = false;
+            const int N = SmoothRingSegments;
+            int pointCount = 0;
+            bool completeLoop = true;
 
-            for (int j = 0; j <= N; j++)
+            for (int j = 0; j < N; j++)
             {
                 float t = j * MathF.Tau / N;
                 Vector3 pt = cyl.Center + new Vector3(MathF.Cos(t) * cyl.Radius, MathF.Sin(t) * cyl.Radius, 0f);
                 var (sx, sy, beh) = cam.WorldToScreen(pt);
-                var (nx, ny) = ScreenToNdc(sx, sy, vpW, vpH);
-                if (pok && !beh)
+                if (beh)
                 {
-                    if (vc + 6 > _ringSegBuf.Length) Array.Resize(ref _ringSegBuf, _ringSegBuf.Length * 2);
-                    _ringSegBuf[vc++] = pnx; _ringSegBuf[vc++] = pny; _ringSegBuf[vc++] = 0f;
-                    _ringSegBuf[vc++] = nx;  _ringSegBuf[vc++] = ny;  _ringSegBuf[vc++] = 0f;
+                    completeLoop = false;
+                    break;
                 }
-                pnx = nx; pny = ny; pok = !beh;
+
+                var (nx, ny) = ScreenToNdc(sx, sy, vpW, vpH);
+                int write = pointCount * 3;
+                _ringSegBuf[write] = nx;
+                _ringSegBuf[write + 1] = ny;
+                _ringSegBuf[write + 2] = 0f;
+                pointCount++;
             }
-            if (vc == 0) return;
+            if (!completeLoop || pointCount < 3) return;
 
             BeginScreenSpaceRender();
-            Dyn(_ringSegBuf, vc);
-            DrawDynamicLines(0, vc / 3, new Vector4(0.25f, 0.85f, 0.95f, 0.90f), 2f);
+            DrawDynamicSmoothLoop(_ringSegBuf, pointCount, new Vector4(0.25f, 0.85f, 0.95f, 0.90f), 2f);
             var (cnx, cny) = ScreenToNdc(cx, cy, vpW, vpH);
             float hx = 6f / vpW, hy = 6f / vpH;
             DrawDiamondFill(cnx, cny, hx, hy, new(0.3f, 1f, 0.45f, 0.9f));
@@ -204,7 +207,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
         private void RenderRings(CylinderSelectionTool cyl, OrbitCamera cam)
         {
-            const int N    = 512;
+            const int N    = SmoothRingSegments;
             float     rad  = cyl.RingRadius;
             Matrix3   invR = Matrix3.Transpose(Matrix3.CreateFromQuaternion(cyl.Rotation));
             float     vpW  = cam.ViewportWidth, vpH = cam.ViewportHeight;
@@ -223,11 +226,10 @@ namespace CloudScope.Platform.OpenGL.Rendering
                     && activeGrip.Axis == axis;
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveRing(hov, AxisColor[axis], active);
 
-                int   vc  = 0;
-                float psx = 0, psy = 0;
-                bool  pok = false;
+                int pointCount = 0;
+                bool completeLoop = true;
 
-                for (int j = 0; j <= N; j++)
+                for (int j = 0; j < N; j++)
                 {
                     float t = j * MathF.Tau / N;
                     float ct = MathF.Cos(t), st = MathF.Sin(t);
@@ -239,18 +241,21 @@ namespace CloudScope.Platform.OpenGL.Rendering
                     } * rad;
 
                     var (sx, sy, behind) = cam.WorldToScreen(cyl.Center + invR * local);
-                    var (nx, ny) = ScreenToNdc(sx, sy, vpW, vpH);
-                    if (pok && !behind)
+                    if (behind)
                     {
-                        if (vc + 6 > _ringSegBuf.Length) Array.Resize(ref _ringSegBuf, _ringSegBuf.Length * 2);
-                        _ringSegBuf[vc++] = psx; _ringSegBuf[vc++] = psy; _ringSegBuf[vc++] = 0f;
-                        _ringSegBuf[vc++] = nx;  _ringSegBuf[vc++] = ny;  _ringSegBuf[vc++] = 0f;
+                        completeLoop = false;
+                        break;
                     }
-                    psx = nx; psy = ny; pok = !behind;
+
+                    var (nx, ny) = ScreenToNdc(sx, sy, vpW, vpH);
+                    int write = pointCount * 3;
+                    _ringSegBuf[write] = nx;
+                    _ringSegBuf[write + 1] = ny;
+                    _ringSegBuf[write + 2] = 0f;
+                    pointCount++;
                 }
-                if (vc == 0) continue;
-                Dyn(_ringSegBuf, vc);
-                DrawDynamicLines(0, vc / 3, style.Color, style.LineWidth);
+                if (!completeLoop || pointCount < 3) continue;
+                DrawDynamicSmoothLoop(_ringSegBuf, pointCount, style.Color, style.LineWidth);
             }
 
             EndScreenSpaceRender();

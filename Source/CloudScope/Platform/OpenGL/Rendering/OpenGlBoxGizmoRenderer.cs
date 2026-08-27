@@ -214,7 +214,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
         private void RenderRings(BoxSelectionTool box, OrbitCamera cam)
         {
-            const int N      = 512;
+            const int N      = SmoothRingSegments;
             float     radius = box.RingRadius;
             Matrix3   invRot = Matrix3.Transpose(Matrix3.CreateFromQuaternion(box.Rotation));
             float     vpW    = cam.ViewportWidth, vpH = cam.ViewportHeight;
@@ -233,9 +233,9 @@ namespace CloudScope.Platform.OpenGL.Rendering
                     && activeGrip.Axis == axis;
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveRing(hov, AxisColor[axis], active);
 
-                int vc = 0;
-                float psx = 0, psy = 0; bool pok = false;
-                for (int j = 0; j <= N; j++)
+                int pointCount = 0;
+                bool completeLoop = true;
+                for (int j = 0; j < N; j++)
                 {
                     float t  = j * MathF.Tau / N;
                     float ct = MathF.Cos(t), st = MathF.Sin(t);
@@ -247,18 +247,21 @@ namespace CloudScope.Platform.OpenGL.Rendering
                     } * radius;
 
                     var (sx, sy, behind) = cam.WorldToScreen(box.Center + invRot * local);
-                    var (nx, ny) = ScreenToNdc(sx, sy, vpW, vpH);
-                    if (pok && !behind)
+                    if (behind)
                     {
-                        if (vc + 6 > _ringSegBuf.Length) Array.Resize(ref _ringSegBuf, _ringSegBuf.Length * 2);
-                        _ringSegBuf[vc++]=psx; _ringSegBuf[vc++]=psy; _ringSegBuf[vc++]=0f;
-                        _ringSegBuf[vc++]=nx;  _ringSegBuf[vc++]=ny;  _ringSegBuf[vc++]=0f;
+                        completeLoop = false;
+                        break;
                     }
-                    psx=nx; psy=ny; pok=!behind;
+
+                    var (nx, ny) = ScreenToNdc(sx, sy, vpW, vpH);
+                    int write = pointCount * 3;
+                    _ringSegBuf[write] = nx;
+                    _ringSegBuf[write + 1] = ny;
+                    _ringSegBuf[write + 2] = 0f;
+                    pointCount++;
                 }
-                if (vc == 0) continue;
-                Dyn(_ringSegBuf, vc);
-                DrawDynamicLines(0, vc / 3, style.Color, style.LineWidth);
+                if (!completeLoop || pointCount < 3) continue;
+                DrawDynamicSmoothLoop(_ringSegBuf, pointCount, style.Color, style.LineWidth);
             }
 
             EndScreenSpaceRender();

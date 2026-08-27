@@ -22,9 +22,9 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private readonly OpenGlSmoothPolylineRenderer _smoothCircles = new();
 
         private int _fillVertCount;
-        // At 512 sides the projected-circle deviation stays well below one pixel even on
-        // Retina/4K displays. This is cheap: rings are instanced screen-space quads.
-        private const int Seg = 512;
+        // Subpixel-dense tessellation makes adjacent miter directions numerically unstable.
+        // 128 sides stay below half a pixel of deviation even for very large gizmos.
+        private const int Seg = SmoothRingSegments;
         private const int Lat = 16;
         private const int Lon = 32;
         private const int CircleVertexCount = (Seg + 1) * 2;

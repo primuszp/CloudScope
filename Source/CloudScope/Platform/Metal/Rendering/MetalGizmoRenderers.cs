@@ -11,6 +11,7 @@ namespace CloudScope.Platform.Metal.Rendering
     internal abstract class MetalGizmoRendererBase : ISelectionGizmoRenderer
     {
         private const int BufferedFrameCount = 3;
+        protected const int SmoothRingSegments = 128;
 
         /// <summary>Widths mirror the OpenGL gizmo renderers so both backends look alike.</summary>
         private const float AxisLineWidth = 1.5f;
@@ -78,6 +79,7 @@ namespace CloudScope.Platform.Metal.Rendering
         private readonly float[] _lineBuf    = new float[6];
         private readonly float[] _arrowBuf   = new float[9];
         private readonly float[] _diamondBuf = new float[18];
+        private float[] _smoothLoopBuf = new float[(SmoothRingSegments + 1) * 2 * 9];
         protected void DrawLine(float x0, float y0, float x1, float y1, Vector4 color,
             float lineWidthPixels = LineWidth.NativeMax)
         {
@@ -118,12 +120,56 @@ namespace CloudScope.Platform.Metal.Rendering
             // Every encoded Metal draw must retain its own vertex contents until the
             // command buffer completes. Reusing one buffer here made rotation rings
             // and arrow handles display the last uploaded line series repeatedly.
+            MTLBuffer dynamicBuffer = UploadDynamic(vertices);
+            Renderer.Draw(dynamicBuffer, vertexCount, primitive, Matrix4.Identity, color, depthTest: false,
+                lineWidthPixels: lineWidthPixels);
+        }
+
+        /// <summary>Draws unique screen-space loop points through the pivot's joined ribbon path.</summary>
+        protected void DrawDynamicSmoothLoop(float[] points, int pointCount, Vector4 color, float lineWidthPixels)
+        {
+            if (pointCount < 3)
+                return;
+
+            int vertexCount = (pointCount + 1) * 2;
+            int floatCount = vertexCount * 9;
+            if (_smoothLoopBuf.Length < floatCount)
+                Array.Resize(ref _smoothLoopBuf, floatCount);
+
+            int write = 0;
+            for (int point = 0; point <= pointCount; point++)
+            {
+                int previous = (point + pointCount - 1) % pointCount;
+                int current = point % pointCount;
+                int next = (point + 1) % pointCount;
+                for (int side = 0; side < 2; side++)
+                {
+                    CopyRingPoint(points, previous, _smoothLoopBuf, ref write);
+                    CopyRingPoint(points, current, _smoothLoopBuf, ref write);
+                    CopyRingPoint(points, next, _smoothLoopBuf, ref write);
+                }
+            }
+
+            MTLBuffer dynamicBuffer = UploadDynamic(_smoothLoopBuf);
+            Renderer.DrawSmoothPolyline(dynamicBuffer, vertexCount, Matrix4.Identity, color,
+                depthTest: false, lineWidthPixels: lineWidthPixels);
+        }
+
+        private MTLBuffer UploadDynamic(float[] vertices)
+        {
             int drawInFrame = Math.Min(_dynamicDrawIndex++, DynamicBuffersPerFrame - 1);
             int bufferIndex = _dynamicFrameIndex * DynamicBuffersPerFrame + drawInFrame;
             ref MTLBuffer dynamicBuffer = ref _dynamicBuffers[bufferIndex];
             Renderer.UpdateBuffer(ref dynamicBuffer, vertices);
-            Renderer.Draw(dynamicBuffer, vertexCount, primitive, Matrix4.Identity, color, depthTest: false,
-                lineWidthPixels: lineWidthPixels);
+            return dynamicBuffer;
+        }
+
+        private static void CopyRingPoint(float[] source, int point, float[] destination, ref int write)
+        {
+            int read = point * 3;
+            destination[write++] = source[read];
+            destination[write++] = source[read + 1];
+            destination[write++] = source[read + 2];
         }
 
         public virtual void Dispose()
@@ -171,7 +217,7 @@ namespace CloudScope.Platform.Metal.Rendering
         private MTLBuffer _faceBuffer;
         private MTLBuffer _placementFillBuffer;
         private MTLBuffer _placementLineBuffer;
-        private readonly float[] _ringBuf = new float[512 * 6];
+        private readonly float[] _ringBuf = new float[SmoothRingSegments * 3];
 
         public override void Render(IRenderFrameData frameData, ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera camera)
         {
@@ -291,7 +337,7 @@ namespace CloudScope.Platform.Metal.Rendering
 
         private void RenderRings(BoxSelectionTool box, OrbitCamera camera)
         {
-            const int segmentCount = 512;
+            const int segmentCount = SmoothRingSegments;
             float radius = box.RingRadius;
             Matrix3 invRot = Matrix3.Transpose(Matrix3.CreateFromQuaternion(box.Rotation));
 
@@ -299,10 +345,9 @@ namespace CloudScope.Platform.Metal.Rendering
             {
                 if (!box.IsGripVisible(15 + axis)) continue;
 
-                int write = 0;
-                float prevX = 0f, prevY = 0f;
-                bool prevOk = false;
-                for (int j = 0; j <= segmentCount; j++)
+                int pointCount = 0;
+                bool completeLoop = true;
+                for (int j = 0; j < segmentCount; j++)
                 {
                     float t = j * MathF.Tau / segmentCount;
                     float c = MathF.Cos(t);
@@ -315,22 +360,25 @@ namespace CloudScope.Platform.Metal.Rendering
                     } * radius;
 
                     var (sx, sy, behind) = camera.WorldToScreen(box.Center + invRot * local);
-                    var (nx, ny) = ScreenToNdc(sx, sy, camera.ViewportWidth, camera.ViewportHeight);
-                    if (prevOk && !behind)
+                    if (behind)
                     {
-                        _ringBuf[write++] = prevX; _ringBuf[write++] = prevY; _ringBuf[write++] = 0f;
-                        _ringBuf[write++] = nx;    _ringBuf[write++] = ny;    _ringBuf[write++] = 0f;
+                        completeLoop = false;
+                        break;
                     }
-                    prevX = nx;
-                    prevY = ny;
-                    prevOk = !behind;
+
+                    var (nx, ny) = ScreenToNdc(sx, sy, camera.ViewportWidth, camera.ViewportHeight);
+                    int write = pointCount * 3;
+                    _ringBuf[write] = nx;
+                    _ringBuf[write + 1] = ny;
+                    _ringBuf[write + 2] = 0f;
+                    pointCount++;
                 }
-                if (write == 0) continue;
+                if (!completeLoop || pointCount < 3) continue;
                 bool hovered = box.HoveredHandle == 15 + axis;
                 bool active = box.ActiveHandle == 15 + axis;
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveRing(hovered, AxisColor[axis], active);
                 Vector4 color = style.Color;
-                DrawDynamic(_ringBuf, write / 3, MTLPrimitiveType.Line, color, style.LineWidth);
+                DrawDynamicSmoothLoop(_ringBuf, pointCount, color, style.LineWidth);
             }
         }
 
@@ -364,8 +412,8 @@ namespace CloudScope.Platform.Metal.Rendering
     {
         public MetalSphereGizmoRenderer(MetalRenderContext context) : base(context) { }
 
-        // Keep the polygonal approximation below a pixel even for large Retina/4K gizmos.
-        private const int Seg = 512;
+        // Avoid subpixel-dense miter direction changes while remaining visually analytic.
+        private const int Seg = SmoothRingSegments;
         private const int Lat = 16;
         private const int Lon = 32;
         private const int CircleVertexCount = (Seg + 1) * 2;
@@ -506,7 +554,7 @@ namespace CloudScope.Platform.Metal.Rendering
 
         private MTLBuffer _fillBuffer;
         private MTLBuffer _wireBuffer;
-        private float[] _ringBuf = new float[512 * 6];
+        private float[] _ringBuf = new float[SmoothRingSegments * 3];
         private int _fillVertexCount;
         private int _wireVertexCount;
 
@@ -606,27 +654,31 @@ namespace CloudScope.Platform.Metal.Rendering
             var (cx, cy, centerBehind) = camera.WorldToScreen(cyl.Center);
             if (centerBehind) return;
 
-            const int n = 512;
-            int write = 0;
-            float prevX = 0f, prevY = 0f;
-            bool prevOk = false;
-            for (int j = 0; j <= n; j++)
+            const int n = SmoothRingSegments;
+            int pointCount = 0;
+            bool completeLoop = true;
+            for (int j = 0; j < n; j++)
             {
                 float t = j * MathF.Tau / n;
                 Vector3 pt = cyl.Center + new Vector3(MathF.Cos(t) * cyl.Radius, MathF.Sin(t) * cyl.Radius, 0f);
                 var (sx, sy, behind) = camera.WorldToScreen(pt);
-                var (nx, ny) = ScreenToNdc(sx, sy, camera.ViewportWidth, camera.ViewportHeight);
-                if (prevOk && !behind)
+                if (behind)
                 {
-                    EnsureRingCapacity(write + 6);
-                    _ringBuf[write++] = prevX; _ringBuf[write++] = prevY; _ringBuf[write++] = 0f;
-                    _ringBuf[write++] = nx; _ringBuf[write++] = ny; _ringBuf[write++] = 0f;
+                    completeLoop = false;
+                    break;
                 }
-                prevX = nx; prevY = ny; prevOk = !behind;
-            }
-            if (write == 0) return;
 
-            DrawDynamic(_ringBuf, write / 3, MTLPrimitiveType.Line, new Vector4(0.25f, 0.85f, 0.95f, 0.90f), 2f);
+                var (nx, ny) = ScreenToNdc(sx, sy, camera.ViewportWidth, camera.ViewportHeight);
+                int write = pointCount * 3;
+                EnsureRingCapacity(write + 3);
+                _ringBuf[write] = nx;
+                _ringBuf[write + 1] = ny;
+                _ringBuf[write + 2] = 0f;
+                pointCount++;
+            }
+            if (!completeLoop || pointCount < 3) return;
+
+            DrawDynamicSmoothLoop(_ringBuf, pointCount, new Vector4(0.25f, 0.85f, 0.95f, 0.90f), 2f);
             var (cnx, cny) = ScreenToNdc(cx, cy, camera.ViewportWidth, camera.ViewportHeight);
             DrawDiamond(cnx, cny, 6f / camera.ViewportWidth, 6f / camera.ViewportHeight, new Vector4(0.3f, 1f, 0.45f, 0.9f));
         }
@@ -652,17 +704,16 @@ namespace CloudScope.Platform.Metal.Rendering
 
         private void RenderRings(CylinderSelectionTool cyl, OrbitCamera camera)
         {
-            const int n = 512;
+            const int n = SmoothRingSegments;
             float radius = cyl.RingRadius;
             Matrix3 invRot = Matrix3.Transpose(Matrix3.CreateFromQuaternion(cyl.Rotation));
             for (int axis = 0; axis < 3; axis++)
             {
                 if (!cyl.IsGripVisible(7 + axis)) continue;
 
-                int write = 0;
-                float prevX = 0f, prevY = 0f;
-                bool prevOk = false;
-                for (int j = 0; j <= n; j++)
+                int pointCount = 0;
+                bool completeLoop = true;
+                for (int j = 0; j < n; j++)
                 {
                     float t = j * MathF.Tau / n;
                     float ct = MathF.Cos(t), st = MathF.Sin(t);
@@ -673,16 +724,21 @@ namespace CloudScope.Platform.Metal.Rendering
                         _ => new Vector3(ct, st, 0f),
                     } * radius;
                     var (sx, sy, behind) = camera.WorldToScreen(cyl.Center + invRot * local);
-                    var (nx, ny) = ScreenToNdc(sx, sy, camera.ViewportWidth, camera.ViewportHeight);
-                    if (prevOk && !behind)
+                    if (behind)
                     {
-                        EnsureRingCapacity(write + 6);
-                        _ringBuf[write++] = prevX; _ringBuf[write++] = prevY; _ringBuf[write++] = 0f;
-                        _ringBuf[write++] = nx; _ringBuf[write++] = ny; _ringBuf[write++] = 0f;
+                        completeLoop = false;
+                        break;
                     }
-                    prevX = nx; prevY = ny; prevOk = !behind;
+
+                    var (nx, ny) = ScreenToNdc(sx, sy, camera.ViewportWidth, camera.ViewportHeight);
+                    int write = pointCount * 3;
+                    EnsureRingCapacity(write + 3);
+                    _ringBuf[write] = nx;
+                    _ringBuf[write + 1] = ny;
+                    _ringBuf[write + 2] = 0f;
+                    pointCount++;
                 }
-                if (write == 0) continue;
+                if (!completeLoop || pointCount < 3) continue;
 
                 bool hovered = cyl.TryGetGrip(cyl.HoveredHandle, out GripDescriptor hoveredGrip)
                     && hoveredGrip.Kind == GripKind.RotationRing
@@ -691,7 +747,7 @@ namespace CloudScope.Platform.Metal.Rendering
                     && activeGrip.Kind == GripKind.RotationRing
                     && activeGrip.Axis == axis;
                 GripVisualDescriptor style = GripVisualStyleResolver.ResolveRing(hovered, AxisColor[axis], active);
-                DrawDynamic(_ringBuf, write / 3, MTLPrimitiveType.Line, style.Color, style.LineWidth);
+                DrawDynamicSmoothLoop(_ringBuf, pointCount, style.Color, style.LineWidth);
             }
         }
 
