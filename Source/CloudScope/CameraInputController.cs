@@ -7,6 +7,7 @@ namespace CloudScope
     {
         private int _lastX, _lastY;
         private bool _leftDown, _rightDown, _middleDown;
+        private bool _leftPans;
         private float _orbitVelX, _orbitVelY;
         private float _panVelX, _panVelY;
         private float _pointSize = 1.5f;
@@ -90,8 +91,24 @@ namespace CloudScope
                 }
 
                 _leftDown = true;
+                _leftPans = false;
                 _orbitVelX = 0f;
                 _orbitVelY = 0f;
+                _panVelX = 0f;
+                _panVelY = 0f;
+            }
+            else if (button == ViewerMouseButton.Left && !leftButtonConsumed)
+            {
+                // A fixed orthographic view must not orbit, but it is still an interactive
+                // viewport. Left-drag pans it, mirroring the direct manipulation available
+                // in the perspective viewport without breaking its standard view direction.
+                camera.PickDepthWindow(x, y, 11);
+                _leftDown = true;
+                _leftPans = true;
+                _orbitVelX = 0f;
+                _orbitVelY = 0f;
+                _panVelX = 0f;
+                _panVelY = 0f;
             }
 
             if (button == ViewerMouseButton.Right)
@@ -116,7 +133,11 @@ namespace CloudScope
 
         public void MouseUp(ViewerMouseButton button)
         {
-            if (button == ViewerMouseButton.Left) _leftDown = false;
+            if (button == ViewerMouseButton.Left)
+            {
+                _leftDown = false;
+                _leftPans = false;
+            }
             if (button == ViewerMouseButton.Right) _rightDown = false;
             if (button == ViewerMouseButton.Middle) _middleDown = false;
         }
@@ -128,9 +149,18 @@ namespace CloudScope
 
             if (_leftDown)
             {
-                camera.Rotate(dx, dy);
-                _orbitVelX = dx;
-                _orbitVelY = dy;
+                if (_leftPans)
+                {
+                    camera.Pan(_lastX, _lastY, x, y);
+                    _panVelX = dx;
+                    _panVelY = dy;
+                }
+                else
+                {
+                    camera.Rotate(dx, dy);
+                    _orbitVelX = dx;
+                    _orbitVelY = dy;
+                }
             }
             else if (_rightDown || _middleDown)
             {
@@ -154,7 +184,7 @@ namespace CloudScope
 
         private void UpdatePivotAnimation(float dt, bool selectionVolumeActive)
         {
-            bool orbiting = _leftDown || _orbitVelX != 0f || _orbitVelY != 0f;
+            bool orbiting = (_leftDown && !_leftPans) || _orbitVelX != 0f || _orbitVelY != 0f;
             float target = orbiting && !selectionVolumeActive ? 1f : 0f;
             float rate = target > _pivotFade ? 8f : 5f;
             _pivotFade += (target - _pivotFade) * Math.Min(rate * dt, 1f);
@@ -179,7 +209,8 @@ namespace CloudScope
                 if (MathF.Abs(_orbitVelY) < 0.05f) _orbitVelY = 0f;
             }
 
-            if (!_rightDown && !_middleDown && (_panVelX != 0f || _panVelY != 0f))
+            if (!_rightDown && !_middleDown && !(_leftDown && _leftPans) &&
+                (_panVelX != 0f || _panVelY != 0f))
             {
                 int cx = viewportWidth / 2, cy = viewportHeight / 2;
                 int dx = (int)MathF.Round(_panVelX), dy = (int)MathF.Round(_panVelY);

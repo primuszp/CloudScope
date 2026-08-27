@@ -24,6 +24,7 @@ namespace CloudScope
 
         private readonly ViewportState[] _viewports;
         private int _activeViewportIndex;
+        private ViewportState? _pointerCaptureViewport;
         private ViewportLayoutKind _viewportLayout = ViewportLayoutKind.SinglePerspective;
         private ViewportLayoutKind _previousViewportLayout = ViewportLayoutKind.SinglePerspective;
         private ViewportViewKind _auxiliaryViewportView = ViewportViewKind.Top;
@@ -943,6 +944,7 @@ namespace CloudScope
                 return;
             }
 
+            _pointerCaptureViewport = viewport;
             _selection.SetViewConstraint(ConstraintFor(viewport));
             if (button == ViewerMouseButton.Left)
             {
@@ -963,18 +965,29 @@ namespace CloudScope
 
         public void MouseUp(ViewerMouseButton button, int mx, int my)
         {
-            if (!TryGetViewportLocal(mx, my, out ViewportState viewport, out int localX, out int localY))
-                viewport = ActiveViewport;
+            ViewportState viewport = _pointerCaptureViewport ?? ActiveViewport;
+            GetViewportLocal(viewport, mx, my, out int localX, out int localY);
 
             _selection.SetViewConstraint(ConstraintFor(viewport));
             if (button == ViewerMouseButton.Left) _selection.MouseUpLeft(localX, localY, viewport.Camera);
             viewport.Input.MouseUp(button);
+            _pointerCaptureViewport = null;
         }
 
         public void MouseMove(int mx, int my)
         {
-            if (!TryGetViewportLocal(mx, my, out ViewportState viewport, out int localX, out int localY))
+            ViewportState viewport;
+            int localX, localY;
+            if (_pointerCaptureViewport != null)
+            {
+                viewport = _pointerCaptureViewport;
+                GetViewportLocal(viewport, mx, my, out localX, out localY);
+            }
+            else if (!TryGetViewportLocal(mx, my, out viewport, out localX, out localY))
+            {
                 viewport = ActiveViewport;
+                GetViewportLocal(viewport, mx, my, out localX, out localY);
+            }
 
             _selection.SetViewConstraint(ConstraintFor(viewport));
             _selection.MouseMove(localX, localY, viewport.Camera);
@@ -1248,6 +1261,12 @@ namespace CloudScope
             localX = Math.Clamp(x - viewport.Bounds.X, 0, Math.Max(0, viewport.Bounds.Width - 1));
             localY = Math.Clamp(y - viewport.Bounds.Y, 0, Math.Max(0, viewport.Bounds.Height - 1));
             return false;
+        }
+
+        private static void GetViewportLocal(ViewportState viewport, int x, int y, out int localX, out int localY)
+        {
+            localX = Math.Clamp(x - viewport.Bounds.X, 0, Math.Max(0, viewport.Bounds.Width - 1));
+            localY = Math.Clamp(y - viewport.Bounds.Y, 0, Math.Max(0, viewport.Bounds.Height - 1));
         }
 
         private static string DescribeViewportLayout(ViewportLayoutKind layout) => layout switch
