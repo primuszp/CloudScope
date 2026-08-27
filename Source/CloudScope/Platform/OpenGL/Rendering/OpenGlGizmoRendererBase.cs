@@ -115,7 +115,7 @@ void main() { FragColor = uColor; }
         protected void SetMvp(ref Matrix4 mvp)
         {
             _currentMvp = mvp;
-            SetMvp(ref mvp);
+            GL.UniformMatrix4(_uMVP, false, ref mvp);
         }
 
         /// <summary>
