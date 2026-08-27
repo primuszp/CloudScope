@@ -416,60 +416,18 @@ namespace CloudScope.Ui
             clipper.Destroy();
         }
 
-        // The prompt's keywords are clickable where they are written, inside its own
-        // "[Box/Cylinder/Sphere]" — the layout comes from PromptLayout, so this shell and the
-        // Avalonia one cannot disagree about what a prompt line says.
-        private void RenderPromptSegments()
-        {
-            ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(0f, ImGui.GetStyle().ItemSpacing.Y));
-
-            foreach (PromptSegment segment in PromptLayout.Split(_dispatcher.CurrentPrompt, _session.ActiveOptions))
-            {
-                if (segment.Kind == PromptSegmentKind.Text)
-                {
-                    ImGui.TextColored(ImGuiTheme.Accent, segment.Text);
-                    ImGui.SameLine();
-                    continue;
-                }
-
-                Keyword keyword = segment.Keyword!;
-                if (segment.IsDefault)
-                    ImGui.PushStyleColor(ImGuiCol.Text, ImGuiTheme.Accent);
-
-                if (ImGui.SmallButton(KeywordLabel(keyword)))
-                    Run(keyword.GlobalName);
-
-                if (segment.IsDefault)
-                    ImGui.PopStyleColor();
-
-                if (ImGui.IsItemHovered() && keyword.Abbreviation.Length > 0)
-                    ImGui.SetTooltip($"Type {keyword.Abbreviation}");
-
-                ImGui.SameLine();
-            }
-
-            ImGui.PopStyleVar();
-        }
-
-        // ImGui buttons cannot underline part of their label, so the accepted abbreviation is
-        // spelled out instead: "ReTurn (RT)".
-        private static string KeywordLabel(Keyword keyword) =>
-            keyword.Abbreviation.Length > 0 && !keyword.Abbreviation.Equals(keyword.Display, StringComparison.Ordinal)
-                ? $"{keyword.Display} ({keyword.Abbreviation})"
-                : keyword.Display;
-
         private void RenderPromptLine()
         {
             PushMono();
-            RenderPromptSegments();
 
-            // What Tab would complete to. ImGui's input has no inline suggestion, so the
-            // candidate is shown next to the prompt instead of inside the field.
-            if (_completions.Count > 0)
-            {
-                ImGui.TextDisabled($"{_completions[_completionIndex].Insert} ⇥");
-                ImGui.SameLine();
-            }
+            // Keep the prompt and the editable suffix visually continuous.  The input frame
+            // is intentionally transparent, so this is one console line rather than a label
+            // followed by a separate widget.
+            ImGui.TextColored(ImGuiTheme.Accent, _dispatcher.CurrentPrompt.TrimEnd() + " ");
+            ImGui.SameLine(0f, 0f);
+            ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, Vector2.Zero);
+            ImGui.PushStyleColor(ImGuiCol.FrameBg, Vector4.Zero);
+            ImGui.PushStyleColor(ImGuiCol.Border, Vector4.Zero);
 
             ImGui.SetNextItemWidth(-1f);
 
@@ -481,6 +439,9 @@ namespace CloudScope.Ui
 
             bool submitted = ImGui.InputText("##CommandInput", ref _commandText, CommandInputCapacity,
                 ImGuiInputTextFlags.EnterReturnsTrue);
+
+            ImGui.PopStyleColor(2);
+            ImGui.PopStyleVar();
 
             if (ImGui.IsItemActive() || ImGui.IsItemFocused())
                 HandleCommandKeys();

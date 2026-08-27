@@ -3,8 +3,6 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
-using Avalonia.Layout;
-using Avalonia.Controls.Documents;
 using Avalonia.Media;
 using Avalonia.Threading;
 using CloudScope.Commands;
@@ -12,10 +10,10 @@ using CloudScope.Commands;
 namespace CloudScope.Avalonia.Controls;
 
 /// <summary>
-/// The AutoCAD-style command window: scrolling typed output, clickable prompt keywords,
-/// autocomplete over prompt keywords and command names, input recall, and the space-vs-enter
-/// submission rule. All behaviour comes from <see cref="CommandLineSession"/>, so the
-/// GameWindow shell's command window behaves identically.
+/// The AutoCAD-style command window: a single live command line beneath scrolling output,
+/// autocomplete, input recall, and the space-vs-enter submission rule.  The prompt is an
+/// immutable prefix of the input, so it reads as one console line rather than a label beside a
+/// separate textbox.
 /// </summary>
 public sealed class CommandLineControl : UserControl
 {
@@ -23,14 +21,15 @@ public sealed class CommandLineControl : UserControl
     private readonly Func<string, Task> _submit;
 
     private readonly CommandTranscript _transcript;
-    private readonly WrapPanel _promptPanel = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBox _input = new();
     private readonly Popup _completionPopup = new();
     private readonly ListBox _completionList = new();
 
     private IReadOnlyList<CommandCompletion> _completions = [];
     private string _completionPrefix = "";
+    private string _promptPrefix = "";
     private bool _suppressInlineSuggestion;
+    private bool _settingInput;
 
     public CommandLineControl(CommandLineSession session, Func<string, Task> submit)
     {
@@ -41,11 +40,27 @@ public sealed class CommandLineControl : UserControl
         _transcript.CommandRecalled += Stage;
 
         _input.Classes.Add("commandInput");
-        _input.MinWidth = 220;
-        _input.PlaceholderText = "Type a command — Tab completes, ↑ recalls, F2 shows history";
         _input.KeyDown += OnInputKeyDown;
         _input.TextChanged += (_, _) =>
         {
+            if (_settingInput)
+                return;
+
+            // The prompt is display text, not input.  A mouse selection or paste must not be
+            // allowed to turn it into a command, so restore it whenever an edit crosses it.
+            string displayed = _input.Text ?? "";
+            if (!displayed.StartsWith(_promptPrefix, StringComparison.Ordinal))
+            {
+                // Clicking into the prefix and typing leaves the old prefix further right;
+                // pull it back out rather than letting that display text become input.
+                int prefixAt = displayed.IndexOf(_promptPrefix, StringComparison.Ordinal);
+                string editedInput = prefixAt >= 0
+                    ? displayed.Remove(prefixAt, _promptPrefix.Length)
+                    : displayed.TrimStart();
+                SetInput(editedInput, caretAtEnd: true);
+                return;
+            }
+
             if (!_suppressInlineSuggestion)
                 RefreshCompletions();
         };
@@ -135,7 +150,7 @@ public sealed class CommandLineControl : UserControl
     public void FocusInput()
     {
         _input.Focus();
-        _input.CaretIndex = _input.Text?.Length ?? 0;
+        _input.CaretIndex = (_input.Text ?? "").Length;
     }
 
     /// <summary>
@@ -145,12 +160,13 @@ public sealed class CommandLineControl : UserControl
     /// </summary>
     public void BeginTyping(string text)
     {
-        string current = _input.Text ?? "";
-        int caret = IsKeyboardFocusWithin ? Math.Clamp(_input.CaretIndex, 0, current.Length) : current.Length;
+        string current = InputText;
+        int caret = IsKeyboardFocusWithin
+            ? Math.Clamp(_input.CaretIndex - _promptPrefix.Length, 0, current.Length)
+            : current.Length;
 
-        _input.Text = current[..caret] + text + current[caret..];
+        SetInput(current[..caret] + text + current[caret..], caret + text.Length);
         _input.Focus();
-        _input.CaretIndex = caret + text.Length;
         RefreshCompletions();
     }
 
@@ -158,124 +174,90 @@ public sealed class CommandLineControl : UserControl
     public void Stage(string command)
     {
         _session.Stage(command);
-        _input.Text = command;
+        SetInput(command, caretAtEnd: true);
         FocusInput();
     }
 
-    /// <summary>Redraws prompt, keywords and history after the session state changed.</summary>
+    /// <summary>Redraws the live prompt and history after the session state changed.</summary>
     public void Refresh()
     {
-        RebuildPrompt();
+        SetPromptPrefix();
         _transcript.Sync();
     }
 
-    public void Clear() => _input.Text = "";
+    public void Clear() => SetInput("", caretAtEnd: true);
 
     private Control BuildLayout()
     {
-        var header = new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
-            Height = 22,
-            Children =
-            {
-                new TextBlock { Text = "COMMAND", Classes = { "sectionTitle" }, Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center },
-                new TextBlock { Text = "F2  HISTORY", Classes = { "sectionTitle" }, Margin = new Thickness(0, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right, [Grid.ColumnProperty] = 2 }
-            }
-        };
-        header[!BackgroundProperty] = ResourceBinding("CsSurfaceAlt");
-
-        var promptRow = new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-            Margin = new Thickness(10, 2, 10, 4),
-            Children = { _promptPanel, _input }
-        };
-        Grid.SetColumn(_input, 1);
-
         var promptBorder = new Border
         {
-            BorderThickness = new Thickness(2, 1, 0, 0),
-            Child = new StackPanel { Children = { promptRow, _completionPopup } }
+            BorderThickness = new Thickness(0, 1, 0, 0),
+            Padding = new Thickness(10, 3, 10, 4),
+            Child = _input
         };
-        promptBorder[!BorderBrushProperty] = ResourceBinding("CsAccent");
-        promptBorder[!BackgroundProperty] = ResourceBinding("CsSurface");
+        promptBorder[!BorderBrushProperty] = ResourceBinding("CsBorder");
+        promptBorder[!BackgroundProperty] = ResourceBinding("CsSurfaceDeep");
 
-        var root = new Grid { RowDefinitions = new RowDefinitions("22,*,Auto") };
-        root.Children.Add(header);
+        var root = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };
         root.Children.Add(_transcript);
         root.Children.Add(promptBorder);
-        Grid.SetRow(_transcript, 1);
-        Grid.SetRow(promptBorder, 2);
+        Grid.SetRow(promptBorder, 1);
         return root;
     }
 
-    // The prompt is laid out where AutoCAD writes it: the keywords are clickable inside the
-    // "[Box/Cylinder/Sphere]" of the prompt line itself, rather than repeated on a row of
-    // their own above a prompt that already lists them.
-    private void RebuildPrompt()
+    private string InputText => (_input.Text ?? "").StartsWith(_promptPrefix, StringComparison.Ordinal)
+        ? (_input.Text ?? "")[_promptPrefix.Length..]
+        : "";
+
+    private void SetPromptPrefix()
     {
-        _promptPanel.Children.Clear();
-
-        foreach (PromptSegment segment in PromptLayout.Split(_session.Prompt, _session.ActiveOptions))
-        {
-            if (segment.Kind == PromptSegmentKind.Text)
-            {
-                _promptPanel.Children.Add(new TextBlock
-                {
-                    Text = segment.Text,
-                    Classes = { "prompt" },
-                    VerticalAlignment = VerticalAlignment.Center
-                });
-                continue;
-            }
-
-            _promptPanel.Children.Add(BuildKeywordButton(segment));
-        }
+        string input = InputText;
+        _promptPrefix = _session.Prompt.TrimEnd() + " ";
+        SetInput(input, caretAtEnd: true);
     }
 
-    private Button BuildKeywordButton(PromptSegment segment)
+    private void SetInput(string text, bool caretAtEnd) => SetInput(text, caretAtEnd ? text.Length : 0);
+
+    private void SetInput(string text, int caret)
     {
-        Keyword keyword = segment.Keyword!;
-        var button = new Button
+        _settingInput = true;
+        try
         {
-            Content = BuildKeywordText(keyword),
-            Classes = { "keywordLink" },
-            Tag = keyword.GlobalName
-        };
-
-        if (segment.IsDefault)
-            button.Classes.Add("defaultKeyword");
-
-        if (keyword.Abbreviation.Length > 0)
-            ToolTip.SetTip(button, $"Type {keyword.Abbreviation}");
-
-        button.Click += (_, _) => SubmitText(keyword.GlobalName);
-        return button;
-    }
-
-    // AutoCAD underlines the capitalised letters of a keyword to show what may be typed
-    // instead of the whole word ("ReTurn" accepts "RT").
-    private static TextBlock BuildKeywordText(Keyword keyword)
-    {
-        var block = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
-        foreach (KeywordSegment part in keyword.DisplaySegments)
-        {
-            block.Inlines?.Add(new Run(part.Text)
-            {
-                TextDecorations = part.IsAbbreviation ? TextDecorations.Underline : null
-            });
+            _input.Text = _promptPrefix + text;
+            _input.CaretIndex = _promptPrefix.Length + Math.Clamp(caret, 0, text.Length);
         }
-
-        return block;
+        finally { _settingInput = false; }
     }
 
     private void OnInputKeyDown(object? sender, KeyEventArgs e)
     {
         switch (e.Key)
         {
+            case Key.Home:
+                _input.CaretIndex = _promptPrefix.Length;
+                e.Handled = true;
+                return;
+
+            case Key.Left:
+                if (_input.CaretIndex <= _promptPrefix.Length)
+                {
+                    _input.CaretIndex = _promptPrefix.Length;
+                    e.Handled = true;
+                }
+                return;
+
             case Key.Back:
             case Key.Delete:
+                if (e.Key == Key.Back && _input.CaretIndex <= _promptPrefix.Length)
+                {
+                    e.Handled = true;
+                    return;
+                }
+                if (e.Key == Key.Delete && _input.CaretIndex < _promptPrefix.Length)
+                {
+                    e.Handled = true;
+                    return;
+                }
                 // Backspacing past a suggestion must delete, not re-suggest the same text.
                 _suppressInlineSuggestion = true;
                 Dispatcher.UIThread.Post(() => _suppressInlineSuggestion = false, DispatcherPriority.Input);
@@ -284,8 +266,8 @@ public sealed class CommandLineControl : UserControl
             case Key.Escape:
                 // Esc peels one layer at a time: list, then the active command, then the text.
                 if (_completionPopup.IsOpen) DismissCompletions();
-                else if (_session.ActiveOptions != null || (_input.Text ?? "").Length == 0) SubmitText("CANCEL");
-                else _input.Text = "";
+                else if (_session.ActiveOptions != null || InputText.Length == 0) SubmitText("CANCEL");
+                else SetInput("", caretAtEnd: true);
                 e.Handled = true;
                 return;
 
@@ -319,17 +301,17 @@ public sealed class CommandLineControl : UserControl
                     return;
                 }
 
-                SubmitText(_input.Text ?? "");
+                SubmitText(InputText);
                 e.Handled = true;
                 return;
 
             case Key.Space:
                 // Only submit on space where the active prompt does not take free-form text,
                 // otherwise a quoted path or a multi-word value could never be typed.
-                if (!_session.SpaceSubmits || (_input.Text ?? "").Trim().Length == 0)
+                if (!_session.SpaceSubmits || InputText.Trim().Length == 0)
                     return;
 
-                SubmitText((_input.Text ?? "").TrimEnd());
+                SubmitText(InputText.TrimEnd());
                 e.Handled = true;
                 return;
         }
@@ -337,15 +319,14 @@ public sealed class CommandLineControl : UserControl
 
     private void SetInput(string text)
     {
-        _input.Text = text;
-        _input.CaretIndex = text.Length;
+        SetInput(text, caretAtEnd: true);
         DismissCompletions();
     }
 
     private void SubmitText(string command)
     {
         DismissCompletions();
-        _input.Text = "";
+        SetInput("", caretAtEnd: true);
         _ = SubmitAsync(command);
     }
 
@@ -358,7 +339,7 @@ public sealed class CommandLineControl : UserControl
 
     private void RefreshCompletions()
     {
-        string typed = (_input.Text ?? "").Trim();
+        string typed = InputText.Trim();
         if (typed == _completionPrefix)
             return;
 
@@ -392,9 +373,9 @@ public sealed class CommandLineControl : UserControl
         _suppressInlineSuggestion = true;
         try
         {
-            _input.Text = typed + best[typed.Length..];
-            _input.SelectionStart = typed.Length;
-            _input.SelectionEnd = best.Length;
+            SetInput(typed + best[typed.Length..], caretAtEnd: true);
+            _input.SelectionStart = _promptPrefix.Length + typed.Length;
+            _input.SelectionEnd = _promptPrefix.Length + best.Length;
             _completionPrefix = typed;
         }
         finally
@@ -424,8 +405,7 @@ public sealed class CommandLineControl : UserControl
             return;
 
         string insert = _completions[index].Insert;
-        _input.Text = insert;
-        _input.CaretIndex = insert.Length;
+        SetInput(insert, caretAtEnd: true);
         _completionPrefix = insert;
 
         if (submitAfter)
@@ -438,7 +418,7 @@ public sealed class CommandLineControl : UserControl
     {
         _completionPopup.IsOpen = false;
         _completions = [];
-        _completionPrefix = (_input.Text ?? "").Trim();
+        _completionPrefix = InputText.Trim();
     }
 
     private static global::Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension ResourceBinding(string key) =>
