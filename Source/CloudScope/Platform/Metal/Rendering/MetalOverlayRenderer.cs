@@ -42,7 +42,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 _pivotBuffers[i] = _renderer.CreateStaticBuffer(_pivotBatches[i].Positions);
             var device = _context.Device;
             _pivotPointPipeline = MetalShaderLibrary.CreatePivotPointPipeline(
-                device, MTLPixelFormat.BGRA8Unorm, MTLPixelFormat.Depth32Float);
+                device, MTLPixelFormat.BGRA8Unorm, MTLPixelFormat.Depth32Float, _context.SampleCount);
             _pivotPointDepthState = MetalShaderLibrary.CreateDepthState(device, depthWrite: false);
             _pivotPointBuffer = CreatePivotPointBuffer();
             _pivotPointUniforms = device.NewBuffer(

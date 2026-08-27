@@ -15,7 +15,7 @@ namespace CloudScope.Platform.Metal
         /// <summary>Creates a backend that renders with the given device and queue.</summary>
         public MetalRenderBackend(MTLDevice device, MTLCommandQueue commandQueue)
         {
-            _context = new MetalRenderContext(device, commandQueue);
+            _context = new MetalRenderContext(device, commandQueue, ChooseSampleCount(device));
         }
 
         /// <summary>Creates a backend on the system default device, with a queue of its own.</summary>
@@ -32,6 +32,7 @@ namespace CloudScope.Platform.Metal
 
         /// <summary>The device this backend renders with; hosts create their view against it.</summary>
         public MTLDevice Device => _context.Device;
+        public int SampleCount => _context.SampleCount;
 
         public IPointCloudRenderer  CreatePointCloudRenderer()  => new MetalPointCloudRenderer(_context);
         public IPointTileCloudRenderer CreateStreamingPointCloudRenderer() => new MetalStreamingPointCloudRenderer(_context);
@@ -71,8 +72,20 @@ namespace CloudScope.Platform.Metal
                 // Picking happens from input events after this render pass has ended.
                 // MTKView may default depth to DontCare, which permits Metal to discard
                 // it as soon as rendering completes, so explicitly preserve it.
-                da.StoreAction = MTLStoreAction.Store;
-                _context.SetDepthTexture(da.Texture);
+                if (_context.SampleCount > 1 && da.Texture.SampleCount > 1)
+                {
+                    MTLTexture resolved = _context.EnsureDepthResolveTexture(
+                        checked((int)da.Texture.Width), checked((int)da.Texture.Height), da.Texture.PixelFormat);
+                    da.ResolveTexture = resolved;
+                    da.DepthResolveFilter = MTLMultisampleDepthResolveFilter.Min;
+                    da.StoreAction = MTLStoreAction.MultisampleResolve;
+                    _context.SetDepthTexture(resolved);
+                }
+                else
+                {
+                    da.StoreAction = MTLStoreAction.Store;
+                    _context.SetDepthTexture(da.Texture);
+                }
             }
 
             var cmdBuffer = frame.CommandBuffer;
@@ -88,6 +101,13 @@ namespace CloudScope.Platform.Metal
         }
 
         public void Resize(int width, int height) { }
+
+        private static int ChooseSampleCount(MTLDevice device)
+        {
+            if (device.SupportsTextureSampleCount(4)) return 4;
+            if (device.SupportsTextureSampleCount(2)) return 2;
+            return 1;
+        }
 
         public void SetViewport(int x, int y, int width, int height)
         {
