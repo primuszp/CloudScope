@@ -362,6 +362,70 @@ fragment float4 wide_line_fragment(ColorVertexOut in [[stage_in]], constant Colo
             => CreatePipeline(device, WideLineShaderSource, "wide_line_vertex", "wide_line_fragment",
                 colorFormat, depthFormat, blend: true, sampleCount);
 
+        private const string SmoothPolylineShaderSource =
+@"#include <metal_stdlib>
+using namespace metal;
+
+struct ColorUniforms { float4x4 mvp; float4 color; float4 line; };
+struct PolylineVertex { packed_float3 previous; packed_float3 current; packed_float3 next; };
+struct ColorVertexOut { float4 position [[position]]; float side [[user(locn0)]]; };
+
+float2 direction_or(float2 value, float2 fallback)
+{
+    float length2 = dot(value, value);
+    return length2 > 1e-12 ? value * rsqrt(length2) : fallback;
+}
+
+// A connected mitered ribbon. Every pair of input vertices shares a previous/current/next
+// triplet, so a closed circle is one continuous surface rather than overlapping segments.
+vertex ColorVertexOut smooth_polyline_vertex(
+    uint vertexId [[vertex_id]],
+    const device PolylineVertex* vertices [[buffer(0)]],
+    constant ColorUniforms& uniforms [[buffer(1)]])
+{
+    PolylineVertex lineVertex = vertices[vertexId];
+    float4 previous = uniforms.mvp * float4(float3(lineVertex.previous), 1.0);
+    float4 current  = uniforms.mvp * float4(float3(lineVertex.current),  1.0);
+    float4 next     = uniforms.mvp * float4(float3(lineVertex.next),     1.0);
+    float side = (vertexId % 2u == 0u) ? -1.0 : 1.0;
+    ColorVertexOut out;
+
+    if (previous.w <= 0.0 || current.w <= 0.0 || next.w <= 0.0)
+    {
+        out.position = current;
+        out.side = 0.0;
+        return out;
+    }
+
+    float2 halfViewport = max(uniforms.line.xy, float2(1.0)) * 0.5;
+    float2 p0 = previous.xy / previous.w * halfViewport;
+    float2 p1 = current.xy  / current.w  * halfViewport;
+    float2 p2 = next.xy     / next.w     * halfViewport;
+    float2 incoming = direction_or(p1 - p0, float2(1.0, 0.0));
+    float2 outgoing = direction_or(p2 - p1, incoming);
+    float2 tangent = direction_or(incoming + outgoing, outgoing);
+    float2 miter = float2(-tangent.y, tangent.x);
+    float2 outgoingNormal = float2(-outgoing.y, outgoing.x);
+    float miterScale = min(1.0 / max(abs(dot(miter, outgoingNormal)), 0.25), 4.0);
+    float outerHalfWidth = uniforms.line.z * 0.5 + 0.5;
+    float2 offsetNdc = miter * side * outerHalfWidth * miterScale / halfViewport;
+    out.position = float4(current.xy + offsetNdc * current.w, current.z, current.w);
+    out.side = side * outerHalfWidth;
+    return out;
+}
+
+fragment float4 smooth_polyline_fragment(ColorVertexOut in [[stage_in]], constant ColorUniforms& uniforms [[buffer(1)]])
+{
+    float halfWidth = uniforms.line.z * 0.5;
+    float coverage = 1.0 - smoothstep(halfWidth - 0.5, halfWidth + 0.5, abs(in.side));
+    return float4(uniforms.color.rgb, uniforms.color.a * coverage);
+}";
+
+        public static MTLRenderPipelineState CreateSmoothPolylinePipeline(
+            MTLDevice device, MTLPixelFormat colorFormat, MTLPixelFormat depthFormat, int sampleCount = 1)
+            => CreatePipeline(device, SmoothPolylineShaderSource, "smooth_polyline_vertex", "smooth_polyline_fragment",
+                colorFormat, depthFormat, blend: true, sampleCount);
+
         public static MTLRenderPipelineState CreateColorPipeline(
             MTLDevice device, MTLPixelFormat colorFormat, MTLPixelFormat depthFormat, int sampleCount = 1)
             => CreatePipeline(device, ColorShaderSource, "color_vertex", "color_fragment",

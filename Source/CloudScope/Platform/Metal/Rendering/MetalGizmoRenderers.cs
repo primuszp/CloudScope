@@ -368,11 +368,11 @@ namespace CloudScope.Platform.Metal.Rendering
         private const int Seg = 512;
         private const int Lat = 16;
         private const int Lon = 32;
+        private const int CircleVertexCount = (Seg + 1) * 2;
 
         private MTLBuffer _fillBuffer;
         private MTLBuffer _circleBuffer;
         private int _fillVertexCount;
-        private int _circleVertexCount;
 
         public override void Render(IRenderFrameData frameData, ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera camera)
         {
@@ -387,10 +387,14 @@ namespace CloudScope.Platform.Metal.Rendering
             Renderer.Draw(_fillBuffer, _fillVertexCount, MTLPrimitiveType.Triangle, mvp,
                 new Vector4(0.30f, 0.60f, 0.95f, 0.07f), depthTest: true);
             RenderAxis(mvp);
-            Renderer.Draw(_circleBuffer, _circleVertexCount, MTLPrimitiveType.Line, mvp,
-                new Vector4(0.25f, 0.85f, 0.95f, 0.85f), depthTest: true, lineWidthPixels: 2f);
-            Renderer.Draw(_circleBuffer, _circleVertexCount, MTLPrimitiveType.Line, mvp,
-                new Vector4(0.25f, 0.85f, 0.95f, 0.18f), depthTest: false, lineWidthPixels: LineWidth.NativeMax);
+            for (int axis = 0; axis < 3; axis++)
+            {
+                int offset = axis * CircleVertexCount;
+                Renderer.DrawSmoothPolyline(_circleBuffer, CircleVertexCount, mvp,
+                    new Vector4(0.25f, 0.85f, 0.95f, 0.85f), depthTest: true, lineWidthPixels: 2f, firstVertex: offset);
+                Renderer.DrawSmoothPolyline(_circleBuffer, CircleVertexCount, mvp,
+                    new Vector4(0.25f, 0.85f, 0.95f, 0.18f), depthTest: false, lineWidthPixels: LineWidth.NativeMax, firstVertex: offset);
+            }
             RenderHandles(sphere, camera);
         }
 
@@ -424,12 +428,11 @@ namespace CloudScope.Platform.Metal.Rendering
             }
             _fillBuffer = Renderer.CreateStaticBuffer(fill);
 
-            float[] data = new float[3 * Seg * 2 * 3];
+            float[] data = new float[3 * CircleVertexCount * 9];
             int i = 0;
-            AddCircle(data, ref i, Seg, 0);
-            AddCircle(data, ref i, Seg, 1);
-            AddCircle(data, ref i, Seg, 2);
-            _circleVertexCount = i / 3;
+            AddCircleLoop(data, ref i, 0);
+            AddCircleLoop(data, ref i, 1);
+            AddCircleLoop(data, ref i, 2);
             _circleBuffer      = Renderer.CreateStaticBuffer(data);
         }
 
@@ -458,19 +461,26 @@ namespace CloudScope.Platform.Metal.Rendering
             data[i++] = cp * st;
         }
 
-        private static void AddCircle(float[] data, ref int i, int seg, int axis)
+        private static void AddCircleLoop(float[] data, ref int i, int axis)
         {
-            for (int s = 0; s < seg; s++)
+            for (int point = 0; point <= Seg; point++)
             {
-                float a0 = s       * MathF.Tau / seg;
-                float a1 = (s + 1) * MathF.Tau / seg;
-                AddCirclePt(data, ref i, axis, MathF.Cos(a0), MathF.Sin(a0));
-                AddCirclePt(data, ref i, axis, MathF.Cos(a1), MathF.Sin(a1));
+                int previous = (point + Seg - 1) % Seg;
+                int current = point % Seg;
+                int next = (point + 1) % Seg;
+                for (int side = 0; side < 2; side++)
+                {
+                    AddCirclePoint(data, ref i, axis, previous);
+                    AddCirclePoint(data, ref i, axis, current);
+                    AddCirclePoint(data, ref i, axis, next);
+                }
             }
         }
 
-        private static void AddCirclePt(float[] data, ref int i, int axis, float c, float s)
+        private static void AddCirclePoint(float[] data, ref int i, int axis, int point)
         {
+            float angle = point * MathF.Tau / Seg;
+            float c = MathF.Cos(angle), s = MathF.Sin(angle);
             if (axis == 0) { data[i++] = 0f; data[i++] = c; data[i++] = s; }
             else if (axis == 1) { data[i++] = c; data[i++] = 0f; data[i++] = s; }
             else { data[i++] = c; data[i++] = s; data[i++] = 0f; }
