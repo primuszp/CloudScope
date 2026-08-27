@@ -13,7 +13,10 @@ public sealed class ShellSettings
     private const int MaxRecentInput = 100;
 
     /// <summary>Height of the docked command window, in text lines.</summary>
-    public double HeightInLines { get; set; } = 5;
+    public double HeightInLines { get; set; } = 1;
+
+    /// <summary>Used to migrate command-window chrome changes without discarding later user resizing.</summary>
+    public int CommandLineLayoutVersion { get; set; }
 
     /// <summary>Width of the properties inspector, in logical pixels.</summary>
     public double InspectorWidth { get; set; } = 280;

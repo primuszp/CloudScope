@@ -62,6 +62,19 @@
       <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="Padding" Value="0" />
     </Style>
+    <Style Selector="Button.commandRailButton">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
+      <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Width" Value="22" />
+      <Setter Property="Height" Value="20" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="Button.commandRailButton:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource CsAccentDim}" />
+    </Style>
     <!-- A keyword sits inside the prompt's own "[...]", so it has to sit on the text's
          baseline and metrics rather than look like a button dropped into a sentence. -->
     <Style Selector="Button.keywordLink">
@@ -103,7 +116,7 @@
     </Style>
   </Window.Styles>
 
-  <Grid x:Name="WorkspaceGrid" RowDefinitions="30,Auto,*,180,24">
+  <Grid x:Name="WorkspaceGrid" RowDefinitions="30,Auto,*,56,24">
     <!-- Row 0 is collapsed on macOS, where the menu lives in the system menu bar. -->
     <Menu x:Name="MainMenuBar" Grid.Row="0" />
 
@@ -143,7 +156,7 @@
     <GridSplitter x:Name="CommandLineSplitter" Grid.Row="3" Height="4" VerticalAlignment="Top"
                   Background="{DynamicResource CsBorder}" ResizeDirection="Rows" />
 
-    <Border x:Name="CommandLineBorder" Grid.Row="3" MinHeight="120"
+    <Border x:Name="CommandLineBorder" Grid.Row="3" MinHeight="48"
             Background="{DynamicResource CsSurface}"
             BorderBrush="{DynamicResource CsBorder}" BorderThickness="0,1,0,1">
       <ContentControl x:Name="CommandLineHost" />
