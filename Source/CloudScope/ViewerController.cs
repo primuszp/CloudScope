@@ -957,7 +957,7 @@ namespace CloudScope
                     toolConsumed,
                     _selection.Mode == InteractionMode.Label && _selection.ActiveTool.HasVolume,
                     _selection.ActiveTool.Center,
-                    viewport.Kind == ViewportKind.Perspective3D);
+                    allowRotate: true);
             }
             if (button != ViewerMouseButton.Left)
                 viewport.Input.MouseDown(button, localX, localY, camera, false, false, Vector3.Zero);
