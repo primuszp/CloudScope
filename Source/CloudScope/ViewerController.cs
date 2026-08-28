@@ -1381,8 +1381,8 @@ namespace CloudScope
                         polylineTarget.Polyline.Vertices, polylineTarget.Polyline.Closed,
                         selected
                             ? new Vector4(0.18f, 0.78f, 1f, 1f)
-                            : new Vector4(0.92f, 0.92f, 0.96f, 0.95f),
-                        selected ? 2.4f : 1.7f);
+                            : new Vector4(0.92f, 0.92f, 0.96f, 1f),
+                        selected ? 2.5f : 2f);
                     if (selected)
                         _overlayRenderer.RenderGrips(frameData, ref view, ref proj, viewport.Camera,
                             polylineTarget.Grips, polylineTarget.HoveredHandle, polylineTarget.ActiveHandle);

@@ -341,7 +341,11 @@ void main()
             GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * sizeof(float), vertices, BufferUsageHint.DynamicDraw);
             Matrix4 mvp = view * proj;
             if (depthTest) GL.Enable(EnableCap.DepthTest); else GL.Disable(EnableCap.DepthTest);
+            // Match Metal and the pivot renderer: test the line against the scene, but never
+            // let its antialiased capsule fragments write depth and mask adjacent segments.
+            GL.DepthMask(false);
             _wideLines.Draw(_polylineVbo, 0, vertices.Length / 3, ref mvp, color, widthPixels);
+            GL.DepthMask(true);
             GL.Enable(EnableCap.DepthTest);
         }
 
