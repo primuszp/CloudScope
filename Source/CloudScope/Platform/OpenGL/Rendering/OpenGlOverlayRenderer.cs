@@ -27,6 +27,8 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private readonly float[] _viewportBorderData = new float[30];
         private readonly float[] _sectionGuideVertices = new float[48];
         private int _sectionGuideVbo = -1;
+        private float[] _gripVertices = Array.Empty<float>();
+        private int _gripVbo = -1;
 
         /// <summary>Interleaved position + color vertices, as the overlay buffers store them.</summary>
         private const int PivotVertexStride = 6 * sizeof(float);
@@ -304,6 +306,27 @@ void main()
             GL.Enable(EnableCap.DepthTest);
         }
 
+        public void RenderGrips(
+            IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj,
+            OrbitCamera camera, IReadOnlyList<GripDescriptor> grips, int hovered, int active)
+        {
+            if (grips.Count == 0) return;
+            int required = grips.Count * GripOverlayGeometry.FloatsPerGrip;
+            if (_gripVertices.Length < required) _gripVertices = new float[required];
+            int count = GripOverlayGeometry.Fill(grips, camera, _gripVertices);
+            if (_gripVbo == -1) _gripVbo = GL.GenBuffer();
+            GL.BindBuffer(BufferTarget.ArrayBuffer, _gripVbo);
+            GL.BufferData(BufferTarget.ArrayBuffer, required * sizeof(float), _gripVertices, BufferUsageHint.DynamicDraw);
+
+            Matrix4 mvp = view * proj;
+            GL.Disable(EnableCap.DepthTest);
+            for (int i = 0; i < count; i++)
+                _wideLines.Draw(_gripVbo, i * GripOverlayGeometry.VerticesPerGrip,
+                    GripOverlayGeometry.VerticesPerGrip, ref mvp,
+                    GripOverlayGeometry.Color(grips[i].Index, hovered, active), 2f);
+            GL.Enable(EnableCap.DepthTest);
+        }
+
         private void AddSectionSegment(ref int vertex, Vector3 start, Vector3 end)
         {
             WriteSectionVertex(vertex++, start);
@@ -402,6 +425,11 @@ void main()
             {
                 GL.DeleteBuffer(_sectionGuideVbo);
                 _sectionGuideVbo = -1;
+            }
+            if (_gripVbo != -1)
+            {
+                GL.DeleteBuffer(_gripVbo);
+                _gripVbo = -1;
             }
             _smoothLines.Dispose();
             foreach (int pivotVbo in _pivotVbos)

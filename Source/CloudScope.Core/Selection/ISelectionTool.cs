@@ -8,7 +8,7 @@ namespace CloudScope.Selection
     /// Phase 1 (Drawing): OnMouseDown → OnMouseMove → OnMouseUp → enters Editing.
     /// Phase 2 (Editing): handle drag, G/S/R keyboard, scroll, Enter to confirm.
     /// </summary>
-    public interface ISelectionTool
+    public interface ISelectionTool : IGripTarget
     {
         SelectionToolType ToolType { get; }
 
@@ -18,7 +18,6 @@ namespace CloudScope.Selection
         bool      HasVolume { get; }
 
         Vector3 Center { get; set; }
-        IReadOnlyList<GripDescriptor> Grips { get; }
 
         // ── View-constrained grips ────────────────────────────────────────────
         /// <summary>Active per-viewport grip view constraint (set before render/hit-test).</summary>
@@ -27,22 +26,10 @@ namespace CloudScope.Selection
         /// <summary>Orientation of the volume; SCALE and ROTATE need it, gestures set it too.</summary>
         Quaternion Rotation { get; set; }
         /// <summary>True when grip <paramref name="index"/> is shown/interactive under the current constraint.</summary>
-        bool IsGripVisible(int index);
         /// <summary>Handle index of the center grip used for in-plane body translation.</summary>
-        int CenterGripIndex { get; }
         /// <summary>True when the screen point lies within the volume's body (for click-drag translation).</summary>
-        bool HitTestBody(int mx, int my, OrbitCamera cam);
 
         // ── Handle interaction ────────────────────────────────────────────────
-        int  HoveredHandle    { get; set; }
-        int  ActiveHandle     { get; }
-        bool IsHandleDragging { get; }
-        int  HitTestHandles(int mx, int my, OrbitCamera cam, float threshold = 12f);
-        GripDescriptor GetGrip(int handle);
-        bool TryGetGrip(int handle, out GripDescriptor grip);
-        void BeginHandleDrag(int handle, int mx, int my, OrbitCamera cam);
-        void UpdateHandleDrag(int mx, int my, OrbitCamera cam);
-        void EndHandleDrag();
 
         // ── Phase 1: Placement ────────────────────────────────────────────────
         void OnMouseDown(int mx, int my, OrbitCamera camera);

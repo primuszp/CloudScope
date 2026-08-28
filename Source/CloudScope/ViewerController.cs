@@ -34,6 +34,10 @@ namespace CloudScope
         private PointCloudDataset? _dataset;
         private SectionDefinition? _crossSection;
         private SectionDefinition? _crossSectionDraft;
+        private CrossSectionGripTarget? _crossSectionGripTarget;
+        private readonly GripInteractionSession _objectGripSession = new();
+        private bool _crossSectionSelected;
+        private SectionStateSnapshot? _sectionGripBefore;
         private int _crossSectionDraftViewport = -1;
         private bool _crossSectionDraftChoosingWidth;
         private int _nextSectionId = 1;
@@ -948,7 +952,8 @@ namespace CloudScope
 
             SectionStateSnapshot before = CaptureSectionState();
             var section = new SectionDefinition(_nextSectionId++, $"XS{_nextSectionId - 1}", start, end, width);
-            _crossSection = section;
+            SetCrossSectionState(section);
+            _crossSectionSelected = true;
 
             foreach (ViewportState viewport in _viewports)
                 viewport.SectionMode = SectionDisplayMode.None;
@@ -984,7 +989,7 @@ namespace CloudScope
                 return "No cross-section to clear.";
 
             SectionStateSnapshot before = CaptureSectionState();
-            _crossSection = null;
+            SetCrossSectionState(null);
             foreach (ViewportState viewport in _viewports)
                 viewport.SectionMode = SectionDisplayMode.None;
             RecordSectionChange(before, CaptureSectionState());
@@ -997,7 +1002,7 @@ namespace CloudScope
                 return "No cross-section to flip.";
 
             SectionStateSnapshot before = CaptureSectionState();
-            _crossSection = section with { Flipped = !section.Flipped };
+            SetCrossSectionState(section with { Flipped = !section.Flipped });
             ApplySectionCameras();
             RecordSectionChange(before, CaptureSectionState());
             return $"Cross-section {section.Name} view direction flipped.";
@@ -1011,7 +1016,7 @@ namespace CloudScope
                 return "Cross-section width must be positive.";
 
             SectionStateSnapshot before = CaptureSectionState();
-            _crossSection = section with { Width = width };
+            SetCrossSectionState(section with { Width = width });
             RecordSectionChange(before, CaptureSectionState());
             return $"Cross-section {section.Name} width: {width:0.###}.";
         }
@@ -1096,6 +1101,32 @@ namespace CloudScope
             _selection.SetSectionClip(SectionClipFor(viewport));
             if (button == ViewerMouseButton.Left)
             {
+                if (viewport.SectionMode == SectionDisplayMode.PlanGuide
+                    && _crossSectionGripTarget is { } sectionTarget)
+                {
+                    _objectGripSession.SetTarget(sectionTarget);
+                    if (_crossSectionSelected)
+                    {
+                        _sectionGripBefore = CaptureSectionState();
+                        if (_objectGripSession.TryBegin(localX, localY, camera, allowBodyDrag: true))
+                        {
+                            UndoHistory.BeginMark("GRIPEDIT");
+                            return;
+                        }
+                        _sectionGripBefore = null;
+                    }
+
+                    if (sectionTarget.HitTestBody(localX, localY, camera))
+                    {
+                        _crossSectionSelected = true;
+                        _objectGripSession.UpdateHover(localX, localY, camera);
+                        return;
+                    }
+
+                    _crossSectionSelected = false;
+                    sectionTarget.HoveredHandle = -1;
+                }
+
                 bool toolConsumed = _selection.MouseDownLeft(localX, localY, camera);
                 viewport.Input.MouseDown(
                     button,
@@ -1118,6 +1149,21 @@ namespace CloudScope
 
             _selection.SetViewConstraint(ConstraintFor(viewport));
             _selection.SetSectionClip(SectionClipFor(viewport));
+            if (button == ViewerMouseButton.Left && _objectGripSession.IsDragging)
+            {
+                _objectGripSession.Commit();
+                if (_sectionGripBefore is { } before)
+                {
+                    SectionStateSnapshot after = CaptureSectionState();
+                    if (before.Section != after.Section)
+                        RecordSectionChange(before, after);
+                }
+                UndoHistory.Commit();
+                _sectionGripBefore = null;
+                viewport.Input.MouseUp(button);
+                _pointerCaptureViewport = null;
+                return;
+            }
             if (button == ViewerMouseButton.Left) _selection.MouseUpLeft(localX, localY, viewport.Camera);
             viewport.Input.MouseUp(button);
             _pointerCaptureViewport = null;
@@ -1141,6 +1187,15 @@ namespace CloudScope
             _selection.SetViewConstraint(ConstraintFor(viewport));
             _selection.SetSectionClip(SectionClipFor(viewport));
             UpdateCrossSectionDraft(viewport, localX, localY);
+            if (_objectGripSession.IsDragging)
+            {
+                _objectGripSession.Update(localX, localY, viewport.Camera);
+                return;
+            }
+            if (_crossSectionSelected && viewport.SectionMode == SectionDisplayMode.PlanGuide)
+                _objectGripSession.UpdateHover(localX, localY, viewport.Camera);
+            else if (_crossSectionGripTarget != null)
+                _crossSectionGripTarget.HoveredHandle = -1;
             _selection.MouseMove(localX, localY, viewport.Camera);
             viewport.Input.MouseMove(localX, localY, viewport.Camera);
         }
@@ -1158,6 +1213,15 @@ namespace CloudScope
 
         public void KeyDown(ViewerKey key, bool ctrl, int mouseX, int mouseY)
         {
+            if (key == ViewerKey.Escape && _objectGripSession.Cancel())
+            {
+                if (_sectionGripBefore is { } before)
+                    RestoreSectionState(before);
+                _sectionGripBefore = null;
+                UndoHistory.Rollback();
+                _suppressEscapeClose = true;
+                return;
+            }
             if (_selection.KeyDown(key, ctrl) && key == ViewerKey.Escape)
                 _suppressEscapeClose = true;
         }
@@ -1221,7 +1285,12 @@ namespace CloudScope
                     _overlayRenderer.RenderModeIndicator(frameData, viewport.Bounds.Width, viewport.Bounds.Height, _selection.ActiveTool.ToolType);
 
                 if (_crossSection is { } section && viewport.SectionMode == SectionDisplayMode.PlanGuide)
+                {
                     _overlayRenderer.RenderSectionGuide(frameData, ref view, ref proj, section);
+                    if (_crossSectionSelected && _crossSectionGripTarget is { } sectionTarget)
+                        _overlayRenderer.RenderGrips(frameData, ref view, ref proj, viewport.Camera,
+                            sectionTarget.Grips, sectionTarget.HoveredHandle, sectionTarget.ActiveHandle);
+                }
 
                 if (_crossSectionDraft is { } draft
                     && _crossSectionDraftViewport == Array.IndexOf(_viewports, viewport)
@@ -1498,7 +1567,7 @@ namespace CloudScope
 
         private void RestoreSectionState(SectionStateSnapshot snapshot)
         {
-            _crossSection = snapshot.Section;
+            SetCrossSectionState(snapshot.Section);
             _viewportLayout = snapshot.Layout;
             _previousViewportLayout = snapshot.PreviousLayout;
             _activeViewportIndex = snapshot.ActiveViewportIndex;
@@ -1517,9 +1586,38 @@ namespace CloudScope
                 () => RestoreSectionState(before),
                 () => RestoreSectionState(after)));
 
+        private void SetCrossSectionState(SectionDefinition? section)
+        {
+            _crossSection = section;
+            if (section is not { } value)
+            {
+                _objectGripSession.SetTarget(null);
+                _crossSectionGripTarget = null;
+                _crossSectionSelected = false;
+                return;
+            }
+
+            if (_crossSectionGripTarget == null)
+            {
+                _crossSectionGripTarget = new CrossSectionGripTarget(value);
+                _crossSectionGripTarget.Changed += OnCrossSectionGripChanged;
+            }
+            else if (!_crossSectionGripTarget.IsHandleDragging)
+            {
+                _crossSectionGripTarget.SetSection(value);
+            }
+            _objectGripSession.SetTarget(_crossSectionGripTarget);
+        }
+
+        private void OnCrossSectionGripChanged(SectionDefinition section)
+        {
+            _crossSection = section;
+            ApplySectionCameras();
+        }
+
         private void DiscardCrossSection()
         {
-            _crossSection = null;
+            SetCrossSectionState(null);
             ClearCrossSectionDraft();
             foreach (ViewportState viewport in _viewports)
                 viewport.SectionMode = SectionDisplayMode.None;

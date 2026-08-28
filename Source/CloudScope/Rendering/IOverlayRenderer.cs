@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using OpenTK.Mathematics;
 using CloudScope.Selection;
 using CloudScope.Sections;
@@ -13,5 +14,7 @@ namespace CloudScope.Rendering
         void RenderModeIndicator(IRenderFrameData frameData, int width, int height, SelectionToolType toolType);
         void RenderViewportBorder(IRenderFrameData frameData, int width, int height, bool active);
         void RenderSectionGuide(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj, SectionDefinition section);
+        void RenderGrips(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj,
+            OrbitCamera camera, IReadOnlyList<GripDescriptor> grips, int hovered, int active);
     }
 }

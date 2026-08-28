@@ -30,6 +30,8 @@ namespace CloudScope.Platform.Metal.Rendering
         private readonly float[] _viewportBorderVertices = new float[15];
         private readonly float[] _sectionGuideVertices = new float[48];
         private MTLBuffer _sectionGuideBuffer;
+        private float[] _gripVertices = Array.Empty<float>();
+        private MTLBuffer _gripBuffer;
         private MTLRenderPipelineState _pivotPointPipeline;
         private MTLDepthStencilState _pivotPointDepthState;
         private MTLBuffer _pivotPointBuffer;
@@ -177,6 +179,23 @@ namespace CloudScope.Platform.Metal.Rendering
                 lineWidthPixels: 2f);
         }
 
+        public void RenderGrips(
+            IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj,
+            OrbitCamera camera, IReadOnlyList<GripDescriptor> grips, int hovered, int active)
+        {
+            if (frameData is not MetalFrameState frame || grips.Count == 0) return;
+            _renderer.SetFrame(frame);
+            int required = grips.Count * GripOverlayGeometry.FloatsPerGrip;
+            if (_gripVertices.Length < required) _gripVertices = new float[required];
+            int count = GripOverlayGeometry.Fill(grips, camera, _gripVertices);
+            _renderer.UpdateBuffer(ref _gripBuffer, _gripVertices);
+            Matrix4 mvp = view * proj;
+            for (int i = 0; i < count; i++)
+                _renderer.Draw(_gripBuffer, GripOverlayGeometry.VerticesPerGrip, MTLPrimitiveType.Line,
+                    mvp, GripOverlayGeometry.Color(grips[i].Index, hovered, active), depthTest: false,
+                    firstVertex: i * GripOverlayGeometry.VerticesPerGrip, lineWidthPixels: 2f);
+        }
+
         private void AddSectionSegment(ref int vertex, Vector3 start, Vector3 end)
         {
             WriteSectionVertex(vertex++, start);
@@ -197,6 +216,7 @@ namespace CloudScope.Platform.Metal.Rendering
             MetalResources.Release(ref _modeBuffer);
             MetalResources.Release(ref _viewportBorderBuffer);
             MetalResources.Release(ref _sectionGuideBuffer);
+            MetalResources.Release(ref _gripBuffer);
             for (int i = 0; i < _pivotBuffers.Length; i++)
                 MetalResources.Release(ref _pivotBuffers[i]);
             _pivotBuffers = Array.Empty<MTLBuffer>();
