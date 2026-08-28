@@ -5,6 +5,26 @@ namespace CloudScope.Rendering;
 /// <summary>Connected previous/current/next vertices for the shared anti-aliased line shader.</summary>
 public static class PolylineRenderGeometry
 {
+    /// <summary>
+    /// Builds an independent line-list segment for every polyline edge. Editable 3D
+    /// polylines use this so their screen-space quads cannot fold over at projected bends.
+    /// </summary>
+    public static float[] BuildSegments(IReadOnlyList<Vector3> points, bool closed)
+    {
+        int pointCount = points.Count;
+        if (pointCount < 2) return [];
+
+        int segmentCount = pointCount - 1 + (closed && pointCount > 2 ? 1 : 0);
+        var vertices = new float[segmentCount * 2 * 3];
+        int write = 0;
+        for (int segment = 0; segment < segmentCount; segment++)
+        {
+            Write(vertices, ref write, points[segment]);
+            Write(vertices, ref write, points[(segment + 1) % pointCount]);
+        }
+        return vertices;
+    }
+
     public static int RequiredVertexCount(int pointCount, bool closed) => pointCount < 2
         ? 0
         : closed && pointCount > 2 ? (pointCount + 1) * 2 : pointCount * 2;

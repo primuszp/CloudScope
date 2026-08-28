@@ -202,12 +202,14 @@ namespace CloudScope.Platform.Metal.Rendering
             IReadOnlyList<Vector3> points, bool closed, Vector4 color, float widthPixels, bool depthTest = true)
         {
             if (frameData is not MetalFrameState frame) return;
-            float[] vertices = PolylineRenderGeometry.Build(points, closed);
+            // A connected triangle strip can turn inside-out at a projected 3D bend.
+            // Independent screen-space capsules retain their pixel width under rotation.
+            float[] vertices = PolylineRenderGeometry.BuildSegments(points, closed);
             if (vertices.Length == 0) return;
             _renderer.SetFrame(frame);
             _renderer.UpdateBuffer(ref _polylineBuffer, vertices);
-            _renderer.DrawSmoothPolyline(_polylineBuffer, vertices.Length / 9, view * proj, color,
-                depthTest, widthPixels);
+            _renderer.Draw(_polylineBuffer, vertices.Length / 3, MTLPrimitiveType.Line,
+                view * proj, color, depthTest, lineWidthPixels: widthPixels);
         }
 
         public void RenderSnapIndicator(

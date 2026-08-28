@@ -35,7 +35,8 @@ uniform mat4  uMVP;
 uniform vec2  uViewport;   // framebuffer size in pixels
 uniform float uWidth;      // line width in pixels
 
-noperspective out float vSide;
+noperspective out vec2 vLineCoord;
+noperspective out float vSegmentLength;
 
 void main()
 {
@@ -52,7 +53,8 @@ void main()
     if (clipHere.w <= 0.0 || clipThere.w <= 0.0)
     {
         gl_Position = clipHere;
-        vSide = 0.0;
+        vLineCoord = vec2(0.0);
+        vSegmentLength = 0.0;
         return;
     }
 
@@ -65,33 +67,34 @@ void main()
     vec2  direction = length2 > 1e-12 ? delta * inversesqrt(length2) : vec2(1.0, 0.0);
     vec2  normal = vec2(-direction.y, direction.x);
 
-    // Do not extend the quad along the segment. Overlapping transparent segments make
-    // closed rings brighter at every join (a scalloped / beaded circumference).
-    // Gizmo circles use sufficiently fine tessellation that their endpoints meet cleanly.
-    // When a 3D segment points almost at the camera its projected length approaches zero.
-    // Give that projection a square, width-sized footprint instead of a zero-area quad.
     float projectedLength = sqrt(length2);
-    float capExtension = max(uWidth - projectedLength, 0.0) * 0.5;
+    // Always form a round screen-space capsule. It retains a width-sized footprint even
+    // when the 3D segment is viewed end-on and its projected length approaches zero.
+    float outerHalfWidth = uWidth * 0.5 + 0.5;
+    float capExtension = outerHalfWidth;
     float capDirection = atStart ? -1.0 : 1.0;
-    vec2 offsetNdc = (normal * side * (uWidth * 0.5)
+    vec2 offsetNdc = (normal * side * outerHalfWidth
         + direction * capDirection * capExtension) / halfViewport;
     gl_Position = vec4(clipHere.xy + offsetNdc * clipHere.w, clipHere.z, clipHere.w);
-    vSide = side;
+    vLineCoord = vec2(atStart ? -outerHalfWidth : projectedLength + outerHalfWidth,
+        side * outerHalfWidth);
+    vSegmentLength = projectedLength;
 }
 ";
 
         private const string FragSrc = @"
 #version 330 core
 uniform vec4 uColor;
-noperspective in float vSide;
+uniform float uWidth;
+noperspective in vec2 vLineCoord;
+noperspective in float vSegmentLength;
 out vec4 FragColor;
 void main()
 {
-    // Derivative-based coverage softens the two long quad edges at the actual framebuffer
-    // resolution.  It works with any DPI and avoids driver-dependent GL_LINE_SMOOTH.
-    float edge = abs(vSide);
-    float feather = max(fwidth(edge), 0.001);
-    float coverage = 1.0 - smoothstep(1.0 - feather, 1.0 + feather, edge);
+    float alongOutside = max(max(-vLineCoord.x, vLineCoord.x - vSegmentLength), 0.0);
+    float distanceToSegment = length(vec2(alongOutside, vLineCoord.y));
+    float halfWidth = uWidth * 0.5;
+    float coverage = 1.0 - smoothstep(halfWidth - 0.5, halfWidth + 0.5, distanceToSegment);
     FragColor = vec4(uColor.rgb, uColor.a * coverage);
 }
 ";
