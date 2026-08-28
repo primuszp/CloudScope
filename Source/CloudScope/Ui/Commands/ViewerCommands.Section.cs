@@ -67,18 +67,39 @@ public sealed partial class ViewerCommands
 
         if (!first.IsOk) yield break;
 
-        PromptPointStep second = ed.GetCorner("Specify section end point:", first.Value);
-        yield return second;
-        if (!second.IsOk) yield break;
+        viewer.BeginCrossSectionDraft(first.Value, _lastCrossSectionWidth);
+        try
+        {
+            PromptPointStep second = ed.GetCorner("Specify section end point:", first.Value);
+            yield return second;
+            if (!second.IsOk) yield break;
 
-        PromptDoubleStep width = ed
-            .GetDistance($"Specify section width <{_lastCrossSectionWidth:0.###}>:")
-            .WithRange(0.001, double.MaxValue)
-            .WithDefault(_lastCrossSectionWidth);
-        yield return width;
-        if (!width.IsOk) yield break;
+            viewer.SetCrossSectionDraftBaseline(first.Value, second.Value, _lastCrossSectionWidth);
+            PromptDistanceOrPointStep width = ed
+                .GetDistanceOrPoint(
+                    $"Specify section width or pick one edge <{_lastCrossSectionWidth:0.###}>:",
+                    point => MeasureSectionWidth(first.Value, second.Value, point))
+                .WithRange(0.001, double.MaxValue)
+                .WithDefault(_lastCrossSectionWidth);
+            yield return width;
+            if (!width.IsOk) yield break;
 
-        _lastCrossSectionWidth = width.Single;
-        ed.WriteMessage(viewer.CreateCrossSection(first.Value, second.Value, _lastCrossSectionWidth));
+            _lastCrossSectionWidth = width.Single;
+            ed.WriteMessage(viewer.CreateCrossSection(first.Value, second.Value, _lastCrossSectionWidth));
+        }
+        finally
+        {
+            viewer.ClearCrossSectionDraft();
+        }
+    }
+
+    private static double MeasureSectionWidth(Vector3 start, Vector3 end, Vector3 point)
+    {
+        Vector2 along = new(end.X - start.X, end.Y - start.Y);
+        if (along.LengthSquared < 1e-10f) return 0d;
+        along.Normalize();
+        Vector2 normal = new(-along.Y, along.X);
+        Vector2 delta = new(point.X - start.X, point.Y - start.Y);
+        return 2d * Math.Abs(Vector2.Dot(delta, normal));
     }
 }

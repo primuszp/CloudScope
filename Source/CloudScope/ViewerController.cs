@@ -33,6 +33,9 @@ namespace CloudScope
         private float _cloudRadius = 50f;
         private PointCloudDataset? _dataset;
         private SectionDefinition? _crossSection;
+        private SectionDefinition? _crossSectionDraft;
+        private int _crossSectionDraftViewport = -1;
+        private bool _crossSectionDraftChoosingWidth;
         private int _nextSectionId = 1;
 
         /// <summary>
@@ -906,6 +909,29 @@ namespace CloudScope
             ? $"{section.Name}: length {section.Length:0.###}, width {section.Width:0.###}"
             : "No cross-section.";
 
+        public void BeginCrossSectionDraft(Vector3 start, float width)
+        {
+            _crossSectionDraft = new SectionDefinition(0, "Preview", start, start, MathF.Max(width, 0.001f));
+            _crossSectionDraftViewport = _activeViewportIndex;
+            _crossSectionDraftChoosingWidth = false;
+        }
+
+        public void SetCrossSectionDraftBaseline(Vector3 start, Vector3 end, float width)
+        {
+            float z = (start.Z + end.Z) * 0.5f;
+            start.Z = z;
+            end.Z = z;
+            _crossSectionDraft = new SectionDefinition(0, "Preview", start, end, MathF.Max(width, 0.001f));
+            _crossSectionDraftChoosingWidth = true;
+        }
+
+        public void ClearCrossSectionDraft()
+        {
+            _crossSectionDraft = null;
+            _crossSectionDraftViewport = -1;
+            _crossSectionDraftChoosingWidth = false;
+        }
+
         public string CreateCrossSection(Vector3 start, Vector3 end, float width)
         {
             float length = new Vector2(end.X - start.X, end.Y - start.Y).Length;
@@ -1056,7 +1082,11 @@ namespace CloudScope
             // any of them growing a second, gesture-shaped implementation.
             if (button == ViewerMouseButton.Left && CommandPrompts?.AwaitsPoint == true)
             {
-                camera.TryPickWorldPoint(localX, localY, 11, out Vector3 picked);
+                if (!camera.TryPickWorldPoint(localX, localY, 11, out Vector3 picked))
+                {
+                    Vector3 planePoint = _crossSectionDraft?.Center ?? camera.Pivot;
+                    picked = camera.ScreenToWorldAtDepth(localX, localY, camera.WorldToViewZ(planePoint));
+                }
                 CommandPrompts.SupplyPoint(picked, localX, localY);
                 return;
             }
@@ -1110,6 +1140,7 @@ namespace CloudScope
 
             _selection.SetViewConstraint(ConstraintFor(viewport));
             _selection.SetSectionClip(SectionClipFor(viewport));
+            UpdateCrossSectionDraft(viewport, localX, localY);
             _selection.MouseMove(localX, localY, viewport.Camera);
             viewport.Input.MouseMove(localX, localY, viewport.Camera);
         }
@@ -1191,6 +1222,11 @@ namespace CloudScope
 
                 if (_crossSection is { } section && viewport.SectionMode == SectionDisplayMode.PlanGuide)
                     _overlayRenderer.RenderSectionGuide(frameData, ref view, ref proj, section);
+
+                if (_crossSectionDraft is { } draft
+                    && _crossSectionDraftViewport == Array.IndexOf(_viewports, viewport)
+                    && draft.Length > 0.001f)
+                    _overlayRenderer.RenderSectionGuide(frameData, ref view, ref proj, draft);
 
                 _overlayRenderer.RenderViewportBorder(frameData, viewport.Bounds.Width, viewport.Bounds.Height,
                     ReferenceEquals(viewport, ActiveViewport));
@@ -1415,6 +1451,30 @@ namespace CloudScope
                 ApplySectionCamera(viewport);
         }
 
+        private void UpdateCrossSectionDraft(ViewportState viewport, int localX, int localY)
+        {
+            if (_crossSectionDraft is not { } draft
+                || CommandPrompts?.AwaitsPoint != true
+                || Array.IndexOf(_viewports, viewport) != _crossSectionDraftViewport)
+                return;
+
+            OrbitCamera camera = viewport.Camera;
+            if (!camera.TryPickWorldPoint(localX, localY, 9, out Vector3 point))
+                point = camera.ScreenToWorldAtDepth(localX, localY, camera.WorldToViewZ(draft.Center));
+
+            if (_crossSectionDraftChoosingWidth)
+            {
+                Vector3 delta = point - draft.Start;
+                float width = 2f * MathF.Abs(Vector3.Dot(delta, draft.Normal));
+                _crossSectionDraft = draft with { Width = MathF.Max(width, 0.001f) };
+            }
+            else
+            {
+                point.Z = draft.Start.Z;
+                _crossSectionDraft = draft with { End = point };
+            }
+        }
+
         private SectionClip SectionClipFor(ViewportState viewport) =>
             _crossSection is { } section && viewport.SectionMode == SectionDisplayMode.Profile
                 ? section.ToClip()
@@ -1460,6 +1520,7 @@ namespace CloudScope
         private void DiscardCrossSection()
         {
             _crossSection = null;
+            ClearCrossSectionDraft();
             foreach (ViewportState viewport in _viewports)
                 viewport.SectionMode = SectionDisplayMode.None;
             _selection.SetSectionClip(SectionClip.None);
