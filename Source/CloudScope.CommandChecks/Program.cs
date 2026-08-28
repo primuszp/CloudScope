@@ -8,6 +8,7 @@
 using CloudScope.Commands;
 using CloudScope.Ui.Commands;
 using CloudScope.Sections;
+using CloudScope.Selection;
 using OpenTK.Mathematics;
 
 int failures = 0;
@@ -266,6 +267,19 @@ sectionCamera.SetOrthographicSectionView(section.Start, section.End, flipped: fa
 Check("section camera is orthographic", !sectionCamera.IsPerspective);
 Check("section camera keeps Z vertical", Vector3.Dot(sectionCamera.CameraUp, Vector3.UnitZ) > 0.999f);
 Check("section camera follows baseline", Vector3.Dot(sectionCamera.CameraRight, Vector3.UnitX) > 0.999f);
+
+var sectionGrips = new CrossSectionGripTarget(section);
+Check("section exposes six standard grips", sectionGrips.Grips.Count == 6);
+Check("section endpoint grips follow baseline",
+    sectionGrips.GetGrip(CrossSectionGripTarget.StartGrip).Position == section.Start
+    && sectionGrips.GetGrip(CrossSectionGripTarget.EndGrip).Position == section.End);
+Check("section width grips are symmetric",
+    Vector3.Distance(
+        sectionGrips.GetGrip(CrossSectionGripTarget.PositiveWidthGrip).Position,
+        sectionGrips.GetGrip(CrossSectionGripTarget.NegativeWidthGrip).Position) is > 1.999f and < 2.001f);
+Check("section grip kinds describe their behavior",
+    sectionGrips.GetGrip(CrossSectionGripTarget.CenterGrip).Kind == GripKind.Center
+    && sectionGrips.GetGrip(CrossSectionGripTarget.DirectionGrip).Kind == GripKind.Direction);
 
 Console.WriteLine();
 Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : $"{failures} CHECK(S) FAILED");

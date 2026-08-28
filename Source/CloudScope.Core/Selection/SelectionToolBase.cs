@@ -157,6 +157,10 @@ namespace CloudScope.Selection
             _activeGrip = default;
         }
 
+        /// <summary>Selection tools historically commit continuously; cancellation therefore
+        /// ends the gesture. Object targets with transactional editing override this behavior.</summary>
+        public virtual void CancelHandleDrag() => EndHandleDrag();
+
         // ── Keyboard edit ─────────────────────────────────────────────────────
 
         public virtual void BeginGrab(int mx, int my, OrbitCamera camera)

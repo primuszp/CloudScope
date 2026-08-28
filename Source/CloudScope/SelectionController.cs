@@ -20,6 +20,7 @@ namespace CloudScope
         private readonly LabelManager          _labelManager  = new();
         private readonly LabelRegistry         _registry      = new();
         private readonly Action<string>        _log;
+        private readonly GripInteractionSession _gripSession = new();
 
         private SelectionToolType        _activeToolType = SelectionToolType.Box;
         private EditAction               _pendingAction    = EditAction.None;
@@ -393,7 +394,7 @@ namespace CloudScope
             switch (_interactionState)
             {
                 case SelectionInteractionState.DraggingGrip:
-                    tool.EndHandleDrag();
+                    _gripSession.Commit();
                     SetInteractionState(SelectionInteractionState.Editing);
                     return;
 
@@ -427,13 +428,14 @@ namespace CloudScope
                     tool.OnMouseMove(x, y, camera);
                     break;
                 case SelectionInteractionState.DraggingGrip:
-                    tool.UpdateHandleDrag(x, y, camera);
+                    _gripSession.Update(x, y, camera);
                     break;
                 case SelectionInteractionState.KeyboardEdit:
                     tool.UpdateEdit(x, y, camera);
                     break;
                 case SelectionInteractionState.Editing:
-                    tool.HoveredHandle = tool.HitTestHandles(x, y, camera);
+                    _gripSession.SetTarget(tool);
+                    _gripSession.UpdateHover(x, y, camera);
                     break;
             }
         }
@@ -522,6 +524,7 @@ namespace CloudScope
             }
             else if (ActiveTool.IsEditing || ActiveTool.IsActive)
             {
+                _gripSession.Cancel();
                 ActiveTool.Cancel();
                 _pendingAction = EditAction.None;
                 SetRestingInteractionState();
@@ -616,25 +619,12 @@ namespace CloudScope
 
         private bool BeginEditingGesture(ISelectionTool tool, int x, int y, OrbitCamera camera)
         {
-            int handle = tool.HitTestHandles(x, y, camera);
-            if (handle >= 0)
+            _gripSession.SetTarget(tool);
+            bool allowBodyDrag = tool.ViewConstraint.IsConstrained;
+            if (_gripSession.TryBegin(x, y, camera, allowBodyDrag))
             {
-                tool.BeginHandleDrag(handle, x, y, camera);
-                if (tool.IsHandleDragging)
-                    SetInteractionState(SelectionInteractionState.DraggingGrip);
+                SetInteractionState(SelectionInteractionState.DraggingGrip);
                 return true;
-            }
-
-            // In a view-constrained (orthographic) viewport, dragging anywhere on the volume
-            // body translates it in the view plane — reusing the center grip's drag math.
-            if (tool.ViewConstraint.IsConstrained && tool.HitTestBody(x, y, camera))
-            {
-                tool.BeginHandleDrag(tool.CenterGripIndex, x, y, camera);
-                if (tool.IsHandleDragging)
-                {
-                    SetInteractionState(SelectionInteractionState.DraggingGrip);
-                    return true;
-                }
             }
 
             if (_pendingAction == EditAction.None)
