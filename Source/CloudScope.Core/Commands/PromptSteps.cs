@@ -234,6 +234,7 @@ public sealed class PromptPointStep(string message) : PromptStep(message, allowA
     public Vector3 Value { get; internal set; }
     public double PlaneZ { get; private set; }
     private Vector3? _default;
+    private Func<double, Vector3>? _directionalDistanceResolver;
 
     /// <summary>Base point a rubber-banded pick is measured from, when the command has one.</summary>
     public Vector3? BasePoint { get; private set; }
@@ -250,6 +251,16 @@ public sealed class PromptPointStep(string message) : PromptStep(message, allowA
         return this;
     }
 
+    /// <summary>
+    /// Accepts one scalar as a distance along the direction currently inferred by the
+    /// viewport. Coordinate pairs/triples keep their ordinary meaning.
+    /// </summary>
+    public PromptPointStep WithDirectionalDistance(Func<double, Vector3> resolver)
+    {
+        _directionalDistanceResolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
+        return this;
+    }
+
     internal override bool ApplyDefaultValue()
     {
         if (_default == null) return false;
@@ -260,9 +271,18 @@ public sealed class PromptPointStep(string message) : PromptStep(message, allowA
 
     internal override bool Accept(string input)
     {
+        if (_directionalDistanceResolver != null
+            && double.TryParse(input, NumberStyles.Float, CultureInfo.InvariantCulture, out double distance)
+            && double.IsFinite(distance))
+        {
+            Value = _directionalDistanceResolver(distance);
+            Status = PromptStatus.OK;
+            return true;
+        }
+
         if (!TryParsePoint(input, out Vector3 point))
         {
-            Error = $"Invalid point: {input}. Use x,y or x,y,z, or pick in the viewport.";
+            Error = $"Invalid point: {input}. Use a distance, x,y or x,y,z, or pick in the viewport.";
             return false;
         }
 
