@@ -152,38 +152,18 @@ void main() { FragColor = uColor; }
             if (pointCount < 3)
                 return;
 
-            int vertexCount = (pointCount + 1) * 2;
+            int vertexCount = PolylineRenderGeometry.RequiredVertexCount(pointCount, closed: true);
             int floatCount = vertexCount * 9;
             if (_smoothLoopBuf.Length < floatCount)
                 Array.Resize(ref _smoothLoopBuf, floatCount);
 
-            int write = 0;
-            for (int point = 0; point <= pointCount; point++)
-            {
-                int previous = (point + pointCount - 1) % pointCount;
-                int current = point % pointCount;
-                int next = (point + 1) % pointCount;
-                for (int side = 0; side < 2; side++)
-                {
-                    CopyRingPoint(points, previous, _smoothLoopBuf, ref write);
-                    CopyRingPoint(points, current, _smoothLoopBuf, ref write);
-                    CopyRingPoint(points, next, _smoothLoopBuf, ref write);
-                }
-            }
+            PolylineRenderGeometry.Fill(points, pointCount, closed: true, _smoothLoopBuf);
 
             Dyn(_smoothLoopBuf, floatCount);
             _smoothLines.Draw(_dynVbo, 0, vertexCount, ref _currentMvp, color, widthPixels);
             GL.UseProgram(_shader);
             GL.BindVertexArray(_dynVao);
             GL.BindBuffer(BufferTarget.ArrayBuffer, _dynVbo);
-        }
-
-        private static void CopyRingPoint(float[] source, int point, float[] destination, ref int write)
-        {
-            int read = point * 3;
-            destination[write++] = source[read];
-            destination[write++] = source[read + 1];
-            destination[write++] = source[read + 2];
         }
 
         // ── NDC conversion ────────────────────────────────────────────────────

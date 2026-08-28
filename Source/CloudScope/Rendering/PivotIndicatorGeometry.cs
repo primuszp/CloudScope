@@ -31,35 +31,7 @@ internal static class PivotIndicatorGeometry
     /// triangle strip. No independently rasterized segment joins remain.
     /// </summary>
     public static float[] BuildSmoothLoopVertices(float[] points)
-    {
-        int pointCount = points.Length / 3;
-        if (pointCount < 3)
-            return [];
-
-        var vertices = new float[(pointCount + 1) * 2 * 9];
-        int destination = 0;
-        for (int point = 0; point <= pointCount; point++)
-        {
-            int previous = (point + pointCount - 1) % pointCount;
-            int current = point % pointCount;
-            int next = (point + 1) % pointCount;
-            for (int side = 0; side < 2; side++)
-            {
-                CopyPoint(points, previous, vertices, ref destination);
-                CopyPoint(points, current, vertices, ref destination);
-                CopyPoint(points, next, vertices, ref destination);
-            }
-        }
-        return vertices;
-    }
-
-    private static void CopyPoint(float[] source, int point, float[] destination, ref int write)
-    {
-        int read = point * 3;
-        destination[write++] = source[read];
-        destination[write++] = source[read + 1];
-        destination[write++] = source[read + 2];
-    }
+        => PolylineRenderGeometry.Build(points, points.Length / 3, closed: true);
 
     private static float[] BuildAxis(int axis, float extent)
     {

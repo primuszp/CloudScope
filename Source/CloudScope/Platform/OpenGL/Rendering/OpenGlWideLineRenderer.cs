@@ -68,7 +68,13 @@ void main()
     // Do not extend the quad along the segment. Overlapping transparent segments make
     // closed rings brighter at every join (a scalloped / beaded circumference).
     // Gizmo circles use sufficiently fine tessellation that their endpoints meet cleanly.
-    vec2 offsetNdc = normal * side * (uWidth * 0.5) / halfViewport;
+    // When a 3D segment points almost at the camera its projected length approaches zero.
+    // Give that projection a square, width-sized footprint instead of a zero-area quad.
+    float projectedLength = sqrt(length2);
+    float capExtension = max(uWidth - projectedLength, 0.0) * 0.5;
+    float capDirection = atStart ? -1.0 : 1.0;
+    vec2 offsetNdc = (normal * side * (uWidth * 0.5)
+        + direction * capDirection * capExtension) / halfViewport;
     gl_Position = vec4(clipHere.xy + offsetNdc * clipHere.w, clipHere.z, clipHere.w);
     vSide = side;
 }
