@@ -18,8 +18,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
     internal sealed class OpenGlSphereGizmoRenderer : OpenGlGizmoRendererBase
     {
         private int _fillVao = -1, _fillVbo = -1;
-        private int _circVao = -1, _circVbo = -1;
-        private readonly OpenGlSmoothPolylineRenderer _smoothCircles = new();
+        private readonly float[][] _circlePoints = new float[3][];
 
         private int _fillVertCount;
         // Subpixel-dense tessellation makes adjacent miter directions numerically unstable.
@@ -27,7 +26,6 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private const int Seg = SmoothRingSegments;
         private const int Lat = 16;
         private const int Lon = 32;
-        private const int CircleVertexCount = (Seg + 1) * 2;
 
         // ── Public entry point ────────────────────────────────────────────────
 
@@ -77,18 +75,17 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
             for (int ax = 0; ax < 3; ax++)
             {
-                var c      = AxisColor[ax];
-                int offset = ax * CircleVertexCount;
+                var c = AxisColor[ax];
 
                 GL.Enable(EnableCap.DepthTest);
-                _smoothCircles.Draw(_circVbo, offset, CircleVertexCount, ref mvp, c with { W = 0.80f }, 2.0f);
+                DrawDynamicSmoothLoop(_circlePoints[ax], Seg, ref mvp, c with { W = 0.80f }, 2.0f);
 
                 // Draw the faint guide only where scene depth actually occludes the ring.
                 // Drawing it unconditionally over the solid stroke created a second, thin
                 // contour around the entire circle and made the edge look noisy.
                 GL.Enable(EnableCap.DepthTest);
                 GL.DepthFunc(DepthFunction.Greater);
-                _smoothCircles.Draw(_circVbo, offset, CircleVertexCount, ref mvp, c with { W = 0.18f }, 1.0f);
+                DrawDynamicSmoothLoop(_circlePoints[ax], Seg, ref mvp, c with { W = 0.18f }, 1.0f);
                 GL.DepthFunc(DepthFunction.Less);
             }
 
@@ -173,28 +170,15 @@ namespace CloudScope.Platform.OpenGL.Rendering
             }
             MakeStaticVao(ref _fillVao, ref _fillVbo, fill);
 
-            // 3 great-circle rings
-            float[] circ = new float[3 * CircleVertexCount * 9];
-            int ci = 0;
-            AddCircleLoop(circ, ref ci, 0);
-            AddCircleLoop(circ, ref ci, 1);
-            AddCircleLoop(circ, ref ci, 2);
-            MakeStaticVao(ref _circVao, ref _circVbo, circ);
-        }
-
-        private static void AddCircleLoop(float[] data, ref int i, int axis)
-        {
-            for (int point = 0; point <= Seg; point++)
+            // 3 great-circle rings, kept as unique loop points: the shared joined-line path
+            // expands them into segment and round-join instances.
+            for (int axis = 0; axis < 3; axis++)
             {
-                int previous = (point + Seg - 1) % Seg;
-                int current = point % Seg;
-                int next = (point + 1) % Seg;
-                for (int side = 0; side < 2; side++)
-                {
-                    AddCirclePoint(data, ref i, axis, previous);
-                    AddCirclePoint(data, ref i, axis, current);
-                    AddCirclePoint(data, ref i, axis, next);
-                }
+                var points = new float[Seg * 3];
+                int i = 0;
+                for (int point = 0; point < Seg; point++)
+                    AddCirclePoint(points, ref i, axis, point);
+                _circlePoints[axis] = points;
             }
         }
 
@@ -210,8 +194,6 @@ namespace CloudScope.Platform.OpenGL.Rendering
         public override void Dispose()
         {
             if (_fillVao != -1) { GL.DeleteVertexArray(_fillVao); GL.DeleteBuffer(_fillVbo); _fillVao = -1; }
-            if (_circVao != -1) { GL.DeleteVertexArray(_circVao); GL.DeleteBuffer(_circVbo); _circVao = -1; }
-            _smoothCircles.Dispose();
             base.Dispose();
         }
     }

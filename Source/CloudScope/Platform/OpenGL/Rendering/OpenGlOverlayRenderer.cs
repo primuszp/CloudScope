@@ -17,7 +17,9 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private int[] _pivotVbos = Array.Empty<int>();
         private PivotLineBatch[] _pivotBatches = Array.Empty<PivotLineBatch>();
         private readonly OpenGlWideLineRenderer _wideLines = new();
-        private readonly OpenGlSmoothPolylineRenderer _smoothLines = new();
+        private readonly OpenGlJoinedLineRenderer _joinedLines = new();
+        private float[][] _pivotLoopSegments = Array.Empty<float[]>();
+        private float[][] _pivotLoopJoins = Array.Empty<float[]>();
         private int _sphereVao = -1, _sphereVbo = -1;
         private int _crosshairVao = -1, _crosshairVbo = -1;
 
@@ -25,8 +27,6 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private readonly float[] _shadowData = new float[24];
         private readonly float[] _indData = new float[24];
         private readonly float[] _viewportBorderData = new float[30];
-        private readonly float[] _sectionGuideVertices = new float[48];
-        private int _sectionGuideVbo = -1;
         private float[] _gripVertices = Array.Empty<float>();
         private int _gripVbo = -1;
         private int _polylineVbo = -1;
@@ -104,6 +104,7 @@ void main()
             _uAlphaLine = GL.GetUniformLocation(_lineShader, "uAlpha");
 
             _wideLines.EnsureResources();
+            _joinedLines.EnsureResources();
             _sphereShader = OpenGlShaderCompiler.CreateProgram(VertSrc, SphereFragSrc, "overlay");
             _uViewSphere = GL.GetUniformLocation(_sphereShader, "view");
             _uProjSphere = GL.GetUniformLocation(_sphereShader, "projection");
@@ -157,9 +158,10 @@ void main()
                 PivotLineBatch batch = _pivotBatches[i];
                 if (batch.IsClosedLoop)
                 {
-                    int vertexCount = (batch.PointCount + 1) * 2;
-                    _smoothLines.Draw(_pivotVbos[i], 0, vertexCount, ref mvp,
-                        new Vector4(batch.Color, alpha), widthPixels);
+                    _joinedLines.Draw(
+                        _pivotLoopSegments[i], PolylineRenderGeometry.SegmentCount(batch.PointCount, closed: true),
+                        _pivotLoopJoins[i], PolylineRenderGeometry.JoinCount(batch.PointCount, closed: true),
+                        ref mvp, new Vector4(batch.Color, alpha), widthPixels);
                 }
                 else
                 {
@@ -275,36 +277,14 @@ void main()
         public void RenderSectionGuide(
             IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj, SectionDefinition section)
         {
-            Vector3 normal = section.Normal;
-            Vector3 along = section.Along;
-            float halfWidth = section.Width * 0.5f;
-            Vector3 s0 = section.Start + normal * halfWidth;
-            Vector3 s1 = section.Start - normal * halfWidth;
-            Vector3 e0 = section.End + normal * halfWidth;
-            Vector3 e1 = section.End - normal * halfWidth;
-            int vertex = 0;
-            AddSectionSegment(ref vertex, s0, e0);
-            AddSectionSegment(ref vertex, e0, e1);
-            AddSectionSegment(ref vertex, e1, s1);
-            AddSectionSegment(ref vertex, s1, s0);
-            AddSectionSegment(ref vertex, section.Start, section.End);
-
-            float arrowLength = MathF.Max(section.Width, section.Length * 0.08f);
-            Vector3 tip = section.Center + normal * arrowLength;
-            AddSectionSegment(ref vertex, section.Center, tip);
-            AddSectionSegment(ref vertex, tip, tip - normal * arrowLength * 0.32f + along * arrowLength * 0.22f);
-            AddSectionSegment(ref vertex, tip, tip - normal * arrowLength * 0.32f - along * arrowLength * 0.22f);
-
-            if (_sectionGuideVbo == -1)
-                _sectionGuideVbo = GL.GenBuffer();
-            GL.BindBuffer(BufferTarget.ArrayBuffer, _sectionGuideVbo);
-            GL.BufferData(BufferTarget.ArrayBuffer, _sectionGuideVertices.Length * sizeof(float),
-                _sectionGuideVertices, BufferUsageHint.DynamicDraw);
-            Matrix4 mvp = view * proj;
-            GL.Disable(EnableCap.DepthTest);
-            _wideLines.Draw(_sectionGuideVbo, 0, vertex, ref mvp,
-                new Vector4(1f, 0.72f, 0.12f, 0.95f), 2f);
-            GL.Enable(EnableCap.DepthTest);
+            RenderPolyline(frameData, ref view, ref proj, SectionGuideGeometry.BuildOutline(section),
+                closed: true, SectionGuideGeometry.Color, SectionGuideGeometry.WidthPixels, depthTest: false);
+            RenderPolyline(frameData, ref view, ref proj, SectionGuideGeometry.BuildBaseline(section),
+                closed: false, SectionGuideGeometry.Color, SectionGuideGeometry.WidthPixels, depthTest: false);
+            RenderPolyline(frameData, ref view, ref proj, SectionGuideGeometry.BuildArrowShaft(section),
+                closed: false, SectionGuideGeometry.Color, SectionGuideGeometry.WidthPixels, depthTest: false);
+            RenderPolyline(frameData, ref view, ref proj, SectionGuideGeometry.BuildArrowHead(section),
+                closed: false, SectionGuideGeometry.Color, SectionGuideGeometry.WidthPixels, depthTest: false);
         }
 
         public void RenderGrips(
@@ -332,19 +312,17 @@ void main()
             IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj,
             IReadOnlyList<Vector3> points, bool closed, Vector4 color, float widthPixels, bool depthTest = true)
         {
-            // A connected triangle strip can turn inside-out at a projected 3D bend.
-            // Independent screen-space capsules retain their pixel width under rotation.
-            float[] vertices = PolylineRenderGeometry.BuildSegments(points, closed);
-            if (vertices.Length == 0) return;
-            if (_polylineVbo == -1) _polylineVbo = GL.GenBuffer();
-            GL.BindBuffer(BufferTarget.ArrayBuffer, _polylineVbo);
-            GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * sizeof(float), vertices, BufferUsageHint.DynamicDraw);
+            int segmentCount = PolylineRenderGeometry.SegmentCount(points.Count, closed);
+            if (segmentCount == 0) return;
+            int joinCount = PolylineRenderGeometry.JoinCount(points.Count, closed);
+            float[] segments = PolylineRenderGeometry.BuildSegmentInstances(points, closed);
+            float[] joins = PolylineRenderGeometry.BuildJoinInstances(points, closed);
             Matrix4 mvp = view * proj;
             if (depthTest) GL.Enable(EnableCap.DepthTest); else GL.Disable(EnableCap.DepthTest);
             // Match Metal and the pivot renderer: test the line against the scene, but never
-            // let its antialiased capsule fragments write depth and mask adjacent segments.
+            // let its antialiased fragments write depth and mask the adjacent geometry.
             GL.DepthMask(false);
-            _wideLines.Draw(_polylineVbo, 0, vertices.Length / 3, ref mvp, color, widthPixels);
+            _joinedLines.Draw(segments, segmentCount, joins, joinCount, ref mvp, color, widthPixels);
             GL.DepthMask(true);
             GL.Enable(EnableCap.DepthTest);
         }
@@ -372,20 +350,6 @@ void main()
             GL.Enable(EnableCap.DepthTest);
         }
 
-        private void AddSectionSegment(ref int vertex, Vector3 start, Vector3 end)
-        {
-            WriteSectionVertex(vertex++, start);
-            WriteSectionVertex(vertex++, end);
-        }
-
-        private void WriteSectionVertex(int vertex, Vector3 point)
-        {
-            int i = vertex * 3;
-            _sectionGuideVertices[i] = point.X;
-            _sectionGuideVertices[i + 1] = point.Y;
-            _sectionGuideVertices[i + 2] = point.Z;
-        }
-
         private void WriteBorderVertex(int vertex, float x, float y, Vector3 color)
         {
             int i = vertex * 6;
@@ -401,17 +365,29 @@ void main()
         {
             if (_pivotVbos.Length > 0) return;
 
+
             _pivotBatches = PivotIndicatorGeometry.BuildBatches();
             _pivotVbos = new int[_pivotBatches.Length];
+            _pivotLoopSegments = new float[_pivotBatches.Length][];
+            _pivotLoopJoins = new float[_pivotBatches.Length][];
             for (int i = 0; i < _pivotBatches.Length; i++)
             {
                 PivotLineBatch batch = _pivotBatches[i];
-                float[] vertices = batch.IsClosedLoop
-                    ? PivotIndicatorGeometry.BuildSmoothLoopVertices(batch.Positions)
-                    : batch.Positions;
+                _pivotLoopSegments[i] = Array.Empty<float>();
+                _pivotLoopJoins[i] = Array.Empty<float>();
+                if (batch.IsClosedLoop)
+                {
+                    // Rings go through the shared joined-line path, which uploads from these
+                    // arrays; only the straight axes still need a static vertex buffer.
+                    _pivotLoopSegments[i] = PivotIndicatorGeometry.BuildLoopSegmentInstances(batch.Positions);
+                    _pivotLoopJoins[i] = PivotIndicatorGeometry.BuildLoopJoinInstances(batch.Positions);
+                    _pivotVbos[i] = -1;
+                    continue;
+                }
                 _pivotVbos[i] = GL.GenBuffer();
                 GL.BindBuffer(BufferTarget.ArrayBuffer, _pivotVbos[i]);
-                GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * sizeof(float), vertices, BufferUsageHint.StaticDraw);
+                GL.BufferData(BufferTarget.ArrayBuffer, batch.Positions.Length * sizeof(float),
+                    batch.Positions, BufferUsageHint.StaticDraw);
             }
         }
 
@@ -466,11 +442,6 @@ void main()
         public void Dispose()
         {
             _wideLines.Dispose();
-            if (_sectionGuideVbo != -1)
-            {
-                GL.DeleteBuffer(_sectionGuideVbo);
-                _sectionGuideVbo = -1;
-            }
             if (_gripVbo != -1)
             {
                 GL.DeleteBuffer(_gripVbo);
@@ -481,7 +452,7 @@ void main()
                 GL.DeleteBuffer(_polylineVbo);
                 _polylineVbo = -1;
             }
-            _smoothLines.Dispose();
+            _joinedLines.Dispose();
             foreach (int pivotVbo in _pivotVbos)
                 if (pivotVbo != -1) GL.DeleteBuffer(pivotVbo);
             if (_sphereVao != -1) GL.DeleteVertexArray(_sphereVao);

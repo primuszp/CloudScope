@@ -26,12 +26,16 @@ internal static class PivotIndicatorGeometry
     }
 
     /// <summary>
-    /// Expands unique loop points into previous/current/next adjacency vertices. Each point
-    /// is emitted twice (left/right), and the first point is repeated to close one continuous
-    /// triangle strip. No independently rasterized segment joins remain.
+    /// Expands unique loop points into the shared joined-line instance streams: one quad
+    /// per ring segment plus one round join per point. The ring is therefore a single
+    /// overlap-free surface, with no independently rasterized segment ends.
     /// </summary>
-    public static float[] BuildSmoothLoopVertices(float[] points)
-        => PolylineRenderGeometry.Build(points, points.Length / 3, closed: true);
+    public static float[] BuildLoopSegmentInstances(float[] points)
+        => PolylineRenderGeometry.BuildSegmentInstances(points, points.Length / 3, closed: true);
+
+    /// <inheritdoc cref="BuildLoopSegmentInstances"/>
+    public static float[] BuildLoopJoinInstances(float[] points)
+        => PolylineRenderGeometry.BuildJoinInstances(points, points.Length / 3, closed: true);
 
     private static float[] BuildAxis(int axis, float extent)
     {

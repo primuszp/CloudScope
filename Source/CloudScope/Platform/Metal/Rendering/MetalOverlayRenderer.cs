@@ -28,11 +28,12 @@ namespace CloudScope.Platform.Metal.Rendering
         private readonly float[] _crosshairVertices = new float[12];
         private readonly float[] _modeVertices = new float[12];
         private readonly float[] _viewportBorderVertices = new float[15];
-        private readonly float[] _sectionGuideVertices = new float[48];
-        private MTLBuffer _sectionGuideBuffer;
         private float[] _gripVertices = Array.Empty<float>();
         private MTLBuffer _gripBuffer;
         private MTLBuffer _polylineBuffer;
+        private MTLBuffer _polylineJoinBuffer;
+        private MTLBuffer[] _pivotLoopSegmentBuffers = Array.Empty<MTLBuffer>();
+        private MTLBuffer[] _pivotLoopJoinBuffers = Array.Empty<MTLBuffer>();
         private MTLRenderPipelineState _pivotPointPipeline;
         private MTLDepthStencilState _pivotPointDepthState;
         private MTLBuffer _pivotPointBuffer;
@@ -46,13 +47,22 @@ namespace CloudScope.Platform.Metal.Rendering
             _renderer.EnsureResources();
             _pivotBatches = PivotIndicatorGeometry.BuildBatches();
             _pivotBuffers = new MTLBuffer[_pivotBatches.Length];
+            _pivotLoopSegmentBuffers = new MTLBuffer[_pivotBatches.Length];
+            _pivotLoopJoinBuffers = new MTLBuffer[_pivotBatches.Length];
             for (int i = 0; i < _pivotBatches.Length; i++)
             {
                 PivotLineBatch batch = _pivotBatches[i];
-                float[] vertices = batch.IsClosedLoop
-                    ? PivotIndicatorGeometry.BuildSmoothLoopVertices(batch.Positions)
-                    : batch.Positions;
-                _pivotBuffers[i] = _renderer.CreateStaticBuffer(vertices);
+                if (batch.IsClosedLoop)
+                {
+                    // Rings go through the shared joined-line path; the straight axes stay
+                    // on the capsule path, which needs no join instances.
+                    _pivotLoopSegmentBuffers[i] = _renderer.CreateStaticBuffer(
+                        PivotIndicatorGeometry.BuildLoopSegmentInstances(batch.Positions));
+                    _pivotLoopJoinBuffers[i] = _renderer.CreateStaticBuffer(
+                        PivotIndicatorGeometry.BuildLoopJoinInstances(batch.Positions));
+                    continue;
+                }
+                _pivotBuffers[i] = _renderer.CreateStaticBuffer(batch.Positions);
             }
             var device = _context.Device;
             _pivotPointPipeline = MetalShaderLibrary.CreatePivotPointPipeline(
@@ -82,12 +92,16 @@ namespace CloudScope.Platform.Metal.Rendering
                 Vector4 color = new(batch.Color, alpha);
                 if (batch.IsClosedLoop)
                 {
-                    int vertexCount = (batch.PointCount + 1) * 2;
-                    _renderer.DrawSmoothPolyline(_pivotBuffers[i], vertexCount, mvp, color,
-                        depthTest: true, lineWidthPixels: 1f + alpha);
+                    int segmentCount = PolylineRenderGeometry.SegmentCount(batch.PointCount, closed: true);
+                    int joinCount = PolylineRenderGeometry.JoinCount(batch.PointCount, closed: true);
+                    _renderer.DrawJoinedLine(
+                        _pivotLoopSegmentBuffers[i], segmentCount, _pivotLoopJoinBuffers[i], joinCount,
+                        mvp, color, depthTest: true, lineWidthPixels: 1f + alpha);
                     color.W = alpha * 0.20f;
-                    _renderer.DrawSmoothPolyline(_pivotBuffers[i], vertexCount, mvp, color,
-                        depthTest: true, lineWidthPixels: LineWidth.NativeMax, occludedOnly: true);
+                    _renderer.DrawJoinedLine(
+                        _pivotLoopSegmentBuffers[i], segmentCount, _pivotLoopJoinBuffers[i], joinCount,
+                        mvp, color, depthTest: true, lineWidthPixels: LineWidth.NativeMax,
+                        occludedOnly: true);
                 }
                 else
                 {
@@ -152,32 +166,14 @@ namespace CloudScope.Platform.Metal.Rendering
         public void RenderSectionGuide(
             IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj, SectionDefinition section)
         {
-            if (frameData is not MetalFrameState frame) return;
-            _renderer.SetFrame(frame);
-            Vector3 normal = section.Normal;
-            Vector3 along = section.Along;
-            float halfWidth = section.Width * 0.5f;
-            Vector3 s0 = section.Start + normal * halfWidth;
-            Vector3 s1 = section.Start - normal * halfWidth;
-            Vector3 e0 = section.End + normal * halfWidth;
-            Vector3 e1 = section.End - normal * halfWidth;
-            int vertex = 0;
-            AddSectionSegment(ref vertex, s0, e0);
-            AddSectionSegment(ref vertex, e0, e1);
-            AddSectionSegment(ref vertex, e1, s1);
-            AddSectionSegment(ref vertex, s1, s0);
-            AddSectionSegment(ref vertex, section.Start, section.End);
-
-            float arrowLength = MathF.Max(section.Width, section.Length * 0.08f);
-            Vector3 tip = section.Center + normal * arrowLength;
-            AddSectionSegment(ref vertex, section.Center, tip);
-            AddSectionSegment(ref vertex, tip, tip - normal * arrowLength * 0.32f + along * arrowLength * 0.22f);
-            AddSectionSegment(ref vertex, tip, tip - normal * arrowLength * 0.32f - along * arrowLength * 0.22f);
-
-            _renderer.UpdateBuffer(ref _sectionGuideBuffer, _sectionGuideVertices);
-            _renderer.Draw(_sectionGuideBuffer, vertex, MTLPrimitiveType.Line,
-                view * proj, new Vector4(1f, 0.72f, 0.12f, 0.95f), depthTest: false,
-                lineWidthPixels: 2f);
+            RenderPolyline(frameData, ref view, ref proj, SectionGuideGeometry.BuildOutline(section),
+                closed: true, SectionGuideGeometry.Color, SectionGuideGeometry.WidthPixels, depthTest: false);
+            RenderPolyline(frameData, ref view, ref proj, SectionGuideGeometry.BuildBaseline(section),
+                closed: false, SectionGuideGeometry.Color, SectionGuideGeometry.WidthPixels, depthTest: false);
+            RenderPolyline(frameData, ref view, ref proj, SectionGuideGeometry.BuildArrowShaft(section),
+                closed: false, SectionGuideGeometry.Color, SectionGuideGeometry.WidthPixels, depthTest: false);
+            RenderPolyline(frameData, ref view, ref proj, SectionGuideGeometry.BuildArrowHead(section),
+                closed: false, SectionGuideGeometry.Color, SectionGuideGeometry.WidthPixels, depthTest: false);
         }
 
         public void RenderGrips(
@@ -202,13 +198,16 @@ namespace CloudScope.Platform.Metal.Rendering
             IReadOnlyList<Vector3> points, bool closed, Vector4 color, float widthPixels, bool depthTest = true)
         {
             if (frameData is not MetalFrameState frame) return;
-            // A connected triangle strip can turn inside-out at a projected 3D bend.
-            // Independent screen-space capsules retain their pixel width under rotation.
-            float[] vertices = PolylineRenderGeometry.BuildSegments(points, closed);
-            if (vertices.Length == 0) return;
+            int segmentCount = PolylineRenderGeometry.SegmentCount(points.Count, closed);
+            if (segmentCount == 0) return;
+            int joinCount = PolylineRenderGeometry.JoinCount(points.Count, closed);
             _renderer.SetFrame(frame);
-            _renderer.UpdateBuffer(ref _polylineBuffer, vertices);
-            _renderer.Draw(_polylineBuffer, vertices.Length / 3, MTLPrimitiveType.Line,
+            _renderer.UpdateBuffer(ref _polylineBuffer,
+                PolylineRenderGeometry.BuildSegmentInstances(points, closed));
+            if (joinCount > 0)
+                _renderer.UpdateBuffer(ref _polylineJoinBuffer,
+                    PolylineRenderGeometry.BuildJoinInstances(points, closed));
+            _renderer.DrawJoinedLine(_polylineBuffer, segmentCount, _polylineJoinBuffer, joinCount,
                 view * proj, color, depthTest, lineWidthPixels: widthPixels);
         }
 
@@ -232,28 +231,21 @@ namespace CloudScope.Platform.Metal.Rendering
                 lineWidthPixels: 2f);
         }
 
-        private void AddSectionSegment(ref int vertex, Vector3 start, Vector3 end)
-        {
-            WriteSectionVertex(vertex++, start);
-            WriteSectionVertex(vertex++, end);
-        }
-
-        private void WriteSectionVertex(int vertex, Vector3 point)
-        {
-            int i = vertex * 3;
-            _sectionGuideVertices[i] = point.X;
-            _sectionGuideVertices[i + 1] = point.Y;
-            _sectionGuideVertices[i + 2] = point.Z;
-        }
 
         public void Dispose()
         {
             MetalResources.Release(ref _crosshairBuffer);
             MetalResources.Release(ref _modeBuffer);
             MetalResources.Release(ref _viewportBorderBuffer);
-            MetalResources.Release(ref _sectionGuideBuffer);
             MetalResources.Release(ref _gripBuffer);
             MetalResources.Release(ref _polylineBuffer);
+            MetalResources.Release(ref _polylineJoinBuffer);
+            for (int i = 0; i < _pivotLoopSegmentBuffers.Length; i++)
+                MetalResources.Release(ref _pivotLoopSegmentBuffers[i]);
+            for (int i = 0; i < _pivotLoopJoinBuffers.Length; i++)
+                MetalResources.Release(ref _pivotLoopJoinBuffers[i]);
+            _pivotLoopSegmentBuffers = Array.Empty<MTLBuffer>();
+            _pivotLoopJoinBuffers = Array.Empty<MTLBuffer>();
             for (int i = 0; i < _pivotBuffers.Length; i++)
                 MetalResources.Release(ref _pivotBuffers[i]);
             _pivotBuffers = Array.Empty<MTLBuffer>();

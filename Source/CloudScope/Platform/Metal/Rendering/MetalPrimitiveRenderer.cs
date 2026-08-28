@@ -23,7 +23,8 @@ namespace CloudScope.Platform.Metal.Rendering
         private MetalFrameState? _frame;
         private MTLRenderPipelineState _pipeline;
         private MTLRenderPipelineState _wideLinePipeline;
-        private MTLRenderPipelineState _smoothPolylinePipeline;
+        private MTLRenderPipelineState _joinedSegmentPipeline;
+        private MTLRenderPipelineState _joinedJoinPipeline;
         private MTLDepthStencilState _depthOn;
         private MTLDepthStencilState _depthBehind;
         private MTLDepthStencilState _depthOff;
@@ -55,7 +56,8 @@ namespace CloudScope.Platform.Metal.Rendering
 
             _pipeline = MetalShaderLibrary.CreateColorPipeline(device, colorFmt, depthFmt, _context.SampleCount);
             _wideLinePipeline = MetalShaderLibrary.CreateWideLinePipeline(device, colorFmt, depthFmt, _context.SampleCount);
-            _smoothPolylinePipeline = MetalShaderLibrary.CreateSmoothPolylinePipeline(device, colorFmt, depthFmt, _context.SampleCount);
+            _joinedSegmentPipeline = MetalShaderLibrary.CreateJoinedLineSegmentPipeline(device, colorFmt, depthFmt, _context.SampleCount);
+            _joinedJoinPipeline = MetalShaderLibrary.CreateJoinedLineJoinPipeline(device, colorFmt, depthFmt, _context.SampleCount);
             _depthOn  = MetalShaderLibrary.CreateDepthState(device, depthWrite: false);
             _depthBehind = MetalShaderLibrary.CreateDepthState(device, depthWrite: false, MTLCompareFunction.Greater);
             _depthOff = CreateDepthAlwaysState(device);
@@ -164,46 +166,64 @@ namespace CloudScope.Platform.Metal.Rendering
         }
 
         /// <summary>
-        /// Draws a continuous, miter-joined screen-space ribbon. Each input vertex contains
-        /// previous/current/next <c>float3</c> positions (nine floats) and adjacent sides are
-        /// duplicated, producing a single triangle strip without line-segment overlap.
+        /// Draws the overlap-free instance streams built by <see cref="PolylineRenderGeometry"/>:
+        /// one screen-space quad per segment and one round-join fan per interior joint. This is
+        /// the shared path for polylines, closed loops and gizmo circles; the expansion itself is
+        /// <see cref="JoinedLineShaderCore"/>, which the OpenGL backend compiles from the same text.
         /// </summary>
-        public void DrawSmoothPolyline(
-            MTLBuffer vertexBuffer, int vertexCount, Matrix4 mvp, Vector4 color,
-            bool depthTest, float lineWidthPixels, int firstVertex = 0, bool occludedOnly = false)
+        public void DrawJoinedLine(
+            MTLBuffer segments, int segmentCount,
+            MTLBuffer joins, int joinCount,
+            Matrix4 mvp, Vector4 color, bool depthTest, float lineWidthPixels,
+            bool occludedOnly = false)
         {
-            if (vertexBuffer.NativePtr == IntPtr.Zero || vertexCount < 4 || !_initialized)
+            if (segments.NativePtr == IntPtr.Zero || segmentCount <= 0 || !_initialized)
                 return;
 
             var encoder = _frame?.RenderCommandEncoder ?? default;
             if (encoder.NativePtr == IntPtr.Zero)
                 return;
 
-            ulong stride = UniformStride;
-            ulong offset = (ulong)_uniformOffset * stride;
+            ulong offset = ReserveUniforms(mvp, color, lineWidthPixels);
+            encoder.SetDepthStencilState(occludedOnly ? _depthBehind : depthTest ? _depthOn : _depthOff);
+            encoder.SetVertexBuffer(_uniformsBuffer, offset, 1);
+            encoder.SetFragmentBuffer(_uniformsBuffer, offset, 1);
+
+            encoder.SetRenderPipelineState(_joinedSegmentPipeline);
+            encoder.SetVertexBuffer(segments, 0, 0);
+            encoder.DrawPrimitives(MTLPrimitiveType.TriangleStrip,
+                0, (ulong)PolylineRenderGeometry.VerticesPerSegment, (ulong)segmentCount);
+
+            if (joinCount <= 0 || joins.NativePtr == IntPtr.Zero)
+                return;
+
+            encoder.SetRenderPipelineState(_joinedJoinPipeline);
+            encoder.SetVertexBuffer(joins, 0, 0);
+            encoder.DrawPrimitives(MTLPrimitiveType.Triangle,
+                0, (ulong)PolylineRenderGeometry.VerticesPerJoin, (ulong)joinCount);
+        }
+
+        /// <summary>Writes one draw's uniforms into the ring buffer and returns its byte offset.</summary>
+        private unsafe ulong ReserveUniforms(Matrix4 mvp, Vector4 color, float lineWidthPixels)
+        {
+            ulong offset = (ulong)_uniformOffset * UniformStride;
             int frameRegionEnd = (_bufferedFrameIndex + 1) * DrawsPerFrame;
-            if (_uniformOffset >= frameRegionEnd || offset + stride > _uniformsBuffer.Length)
+            if (_uniformOffset >= frameRegionEnd || offset + UniformStride > _uniformsBuffer.Length)
             {
+                // A pathological gizmo frame exceeded its reserved region. Reuse the
+                // last slot deterministically instead of corrupting another in-flight frame.
                 _uniformOffset = frameRegionEnd - 1;
-                offset = (ulong)_uniformOffset * stride;
+                offset = (ulong)_uniformOffset * UniformStride;
             }
 
             (int viewportWidth, int viewportHeight) = _context.ViewportSize;
-            unsafe
-            {
-                byte* ptr = (byte*)_uniformsBuffer.Contents.ToPointer();
-                var uniforms = new MetalColorUniforms(mvp, color,
-                    new Vector4(viewportWidth, viewportHeight, lineWidthPixels, 0f));
-                Buffer.MemoryCopy(&uniforms, ptr + offset, Unsafe.SizeOf<MetalColorUniforms>(), Unsafe.SizeOf<MetalColorUniforms>());
-            }
+            byte* ptr = (byte*)_uniformsBuffer.Contents.ToPointer();
+            var uniforms = new MetalColorUniforms(mvp, color,
+                new Vector4(viewportWidth, viewportHeight, lineWidthPixels, 0f));
+            Buffer.MemoryCopy(&uniforms, ptr + offset,
+                Unsafe.SizeOf<MetalColorUniforms>(), Unsafe.SizeOf<MetalColorUniforms>());
             _uniformOffset++;
-
-            encoder.SetRenderPipelineState(_smoothPolylinePipeline);
-            encoder.SetDepthStencilState(occludedOnly ? _depthBehind : depthTest ? _depthOn : _depthOff);
-            encoder.SetVertexBuffer(vertexBuffer, 0, 0);
-            encoder.SetVertexBuffer(_uniformsBuffer, offset, 1);
-            encoder.SetFragmentBuffer(_uniformsBuffer, offset, 1);
-            encoder.DrawPrimitives(MTLPrimitiveType.TriangleStrip, (ulong)firstVertex, (ulong)vertexCount);
+            return offset;
         }
 
         public void Dispose()
@@ -211,13 +231,15 @@ namespace CloudScope.Platform.Metal.Rendering
             MetalResources.Release(ref _uniformsBuffer);
             MetalResources.Release(_pipeline.NativePtr);
             MetalResources.Release(_wideLinePipeline.NativePtr);
-            MetalResources.Release(_smoothPolylinePipeline.NativePtr);
+            MetalResources.Release(_joinedSegmentPipeline.NativePtr);
+            MetalResources.Release(_joinedJoinPipeline.NativePtr);
             MetalResources.Release(_depthOn.NativePtr);
             MetalResources.Release(_depthBehind.NativePtr);
             MetalResources.Release(_depthOff.NativePtr);
             _pipeline = default;
             _wideLinePipeline = default;
-            _smoothPolylinePipeline = default;
+            _joinedSegmentPipeline = default;
+            _joinedJoinPipeline = default;
             _depthOn = default;
             _depthBehind = default;
             _depthOff = default;
