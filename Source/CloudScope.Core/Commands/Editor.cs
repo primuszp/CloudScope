@@ -90,6 +90,10 @@ public sealed class Editor
     /// <summary>A non-negative length.</summary>
     public PromptDoubleStep GetDistance(string message) => new PromptDoubleStep(message).WithRange(0, double.MaxValue);
 
+    /// <summary>A distance that may be typed or measured from a viewport click.</summary>
+    public PromptDistanceOrPointStep GetDistanceOrPoint(string message, Func<Vector3, double> measure) =>
+        new(message, measure);
+
     /// <summary>An angle in degrees.</summary>
     public PromptDoubleStep GetAngle(string message) => new(message);
 

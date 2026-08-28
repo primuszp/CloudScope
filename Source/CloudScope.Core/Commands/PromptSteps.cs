@@ -160,6 +160,71 @@ public sealed class PromptDoubleStep(string message) : PromptStep(message, allow
 }
 
 /// <summary>
+/// A distance that can either be typed or measured by clicking a world-space point.
+/// The supplied measurement function defines the construction geometry (for example,
+/// perpendicular distance from a cross-section baseline).
+/// </summary>
+public sealed class PromptDistanceOrPointStep(
+    string message,
+    Func<Vector3, double> measure) : PromptStep(message, allowArbitraryInput: true)
+{
+    private double? _default;
+    private double _min;
+    private double _max = double.MaxValue;
+
+    public double Value { get; private set; }
+    public float Single => (float)Value;
+
+    public PromptDistanceOrPointStep WithDefault(double value)
+    {
+        _default = value;
+        return this;
+    }
+
+    public PromptDistanceOrPointStep WithRange(double min, double max)
+    {
+        _min = min;
+        _max = max;
+        return this;
+    }
+
+    internal override bool ApplyDefaultValue()
+    {
+        if (_default is not double value) return false;
+        Value = value;
+        Status = PromptStatus.OK;
+        return true;
+    }
+
+    internal override bool Accept(string input)
+    {
+        if (!double.TryParse(input, NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
+        {
+            Error = $"Requires a distance or viewport pick: {input}";
+            return false;
+        }
+
+        return AcceptValue(value);
+    }
+
+    internal bool AcceptPick(Vector3 world) => AcceptValue(measure(world));
+
+    private bool AcceptValue(double value)
+    {
+        if (!double.IsFinite(value) || value < _min || value > _max)
+        {
+            Error = $"Value must be between {_min.ToString("0.###", CultureInfo.InvariantCulture)} and "
+                  + $"{_max.ToString("0.###", CultureInfo.InvariantCulture)}.";
+            return false;
+        }
+
+        Value = value;
+        Status = PromptStatus.OK;
+        return true;
+    }
+}
+
+/// <summary>
 /// A prompt for a world-space point, typed as "x,y,z" (or "x,y" at <see cref="PlaneZ"/>) or
 /// picked in the viewport. The pick is delivered through <see cref="Editor.SupplyPick"/>,
 /// which is what makes MOVE, ROTATE and ZOOM Window interactive.

@@ -141,6 +141,14 @@ Check("viewport pick answers point prompt", r.Message == "1,2,3", r.Message);
 r = Run("PICK 4,5,6");
 Check("typed point answers point prompt", r.Message == "4,5,6", r.Message);
 
+// distances may be typed or measured by the same viewport-pick path
+r = Run("DIST");
+Check("distance-or-point prompt waits", r.Status == CommandStatus.Prompting && probeRuntime.AwaitsPoint);
+r = probeRuntime.SupplyPoint(new Vector3(3, 4, 0), 30, 40);
+Check("viewport pick measures distance", r.Message == "5", r.Message);
+r = Run("DIST 7.5");
+Check("visual distance still accepts typing", r.Message == "7.5", r.Message);
+
 // transparent command inside a suspended one
 log.Clear();
 Run("GREET");
@@ -319,6 +327,15 @@ sealed class ProbeCommands
         yield return p;
         if (!p.IsOk) yield break;
         c.Editor.WriteMessage($"{p.Value.X:0.#},{p.Value.Y:0.#},{p.Value.Z:0.#}");
+    }
+
+    [CommandMethod("DIST", Summary = "Measures a typed or picked distance.", Syntax = "DIST <distance>")]
+    public IEnumerable<PromptStep> Distance(CommandContext c)
+    {
+        var distance = c.Editor.GetDistanceOrPoint("Specify distance:", point => point.Length);
+        yield return distance;
+        if (!distance.IsOk) yield break;
+        c.Editor.WriteMessage(distance.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture));
     }
 
     [CommandMethod("HOLD", Summary = "Suspends to test cancellation.", Syntax = "HOLD")]

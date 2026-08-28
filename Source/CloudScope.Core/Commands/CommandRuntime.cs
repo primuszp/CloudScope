@@ -94,7 +94,7 @@ public sealed class CommandRuntime : ICommandExecutor
     public PromptStep? ActiveStep => _step;
 
     /// <summary>True while a command is waiting for a point the user can pick in the viewport.</summary>
-    public bool AwaitsPoint => _step is PromptPointStep or PromptScreenPointStep;
+    public bool AwaitsPoint => _step is PromptPointStep or PromptScreenPointStep or PromptDistanceOrPointStep;
 
     /// <summary>The point prompt a viewport pick would answer, or null.</summary>
     public PromptStep? PointPrompt => AwaitsPoint ? _step : null;
@@ -187,6 +187,11 @@ public sealed class CommandRuntime : ICommandExecutor
                 screen.Y = screenY;
                 screen.Status = PromptStatus.OK;
                 screen.Text = $"{screenX},{screenY}";
+                return Advance();
+            case PromptDistanceOrPointStep distance:
+                if (!distance.AcceptPick(world))
+                    return Prompt();
+                distance.Text = distance.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
                 return Advance();
             default:
                 return CommandResult.End();
