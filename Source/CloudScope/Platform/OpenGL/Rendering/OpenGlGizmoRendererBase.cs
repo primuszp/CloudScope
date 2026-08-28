@@ -16,7 +16,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
         protected const int SmoothRingSegments = 128;
         protected int _shader = -1, _uMVP, _uColor;
         private readonly OpenGlWideLineRenderer _wideLines = new();
-        private readonly OpenGlSmoothPolylineRenderer _smoothLines = new();
+        private readonly OpenGlJoinedLineRenderer _joinedLines = new();
         private Matrix4 _currentMvp = Matrix4.Identity;
         protected int _dynVao = -1, _dynVbo = -1;
         private   int _axisVao = -1, _axisVbo = -1;
@@ -27,7 +27,6 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private readonly float[] _lineBuf           = new float[6];  // 2-vert line
         private readonly float[] _arrowBuf          = new float[9];  // 3-vert arrowhead
         protected        float[] _ringSegBuf        = new float[SmoothRingSegments * 3];
-        private          float[] _smoothLoopBuf      = new float[(SmoothRingSegments + 1) * 2 * 9];
 
         // 3-D cone arrowhead buffers
         private const int ConeSeg = 12;
@@ -81,6 +80,7 @@ void main() { FragColor = uColor; }
 
             MakeStaticVao(ref _axisVao, ref _axisVbo, AxisLineData);
             _wideLines.EnsureResources();
+            _joinedLines.EnsureResources();
         }
 
         // ── Static VAO helper ─────────────────────────────────────────────────
@@ -148,19 +148,21 @@ void main() { FragColor = uColor; }
         /// no independently rasterized segment ends, matching the smooth pivot-ring path.
         /// </summary>
         protected void DrawDynamicSmoothLoop(float[] points, int pointCount, Vector4 color, float widthPixels)
+            => DrawDynamicSmoothLoop(points, pointCount, ref _currentMvp, color, widthPixels);
+
+        /// <inheritdoc cref="DrawDynamicSmoothLoop(float[], int, Vector4, float)"/>
+        protected void DrawDynamicSmoothLoop(
+            float[] points, int pointCount, ref Matrix4 mvp, Vector4 color, float widthPixels)
         {
             if (pointCount < 3)
                 return;
 
-            int vertexCount = PolylineRenderGeometry.RequiredVertexCount(pointCount, closed: true);
-            int floatCount = vertexCount * 9;
-            if (_smoothLoopBuf.Length < floatCount)
-                Array.Resize(ref _smoothLoopBuf, floatCount);
-
-            PolylineRenderGeometry.Fill(points, pointCount, closed: true, _smoothLoopBuf);
-
-            Dyn(_smoothLoopBuf, floatCount);
-            _smoothLines.Draw(_dynVbo, 0, vertexCount, ref _currentMvp, color, widthPixels);
+            _joinedLines.Draw(
+                PolylineRenderGeometry.BuildSegmentInstances(points, pointCount, closed: true),
+                PolylineRenderGeometry.SegmentCount(pointCount, closed: true),
+                PolylineRenderGeometry.BuildJoinInstances(points, pointCount, closed: true),
+                PolylineRenderGeometry.JoinCount(pointCount, closed: true),
+                ref mvp, color, widthPixels);
             GL.UseProgram(_shader);
             GL.BindVertexArray(_dynVao);
             GL.BindBuffer(BufferTarget.ArrayBuffer, _dynVbo);
@@ -394,7 +396,7 @@ void main() { FragColor = uColor; }
         public virtual void Dispose()
         {
             _wideLines.Dispose();
-            _smoothLines.Dispose();
+            _joinedLines.Dispose();
             if (_shader  != -1) { GL.DeleteProgram(_shader);                                _shader  = -1; }
             if (_dynVao  != -1) { GL.DeleteVertexArray(_dynVao);  GL.DeleteBuffer(_dynVbo); _dynVao  = -1; }
             if (_axisVao != -1) { GL.DeleteVertexArray(_axisVao); GL.DeleteBuffer(_axisVbo); _axisVao = -1; }

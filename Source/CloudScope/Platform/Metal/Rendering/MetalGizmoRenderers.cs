@@ -79,7 +79,6 @@ namespace CloudScope.Platform.Metal.Rendering
         private readonly float[] _lineBuf    = new float[6];
         private readonly float[] _arrowBuf   = new float[9];
         private readonly float[] _diamondBuf = new float[18];
-        private float[] _smoothLoopBuf = new float[(SmoothRingSegments + 1) * 2 * 9];
         protected void DrawLine(float x0, float y0, float x1, float y1, Vector4 color,
             float lineWidthPixels = LineWidth.NativeMax)
         {
@@ -127,20 +126,24 @@ namespace CloudScope.Platform.Metal.Rendering
 
         /// <summary>Draws unique screen-space loop points through the pivot's joined ribbon path.</summary>
         protected void DrawDynamicSmoothLoop(float[] points, int pointCount, Vector4 color, float lineWidthPixels)
+            => DrawDynamicSmoothLoop(points, pointCount, Matrix4.Identity, color, lineWidthPixels, depthTest: false);
+
+        /// <inheritdoc cref="DrawDynamicSmoothLoop(float[], int, Vector4, float)"/>
+        protected void DrawDynamicSmoothLoop(
+            float[] points, int pointCount, Matrix4 mvp, Vector4 color, float lineWidthPixels,
+            bool depthTest, bool occludedOnly = false)
         {
             if (pointCount < 3)
                 return;
 
-            int vertexCount = PolylineRenderGeometry.RequiredVertexCount(pointCount, closed: true);
-            int floatCount = vertexCount * 9;
-            if (_smoothLoopBuf.Length < floatCount)
-                Array.Resize(ref _smoothLoopBuf, floatCount);
-
-            PolylineRenderGeometry.Fill(points, pointCount, closed: true, _smoothLoopBuf);
-
-            MTLBuffer dynamicBuffer = UploadDynamic(_smoothLoopBuf);
-            Renderer.DrawSmoothPolyline(dynamicBuffer, vertexCount, Matrix4.Identity, color,
-                depthTest: false, lineWidthPixels: lineWidthPixels);
+            MTLBuffer segments = UploadDynamic(
+                PolylineRenderGeometry.BuildSegmentInstances(points, pointCount, closed: true));
+            MTLBuffer joins = UploadDynamic(
+                PolylineRenderGeometry.BuildJoinInstances(points, pointCount, closed: true));
+            Renderer.DrawJoinedLine(
+                segments, PolylineRenderGeometry.SegmentCount(pointCount, closed: true),
+                joins, PolylineRenderGeometry.JoinCount(pointCount, closed: true),
+                mvp, color, depthTest, lineWidthPixels, occludedOnly);
         }
 
         private MTLBuffer UploadDynamic(float[] vertices)
@@ -396,10 +399,8 @@ namespace CloudScope.Platform.Metal.Rendering
         private const int Seg = SmoothRingSegments;
         private const int Lat = 16;
         private const int Lon = 32;
-        private const int CircleVertexCount = (Seg + 1) * 2;
-
         private MTLBuffer _fillBuffer;
-        private MTLBuffer _circleBuffer;
+        private readonly float[][] _circlePoints = new float[3][];
         private int _fillVertexCount;
 
         public override void Render(IRenderFrameData frameData, ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera camera)
@@ -417,12 +418,11 @@ namespace CloudScope.Platform.Metal.Rendering
             RenderAxis(mvp);
             for (int axis = 0; axis < 3; axis++)
             {
-                int offset = axis * CircleVertexCount;
-                Renderer.DrawSmoothPolyline(_circleBuffer, CircleVertexCount, mvp,
-                    new Vector4(0.25f, 0.85f, 0.95f, 0.85f), depthTest: true, lineWidthPixels: 2f, firstVertex: offset);
-                Renderer.DrawSmoothPolyline(_circleBuffer, CircleVertexCount, mvp,
-                    new Vector4(0.25f, 0.85f, 0.95f, 0.18f), depthTest: true, lineWidthPixels: LineWidth.NativeMax,
-                    firstVertex: offset, occludedOnly: true);
+                DrawDynamicSmoothLoop(_circlePoints[axis], Seg, mvp,
+                    new Vector4(0.25f, 0.85f, 0.95f, 0.85f), 2f, depthTest: true);
+                DrawDynamicSmoothLoop(_circlePoints[axis], Seg, mvp,
+                    new Vector4(0.25f, 0.85f, 0.95f, 0.18f), LineWidth.NativeMax,
+                    depthTest: true, occludedOnly: true);
             }
             RenderHandles(sphere, camera);
         }
@@ -430,7 +430,7 @@ namespace CloudScope.Platform.Metal.Rendering
         private void EnsureResources()
         {
             EnsureBase();
-            if (_circleBuffer.NativePtr != IntPtr.Zero) return;
+            if (_fillBuffer.NativePtr != IntPtr.Zero) return;
 
             _fillVertexCount = Lat * Lon * 6;
             float[] fill = new float[_fillVertexCount * 3];
@@ -457,12 +457,16 @@ namespace CloudScope.Platform.Metal.Rendering
             }
             _fillBuffer = Renderer.CreateStaticBuffer(fill);
 
-            float[] data = new float[3 * CircleVertexCount * 9];
-            int i = 0;
-            AddCircleLoop(data, ref i, 0);
-            AddCircleLoop(data, ref i, 1);
-            AddCircleLoop(data, ref i, 2);
-            _circleBuffer      = Renderer.CreateStaticBuffer(data);
+            // 3 great-circle rings, kept as unique loop points: the shared joined-line path
+            // expands them into segment and round-join instances.
+            for (int axis = 0; axis < 3; axis++)
+            {
+                var points = new float[Seg * 3];
+                int point = 0;
+                for (int step = 0; step < Seg; step++)
+                    AddCirclePoint(points, ref point, axis, step);
+                _circlePoints[axis] = points;
+            }
         }
 
         private void RenderHandles(SphereSelectionTool sphere, OrbitCamera camera)
@@ -490,21 +494,6 @@ namespace CloudScope.Platform.Metal.Rendering
             data[i++] = cp * st;
         }
 
-        private static void AddCircleLoop(float[] data, ref int i, int axis)
-        {
-            for (int point = 0; point <= Seg; point++)
-            {
-                int previous = (point + Seg - 1) % Seg;
-                int current = point % Seg;
-                int next = (point + 1) % Seg;
-                for (int side = 0; side < 2; side++)
-                {
-                    AddCirclePoint(data, ref i, axis, previous);
-                    AddCirclePoint(data, ref i, axis, current);
-                    AddCirclePoint(data, ref i, axis, next);
-                }
-            }
-        }
 
         private static void AddCirclePoint(float[] data, ref int i, int axis, int point)
         {
@@ -518,7 +507,6 @@ namespace CloudScope.Platform.Metal.Rendering
         public override void Dispose()
         {
             MetalResources.Release(ref _fillBuffer);
-            MetalResources.Release(ref _circleBuffer);
             base.Dispose();
         }
     }

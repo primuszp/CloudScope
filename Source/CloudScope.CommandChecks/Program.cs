@@ -339,25 +339,29 @@ ObjectSnapResult axisSnap = snapEngine.Resolve(axisTarget,
 Check("axis tracking resolves the world X direction",
     axisSnap.Kind == ObjectSnapKind.AxisX && MathF.Abs(axisSnap.Position.X - 4f) < 0.1f);
 
-float[] smoothPolyline = PolylineRenderGeometry.Build(polyline.Vertices, closed: false);
-Check("polyline render geometry uses connected adjacency", smoothPolyline.Length == 3 * 2 * 9);
-float[] segmentPolyline = PolylineRenderGeometry.BuildSegments(polyline.Vertices, closed: false);
-Check("editable polyline uses independent render segments", segmentPolyline.Length == 2 * 2 * 3);
-float[] closedSegments = PolylineRenderGeometry.BuildSegments(polyline.Vertices, closed: true);
-Check("closed polyline adds its closing render segment",
-    closedSegments.Length == 3 * 2 * 3
-    && closedSegments.AsSpan(closedSegments.Length - 3, 3)
-        .SequenceEqual(closedSegments.AsSpan(0, 3)));
+int openSegments = PolylineRenderGeometry.SegmentCount(polyline.Vertices.Length, closed: false);
+int openJoins = PolylineRenderGeometry.JoinCount(polyline.Vertices.Length, closed: false);
+float[] segmentInstances = PolylineRenderGeometry.BuildSegmentInstances(polyline.Vertices, closed: false);
+float[] joinInstances = PolylineRenderGeometry.BuildJoinInstances(polyline.Vertices, closed: false);
+Check("polyline expands into one segment instance per edge and one join per bend",
+    openSegments == 2 && openJoins == 1
+    && segmentInstances.Length == openSegments * PolylineRenderGeometry.SegmentFloats
+    && joinInstances.Length == openJoins * PolylineRenderGeometry.JoinFloats);
 Check("open polyline marks exact start and end caps",
-    smoothPolyline.AsSpan(0, 3).SequenceEqual(smoothPolyline.AsSpan(3, 3))
-    && smoothPolyline.AsSpan(smoothPolyline.Length - 6, 3)
-        .SequenceEqual(smoothPolyline.AsSpan(smoothPolyline.Length - 3, 3)));
+    segmentInstances.AsSpan(0, 3).SequenceEqual(segmentInstances.AsSpan(3, 3))
+    && segmentInstances.AsSpan(segmentInstances.Length - 6, 3)
+        .SequenceEqual(segmentInstances.AsSpan(segmentInstances.Length - 3, 3)));
+float[] closedInstances = PolylineRenderGeometry.BuildSegmentInstances(polyline.Vertices, closed: true);
+Check("closed polyline adds its closing render segment",
+    PolylineRenderGeometry.SegmentCount(polyline.Vertices.Length, closed: true) == 3
+    && PolylineRenderGeometry.JoinCount(polyline.Vertices.Length, closed: true) == 3
+    && closedInstances.AsSpan(closedInstances.Length - 6, 3)
+        .SequenceEqual(closedInstances.AsSpan(3, 3)));
 float[] packedPolyline = polyline.Vertices.SelectMany(point => new[] { point.X, point.Y, point.Z }).ToArray();
-float[] commonClosedGeometry = PolylineRenderGeometry.Build(
+float[] commonClosedGeometry = PolylineRenderGeometry.BuildSegmentInstances(
     packedPolyline, polyline.Vertices.Length, closed: true);
 Check("pivot and object paths share the closed line builder",
-    commonClosedGeometry.Length == PolylineRenderGeometry.RequiredVertexCount(
-        polyline.Vertices.Length, closed: true) * 9);
+    commonClosedGeometry.AsSpan().SequenceEqual(closedInstances));
 
 Console.WriteLine();
 Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : $"{failures} CHECK(S) FAILED");
