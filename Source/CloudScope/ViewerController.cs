@@ -43,6 +43,7 @@ namespace CloudScope
         private readonly ObjectSnapEngine _objectSnap = new();
         private ObjectSnapResult _pointSnapPreview;
         private int _pointSnapViewport = -1;
+        private Vector3 _lastPointInputDirection;
         private readonly List<PolylineGripTarget> _polylines = [];
         private readonly List<ITransactionalGripTarget> _gripTargets = [];
         private readonly List<Vector3> _polylineDraft = [];
@@ -924,12 +925,26 @@ namespace CloudScope
             _polylineDraft.Clear();
             _polylineDraft.Add(firstPoint);
             _polylineDraftCursor = firstPoint;
+            _lastPointInputDirection = Vector3.Zero;
         }
 
         public Vector3 PolylineDraftLastPoint => _polylineDraft.Count > 0
             ? _polylineDraft[^1]
             : Vector3.Zero;
         public int PolylineDraftVertexCount => _polylineDraft.Count;
+
+        internal Vector3 PointAlongCurrentDirection(Vector3 origin, double distance)
+        {
+            Vector3 direction = _pointSnapViewport >= 0
+                ? _pointSnapPreview.Position - origin
+                : Vector3.Zero;
+            if (direction.LengthSquared < 1e-10f)
+                direction = _lastPointInputDirection;
+            if (direction.LengthSquared < 1e-10f)
+                direction = Vector3.UnitX;
+            direction.Normalize();
+            return origin + direction * (float)distance;
+        }
 
         public void AddPolylineDraftVertex(Vector3 point)
         {
@@ -1680,8 +1695,15 @@ namespace CloudScope
                     localX, localY, camera.WorldToViewZ(planePoint));
             }
 
-            return _objectSnap.Resolve(rawPoint, localX, localY, camera,
+            ObjectSnapResult result = _objectSnap.Resolve(rawPoint, localX, localY, camera,
                 SnapSourcesFor(viewport), basePoint);
+            if (basePoint is { } origin)
+            {
+                Vector3 direction = result.Position - origin;
+                if (direction.LengthSquared > 1e-10f)
+                    _lastPointInputDirection = direction.Normalized();
+            }
+            return result;
         }
 
         private ObjectSnapResult ResolveGripPoint(ViewportState viewport, int localX, int localY)
@@ -1692,15 +1714,21 @@ namespace CloudScope
             Vector3 raw = camera.ScreenToWorldAtDepth(
                 localX, localY, camera.WorldToViewZ(anchor));
             return _objectSnap.Resolve(raw, localX, localY, camera,
-                SnapSourcesFor(viewport, _selectedGripTarget), anchor);
+                SnapSourcesFor(viewport, _selectedGripTarget, _selectedGripTarget.ActiveHandle), anchor);
         }
 
         private IEnumerable<IObjectSnapSource> SnapSourcesFor(
-            ViewportState viewport, IObjectSnapSource? excluded = null)
+            ViewportState viewport,
+            IObjectSnapSource? activeSource = null,
+            int excludedSourceIndex = -1)
         {
             foreach (ITransactionalGripTarget target in _gripTargets)
-                if (!ReferenceEquals(target, excluded) && IsTargetVisible(target, viewport))
-                    yield return target;
+            {
+                if (!IsTargetVisible(target, viewport)) continue;
+                yield return ReferenceEquals(target, activeSource)
+                    ? new FilteredObjectSnapSource(target, excludedSourceIndex)
+                    : target;
+            }
             if (_polylineDraft.Count > 0)
                 yield return new DraftSnapSource(_polylineDraft);
         }

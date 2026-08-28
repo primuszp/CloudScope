@@ -24,6 +24,32 @@ public interface IObjectSnapSource
     IReadOnlyList<ObjectSnapPoint> SnapPoints { get; }
 }
 
+/// <summary>View of a snap source with one actively dragged grip removed.</summary>
+public sealed class FilteredObjectSnapSource : IObjectSnapSource
+{
+    private readonly IObjectSnapSource _source;
+    private readonly int _excludedSourceIndex;
+    private readonly List<ObjectSnapPoint> _points = [];
+
+    public FilteredObjectSnapSource(IObjectSnapSource source, int excludedSourceIndex)
+    {
+        _source = source;
+        _excludedSourceIndex = excludedSourceIndex;
+    }
+
+    public IReadOnlyList<ObjectSnapPoint> SnapPoints
+    {
+        get
+        {
+            _points.Clear();
+            foreach (ObjectSnapPoint point in _source.SnapPoints)
+                if (point.SourceIndex != _excludedSourceIndex)
+                    _points.Add(point);
+            return _points;
+        }
+    }
+}
+
 public readonly record struct ObjectSnapResult(
     Vector3 Position,
     ObjectSnapKind Kind,

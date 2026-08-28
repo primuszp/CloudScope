@@ -152,6 +152,12 @@ Check("viewport pick measures distance", r.Message == "5", r.Message);
 r = Run("DIST 7.5");
 Check("visual distance still accepts typing", r.Message == "7.5", r.Message);
 
+r = Run("DIRECTIONPOINT");
+Check("directional point prompt waits", r.Status == CommandStatus.Prompting && probeRuntime.AwaitsPoint);
+r = Run("12.5");
+Check("typed distance resolves along inferred direction",
+    r.Status == CommandStatus.Ended && r.Message == "12.5,0,0", r.Message);
+
 // transparent command inside a suspended one
 log.Clear();
 Run("GREET");
@@ -294,6 +300,10 @@ Check("open polyline exposes vertex and midpoint grips", polylineGrips.Grips.Cou
 Check("polyline contributes endpoint and midpoint snaps",
     polylineGrips.SnapPoints.Count == 5
     && polylineGrips.SnapPoints.Count(point => point.Kind == ObjectSnapKind.Midpoint) == 2);
+var selfSnapSource = new FilteredObjectSnapSource(polylineGrips, excludedSourceIndex: 0);
+Check("active endpoint exclusion keeps the other grips snappable",
+    selfSnapSource.SnapPoints.All(point => point.SourceIndex != 0)
+    && selfSnapSource.SnapPoints.Any(point => point.SourceIndex == 1));
 
 var dragCamera = new CloudScope.OrbitCamera();
 dragCamera.SetViewportSize(800, 600);
@@ -313,6 +323,14 @@ ObjectSnapResult endpointSnap = snapEngine.Resolve(Vector3.Zero,
 Check("object snap resolves a polyline grip", !endpointBehind
     && endpointSnap.Kind == ObjectSnapKind.Endpoint
     && endpointSnap.Position == endpoint);
+var otherEndpoint = polylineGrips.Polyline.Vertices[1];
+var (otherX, otherY, otherBehind) = dragCamera.WorldToScreen(otherEndpoint);
+ObjectSnapResult selfEndpointSnap = snapEngine.Resolve(Vector3.Zero,
+    (int)otherX, (int)otherY, dragCamera,
+    [new FilteredObjectSnapSource(polylineGrips, excludedSourceIndex: 0)], endpoint);
+Check("dragged endpoint snaps to another endpoint on its own polyline", !otherBehind
+    && selfEndpointSnap.Kind == ObjectSnapKind.Endpoint
+    && selfEndpointSnap.Position == otherEndpoint);
 
 Vector3 axisTarget = new(4f, 0f, 0f);
 var (axisX, axisY, _) = dragCamera.WorldToScreen(axisTarget);
@@ -332,6 +350,16 @@ sealed class ProbeCommands
 {
     [CommandMethod("PING", Summary = "Replies pong.", Syntax = "PING")]
     public IEnumerable<PromptStep> Ping(CommandContext c) { c.Editor.WriteMessage("pong"); yield break; }
+
+    [CommandMethod("DIRECTIONPOINT", Summary = "Directional point probe.", Syntax = "DIRECTIONPOINT")]
+    public IEnumerable<PromptStep> DirectionPoint(CommandContext c)
+    {
+        PromptPointStep point = c.Editor.GetPoint("Specify distance:")
+            .WithDirectionalDistance(distance => new Vector3((float)distance, 0f, 0f));
+        yield return point;
+        if (point.IsOk)
+            c.Editor.WriteMessage($"{point.Value.X:0.###},{point.Value.Y:0.###},{point.Value.Z:0.###}");
+    }
 
     [CommandMethod("PEEK", Flags = CommandFlags.Transparent | CommandFlags.NoHistory,
         Summary = "Transparent probe.", Syntax = "PEEK")]

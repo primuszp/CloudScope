@@ -173,7 +173,7 @@ public sealed class PolylineGripTarget : ITransactionalGripTarget
             int handle = vertices.Length + segment;
             _grips.Add(new GripDescriptor(handle, GripKind.Midpoint, midpoint, Vector3.Zero,
                 GripConstraint.ViewPlane));
-            _snapPoints.Add(new ObjectSnapPoint(midpoint, ObjectSnapKind.Midpoint, segment));
+            _snapPoints.Add(new ObjectSnapPoint(midpoint, ObjectSnapKind.Midpoint, handle));
         }
     }
 }

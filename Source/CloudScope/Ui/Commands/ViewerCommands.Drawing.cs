@@ -33,6 +33,8 @@ public sealed partial class ViewerCommands
                 PromptPointStep next = editor
                     .GetCorner("Specify next point or [Close/Undo] <finish>:",
                         viewer.PolylineDraftLastPoint)
+                    .WithDirectionalDistance(distance => viewer.PointAlongCurrentDirection(
+                        viewer.PolylineDraftLastPoint, distance))
                     .WithKeywords(PolylineKeywords);
                 yield return next;
 
