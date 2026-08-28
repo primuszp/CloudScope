@@ -33,12 +33,6 @@ uniform float uWidth;
 
 noperspective out float vDistance;
 
-vec2 directionOr(vec2 value, vec2 fallback)
-{
-    float length2 = dot(value, value);
-    return length2 > 1e-12 ? value * inversesqrt(length2) : fallback;
-}
-
 void main()
 {
     vec4 previous = uMVP * vec4(aPrevious, 1.0);
@@ -57,9 +51,17 @@ void main()
     vec2 p0 = previous.xy / previous.w * halfViewport;
     vec2 p1 = current.xy  / current.w  * halfViewport;
     vec2 p2 = next.xy     / next.w     * halfViewport;
-    vec2 incoming = directionOr(p1 - p0, vec2(1.0, 0.0));
-    vec2 outgoing = directionOr(p2 - p1, incoming);
-    vec2 tangent = directionOr(incoming + outgoing, outgoing);
+    vec2 incomingDelta = p1 - p0;
+    vec2 outgoingDelta = p2 - p1;
+    bool hasIncoming = dot(incomingDelta, incomingDelta) > 1e-6;
+    bool hasOutgoing = dot(outgoingDelta, outgoingDelta) > 1e-6;
+    vec2 incoming = hasIncoming
+        ? normalize(incomingDelta)
+        : hasOutgoing ? normalize(outgoingDelta) : vec2(1.0, 0.0);
+    vec2 outgoing = hasOutgoing ? normalize(outgoingDelta) : incoming;
+    vec2 tangentSum = incoming + outgoing;
+    vec2 tangent = dot(tangentSum, tangentSum) > 1e-6
+        ? normalize(tangentSum) : outgoing;
     vec2 miter = vec2(-tangent.y, tangent.x);
     vec2 outgoingNormal = vec2(-outgoing.y, outgoing.x);
     float miterScale = min(1.0 / max(abs(dot(miter, outgoingNormal)), 0.25), 4.0);
@@ -67,7 +69,14 @@ void main()
     // The half-pixel transparent fringe provides analytic edge coverage; its geometry is
     // continuous across joins, so a ring cannot become dotted at individual segments.
     float outerHalfWidth = uWidth * 0.5 + 0.5;
-    vec2 offsetNdc = miter * side * outerHalfWidth * miterScale / halfViewport;
+    vec3 n0 = previous.xyz / previous.w;
+    vec3 n1 = current.xyz / current.w;
+    vec3 n2 = next.xyz / next.w;
+    bool startCap = dot(n1 - n0, n1 - n0) < 1e-12;
+    bool endCap = dot(n2 - n1, n2 - n1) < 1e-12;
+    vec2 capOffset = startCap ? -outgoing * outerHalfWidth
+        : endCap ? incoming * outerHalfWidth : vec2(0.0);
+    vec2 offsetNdc = (miter * side * outerHalfWidth * miterScale + capOffset) / halfViewport;
     gl_Position = vec4(current.xy + offsetNdc * current.w, current.z, current.w);
     vDistance = side * outerHalfWidth;
 }

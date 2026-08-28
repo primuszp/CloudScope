@@ -417,7 +417,11 @@ vertex ColorVertexOut wide_line_vertex(
     // Do not overlap transparent line-list quads at their endpoints. Such overlap makes
     // a closed ring brighter at every join, which reads as a scalloped circumference.
     // The circle meshes are deliberately dense, so their endpoints meet without a seam.
-    float2 offsetNdc = normal * side * (uniforms.line.z * 0.5) / halfViewport;
+    float projectedLength = sqrt(length2);
+    float capExtension = max(uniforms.line.z - projectedLength, 0.0) * 0.5;
+    float capDirection = atStart ? -1.0 : 1.0;
+    float2 offsetNdc = (normal * side * (uniforms.line.z * 0.5)
+        + direction * capDirection * capExtension) / halfViewport;
     out.position = float4(clipHere.xy + offsetNdc * clipHere.w, clipHere.z, clipHere.w);
     out.side = side;
     return out;
@@ -444,12 +448,6 @@ struct ColorUniforms { float4x4 mvp; float4 color; float4 line; };
 struct PolylineVertex { packed_float3 previous; packed_float3 current; packed_float3 next; };
 struct ColorVertexOut { float4 position [[position]]; float side [[user(locn0)]]; };
 
-float2 direction_or(float2 value, float2 fallback)
-{
-    float length2 = dot(value, value);
-    return length2 > 1e-12 ? value * rsqrt(length2) : fallback;
-}
-
 // A connected mitered ribbon. Every pair of input vertices shares a previous/current/next
 // triplet, so a closed circle is one continuous surface rather than overlapping segments.
 vertex ColorVertexOut smooth_polyline_vertex(
@@ -475,14 +473,29 @@ vertex ColorVertexOut smooth_polyline_vertex(
     float2 p0 = previous.xy / previous.w * halfViewport;
     float2 p1 = current.xy  / current.w  * halfViewport;
     float2 p2 = next.xy     / next.w     * halfViewport;
-    float2 incoming = direction_or(p1 - p0, float2(1.0, 0.0));
-    float2 outgoing = direction_or(p2 - p1, incoming);
-    float2 tangent = direction_or(incoming + outgoing, outgoing);
+    float2 incomingDelta = p1 - p0;
+    float2 outgoingDelta = p2 - p1;
+    bool hasIncoming = dot(incomingDelta, incomingDelta) > 1e-6;
+    bool hasOutgoing = dot(outgoingDelta, outgoingDelta) > 1e-6;
+    float2 incoming = hasIncoming
+        ? normalize(incomingDelta)
+        : hasOutgoing ? normalize(outgoingDelta) : float2(1.0, 0.0);
+    float2 outgoing = hasOutgoing ? normalize(outgoingDelta) : incoming;
+    float2 tangentSum = incoming + outgoing;
+    float2 tangent = dot(tangentSum, tangentSum) > 1e-6
+        ? normalize(tangentSum) : outgoing;
     float2 miter = float2(-tangent.y, tangent.x);
     float2 outgoingNormal = float2(-outgoing.y, outgoing.x);
     float miterScale = min(1.0 / max(abs(dot(miter, outgoingNormal)), 0.25), 4.0);
     float outerHalfWidth = uniforms.line.z * 0.5 + 0.5;
-    float2 offsetNdc = miter * side * outerHalfWidth * miterScale / halfViewport;
+    float3 n0 = previous.xyz / previous.w;
+    float3 n1 = current.xyz / current.w;
+    float3 n2 = next.xyz / next.w;
+    bool startCap = dot(n1 - n0, n1 - n0) < 1e-12;
+    bool endCap = dot(n2 - n1, n2 - n1) < 1e-12;
+    float2 capOffset = startCap ? -outgoing * outerHalfWidth
+        : endCap ? incoming * outerHalfWidth : float2(0.0);
+    float2 offsetNdc = (miter * side * outerHalfWidth * miterScale + capOffset) / halfViewport;
     out.position = float4(current.xy + offsetNdc * current.w, current.z, current.w);
     out.side = side * outerHalfWidth;
     return out;

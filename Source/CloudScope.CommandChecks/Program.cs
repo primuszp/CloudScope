@@ -341,6 +341,16 @@ Check("axis tracking resolves the world X direction",
 
 float[] smoothPolyline = PolylineRenderGeometry.Build(polyline.Vertices, closed: false);
 Check("polyline render geometry uses connected adjacency", smoothPolyline.Length == 3 * 2 * 9);
+Check("open polyline marks exact start and end caps",
+    smoothPolyline.AsSpan(0, 3).SequenceEqual(smoothPolyline.AsSpan(3, 3))
+    && smoothPolyline.AsSpan(smoothPolyline.Length - 6, 3)
+        .SequenceEqual(smoothPolyline.AsSpan(smoothPolyline.Length - 3, 3)));
+float[] packedPolyline = polyline.Vertices.SelectMany(point => new[] { point.X, point.Y, point.Z }).ToArray();
+float[] commonClosedGeometry = PolylineRenderGeometry.Build(
+    packedPolyline, polyline.Vertices.Length, closed: true);
+Check("pivot and object paths share the closed line builder",
+    commonClosedGeometry.Length == PolylineRenderGeometry.RequiredVertexCount(
+        polyline.Vertices.Length, closed: true) * 9);
 
 Console.WriteLine();
 Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : $"{failures} CHECK(S) FAILED");
