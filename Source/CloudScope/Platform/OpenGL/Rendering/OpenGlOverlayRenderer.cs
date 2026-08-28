@@ -332,14 +332,16 @@ void main()
             IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj,
             IReadOnlyList<Vector3> points, bool closed, Vector4 color, float widthPixels, bool depthTest = true)
         {
-            float[] vertices = PolylineRenderGeometry.Build(points, closed);
+            // A connected triangle strip can turn inside-out at a projected 3D bend.
+            // Independent screen-space capsules retain their pixel width under rotation.
+            float[] vertices = PolylineRenderGeometry.BuildSegments(points, closed);
             if (vertices.Length == 0) return;
             if (_polylineVbo == -1) _polylineVbo = GL.GenBuffer();
             GL.BindBuffer(BufferTarget.ArrayBuffer, _polylineVbo);
             GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * sizeof(float), vertices, BufferUsageHint.DynamicDraw);
             Matrix4 mvp = view * proj;
             if (depthTest) GL.Enable(EnableCap.DepthTest); else GL.Disable(EnableCap.DepthTest);
-            _smoothLines.Draw(_polylineVbo, 0, vertices.Length / 9, ref mvp, color, widthPixels);
+            _wideLines.Draw(_polylineVbo, 0, vertices.Length / 3, ref mvp, color, widthPixels);
             GL.Enable(EnableCap.DepthTest);
         }
 

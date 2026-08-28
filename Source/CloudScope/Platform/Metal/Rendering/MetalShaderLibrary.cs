@@ -379,7 +379,14 @@ fragment float4 color_fragment(ColorVertexOut in [[stage_in]], constant ColorUni
 using namespace metal;
 
 struct ColorUniforms { float4x4 mvp; float4 color; float4 line; };
-struct ColorVertexOut { float4 position [[position]]; float side [[user(locn0)]]; };
+struct ColorVertexOut
+{
+    float4 position [[position]];
+    // These are measured in framebuffer pixels, so interpolation must happen after the
+    // perspective divide just like GLSL's noperspective qualifier.
+    float2 lineCoord [[user(locn0), center_no_perspective]];
+    float segmentLength [[user(locn1), flat]];
+};
 
 // One instance per segment, four vertices per instance: the segment is expanded into a
 // screen-space quad because Metal has no line width. Matches the OpenGL wide-line shader.
@@ -401,7 +408,8 @@ vertex ColorVertexOut wide_line_vertex(
     if (clipHere.w <= 0.0 || clipThere.w <= 0.0)
     {
         out.position = clipHere;
-        out.side = 0.0;
+        out.lineCoord = float2(0.0);
+        out.segmentLength = 0.0;
         return out;
     }
 
@@ -414,24 +422,27 @@ vertex ColorVertexOut wide_line_vertex(
     float2 direction = length2 > 1e-12 ? delta * rsqrt(length2) : float2(1.0, 0.0);
     float2 normal = float2(-direction.y, direction.x);
 
-    // Do not overlap transparent line-list quads at their endpoints. Such overlap makes
-    // a closed ring brighter at every join, which reads as a scalloped circumference.
-    // The circle meshes are deliberately dense, so their endpoints meet without a seam.
     float projectedLength = sqrt(length2);
-    float capExtension = max(uniforms.line.z - projectedLength, 0.0) * 0.5;
+    // Each edge is a round screen-space capsule with a constant pixel diameter, including
+    // when the 3D edge is viewed end-on and has an almost zero projected length.
+    float outerHalfWidth = uniforms.line.z * 0.5 + 0.5;
+    float capExtension = outerHalfWidth;
     float capDirection = atStart ? -1.0 : 1.0;
-    float2 offsetNdc = (normal * side * (uniforms.line.z * 0.5)
+    float2 offsetNdc = (normal * side * outerHalfWidth
         + direction * capDirection * capExtension) / halfViewport;
     out.position = float4(clipHere.xy + offsetNdc * clipHere.w, clipHere.z, clipHere.w);
-    out.side = side;
+    out.lineCoord = float2(atStart ? -outerHalfWidth : projectedLength + outerHalfWidth,
+        side * outerHalfWidth);
+    out.segmentLength = projectedLength;
     return out;
 }
 
 fragment float4 wide_line_fragment(ColorVertexOut in [[stage_in]], constant ColorUniforms& uniforms [[buffer(1)]])
 {
-    float edge = abs(in.side);
-    float feather = max(fwidth(edge), 0.001);
-    float coverage = 1.0 - smoothstep(1.0 - feather, 1.0 + feather, edge);
+    float alongOutside = max(max(-in.lineCoord.x, in.lineCoord.x - in.segmentLength), 0.0);
+    float distanceToSegment = length(float2(alongOutside, in.lineCoord.y));
+    float halfWidth = uniforms.line.z * 0.5;
+    float coverage = 1.0 - smoothstep(halfWidth - 0.5, halfWidth + 0.5, distanceToSegment);
     return float4(uniforms.color.rgb, uniforms.color.a * coverage);
 }";
 

@@ -341,6 +341,13 @@ Check("axis tracking resolves the world X direction",
 
 float[] smoothPolyline = PolylineRenderGeometry.Build(polyline.Vertices, closed: false);
 Check("polyline render geometry uses connected adjacency", smoothPolyline.Length == 3 * 2 * 9);
+float[] segmentPolyline = PolylineRenderGeometry.BuildSegments(polyline.Vertices, closed: false);
+Check("editable polyline uses independent render segments", segmentPolyline.Length == 2 * 2 * 3);
+float[] closedSegments = PolylineRenderGeometry.BuildSegments(polyline.Vertices, closed: true);
+Check("closed polyline adds its closing render segment",
+    closedSegments.Length == 3 * 2 * 3
+    && closedSegments.AsSpan(closedSegments.Length - 3, 3)
+        .SequenceEqual(closedSegments.AsSpan(0, 3)));
 Check("open polyline marks exact start and end caps",
     smoothPolyline.AsSpan(0, 3).SequenceEqual(smoothPolyline.AsSpan(3, 3))
     && smoothPolyline.AsSpan(smoothPolyline.Length - 6, 3)
