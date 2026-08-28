@@ -76,6 +76,8 @@ public static class CommandMenu
             CommandMenuEntry.Action("Confirm", "CONFIRM", "Mod+Return"),
             CommandMenuEntry.Action("Cancel", "CANCEL", "Escape"),
             CommandMenuEntry.Separator,
+            CommandMenuEntry.Action("3D polyline...", "3DPOLY"),
+            CommandMenuEntry.Separator,
             CommandMenuEntry.Action("Move selection...", "MOVE", requiresCloud: true),
             CommandMenuEntry.Action("Rotate selection...", "ROTATE", requiresCloud: true),
             CommandMenuEntry.Action("Scale selection...", "SCALE", requiresCloud: true),

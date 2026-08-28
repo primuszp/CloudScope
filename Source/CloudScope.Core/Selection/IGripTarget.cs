@@ -8,7 +8,7 @@ namespace CloudScope.Selection;
 /// section plane, measurement or future drawing entity can all be driven by the same
 /// pointer state machine without teaching the viewport about that object's geometry.
 /// </summary>
-public interface IGripTarget
+public interface IGripTarget : IObjectSnapSource
 {
     IReadOnlyList<GripDescriptor> Grips { get; }
     int CenterGripIndex { get; }

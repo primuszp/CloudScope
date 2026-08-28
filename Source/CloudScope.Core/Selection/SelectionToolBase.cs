@@ -24,6 +24,10 @@ namespace CloudScope.Selection
         // ── Center ────────────────────────────────────────────────────────────
         public virtual Vector3 Center { get; set; }
         public abstract IReadOnlyList<GripDescriptor> Grips { get; }
+        public IReadOnlyList<ObjectSnapPoint> SnapPoints => Grips
+            .Where(grip => IsGripVisible(grip.Index))
+            .Select(grip => new ObjectSnapPoint(grip.Position, ObjectSnapKind.Grip, grip.Index))
+            .ToArray();
 
         // ── View-constrained grips ────────────────────────────────────────────
         public GripViewConstraint ViewConstraint { get; set; } = GripViewConstraint.None;

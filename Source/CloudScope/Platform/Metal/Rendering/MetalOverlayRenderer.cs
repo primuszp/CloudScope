@@ -32,6 +32,7 @@ namespace CloudScope.Platform.Metal.Rendering
         private MTLBuffer _sectionGuideBuffer;
         private float[] _gripVertices = Array.Empty<float>();
         private MTLBuffer _gripBuffer;
+        private MTLBuffer _polylineBuffer;
         private MTLRenderPipelineState _pivotPointPipeline;
         private MTLDepthStencilState _pivotPointDepthState;
         private MTLBuffer _pivotPointBuffer;
@@ -196,6 +197,39 @@ namespace CloudScope.Platform.Metal.Rendering
                     firstVertex: i * GripOverlayGeometry.VerticesPerGrip, lineWidthPixels: 2f);
         }
 
+        public void RenderPolyline(
+            IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj,
+            IReadOnlyList<Vector3> points, bool closed, Vector4 color, float widthPixels, bool depthTest = true)
+        {
+            if (frameData is not MetalFrameState frame) return;
+            float[] vertices = PolylineRenderGeometry.Build(points, closed);
+            if (vertices.Length == 0) return;
+            _renderer.SetFrame(frame);
+            _renderer.UpdateBuffer(ref _polylineBuffer, vertices);
+            _renderer.DrawSmoothPolyline(_polylineBuffer, vertices.Length / 9, view * proj, color,
+                depthTest, widthPixels);
+        }
+
+        public void RenderSnapIndicator(
+            IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj,
+            OrbitCamera camera, ObjectSnapResult snap)
+        {
+            if (frameData is not MetalFrameState frame || !snap.IsSnapped) return;
+            if (snap.GuideStart is { } start && snap.GuideEnd is { } end)
+                RenderPolyline(frameData, ref view, ref proj, [start, end], false,
+                    GripOverlayGeometry.SnapColor(snap.Kind, 0.72f), 1.25f, depthTest: false);
+
+            _renderer.SetFrame(frame);
+            GripKind kind = snap.Kind == ObjectSnapKind.Midpoint ? GripKind.Midpoint : GripKind.Endpoint;
+            GripDescriptor[] marker = [new(0, kind, snap.Position, Vector3.Zero, GripConstraint.ViewPlane)];
+            float[] vertices = new float[GripOverlayGeometry.FloatsPerGrip];
+            GripOverlayGeometry.Fill(marker, camera, vertices);
+            _renderer.UpdateBuffer(ref _gripBuffer, vertices);
+            _renderer.Draw(_gripBuffer, GripOverlayGeometry.VerticesPerGrip, MTLPrimitiveType.Line,
+                view * proj, GripOverlayGeometry.SnapColor(snap.Kind), depthTest: false,
+                lineWidthPixels: 2f);
+        }
+
         private void AddSectionSegment(ref int vertex, Vector3 start, Vector3 end)
         {
             WriteSectionVertex(vertex++, start);
@@ -217,6 +251,7 @@ namespace CloudScope.Platform.Metal.Rendering
             MetalResources.Release(ref _viewportBorderBuffer);
             MetalResources.Release(ref _sectionGuideBuffer);
             MetalResources.Release(ref _gripBuffer);
+            MetalResources.Release(ref _polylineBuffer);
             for (int i = 0; i < _pivotBuffers.Length; i++)
                 MetalResources.Release(ref _pivotBuffers[i]);
             _pivotBuffers = Array.Empty<MTLBuffer>();

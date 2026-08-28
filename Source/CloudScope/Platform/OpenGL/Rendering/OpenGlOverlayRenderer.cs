@@ -29,6 +29,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
         private int _sectionGuideVbo = -1;
         private float[] _gripVertices = Array.Empty<float>();
         private int _gripVbo = -1;
+        private int _polylineVbo = -1;
 
         /// <summary>Interleaved position + color vertices, as the overlay buffers store them.</summary>
         private const int PivotVertexStride = 6 * sizeof(float);
@@ -327,6 +328,44 @@ void main()
             GL.Enable(EnableCap.DepthTest);
         }
 
+        public void RenderPolyline(
+            IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj,
+            IReadOnlyList<Vector3> points, bool closed, Vector4 color, float widthPixels, bool depthTest = true)
+        {
+            float[] vertices = PolylineRenderGeometry.Build(points, closed);
+            if (vertices.Length == 0) return;
+            if (_polylineVbo == -1) _polylineVbo = GL.GenBuffer();
+            GL.BindBuffer(BufferTarget.ArrayBuffer, _polylineVbo);
+            GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * sizeof(float), vertices, BufferUsageHint.DynamicDraw);
+            Matrix4 mvp = view * proj;
+            if (depthTest) GL.Enable(EnableCap.DepthTest); else GL.Disable(EnableCap.DepthTest);
+            _smoothLines.Draw(_polylineVbo, 0, vertices.Length / 9, ref mvp, color, widthPixels);
+            GL.Enable(EnableCap.DepthTest);
+        }
+
+        public void RenderSnapIndicator(
+            IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj,
+            OrbitCamera camera, ObjectSnapResult snap)
+        {
+            if (!snap.IsSnapped) return;
+            if (snap.GuideStart is { } start && snap.GuideEnd is { } end)
+                RenderPolyline(frameData, ref view, ref proj, [start, end], false,
+                    GripOverlayGeometry.SnapColor(snap.Kind, 0.72f), 1.25f, depthTest: false);
+
+            GripKind kind = snap.Kind == ObjectSnapKind.Midpoint ? GripKind.Midpoint : GripKind.Endpoint;
+            GripDescriptor[] marker = [new(0, kind, snap.Position, Vector3.Zero, GripConstraint.ViewPlane)];
+            float[] vertices = new float[GripOverlayGeometry.FloatsPerGrip];
+            GripOverlayGeometry.Fill(marker, camera, vertices);
+            if (_gripVbo == -1) _gripVbo = GL.GenBuffer();
+            GL.BindBuffer(BufferTarget.ArrayBuffer, _gripVbo);
+            GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * sizeof(float), vertices, BufferUsageHint.DynamicDraw);
+            Matrix4 mvp = view * proj;
+            GL.Disable(EnableCap.DepthTest);
+            _wideLines.Draw(_gripVbo, 0, GripOverlayGeometry.VerticesPerGrip, ref mvp,
+                GripOverlayGeometry.SnapColor(snap.Kind), 2f);
+            GL.Enable(EnableCap.DepthTest);
+        }
+
         private void AddSectionSegment(ref int vertex, Vector3 start, Vector3 end)
         {
             WriteSectionVertex(vertex++, start);
@@ -430,6 +469,11 @@ void main()
             {
                 GL.DeleteBuffer(_gripVbo);
                 _gripVbo = -1;
+            }
+            if (_polylineVbo != -1)
+            {
+                GL.DeleteBuffer(_polylineVbo);
+                _polylineVbo = -1;
             }
             _smoothLines.Dispose();
             foreach (int pivotVbo in _pivotVbos)

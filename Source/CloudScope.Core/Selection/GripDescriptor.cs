@@ -12,7 +12,8 @@ namespace CloudScope.Selection
         RotationRing,
         Endpoint,
         WidthResize,
-        Direction
+        Direction,
+        Midpoint
     }
 
     public enum GripConstraint
