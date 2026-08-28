@@ -16,5 +16,9 @@ namespace CloudScope.Rendering
         void RenderSectionGuide(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj, SectionDefinition section);
         void RenderGrips(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj,
             OrbitCamera camera, IReadOnlyList<GripDescriptor> grips, int hovered, int active);
+        void RenderPolyline(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj,
+            IReadOnlyList<Vector3> points, bool closed, Vector4 color, float widthPixels, bool depthTest = true);
+        void RenderSnapIndicator(IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj,
+            OrbitCamera camera, ObjectSnapResult snap);
     }
 }

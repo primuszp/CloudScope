@@ -4,7 +4,7 @@ using OpenTK.Mathematics;
 namespace CloudScope.Sections;
 
 /// <summary>Grip-editable adapter around an immutable <see cref="SectionDefinition"/>.</summary>
-public sealed class CrossSectionGripTarget : IGripTarget
+public sealed class CrossSectionGripTarget : ITransactionalGripTarget
 {
     public const int StartGrip = 0;
     public const int EndGrip = 1;
@@ -15,6 +15,7 @@ public sealed class CrossSectionGripTarget : IGripTarget
     private const float MinimumSize = 0.001f;
 
     private readonly List<GripDescriptor> _grips = new(6);
+    private readonly List<ObjectSnapPoint> _snapPoints = new(3);
     private SectionDefinition _dragStart;
     private GripDragContext _dragContext;
     private int _activeHandle = -1;
@@ -22,8 +23,12 @@ public sealed class CrossSectionGripTarget : IGripTarget
     public CrossSectionGripTarget(SectionDefinition section) => SetSection(section);
 
     public event Action<SectionDefinition>? Changed;
+    public string EditKey => $"SECTION:{Section.Id}";
+    public string EditDescription => "Cross-section grip edit";
+    public Vector3 DragAnchor => _dragContext.Grip.Position;
     public SectionDefinition Section { get; private set; }
-    public IReadOnlyList<GripDescriptor> Grips { get { RebuildGrips(); return _grips; } }
+    public IReadOnlyList<GripDescriptor> Grips => _grips;
+    public IReadOnlyList<ObjectSnapPoint> SnapPoints => _snapPoints;
     public int CenterGripIndex => CenterGrip;
     public int HoveredHandle { get; set; } = -1;
     public int ActiveHandle => _activeHandle;
@@ -92,6 +97,13 @@ public sealed class CrossSectionGripTarget : IGripTarget
     {
         if (_activeHandle < 0) return;
         Vector3 delta = GripManipulator3D.Translation(_dragContext, camera, mouseX, mouseY);
+        UpdateHandleDragTo(_dragContext.Grip.Position + delta);
+    }
+
+    public void UpdateHandleDragTo(Vector3 worldPoint)
+    {
+        if (_activeHandle < 0) return;
+        Vector3 delta = worldPoint - _dragContext.Grip.Position;
         delta.Z = 0f;
         SectionDefinition next = _dragStart;
 
@@ -112,15 +124,13 @@ public sealed class CrossSectionGripTarget : IGripTarget
                 break;
             case PositiveWidthGrip:
             case NegativeWidthGrip:
-                Vector3 world = camera.ScreenToWorldAtDepth(mouseX, mouseY, _dragContext.ViewZ);
-                float halfWidth = MathF.Abs(Vector3.Dot(world - _dragStart.Center, _dragStart.Normal));
+                float halfWidth = MathF.Abs(Vector3.Dot(worldPoint - _dragStart.Center, _dragStart.Normal));
                 next = _dragStart with { Width = MathF.Max(halfWidth * 2f, MinimumSize) };
                 break;
             case DirectionGrip:
-                Vector3 point = camera.ScreenToWorldAtDepth(mouseX, mouseY, _dragContext.ViewZ);
                 Vector3 along = _dragStart.Along;
                 Vector3 positiveNormal = new(-along.Y, along.X, 0f);
-                next = _dragStart with { Flipped = Vector3.Dot(point - _dragStart.Center, positiveNormal) < 0f };
+                next = _dragStart with { Flipped = Vector3.Dot(worldPoint - _dragStart.Center, positiveNormal) < 0f };
                 break;
         }
 
@@ -145,9 +155,24 @@ public sealed class CrossSectionGripTarget : IGripTarget
         Changed?.Invoke(Section);
     }
 
+    public object CaptureState() => Section;
+
+    public void RestoreState(object state)
+    {
+        if (state is not SectionDefinition section)
+            throw new ArgumentException("Expected a SectionDefinition state.", nameof(state));
+        _activeHandle = -1;
+        SetSection(section);
+        Changed?.Invoke(section);
+    }
+
+    public bool StatesEqual(object first, object second) =>
+        first is SectionDefinition a && second is SectionDefinition b && a == b;
+
     private void RebuildGrips()
     {
         _grips.Clear();
+        _snapPoints.Clear();
         Vector3 normal = Section.Normal;
         float halfWidth = Section.Width * 0.5f;
         float arrowLength = MathF.Max(Section.Width, Section.Length * 0.08f);
@@ -160,6 +185,9 @@ public sealed class CrossSectionGripTarget : IGripTarget
             -normal, GripConstraint.Axis, Sign: -1));
         _grips.Add(new(DirectionGrip, GripKind.Direction, Section.Center + normal * arrowLength,
             normal, GripConstraint.Axis));
+        _snapPoints.Add(new ObjectSnapPoint(Section.Start, ObjectSnapKind.Endpoint, StartGrip));
+        _snapPoints.Add(new ObjectSnapPoint(Section.End, ObjectSnapKind.Endpoint, EndGrip));
+        _snapPoints.Add(new ObjectSnapPoint(Section.Center, ObjectSnapKind.Midpoint, CenterGrip));
     }
 
     private static float HorizontalDistance(Vector3 a, Vector3 b) =>

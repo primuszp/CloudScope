@@ -9,6 +9,7 @@ using CloudScope.Selection;
 using CloudScope.Rendering;
 using CloudScope.Store;
 using CloudScope.Sections;
+using CloudScope.Drawing;
 
 namespace CloudScope
 {
@@ -36,8 +37,17 @@ namespace CloudScope
         private SectionDefinition? _crossSectionDraft;
         private CrossSectionGripTarget? _crossSectionGripTarget;
         private readonly GripInteractionSession _objectGripSession = new();
-        private bool _crossSectionSelected;
-        private SectionStateSnapshot? _sectionGripBefore;
+        private ITransactionalGripTarget? _selectedGripTarget;
+        private object? _gripEditBefore;
+        private string? _gripEditKey;
+        private readonly ObjectSnapEngine _objectSnap = new();
+        private ObjectSnapResult _pointSnapPreview;
+        private int _pointSnapViewport = -1;
+        private readonly List<PolylineGripTarget> _polylines = [];
+        private readonly List<ITransactionalGripTarget> _gripTargets = [];
+        private readonly List<Vector3> _polylineDraft = [];
+        private Vector3? _polylineDraftCursor;
+        private int _nextPolylineId = 1;
         private int _crossSectionDraftViewport = -1;
         private bool _crossSectionDraftChoosingWidth;
         private int _nextSectionId = 1;
@@ -909,6 +919,58 @@ namespace CloudScope
 
         public bool HasCrossSection => _crossSection.HasValue;
 
+        public void BeginPolylineDraft(Vector3 firstPoint)
+        {
+            _polylineDraft.Clear();
+            _polylineDraft.Add(firstPoint);
+            _polylineDraftCursor = firstPoint;
+        }
+
+        public Vector3 PolylineDraftLastPoint => _polylineDraft.Count > 0
+            ? _polylineDraft[^1]
+            : Vector3.Zero;
+        public int PolylineDraftVertexCount => _polylineDraft.Count;
+
+        public void AddPolylineDraftVertex(Vector3 point)
+        {
+            if (_polylineDraft.Count == 0 || Vector3.DistanceSquared(_polylineDraft[^1], point) > 1e-10f)
+                _polylineDraft.Add(point);
+            _polylineDraftCursor = point;
+        }
+
+        public bool UndoPolylineDraftVertex()
+        {
+            if (_polylineDraft.Count <= 1) return false;
+            _polylineDraft.RemoveAt(_polylineDraft.Count - 1);
+            _polylineDraftCursor = _polylineDraft[^1];
+            return true;
+        }
+
+        public string CommitPolylineDraft(bool closed)
+        {
+            if (_polylineDraft.Count < 2)
+                return "A polyline needs at least two different points.";
+            if (closed && _polylineDraft.Count < 3)
+                return "A closed polyline needs at least three points.";
+
+            var polyline = new Polyline3D(
+                _nextPolylineId++, $"PL{_nextPolylineId - 1}", _polylineDraft.ToArray(), closed);
+            AddPolyline(polyline, select: true);
+            UndoHistory.Record(new DelegateUndoAction(
+                "3D polyline",
+                () => RemovePolyline(polyline.Id),
+                () => AddPolyline(polyline, select: false)));
+            ClearPolylineDraft();
+            return $"3D polyline {polyline.Name} created with {polyline.Vertices.Length} vertices"
+                + (closed ? ", closed." : ".");
+        }
+
+        public void ClearPolylineDraft()
+        {
+            _polylineDraft.Clear();
+            _polylineDraftCursor = null;
+        }
+
         public string CrossSectionDescription => _crossSection is { } section
             ? $"{section.Name}: length {section.Length:0.###}, width {section.Width:0.###}"
             : "No cross-section.";
@@ -953,7 +1015,7 @@ namespace CloudScope
             SectionStateSnapshot before = CaptureSectionState();
             var section = new SectionDefinition(_nextSectionId++, $"XS{_nextSectionId - 1}", start, end, width);
             SetCrossSectionState(section);
-            _crossSectionSelected = true;
+            SelectGripTarget(_crossSectionGripTarget);
 
             foreach (ViewportState viewport in _viewports)
                 viewport.SectionMode = SectionDisplayMode.None;
@@ -1087,12 +1149,8 @@ namespace CloudScope
             // any of them growing a second, gesture-shaped implementation.
             if (button == ViewerMouseButton.Left && CommandPrompts?.AwaitsPoint == true)
             {
-                if (!camera.TryPickWorldPoint(localX, localY, 11, out Vector3 picked))
-                {
-                    Vector3 planePoint = _crossSectionDraft?.Center ?? camera.Pivot;
-                    picked = camera.ScreenToWorldAtDepth(localX, localY, camera.WorldToViewZ(planePoint));
-                }
-                CommandPrompts.SupplyPoint(picked, localX, localY);
+                ObjectSnapResult picked = ResolvePromptPoint(viewport, localX, localY);
+                CommandPrompts.SupplyPoint(picked.Position, localX, localY);
                 return;
             }
 
@@ -1101,31 +1159,29 @@ namespace CloudScope
             _selection.SetSectionClip(SectionClipFor(viewport));
             if (button == ViewerMouseButton.Left)
             {
-                if (viewport.SectionMode == SectionDisplayMode.PlanGuide
-                    && _crossSectionGripTarget is { } sectionTarget)
+                if (_selectedGripTarget != null && IsTargetVisible(_selectedGripTarget, viewport))
                 {
-                    _objectGripSession.SetTarget(sectionTarget);
-                    if (_crossSectionSelected)
+                    _objectGripSession.SetTarget(_selectedGripTarget);
+                    _gripEditBefore = _selectedGripTarget.CaptureState();
+                    _gripEditKey = _selectedGripTarget.EditKey;
+                    if (_objectGripSession.TryBegin(localX, localY, camera, allowBodyDrag: true))
                     {
-                        _sectionGripBefore = CaptureSectionState();
-                        if (_objectGripSession.TryBegin(localX, localY, camera, allowBodyDrag: true))
-                        {
-                            UndoHistory.BeginMark("GRIPEDIT");
-                            return;
-                        }
-                        _sectionGripBefore = null;
-                    }
-
-                    if (sectionTarget.HitTestBody(localX, localY, camera))
-                    {
-                        _crossSectionSelected = true;
-                        _objectGripSession.UpdateHover(localX, localY, camera);
+                        UndoHistory.BeginMark("GRIPEDIT");
                         return;
                     }
-
-                    _crossSectionSelected = false;
-                    sectionTarget.HoveredHandle = -1;
+                    _gripEditBefore = null;
+                    _gripEditKey = null;
                 }
+
+                ITransactionalGripTarget? hit = HitTestGripTarget(viewport, localX, localY);
+                if (hit != null)
+                {
+                    SelectGripTarget(hit);
+                    _objectGripSession.UpdateHover(localX, localY, camera);
+                    return;
+                }
+
+                SelectGripTarget(null);
 
                 bool toolConsumed = _selection.MouseDownLeft(localX, localY, camera);
                 viewport.Input.MouseDown(
@@ -1151,15 +1207,24 @@ namespace CloudScope
             _selection.SetSectionClip(SectionClipFor(viewport));
             if (button == ViewerMouseButton.Left && _objectGripSession.IsDragging)
             {
+                ITransactionalGripTarget? edited = _selectedGripTarget;
                 _objectGripSession.Commit();
-                if (_sectionGripBefore is { } before)
+                if (edited != null && _gripEditBefore != null && _gripEditKey != null)
                 {
-                    SectionStateSnapshot after = CaptureSectionState();
-                    if (before.Section != after.Section)
-                        RecordSectionChange(before, after);
+                    object before = _gripEditBefore;
+                    object after = edited.CaptureState();
+                    string key = _gripEditKey;
+                    if (!edited.StatesEqual(before, after))
+                        UndoHistory.Record(new DelegateUndoAction(
+                            edited.EditDescription,
+                            () => RestoreGripTargetState(key, before),
+                            () => RestoreGripTargetState(key, after)));
                 }
                 UndoHistory.Commit();
-                _sectionGripBefore = null;
+                _gripEditBefore = null;
+                _gripEditKey = null;
+                _pointSnapPreview = default;
+                _pointSnapViewport = -1;
                 viewport.Input.MouseUp(button);
                 _pointerCaptureViewport = null;
                 return;
@@ -1186,16 +1251,23 @@ namespace CloudScope
 
             _selection.SetViewConstraint(ConstraintFor(viewport));
             _selection.SetSectionClip(SectionClipFor(viewport));
+            UpdatePointInputPreview(viewport, localX, localY);
             UpdateCrossSectionDraft(viewport, localX, localY);
             if (_objectGripSession.IsDragging)
             {
-                _objectGripSession.Update(localX, localY, viewport.Camera);
+                ObjectSnapResult gripSnap = ResolveGripPoint(viewport, localX, localY);
+                _pointSnapPreview = gripSnap;
+                _pointSnapViewport = Array.IndexOf(_viewports, viewport);
+                if (gripSnap.IsSnapped && _selectedGripTarget != null)
+                    _selectedGripTarget.UpdateHandleDragTo(gripSnap.Position);
+                else
+                    _objectGripSession.Update(localX, localY, viewport.Camera);
                 return;
             }
-            if (_crossSectionSelected && viewport.SectionMode == SectionDisplayMode.PlanGuide)
+            if (_selectedGripTarget != null && IsTargetVisible(_selectedGripTarget, viewport))
                 _objectGripSession.UpdateHover(localX, localY, viewport.Camera);
-            else if (_crossSectionGripTarget != null)
-                _crossSectionGripTarget.HoveredHandle = -1;
+            else if (_selectedGripTarget != null)
+                _selectedGripTarget.HoveredHandle = -1;
             _selection.MouseMove(localX, localY, viewport.Camera);
             viewport.Input.MouseMove(localX, localY, viewport.Camera);
         }
@@ -1215,9 +1287,12 @@ namespace CloudScope
         {
             if (key == ViewerKey.Escape && _objectGripSession.Cancel())
             {
-                if (_sectionGripBefore is { } before)
-                    RestoreSectionState(before);
-                _sectionGripBefore = null;
+                if (_gripEditBefore != null && _gripEditKey != null)
+                    RestoreGripTargetState(_gripEditKey, _gripEditBefore);
+                _gripEditBefore = null;
+                _gripEditKey = null;
+                _pointSnapPreview = default;
+                _pointSnapViewport = -1;
                 UndoHistory.Rollback();
                 _suppressEscapeClose = true;
                 return;
@@ -1284,10 +1359,39 @@ namespace CloudScope
                 if (_selection.Mode == InteractionMode.Label)
                     _overlayRenderer.RenderModeIndicator(frameData, viewport.Bounds.Width, viewport.Bounds.Height, _selection.ActiveTool.ToolType);
 
+                foreach (PolylineGripTarget polylineTarget in _polylines)
+                {
+                    bool selected = ReferenceEquals(_selectedGripTarget, polylineTarget);
+                    _overlayRenderer.RenderPolyline(frameData, ref view, ref proj,
+                        polylineTarget.Polyline.Vertices, polylineTarget.Polyline.Closed,
+                        selected
+                            ? new Vector4(0.18f, 0.78f, 1f, 1f)
+                            : new Vector4(0.92f, 0.92f, 0.96f, 0.95f),
+                        selected ? 2.4f : 1.7f);
+                    if (selected)
+                        _overlayRenderer.RenderGrips(frameData, ref view, ref proj, viewport.Camera,
+                            polylineTarget.Grips, polylineTarget.HoveredHandle, polylineTarget.ActiveHandle);
+                }
+
+                if (_polylineDraft.Count > 0)
+                {
+                    IReadOnlyList<Vector3> draftPoints = _polylineDraft;
+                    Vector3[]? previewPoints = null;
+                    if (_polylineDraftCursor is { } cursor
+                        && Vector3.DistanceSquared(_polylineDraft[^1], cursor) > 1e-10f)
+                    {
+                        previewPoints = [.. _polylineDraft, cursor];
+                        draftPoints = previewPoints;
+                    }
+                    _overlayRenderer.RenderPolyline(frameData, ref view, ref proj,
+                        draftPoints, false, new Vector4(0.20f, 0.90f, 1f, 0.95f), 2f, depthTest: false);
+                }
+
                 if (_crossSection is { } section && viewport.SectionMode == SectionDisplayMode.PlanGuide)
                 {
                     _overlayRenderer.RenderSectionGuide(frameData, ref view, ref proj, section);
-                    if (_crossSectionSelected && _crossSectionGripTarget is { } sectionTarget)
+                    if (ReferenceEquals(_selectedGripTarget, _crossSectionGripTarget)
+                        && _crossSectionGripTarget is { } sectionTarget)
                         _overlayRenderer.RenderGrips(frameData, ref view, ref proj, viewport.Camera,
                             sectionTarget.Grips, sectionTarget.HoveredHandle, sectionTarget.ActiveHandle);
                 }
@@ -1296,6 +1400,11 @@ namespace CloudScope
                     && _crossSectionDraftViewport == Array.IndexOf(_viewports, viewport)
                     && draft.Length > 0.001f)
                     _overlayRenderer.RenderSectionGuide(frameData, ref view, ref proj, draft);
+
+                if (_pointSnapViewport == Array.IndexOf(_viewports, viewport)
+                    && (CommandPrompts?.AwaitsPoint == true || _objectGripSession.IsDragging))
+                    _overlayRenderer.RenderSnapIndicator(frameData, ref view, ref proj,
+                        viewport.Camera, _pointSnapPreview);
 
                 _overlayRenderer.RenderViewportBorder(frameData, viewport.Bounds.Width, viewport.Bounds.Height,
                     ReferenceEquals(viewport, ActiveViewport));
@@ -1527,9 +1636,7 @@ namespace CloudScope
                 || Array.IndexOf(_viewports, viewport) != _crossSectionDraftViewport)
                 return;
 
-            OrbitCamera camera = viewport.Camera;
-            if (!camera.TryPickWorldPoint(localX, localY, 9, out Vector3 point))
-                point = camera.ScreenToWorldAtDepth(localX, localY, camera.WorldToViewZ(draft.Center));
+            Vector3 point = _pointSnapPreview.Position;
 
             if (_crossSectionDraftChoosingWidth)
             {
@@ -1542,6 +1649,60 @@ namespace CloudScope
                 point.Z = draft.Start.Z;
                 _crossSectionDraft = draft with { End = point };
             }
+        }
+
+        private void UpdatePointInputPreview(ViewportState viewport, int localX, int localY)
+        {
+            if (CommandPrompts?.AwaitsPoint != true)
+            {
+                _pointSnapViewport = -1;
+                _pointSnapPreview = default;
+                if (_polylineDraft.Count > 0) _polylineDraftCursor = _polylineDraft[^1];
+                return;
+            }
+
+            _pointSnapPreview = ResolvePromptPoint(viewport, localX, localY);
+            _pointSnapViewport = Array.IndexOf(_viewports, viewport);
+            if (_polylineDraft.Count > 0)
+                _polylineDraftCursor = _pointSnapPreview.Position;
+        }
+
+        private ObjectSnapResult ResolvePromptPoint(ViewportState viewport, int localX, int localY)
+        {
+            OrbitCamera camera = viewport.Camera;
+            Vector3? basePoint = (CommandPrompts?.PointPrompt as PromptPointStep)?.BasePoint;
+            if (!camera.TryPickWorldPoint(localX, localY, 11, out Vector3 rawPoint))
+            {
+                Vector3 planePoint = basePoint
+                    ?? _crossSectionDraft?.Center
+                    ?? (_polylineDraft.Count > 0 ? _polylineDraft[^1] : camera.Pivot);
+                rawPoint = camera.ScreenToWorldAtDepth(
+                    localX, localY, camera.WorldToViewZ(planePoint));
+            }
+
+            return _objectSnap.Resolve(rawPoint, localX, localY, camera,
+                SnapSourcesFor(viewport), basePoint);
+        }
+
+        private ObjectSnapResult ResolveGripPoint(ViewportState viewport, int localX, int localY)
+        {
+            if (_selectedGripTarget == null) return default;
+            OrbitCamera camera = viewport.Camera;
+            Vector3 anchor = _selectedGripTarget.DragAnchor;
+            Vector3 raw = camera.ScreenToWorldAtDepth(
+                localX, localY, camera.WorldToViewZ(anchor));
+            return _objectSnap.Resolve(raw, localX, localY, camera,
+                SnapSourcesFor(viewport, _selectedGripTarget), anchor);
+        }
+
+        private IEnumerable<IObjectSnapSource> SnapSourcesFor(
+            ViewportState viewport, IObjectSnapSource? excluded = null)
+        {
+            foreach (ITransactionalGripTarget target in _gripTargets)
+                if (!ReferenceEquals(target, excluded) && IsTargetVisible(target, viewport))
+                    yield return target;
+            if (_polylineDraft.Count > 0)
+                yield return new DraftSnapSource(_polylineDraft);
         }
 
         private SectionClip SectionClipFor(ViewportState viewport) =>
@@ -1591,9 +1752,8 @@ namespace CloudScope
             _crossSection = section;
             if (section is not { } value)
             {
-                _objectGripSession.SetTarget(null);
+                UnregisterGripTarget(_crossSectionGripTarget);
                 _crossSectionGripTarget = null;
-                _crossSectionSelected = false;
                 return;
             }
 
@@ -1601,12 +1761,12 @@ namespace CloudScope
             {
                 _crossSectionGripTarget = new CrossSectionGripTarget(value);
                 _crossSectionGripTarget.Changed += OnCrossSectionGripChanged;
+                RegisterGripTarget(_crossSectionGripTarget);
             }
             else if (!_crossSectionGripTarget.IsHandleDragging)
             {
                 _crossSectionGripTarget.SetSection(value);
             }
-            _objectGripSession.SetTarget(_crossSectionGripTarget);
         }
 
         private void OnCrossSectionGripChanged(SectionDefinition section)
@@ -1615,10 +1775,72 @@ namespace CloudScope
             ApplySectionCameras();
         }
 
+        private void AddPolyline(Polyline3D polyline, bool select)
+        {
+            RemovePolyline(polyline.Id);
+            var target = new PolylineGripTarget(polyline);
+            _polylines.Add(target);
+            RegisterGripTarget(target);
+            if (select) SelectGripTarget(target);
+        }
+
+        private void RemovePolyline(int id)
+        {
+            PolylineGripTarget? target = _polylines.FirstOrDefault(item => item.Polyline.Id == id);
+            if (target == null) return;
+            UnregisterGripTarget(target);
+            _polylines.Remove(target);
+        }
+
+        private void RegisterGripTarget(ITransactionalGripTarget target)
+        {
+            if (!_gripTargets.Contains(target)) _gripTargets.Add(target);
+        }
+
+        private void UnregisterGripTarget(ITransactionalGripTarget? target)
+        {
+            if (target == null) return;
+            if (ReferenceEquals(_selectedGripTarget, target)) SelectGripTarget(null);
+            _gripTargets.Remove(target);
+        }
+
+        private void SelectGripTarget(ITransactionalGripTarget? target)
+        {
+            if (ReferenceEquals(_selectedGripTarget, target)) return;
+            if (_selectedGripTarget != null) _selectedGripTarget.HoveredHandle = -1;
+            _selectedGripTarget = target;
+            _objectGripSession.SetTarget(target);
+        }
+
+        private ITransactionalGripTarget? HitTestGripTarget(
+            ViewportState viewport, int mouseX, int mouseY)
+        {
+            for (int index = _gripTargets.Count - 1; index >= 0; index--)
+                if (IsTargetVisible(_gripTargets[index], viewport)
+                    && _gripTargets[index].HitTestBody(mouseX, mouseY, viewport.Camera))
+                    return _gripTargets[index];
+            return null;
+        }
+
+        private bool IsTargetVisible(ITransactionalGripTarget target, ViewportState viewport) =>
+            target is not CrossSectionGripTarget
+            || viewport.SectionMode == SectionDisplayMode.PlanGuide;
+
+        private void RestoreGripTargetState(string editKey, object state)
+        {
+            ITransactionalGripTarget? target = _gripTargets
+                .FirstOrDefault(item => item.EditKey == editKey);
+            target?.RestoreState(state);
+        }
+
         private void DiscardCrossSection()
         {
+            SelectGripTarget(null);
             SetCrossSectionState(null);
             ClearCrossSectionDraft();
+            ClearPolylineDraft();
+            _polylines.Clear();
+            _gripTargets.Clear();
             foreach (ViewportState viewport in _viewports)
                 viewport.SectionMode = SectionDisplayMode.None;
             _selection.SetSectionClip(SectionClip.None);
@@ -1698,6 +1920,19 @@ namespace CloudScope
             public ViewportBounds Bounds { get; set; } = new(0, 0, 1, 1);
             public bool IsInitialized { get; set; }
             public SectionDisplayMode SectionMode { get; set; }
+        }
+
+        private sealed class DraftSnapSource : IObjectSnapSource
+        {
+            public DraftSnapSource(IReadOnlyList<Vector3> points)
+            {
+                var snaps = new ObjectSnapPoint[points.Count];
+                for (int i = 0; i < points.Count; i++)
+                    snaps[i] = new ObjectSnapPoint(points[i], ObjectSnapKind.Endpoint, i);
+                SnapPoints = snaps;
+            }
+
+            public IReadOnlyList<ObjectSnapPoint> SnapPoints { get; }
         }
 
         private readonly record struct SectionStateSnapshot(

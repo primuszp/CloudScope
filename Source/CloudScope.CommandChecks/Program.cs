@@ -9,6 +9,8 @@ using CloudScope.Commands;
 using CloudScope.Ui.Commands;
 using CloudScope.Sections;
 using CloudScope.Selection;
+using CloudScope.Drawing;
+using CloudScope.Rendering;
 using OpenTK.Mathematics;
 
 int failures = 0;
@@ -280,6 +282,47 @@ Check("section width grips are symmetric",
 Check("section grip kinds describe their behavior",
     sectionGrips.GetGrip(CrossSectionGripTarget.CenterGrip).Kind == GripKind.Center
     && sectionGrips.GetGrip(CrossSectionGripTarget.DirectionGrip).Kind == GripKind.Direction);
+Check("section contributes endpoint and midpoint snaps",
+    sectionGrips.SnapPoints.Count == 3
+    && sectionGrips.SnapPoints.Count(point => point.Kind == ObjectSnapKind.Endpoint) == 2
+    && sectionGrips.SnapPoints.Any(point => point.Kind == ObjectSnapKind.Midpoint));
+
+var polyline = new Polyline3D(1, "PL1",
+    [new Vector3(0f, 0f, 0f), new Vector3(10f, 0f, 0f), new Vector3(10f, 0f, 5f)]);
+var polylineGrips = new PolylineGripTarget(polyline);
+Check("open polyline exposes vertex and midpoint grips", polylineGrips.Grips.Count == 5);
+Check("polyline contributes endpoint and midpoint snaps",
+    polylineGrips.SnapPoints.Count == 5
+    && polylineGrips.SnapPoints.Count(point => point.Kind == ObjectSnapKind.Midpoint) == 2);
+
+var dragCamera = new CloudScope.OrbitCamera();
+dragCamera.SetViewportSize(800, 600);
+dragCamera.SetOrthographicSectionView(Vector3.Zero, Vector3.UnitX, flipped: false, cloudRadius: 50f);
+var (vertexX, vertexY, _) = dragCamera.WorldToScreen(polyline.Vertices[0]);
+polylineGrips.BeginHandleDrag(0, (int)vertexX, (int)vertexY, dragCamera);
+polylineGrips.UpdateHandleDragTo(new Vector3(2f, 3f, 4f));
+polylineGrips.EndHandleDrag();
+Check("polyline vertex grip accepts an exact snapped point",
+    polylineGrips.Polyline.Vertices[0] == new Vector3(2f, 3f, 4f));
+
+var snapEngine = new ObjectSnapEngine();
+var endpoint = polylineGrips.Polyline.Vertices[0];
+var (endpointX, endpointY, endpointBehind) = dragCamera.WorldToScreen(endpoint);
+ObjectSnapResult endpointSnap = snapEngine.Resolve(Vector3.Zero,
+    (int)endpointX, (int)endpointY, dragCamera, [polylineGrips], null);
+Check("object snap resolves a polyline grip", !endpointBehind
+    && endpointSnap.Kind == ObjectSnapKind.Endpoint
+    && endpointSnap.Position == endpoint);
+
+Vector3 axisTarget = new(4f, 0f, 0f);
+var (axisX, axisY, _) = dragCamera.WorldToScreen(axisTarget);
+ObjectSnapResult axisSnap = snapEngine.Resolve(axisTarget,
+    (int)axisX, (int)axisY, dragCamera, Array.Empty<IObjectSnapSource>(), Vector3.Zero);
+Check("axis tracking resolves the world X direction",
+    axisSnap.Kind == ObjectSnapKind.AxisX && MathF.Abs(axisSnap.Position.X - 4f) < 0.1f);
+
+float[] smoothPolyline = PolylineRenderGeometry.Build(polyline.Vertices, closed: false);
+Check("polyline render geometry uses connected adjacency", smoothPolyline.Length == 3 * 2 * 9);
 
 Console.WriteLine();
 Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : $"{failures} CHECK(S) FAILED");

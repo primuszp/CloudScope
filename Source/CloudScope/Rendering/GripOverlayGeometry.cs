@@ -23,7 +23,7 @@ public static class GripOverlayGeometry
             Vector3 up = camera.CameraUp * radius;
 
             Vector3 a, b, c, d;
-            if (grip.Kind is GripKind.WidthResize or GripKind.Direction)
+            if (grip.Kind is GripKind.WidthResize or GripKind.Direction or GripKind.Midpoint)
             {
                 a = grip.Position + up;
                 b = grip.Position + right;
@@ -52,6 +52,14 @@ public static class GripOverlayGeometry
         : index == hovered
             ? new Vector4(1f, 0.20f, 0.12f, 1f)
             : new Vector4(0.10f, 0.72f, 1f, 1f);
+
+    public static Vector4 SnapColor(ObjectSnapKind kind, float alpha = 1f) => kind switch
+    {
+        ObjectSnapKind.AxisX => new Vector4(1f, 0.28f, 0.24f, alpha),
+        ObjectSnapKind.AxisY => new Vector4(0.28f, 1f, 0.38f, alpha),
+        ObjectSnapKind.AxisZ => new Vector4(0.30f, 0.55f, 1f, alpha),
+        _ => new Vector4(0.20f, 1f, 0.42f, alpha)
+    };
 
     private static void Write(Span<float> vertices, int vertex, Vector3 point)
     {
