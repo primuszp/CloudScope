@@ -313,6 +313,27 @@ public sealed partial class ViewerCommands
                 .LoadPlanarPolylines(path.Value));
     }
 
+    [CommandMethod("ORTHO",
+        Group = CommandGroup.Edit, Scope = CommandScope.Viewer,
+        Summary = "Turns axis locking for point input on or off.",
+        Syntax = "ORTHO [ON/OFF] <toggle>")]
+    public IEnumerable<PromptStep> Ortho(CommandContext context)
+    {
+        ViewerController viewer = context.GetTarget<ViewerController>();
+        Editor editor = context.Editor;
+
+        PromptKeywordStep option = editor.GetKeywords(
+            $"Enter mode [ON/OFF] <{(viewer.OrthoMode ? "ON" : "OFF")}>:",
+            new Keyword("ON", "ON"),
+            new Keyword("OFF", "OFF"));
+        yield return option;
+
+        // A bare Enter toggles, which is how the status bar button and F8 behave.
+        editor.WriteMessage(option.Status == PromptStatus.None
+            ? viewer.ToggleOrthoMode()
+            : viewer.SetOrthoMode(option.Is("ON")));
+    }
+
     [CommandMethod("3DPOLY",
         Group = CommandGroup.Edit, Scope = CommandScope.Viewer,
         Summary = "Draws a straight-segment 3D polyline with object and axis snapping.",

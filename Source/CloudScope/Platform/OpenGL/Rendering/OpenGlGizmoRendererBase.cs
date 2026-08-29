@@ -36,9 +36,9 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
         protected static readonly Vector4[] AxisColor =
         {
-            new(0.95f, 0.20f, 0.20f, 1.00f),  // X  red
-            new(0.20f, 0.95f, 0.30f, 1.00f),  // Y  green
-            new(0.25f, 0.55f, 1.00f, 1.00f),  // Z  blue
+            AxisPalette.Of(0, 1.00f),
+            AxisPalette.Of(1, 1.00f),
+            AxisPalette.Of(2, 1.00f),
         };
 
         private static readonly float[] AxisLineData =
