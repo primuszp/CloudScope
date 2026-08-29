@@ -16,12 +16,12 @@ internal static class PivotIndicatorGeometry
         const float axisExtent = 0.55f;
         return
         [
-            new(BuildAxis(0, axisExtent), new Vector3(1f, 0.3f, 0.3f)),
-            new(BuildAxis(1, axisExtent), new Vector3(0.3f, 1f, 0.3f)),
-            new(BuildAxis(2, axisExtent), new Vector3(0.3f, 0.5f, 1f)),
-            new(BuildRing(0), new Vector3(1f, 0.35f, 0.35f), IsClosedLoop: true),
-            new(BuildRing(1), new Vector3(0.35f, 1f, 0.35f), IsClosedLoop: true),
-            new(BuildRing(2), new Vector3(0.35f, 0.6f, 1f), IsClosedLoop: true)
+            new(BuildAxis(0, axisExtent), AxisPalette.X),
+            new(BuildAxis(1, axisExtent), AxisPalette.Y),
+            new(BuildAxis(2, axisExtent), AxisPalette.Z),
+            new(BuildRing(0), AxisPalette.X, IsClosedLoop: true),
+            new(BuildRing(1), AxisPalette.Y, IsClosedLoop: true),
+            new(BuildRing(2), AxisPalette.Z, IsClosedLoop: true)
         ];
     }
 

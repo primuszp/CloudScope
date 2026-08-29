@@ -27,8 +27,7 @@ public static class GripOverlayGeometry
             float radius = MathF.Max(
                 camera.WorldUnitsPerPixel(grip.Position) * RadiusPixels * logicalToPhysical,
                 0.00001f);
-            Vector3 right = camera.CameraRight * radius;
-            Vector3 up = camera.CameraUp * radius;
+            (Vector3 right, Vector3 up) = GripAxes(camera, radius);
 
             if (grip.Kind == GripKind.Center)
             {
@@ -84,6 +83,23 @@ public static class GripOverlayGeometry
         return count;
     }
 
+    /// <summary>
+    /// The plane a grip marker lives in: the world XY plane, so a marker is a flat quad that
+    /// skews with the view exactly like the CAD grips it imitates, instead of a sticker that
+    /// always faces the camera. Seen edge-on that quad would collapse to a line and become
+    /// unclickable, so a view within a few degrees of the plane falls back to the camera axes.
+    /// </summary>
+    public static (Vector3 Right, Vector3 Up) GripAxes(OrbitCamera camera, float radius)
+    {
+        Vector3 forward = camera.CameraForward;
+        if (MathF.Abs(forward.Z) < EdgeOnCosine)
+            return (camera.CameraRight * radius, camera.CameraUp * radius);
+        return (Vector3.UnitX * radius, Vector3.UnitY * radius);
+    }
+
+    /// <summary>Roughly 6 degrees: below this the UCS plane is too edge-on to draw a marker in.</summary>
+    private const float EdgeOnCosine = 0.1f;
+
     public static Vector4 Color(int index, int hovered, int active) => index == active
         ? new Vector4(1f, 0.56f, 0.08f, 1f)
         : index == hovered
@@ -92,9 +108,9 @@ public static class GripOverlayGeometry
 
     public static Vector4 SnapColor(ObjectSnapKind kind, float alpha = 1f) => kind switch
     {
-        ObjectSnapKind.AxisX => new Vector4(1f, 0.28f, 0.24f, alpha),
-        ObjectSnapKind.AxisY => new Vector4(0.28f, 1f, 0.38f, alpha),
-        ObjectSnapKind.AxisZ => new Vector4(0.30f, 0.55f, 1f, alpha),
+        ObjectSnapKind.AxisX => AxisPalette.Of(0, alpha),
+        ObjectSnapKind.AxisY => AxisPalette.Of(1, alpha),
+        ObjectSnapKind.AxisZ => AxisPalette.Of(2, alpha),
         _ => new Vector4(0.20f, 1f, 0.42f, alpha)
     };
 

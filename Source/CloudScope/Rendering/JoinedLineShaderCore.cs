@@ -39,6 +39,7 @@ struct JoinedLineVertex
     vec2 coord;      // pixels: along/across the segment, or radial offset inside a join
     vec2 limits;     // pixels: the along range that is body rather than round cap
     float depth;     // pixels: how deep inside the stroke this corner is known to be
+    float dash;      // pixels along the dash pattern, or negative where the stroke is solid
 };
 
 vec2 joinedLinePerpendicular(vec2 v) { return vec2(-v.y, v.x); }
@@ -92,6 +93,7 @@ JoinedLineVertex joinedLineSegment(
     result.coord = vec2(0.0, 0.0);
     result.limits = vec2(0.0, 0.0);
     result.depth = 0.0;
+    result.dash = -1.0;
 
     // Behind the eye the perspective divide is meaningless; collapsing the quad keeps the
     // segment from smearing across the whole viewport.
@@ -142,6 +144,7 @@ JoinedLineVertex joinedLineSegment(
         clipHere.xy + (point - here) / halfViewport * clipHere.w, clipHere.z, clipHere.w);
     vec2 fromStart = point - pStart;
     result.coord = vec2(dot(fromStart, direction), dot(fromStart, normal));
+    result.dash = result.coord.x;
     result.limits = vec2(
         startJoins ? -JOINED_LINE_UNBOUNDED : 0.0,
         endJoins ? JOINED_LINE_UNBOUNDED : segmentLength);
@@ -159,6 +162,7 @@ JoinedLineVertex joinedLineJoin(
     result.coord = vec2(0.0, 0.0);
     result.limits = vec2(0.0, 0.0);
     result.depth = 0.0;
+    result.dash = -1.0;   // a round join is never dashed: it would gnaw holes into the corner
     if (clipPrevious.w <= 0.0 || clipJoint.w <= 0.0 || clipNext.w <= 0.0)
         return result;
 
@@ -213,6 +217,18 @@ JoinedLineVertex joinedLineJoin(
         clipJoint.xy + (point - pJoint) / halfViewport * clipJoint.w, clipJoint.z, clipJoint.w);
     result.coord = point - pJoint;
     return result;
+}
+
+// One period of the dash pattern in pixels; the stroke is on for the first 55 percent of it.
+// The pattern restarts at every vertex, which is what a CAD rubber band does as well, and
+// keeps the phase independent of the camera so a dash cannot crawl along the line.
+float joinedLineDash(float dash, float period)
+{
+    if (period <= 0.0 || dash < 0.0)
+        return 1.0;
+    float phase = dash - period * floor(dash / period);
+    float on = period * 0.55;
+    return clamp(min(phase, on - phase) + 0.5, 0.0, 1.0);
 }
 
 // Distance to the ideal capsule, in pixels, turned into an antialiased edge. A join passes

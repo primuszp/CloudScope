@@ -464,6 +464,7 @@ struct JoinedLineOut
     // like GLSL's noperspective qualifier.
     float2 coord [[user(locn0), center_no_perspective]];
     float depth [[user(locn1), center_no_perspective]];
+    float dash [[user(locn3), center_no_perspective]];
     float2 limits [[user(locn2), flat]];
 };
 " + JoinedLineShaderCore.Source + @"
@@ -485,6 +486,7 @@ vertex JoinedLineOut joined_line_segment_vertex(
     out.position = expanded.position;
     out.coord = expanded.coord;
     out.depth = expanded.depth;
+    out.dash = expanded.dash;
     out.limits = expanded.limits;
     return out;
 }
@@ -506,6 +508,7 @@ vertex JoinedLineOut joined_line_join_vertex(
     out.position = expanded.position;
     out.coord = expanded.coord;
     out.depth = expanded.depth;
+    out.dash = expanded.dash;
     out.limits = expanded.limits;
     return out;
 }
@@ -513,7 +516,8 @@ vertex JoinedLineOut joined_line_join_vertex(
 fragment float4 joined_line_fragment(
     JoinedLineOut in [[stage_in]], constant ColorUniforms& uniforms [[buffer(1)]])
 {
-    float coverage = joinedLineCoverage(in.coord, in.limits, in.depth, uniforms.line.z);
+    float coverage = joinedLineCoverage(in.coord, in.limits, in.depth, uniforms.line.z)
+        * joinedLineDash(in.dash, uniforms.line.w);
     return float4(uniforms.color.rgb, uniforms.color.a * coverage);
 }";
 

@@ -28,6 +28,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
             public readonly int Color = GL.GetUniformLocation(program, "uColor");
             public readonly int Viewport = GL.GetUniformLocation(program, "uViewport");
             public readonly int Width = GL.GetUniformLocation(program, "uWidth");
+            public readonly int Dash = GL.GetUniformLocation(program, "uDash");
         }
 
         private const string SegmentVertSrc = @"#version 330 core
@@ -42,6 +43,7 @@ uniform float uWidth;
 
 noperspective out vec2 vCoord;
 noperspective out float vDepth;
+noperspective out float vDash;
 flat out vec2 vLimits;
 " + JoinedLineShaderCore.GlslHeader + JoinedLineShaderCore.Source + @"
 void main()
@@ -53,6 +55,7 @@ void main()
     gl_Position = expanded.position;
     vCoord = expanded.coord;
     vDepth = expanded.depth;
+    vDash = expanded.dash;
     vLimits = expanded.limits;
 }
 ";
@@ -68,6 +71,7 @@ uniform float uWidth;
 
 noperspective out vec2 vCoord;
 noperspective out float vDepth;
+noperspective out float vDash;
 flat out vec2 vLimits;
 " + JoinedLineShaderCore.GlslHeader + JoinedLineShaderCore.Source + @"
 void main()
@@ -78,6 +82,7 @@ void main()
     gl_Position = expanded.position;
     vCoord = expanded.coord;
     vDepth = expanded.depth;
+    vDash = expanded.dash;
     vLimits = expanded.limits;
 }
 ";
@@ -85,15 +90,20 @@ void main()
         private const string FragSrc = @"#version 330 core
 uniform vec4 uColor;
 uniform float uWidth;
+uniform float uDash;
 
 noperspective in vec2 vCoord;
 noperspective in float vDepth;
+noperspective in float vDash;
 flat in vec2 vLimits;
 out vec4 FragColor;
 " + JoinedLineShaderCore.GlslHeader + JoinedLineShaderCore.Source + @"
 void main()
 {
-    FragColor = vec4(uColor.rgb, uColor.a * joinedLineCoverage(vCoord, vLimits, vDepth, uWidth));
+    float alpha = uColor.a * joinedLineCoverage(vCoord, vLimits, vDepth, uWidth)
+        * joinedLineDash(vDash, uDash);
+    if (alpha <= 0.0) discard;
+    FragColor = vec4(uColor.rgb, alpha);
 }
 ";
 
@@ -104,7 +114,7 @@ void main()
         public void Draw(
             float[] segments, int segmentCount,
             float[] joins, int joinCount,
-            ref Matrix4 mvp, Vector4 color, float widthPixels)
+            ref Matrix4 mvp, Vector4 color, float widthPixels, float dashPixels = 0f)
         {
             if (segmentCount <= 0)
                 return;
@@ -117,13 +127,13 @@ void main()
             DrawStream(_segmentProgram, _segmentVao, _segmentVbo, _segmentUniforms,
                 segments, segmentCount * PolylineRenderGeometry.SegmentFloats,
                 PolylineRenderGeometry.VerticesPerSegment, segmentCount,
-                PrimitiveType.TriangleStrip, ref mvp, color, widthPixels);
+                PrimitiveType.TriangleStrip, ref mvp, color, widthPixels, dashPixels);
 
             if (joinCount > 0)
                 DrawStream(_joinProgram, _joinVao, _joinVbo, _joinUniforms,
                     joins, joinCount * PolylineRenderGeometry.JoinFloats,
                     PolylineRenderGeometry.VerticesPerJoin, joinCount,
-                    PrimitiveType.Triangles, ref mvp, color, widthPixels);
+                    PrimitiveType.Triangles, ref mvp, color, widthPixels, dashPixels);
 
             GL.BindVertexArray(previousVao);
             GL.UseProgram(previousProgram);
@@ -132,7 +142,7 @@ void main()
         private void DrawStream(
             int program, int vao, int vbo, Uniforms uniforms,
             float[] data, int floatCount, int verticesPerInstance, int instanceCount,
-            PrimitiveType primitive, ref Matrix4 mvp, Vector4 color, float widthPixels)
+            PrimitiveType primitive, ref Matrix4 mvp, Vector4 color, float widthPixels, float dashPixels)
         {
             GL.UseProgram(program);
             GL.BindVertexArray(vao);
@@ -144,6 +154,7 @@ void main()
             // uViewport is a vec2: keep these floating point so OpenTK dispatches glUniform2f.
             GL.Uniform2(uniforms.Viewport, MathF.Max(_viewport[2], 1f), MathF.Max(_viewport[3], 1f));
             GL.Uniform1(uniforms.Width, widthPixels);
+            GL.Uniform1(uniforms.Dash, dashPixels);
             GL.DrawArraysInstanced(primitive, 0, verticesPerInstance, instanceCount);
         }
 
