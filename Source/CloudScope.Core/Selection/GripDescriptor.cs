@@ -13,7 +13,8 @@ namespace CloudScope.Selection
         Endpoint,
         WidthResize,
         Direction,
-        Midpoint
+        Midpoint,
+        Quadrant
     }
 
     public enum GripConstraint

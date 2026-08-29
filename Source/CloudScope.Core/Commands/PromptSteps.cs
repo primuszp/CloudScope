@@ -242,6 +242,7 @@ public sealed class PromptPointStep(string message) : PromptStep(message, allowA
     public PromptPointStep From(Vector3 basePoint)
     {
         BasePoint = basePoint;
+        PlaneZ = basePoint.Z;
         return this;
     }
 
@@ -280,9 +281,10 @@ public sealed class PromptPointStep(string message) : PromptStep(message, allowA
             return true;
         }
 
-        if (!TryParsePoint(input, out Vector3 point))
+        if (!TryParsePoint(input, BasePoint, PlaneZ, out Vector3 point))
         {
-            Error = $"Invalid point: {input}. Use a distance, x,y or x,y,z, or pick in the viewport.";
+            Error = $"Invalid point: {input}. Use a distance, x,y, x,y,z, @dx,dy,dz, "
+                  + "@distance<angle, or pick in the viewport.";
             return false;
         }
 
@@ -293,9 +295,46 @@ public sealed class PromptPointStep(string message) : PromptStep(message, allowA
 
     /// <summary>Parses "x,y" or "x,y,z"; also used where a command reads a triple of its own.</summary>
     public static bool TryParsePoint(string input, out Vector3 point)
+        => TryParsePoint(input, null, 0d, out point);
+
+    /// <summary>
+    /// Parses absolute Cartesian coordinates, AutoCAD-style relative coordinates prefixed
+    /// with <c>@</c>, or a relative polar value in the form <c>@distance&lt;angle</c>.
+    /// Polar angles are measured counter-clockwise in the active XY plane.
+    /// </summary>
+    public static bool TryParsePoint(string input, Vector3? basePoint, double planeZ, out Vector3 point)
     {
         point = default;
-        string[] parts = input.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        string text = input.Trim();
+        bool relative = text.StartsWith('@');
+        if (relative)
+        {
+            if (basePoint == null)
+                return false;
+            text = text[1..].Trim();
+        }
+
+        int polarSeparator = text.IndexOf('<');
+        if (polarSeparator >= 0)
+        {
+            if (!relative || polarSeparator == 0 || polarSeparator == text.Length - 1
+                || !double.TryParse(text[..polarSeparator], NumberStyles.Float,
+                    CultureInfo.InvariantCulture, out double distance)
+                || !double.TryParse(text[(polarSeparator + 1)..], NumberStyles.Float,
+                    CultureInfo.InvariantCulture, out double angleDegrees)
+                || !double.IsFinite(distance) || !double.IsFinite(angleDegrees))
+                return false;
+
+            double angle = angleDegrees * Math.PI / 180d;
+            Vector3 origin = basePoint!.Value;
+            point = origin + new Vector3(
+                (float)(distance * Math.Cos(angle)),
+                (float)(distance * Math.Sin(angle)),
+                0f);
+            return true;
+        }
+
+        string[] parts = text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (parts.Length is not (2 or 3))
             return false;
 
@@ -306,7 +345,15 @@ public sealed class PromptPointStep(string message) : PromptStep(message, allowA
                 return false;
         }
 
-        point = new Vector3(values[0], values[1], values[2]);
+        if (relative)
+        {
+            Vector3 origin = basePoint!.Value;
+            point = origin + new Vector3(values[0], values[1], parts.Length == 3 ? values[2] : 0f);
+        }
+        else
+        {
+            point = new Vector3(values[0], values[1], parts.Length == 3 ? values[2] : (float)planeZ);
+        }
         return true;
     }
 }

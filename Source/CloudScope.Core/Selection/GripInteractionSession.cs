@@ -7,6 +7,7 @@ namespace CloudScope.Selection;
 /// </summary>
 public sealed class GripInteractionSession
 {
+    public float DisplayScale { get; set; } = 1f;
     public IGripTarget? Target { get; private set; }
     public bool IsDragging => Target?.IsHandleDragging == true;
 
@@ -21,13 +22,14 @@ public sealed class GripInteractionSession
     public int UpdateHover(int mouseX, int mouseY, OrbitCamera camera, float threshold = 12f)
     {
         if (Target == null || IsDragging) return -1;
-        return Target.HoveredHandle = Target.HitTestHandles(mouseX, mouseY, camera, threshold);
+        return Target.HoveredHandle = Target.HitTestHandles(
+            mouseX, mouseY, camera, threshold * MathF.Max(DisplayScale, 1f));
     }
 
     public bool TryBegin(int mouseX, int mouseY, OrbitCamera camera, bool allowBodyDrag = false)
     {
         if (Target == null) return false;
-        int handle = Target.HitTestHandles(mouseX, mouseY, camera);
+        int handle = Target.HitTestHandles(mouseX, mouseY, camera, 12f * MathF.Max(DisplayScale, 1f));
         if (handle < 0 && allowBodyDrag && Target.HitTestBody(mouseX, mouseY, camera))
             handle = Target.CenterGripIndex;
         if (handle < 0) return false;

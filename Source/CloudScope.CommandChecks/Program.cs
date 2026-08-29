@@ -144,6 +144,20 @@ Check("viewport pick answers point prompt", r.Message == "1,2,3", r.Message);
 r = Run("PICK 4,5,6");
 Check("typed point answers point prompt", r.Message == "4,5,6", r.Message);
 
+Check("relative Cartesian point uses its base point",
+    PromptPointStep.TryParsePoint("@2,-3,4", new Vector3(10, 20, 30), 30, out Vector3 relativePoint)
+    && relativePoint == new Vector3(12, 17, 34), relativePoint.ToString());
+Check("relative two-coordinate point preserves base elevation",
+    PromptPointStep.TryParsePoint("@2,-3", new Vector3(10, 20, 30), 30, out Vector3 relative2d)
+    && relative2d == new Vector3(12, 17, 30), relative2d.ToString());
+Check("absolute two-coordinate point uses prompt plane elevation",
+    PromptPointStep.TryParsePoint("2,3", new Vector3(10, 20, 30), 7, out Vector3 planarPoint)
+    && planarPoint == new Vector3(2, 3, 7), planarPoint.ToString());
+Check("relative polar point resolves distance and angle",
+    PromptPointStep.TryParsePoint("@10<90", Vector3.Zero, 0, out Vector3 polarPoint)
+    && MathF.Abs(polarPoint.X) < 1e-4f && MathF.Abs(polarPoint.Y - 10f) < 1e-4f,
+    polarPoint.ToString());
+
 // distances may be typed or measured by the same viewport-pick path
 r = Run("DIST");
 Check("distance-or-point prompt waits", r.Status == CommandStatus.Prompting && probeRuntime.AwaitsPoint);
@@ -363,6 +377,76 @@ float[] commonClosedGeometry = PolylineRenderGeometry.BuildSegmentInstances(
 Check("pivot and object paths share the closed line builder",
     commonClosedGeometry.AsSpan().SequenceEqual(closedInstances));
 
+var planarArc = new PlanarPolyline(2, "PL2", Vector3.Zero, Vector3.UnitX, Vector3.UnitY,
+[
+    new PlanarPolylineVertex(Vector2.Zero,
+        PlanarPolylineGeometry.TangentArcBulge(Vector2.Zero, new Vector2(10, 10), Vector2.UnitX)),
+    new PlanarPolylineVertex(new Vector2(10, 10))
+]);
+Vector3[] arcPoints = PlanarPolylineGeometry.Tessellate(planarArc);
+Check("planar polyline arc tessellates from exact start to exact end",
+    arcPoints.Length > 2 && arcPoints[0] == Vector3.Zero
+    && Vector3.DistanceSquared(arcPoints[^1], new Vector3(10, 10, 0)) < 1e-6f);
+Check("tangent arc initially follows the requested direction",
+    arcPoints.Length > 2 && arcPoints[1].X > 0f && MathF.Abs(arcPoints[1].Y) < arcPoints[1].X);
+Check("PLINE angle option encodes a quarter circle",
+    MathF.Abs(PlanarPolylineGeometry.IncludedAngleBulge(90f) - 0.41421356f) < 1e-5f);
+Check("PLINE three-point option preserves the requested side",
+    PlanarPolylineGeometry.ThreePointArcBulge(
+        Vector2.Zero, new Vector2(5, -2), new Vector2(10, 0)) > 0f);
+Check("PLINE radius rejects an impossible chord",
+    PlanarPolylineGeometry.RadiusArcBulge(
+        Vector2.Zero, new Vector2(10, 0), 4f, Vector2.UnitX) == 0f);
+var tapered = planarArc with
+{
+    Vertices =
+    [
+        planarArc.Vertices[0] with { StartWidth = 2f, EndWidth = 4f },
+        planarArc.Vertices[1]
+    ]
+};
+(Vector3[] leftEdge, Vector3[] rightEdge) = PlanarPolylineGeometry.TessellateWidthEdges(tapered);
+Check("wide arc produces matching tapered edge paths",
+    leftEdge.Length == arcPoints.Length && rightEdge.Length == arcPoints.Length
+    && Vector3.Distance(leftEdge[0], rightEdge[0]) is > 1.999f and < 2.001f
+    && Vector3.Distance(leftEdge[^1], rightEdge[^1]) is > 3.999f and < 4.001f);
+var planarGrips = new PlanarPolylineGripTarget(tapered);
+planarGrips.SetUniformWidth(3f);
+Check("PEDIT width updates every planar segment",
+    planarGrips.Polyline.Vertices[0].StartWidth == 3f
+    && planarGrips.Polyline.Vertices[0].EndWidth == 3f);
+Vector3 oldStart = planarGrips.Polyline.ToWorld(planarGrips.Polyline.Vertices[0].Position);
+Vector3 oldEnd = planarGrips.Polyline.ToWorld(planarGrips.Polyline.Vertices[^1].Position);
+planarGrips.Reverse();
+Check("PEDIT reverse swaps endpoints",
+    planarGrips.Polyline.Endpoint == oldStart
+    && planarGrips.Polyline.ToWorld(planarGrips.Polyline.Vertices[0].Position) == oldEnd);
+var gripCamera = new CloudScope.OrbitCamera();
+gripCamera.SetViewportSize(800, 600);
+GripDescriptor[] endpointMarker =
+[
+    new GripDescriptor(0, GripKind.Endpoint, Vector3.Zero, Vector3.Zero, GripConstraint.ViewPlane)
+];
+float[] normalGrip = new float[GripOverlayGeometry.FloatsPerGrip];
+float[] retinaGrip = new float[GripOverlayGeometry.FloatsPerGrip];
+GripOverlayGeometry.Fill(endpointMarker, gripCamera, normalGrip, displayScale: 1f);
+GripOverlayGeometry.Fill(endpointMarker, gripCamera, retinaGrip, displayScale: 2f);
+Check("Retina CAD grip keeps its logical size",
+    MathF.Abs(retinaGrip[0]) > MathF.Abs(normalGrip[0]) * 1.99f);
+float[] midpointMarker = new float[GripOverlayGeometry.FloatsPerGrip];
+GripOverlayGeometry.Fill(
+    [new GripDescriptor(0, GripKind.Midpoint, Vector3.Zero, Vector3.Zero, GripConstraint.ViewPlane)],
+    gripCamera, midpointMarker);
+Check("endpoint and midpoint use distinct CAD marker shapes",
+    !normalGrip.AsSpan().SequenceEqual(midpointMarker));
+string planarJson = PlanarPolylineFile.Serialize([tapered]);
+PlanarPolyline planarRoundTrip = PlanarPolylineFile.Deserialize(planarJson).Single();
+Check("planar polyline JSON preserves plane, arc and tapered widths",
+    planarRoundTrip.Origin == tapered.Origin
+    && planarRoundTrip.AxisX == tapered.AxisX
+    && planarRoundTrip.AxisY == tapered.AxisY
+    && planarRoundTrip.Vertices.AsSpan().SequenceEqual(tapered.Vertices));
+
 Console.WriteLine();
 Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : $"{failures} CHECK(S) FAILED");
 return failures == 0 ? 0 : 1;
@@ -379,7 +463,8 @@ sealed class ProbeCommands
             .WithDirectionalDistance(distance => new Vector3((float)distance, 0f, 0f));
         yield return point;
         if (point.IsOk)
-            c.Editor.WriteMessage($"{point.Value.X:0.###},{point.Value.Y:0.###},{point.Value.Z:0.###}");
+            c.Editor.WriteMessage(string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $"{point.Value.X:0.###},{point.Value.Y:0.###},{point.Value.Z:0.###}"));
     }
 
     [CommandMethod("PEEK", Flags = CommandFlags.Transparent | CommandFlags.NoHistory,
