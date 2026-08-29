@@ -6,11 +6,13 @@
 // run anywhere the solution builds.
 
 using CloudScope.Commands;
+using CloudScope;
 using CloudScope.Ui.Commands;
 using CloudScope.Sections;
 using CloudScope.Selection;
 using CloudScope.Drawing;
 using CloudScope.Rendering;
+using CloudScope.Forestry;
 using OpenTK.Mathematics;
 
 int failures = 0;
@@ -502,6 +504,43 @@ Check("planar polyline JSON preserves plane, arc and tapered widths",
     && planarRoundTrip.AxisX == tapered.AxisX
     && planarRoundTrip.AxisY == tapered.AxisY
     && planarRoundTrip.Vertices.AsSpan().SequenceEqual(tapered.Vertices));
+
+// ---------- 6. Seeded individual-tree segmentation ----------
+var forest = new List<PointData>();
+for (int z = 0; z <= 30; z++)
+{
+    forest.Add(new PointData { X = 0f, Y = 0f, Z = z * 0.1f });
+    forest.Add(new PointData { X = 2f, Y = 0f, Z = z * 0.1f });
+}
+for (int x = 0; x <= 10; x++)
+{
+    forest.Add(new PointData { X = x * 0.2f, Y = 0f, Z = 3f });
+    forest.Add(new PointData { X = 2f - x * 0.2f, Y = 0.1f, Z = 3.1f });
+}
+TreeSegmentationResult tree = TreeSegmentation.Segment(forest, new Vector3(0f, 0f, 1.3f),
+    new TreeSegmentationOptions { ConnectionRadius = 0.23f, MinimumTrunkPoints = 8 });
+Check("tree segmentation grows from a trunk seed", tree.Succeeded && tree.PointIndices.Count > 20,
+    tree.FailureReason ?? tree.PointIndices.Count.ToString());
+Check("tree segmentation detects the neighbouring trunk as a competitor", tree.CompetitorCount > 0,
+    tree.CompetitorCount.ToString());
+Check("tree segmentation does not absorb the competing trunk",
+    tree.PointIndices.All(i => forest[i].X < 1.5f),
+    tree.PointIndices.Count.ToString());
+
+var terrainCloud = new List<PointData>();
+var expectedGround = new HashSet<int>();
+for (int x = 0; x < 9; x++) for (int y = 0; y < 9; y++)
+{
+    expectedGround.Add(terrainCloud.Count);
+    terrainCloud.Add(new PointData { X = x * 0.25f, Y = y * 0.25f, Z = x * 0.025f });
+    if ((x + y) % 3 == 0)
+        terrainCloud.Add(new PointData { X = x * 0.25f, Y = y * 0.25f, Z = 1.2f + x * 0.025f });
+}
+GroundSegmentationResult terrain = GroundSegmentation.Segment(terrainCloud);
+Check("ground segmentation follows a sloping terrain surface", terrain.Succeeded
+    && expectedGround.All(terrain.PointIndices.Contains), terrain.PointIndices.Count.ToString());
+Check("ground segmentation excludes vegetation above the surface",
+    terrain.PointIndices.All(expectedGround.Contains), terrain.PointIndices.Count.ToString());
 
 Console.WriteLine();
 Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : $"{failures} CHECK(S) FAILED");

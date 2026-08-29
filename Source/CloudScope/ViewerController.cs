@@ -10,6 +10,7 @@ using CloudScope.Rendering;
 using CloudScope.Store;
 using CloudScope.Sections;
 using CloudScope.Drawing;
+using CloudScope.Forestry;
 
 namespace CloudScope
 {
@@ -654,6 +655,25 @@ namespace CloudScope
         public string CurrentLabel => _selection.CurrentLabel;
         public int LabelledPointCount => _selection.Labels.Count;
         public int? CurrentInstanceId => _selection.CurrentInstanceId;
+
+        public string SegmentTree(Vector3 seed, int? instanceId = null)
+        {
+            int id = instanceId ?? NextTreeInstanceId();
+            TreeSegmentationResult result = _selection.SegmentTree(seed, id);
+            if (!result.Succeeded) return $"Tree segmentation failed: {result.FailureReason}";
+            return $"Tree {id}: {result.PointIndices.Count:N0} points segmented; {result.CompetitorCount} competing trunk marker(s).";
+        }
+
+        public string SegmentGround()
+        {
+            GroundSegmentationResult result = _selection.SegmentGround();
+            if (!result.Succeeded) return $"Ground segmentation failed: {result.FailureReason}";
+            return $"Ground: {result.PointIndices.Count:N0} points in {result.GroundCellCount:N0} of {result.CellCount:N0} terrain cells.";
+        }
+
+        private int NextTreeInstanceId() => _selection.Labels.AllAnnotations.Values
+            .Where(a => string.Equals(a.LabelName, "Tree", StringComparison.OrdinalIgnoreCase) && a.InstanceId.HasValue)
+            .Select(a => a.InstanceId!.Value).DefaultIfEmpty(0).Max() + 1;
         public bool LabelWindowVisible { get; set; }
 
         /// <summary>Whether the expanded command-history panel (F2) is shown.</summary>
