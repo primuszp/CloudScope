@@ -336,7 +336,13 @@ void main()
                 RenderPolyline(frameData, ref view, ref proj, [start, end], false,
                     GripOverlayGeometry.SnapColor(snap.Kind, 0.72f), 1.25f, depthTest: false);
 
-            GripKind kind = snap.Kind == ObjectSnapKind.Midpoint ? GripKind.Midpoint : GripKind.Endpoint;
+            GripKind kind = snap.Kind switch
+            {
+                ObjectSnapKind.Midpoint => GripKind.Midpoint,
+                ObjectSnapKind.Quadrant => GripKind.Quadrant,
+                ObjectSnapKind.Center => GripKind.Center,
+                _ => GripKind.Endpoint
+            };
             GripDescriptor[] marker = [new(0, kind, snap.Position, Vector3.Zero, GripConstraint.ViewPlane)];
             float[] vertices = new float[GripOverlayGeometry.FloatsPerGrip];
             GripOverlayGeometry.Fill(marker, camera, vertices);

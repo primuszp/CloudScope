@@ -45,10 +45,17 @@ namespace CloudScope
         private int _pointSnapViewport = -1;
         private Vector3 _lastPointInputDirection;
         private readonly List<PolylineGripTarget> _polylines = [];
+        private readonly List<PlanarPolylineGripTarget> _planarPolylines = [];
         private readonly List<ITransactionalGripTarget> _gripTargets = [];
         private readonly List<Vector3> _polylineDraft = [];
         private Vector3? _polylineDraftCursor;
         private int _nextPolylineId = 1;
+        private readonly List<PlanarPolylineVertex> _planarPolylineDraft = [];
+        private Vector3 _planarDraftOrigin;
+        private Vector3? _planarDraftCursor;
+        private bool _planarDraftArcMode;
+        private float _planarDraftStartWidth;
+        private float _planarDraftEndWidth;
         private int _crossSectionDraftViewport = -1;
         private bool _crossSectionDraftChoosingWidth;
         private int _nextSectionId = 1;
@@ -116,6 +123,15 @@ namespace CloudScope
         /// clicking in the viewport answers that prompt.
         /// </summary>
         public ICommandExecutor? CommandPrompts { get; set; }
+
+        /// <summary>Physical pixels per logical UI pixel for CAD-sized hit targets.</summary>
+        internal void SetDisplayScale(float scale)
+        {
+            if (!float.IsFinite(scale) || scale <= 0f) return;
+            _objectGripSession.DisplayScale = scale;
+            _objectSnap.ObjectThresholdPixels = 14f * scale;
+            _objectSnap.AxisThresholdPixels = 10f * scale;
+        }
 
         /// <summary>Command-level undo history; the runtime opens and closes its marks.</summary>
         public UndoManager UndoHistory { get; } = new();
@@ -986,6 +1002,305 @@ namespace CloudScope
             _polylineDraftCursor = null;
         }
 
+        public Vector3? LastPlanarPolylineEndpoint => _planarPolylines.Count == 0
+            ? null
+            : _planarPolylines[^1].Polyline.Endpoint;
+
+        public int PlanarPolylineDraftVertexCount => _planarPolylineDraft.Count;
+        public Vector3 PlanarPolylineDraftLastPoint => _planarPolylineDraft.Count == 0
+            ? _planarDraftOrigin
+            : PlanarDraftToWorld(_planarPolylineDraft[^1].Position);
+
+        public Vector3 PlanarPolylineDraftDirection
+        {
+            get
+            {
+                if (_planarPolylineDraft.Count < 2) return Vector3.UnitX;
+                Vector2 delta = _planarPolylineDraft[^1].Position - _planarPolylineDraft[^2].Position;
+                return delta.LengthSquared > 1e-10f
+                    ? new Vector3(delta.X, delta.Y, 0f).Normalized()
+                    : Vector3.UnitX;
+            }
+        }
+
+        public void BeginPlanarPolylineDraft(Vector3 firstPoint)
+        {
+            _planarPolylineDraft.Clear();
+            _planarDraftOrigin = firstPoint;
+            _planarPolylineDraft.Add(new PlanarPolylineVertex(Vector2.Zero));
+            _planarDraftCursor = firstPoint;
+            _planarDraftArcMode = false;
+            _planarDraftStartWidth = 0f;
+            _planarDraftEndWidth = 0f;
+            _lastPointInputDirection = Vector3.Zero;
+        }
+
+        public void SetPlanarPolylineArcMode(bool arcMode) => _planarDraftArcMode = arcMode;
+
+        public void SetPlanarPolylineWidth(float startWidth, float endWidth)
+        {
+            _planarDraftStartWidth = MathF.Max(0f, startWidth);
+            _planarDraftEndWidth = MathF.Max(0f, endWidth);
+        }
+
+        public void AddPlanarPolylineDraftVertex(Vector3 worldPoint, float? bulgeOverride = null)
+        {
+            if (_planarPolylineDraft.Count == 0) return;
+            Vector2 point = PlanarDraftToPlane(worldPoint);
+            PlanarPolylineVertex previous = _planarPolylineDraft[^1];
+            if (Vector2.DistanceSquared(previous.Position, point) <= 1e-10f) return;
+
+            float bulge = bulgeOverride ?? (_planarDraftArcMode
+                ? PlanarPolylineGeometry.TangentArcBulge(
+                    previous.Position, point, PlanarDraftTangent2D())
+                : 0f);
+            _planarPolylineDraft[^1] = previous with
+            {
+                Bulge = bulge,
+                StartWidth = _planarDraftStartWidth,
+                EndWidth = _planarDraftEndWidth
+            };
+            _planarPolylineDraft.Add(new PlanarPolylineVertex(point));
+            _planarDraftCursor = PlanarDraftToWorld(point);
+            _planarDraftStartWidth = _planarDraftEndWidth;
+        }
+
+        public bool UndoPlanarPolylineDraftVertex()
+        {
+            if (_planarPolylineDraft.Count <= 1) return false;
+            _planarPolylineDraft.RemoveAt(_planarPolylineDraft.Count - 1);
+            PlanarPolylineVertex last = _planarPolylineDraft[^1];
+            _planarPolylineDraft[^1] = last with { Bulge = 0f, StartWidth = 0f, EndWidth = 0f };
+            _planarDraftCursor = PlanarDraftToWorld(last.Position);
+            return true;
+        }
+
+        public string CommitPlanarPolylineDraft(bool closed)
+        {
+            if (_planarPolylineDraft.Count < 2)
+                return "A polyline needs at least two different points.";
+            if (closed && _planarPolylineDraft.Count < 3)
+                return "A closed polyline needs at least three points.";
+
+            if (closed)
+            {
+                PlanarPolylineVertex last = _planarPolylineDraft[^1];
+                float bulge = _planarDraftArcMode
+                    ? PlanarPolylineGeometry.TangentArcBulge(
+                        last.Position, _planarPolylineDraft[0].Position, PlanarDraftTangent2D())
+                    : 0f;
+                _planarPolylineDraft[^1] = last with
+                {
+                    Bulge = bulge,
+                    StartWidth = _planarDraftStartWidth,
+                    EndWidth = _planarDraftEndWidth
+                };
+            }
+
+            var polyline = new PlanarPolyline(_nextPolylineId++, $"PL{_nextPolylineId - 1}",
+                _planarDraftOrigin, Vector3.UnitX, Vector3.UnitY,
+                _planarPolylineDraft.ToArray(), closed);
+            AddPlanarPolyline(polyline, select: true);
+            UndoHistory.Record(new DelegateUndoAction(
+                "Polyline",
+                () => RemovePlanarPolyline(polyline.Id),
+                () => AddPlanarPolyline(polyline, select: false)));
+            ClearPlanarPolylineDraft();
+            return $"Polyline {polyline.Name} created with {polyline.Vertices.Length} vertices"
+                + (closed ? ", closed." : ".");
+        }
+
+        public void ClearPlanarPolylineDraft()
+        {
+            _planarPolylineDraft.Clear();
+            _planarDraftCursor = null;
+            _planarDraftArcMode = false;
+        }
+
+        public bool HasSelectedPlanarPolyline => _selectedGripTarget is PlanarPolylineGripTarget;
+
+        public string SetSelectedPlanarPolylineClosed(bool closed) =>
+            EditSelectedPlanarPolyline(closed ? "Close polyline" : "Open polyline",
+                target => target.SetClosed(closed),
+                closed ? "Polyline closed." : "Polyline opened.");
+
+        public string ReverseSelectedPlanarPolyline() =>
+            EditSelectedPlanarPolyline("Reverse polyline", target => target.Reverse(),
+                "Polyline direction reversed.");
+
+        public string SetSelectedPlanarPolylineWidth(float width) =>
+            EditSelectedPlanarPolyline("Polyline width", target => target.SetUniformWidth(width),
+                $"Polyline width: {width:0.###}.");
+
+        public string JoinSelectedPlanarPolyline(float tolerance)
+        {
+            if (_selectedGripTarget is not PlanarPolylineGripTarget selected)
+                return "Select a planar polyline first.";
+            if (selected.Polyline.Closed)
+                return "A closed polyline cannot be joined at an endpoint.";
+
+            tolerance = MathF.Max(tolerance, 0f);
+            PlanarPolyline a = selected.Polyline.Copy();
+            PlanarPolylineGripTarget? otherTarget = null;
+            PlanarPolyline? joined = null;
+            foreach (PlanarPolylineGripTarget candidate in _planarPolylines)
+            {
+                if (ReferenceEquals(candidate, selected) || candidate.Polyline.Closed) continue;
+                if (MathF.Abs(Vector3.Dot(candidate.Polyline.Origin - a.Origin, a.Normal)) > tolerance)
+                    continue;
+
+                PlanarPolyline b = candidate.Polyline.Copy();
+                if (TryJoinPlanarPolylines(a, b, tolerance, out joined))
+                {
+                    otherTarget = candidate;
+                    break;
+                }
+            }
+            if (otherTarget == null || joined == null)
+                return "No open coplanar polyline endpoint is within the join tolerance.";
+
+            PlanarPolyline beforeSelected = selected.Polyline.Copy();
+            PlanarPolyline removed = otherTarget.Polyline.Copy();
+            selected.RestoreState(joined);
+            RemovePlanarPolyline(removed.Id);
+            UndoHistory.Record(new DelegateUndoAction(
+                "Join polylines",
+                () =>
+                {
+                    selected.RestoreState(beforeSelected);
+                    AddPlanarPolyline(removed, select: false);
+                },
+                () =>
+                {
+                    selected.RestoreState(joined);
+                    RemovePlanarPolyline(removed.Id);
+                }));
+            return $"Polyline {removed.Name} joined to {selected.Polyline.Name}.";
+        }
+
+        public string SavePlanarPolylines(string path)
+        {
+            PlanarPolylineFile.Save(path, _planarPolylines.Select(target => target.Polyline));
+            return $"Saved {_planarPolylines.Count} planar polylines to {Path.GetFullPath(path)}.";
+        }
+
+        public string LoadPlanarPolylines(string path)
+        {
+            PlanarPolyline[] loaded = PlanarPolylineFile.Load(path)
+                .Select(polyline => polyline with
+                {
+                    Id = _nextPolylineId++,
+                    Name = $"PL{_nextPolylineId - 1}"
+                }).ToArray();
+            foreach (PlanarPolyline polyline in loaded)
+                AddPlanarPolyline(polyline, select: false);
+            UndoHistory.Record(new DelegateUndoAction(
+                "Load polylines",
+                () =>
+                {
+                    foreach (PlanarPolyline polyline in loaded)
+                        RemovePlanarPolyline(polyline.Id);
+                },
+                () =>
+                {
+                    foreach (PlanarPolyline polyline in loaded)
+                        AddPlanarPolyline(polyline, select: false);
+                }));
+            return $"Loaded {loaded.Length} planar polylines from {Path.GetFullPath(path)}.";
+        }
+
+        private static bool TryJoinPlanarPolylines(
+            PlanarPolyline selected,
+            PlanarPolyline other,
+            float tolerance,
+            out PlanarPolyline? joined)
+        {
+            joined = null;
+            float toleranceSquared = tolerance * tolerance;
+            PlanarPolyline first = selected;
+            PlanarPolyline second = other;
+            bool reverseFirst = false;
+            bool reverseSecond = false;
+
+            Vector3 aStart = selected.ToWorld(selected.Vertices[0].Position);
+            Vector3 aEnd = selected.Endpoint;
+            Vector3 bStart = other.ToWorld(other.Vertices[0].Position);
+            Vector3 bEnd = other.Endpoint;
+            if (Vector3.DistanceSquared(aEnd, bStart) <= toleranceSquared) { }
+            else if (Vector3.DistanceSquared(aEnd, bEnd) <= toleranceSquared) reverseSecond = true;
+            else if (Vector3.DistanceSquared(aStart, bEnd) <= toleranceSquared)
+            {
+                first = other; second = selected;
+            }
+            else if (Vector3.DistanceSquared(aStart, bStart) <= toleranceSquared)
+            {
+                first = other; second = selected; reverseFirst = true;
+            }
+            else return false;
+
+            if (reverseFirst) first = ReversedCopy(first);
+            if (reverseSecond) second = ReversedCopy(second);
+
+            var vertices = new List<PlanarPolylineVertex>();
+            foreach (PlanarPolylineVertex vertex in first.Vertices)
+                vertices.Add(vertex with { Position = selected.ToPlane(first.ToWorld(vertex.Position)) });
+            PlanarPolylineVertex secondStart = second.Vertices[0];
+            vertices[^1] = vertices[^1] with
+            {
+                Bulge = secondStart.Bulge,
+                StartWidth = secondStart.StartWidth,
+                EndWidth = secondStart.EndWidth
+            };
+            for (int i = 1; i < second.Vertices.Length; i++)
+            {
+                PlanarPolylineVertex vertex = second.Vertices[i];
+                vertices.Add(vertex with { Position = selected.ToPlane(second.ToWorld(vertex.Position)) });
+            }
+            joined = selected with { Vertices = vertices.ToArray(), Closed = false };
+            return true;
+        }
+
+        private static PlanarPolyline ReversedCopy(PlanarPolyline polyline)
+        {
+            var target = new PlanarPolylineGripTarget(polyline);
+            target.Reverse();
+            return target.Polyline.Copy();
+        }
+
+        private string EditSelectedPlanarPolyline(
+            string undoDescription,
+            Action<PlanarPolylineGripTarget> edit,
+            string message)
+        {
+            if (_selectedGripTarget is not PlanarPolylineGripTarget target)
+                return "Select a planar polyline first.";
+            PlanarPolyline before = target.Polyline.Copy();
+            edit(target);
+            PlanarPolyline after = target.Polyline.Copy();
+            UndoHistory.Record(new DelegateUndoAction(
+                undoDescription,
+                () => target.RestoreState(before),
+                () => target.RestoreState(after)));
+            return message;
+        }
+
+        private Vector2 PlanarDraftToPlane(Vector3 world) =>
+            new(world.X - _planarDraftOrigin.X, world.Y - _planarDraftOrigin.Y);
+
+        private Vector3 PlanarDraftToWorld(Vector2 point) =>
+            _planarDraftOrigin + new Vector3(point.X, point.Y, 0f);
+
+        public Vector2 PlanarPolylineDraftPlanePoint(Vector3 world) => PlanarDraftToPlane(world);
+
+        public Vector2 PlanarPolylineDraftTangent => PlanarDraftTangent2D();
+
+        private Vector2 PlanarDraftTangent2D()
+        {
+            if (_planarPolylineDraft.Count < 2) return Vector2.UnitX;
+            Vector2 tangent = _planarPolylineDraft[^1].Position - _planarPolylineDraft[^2].Position;
+            return tangent.LengthSquared > 1e-10f ? tangent.Normalized() : Vector2.UnitX;
+        }
+
         public string CrossSectionDescription => _crossSection is { } section
             ? $"{section.Name}: length {section.Length:0.###}, width {section.Width:0.###}"
             : "No cross-section.";
@@ -1388,6 +1703,32 @@ namespace CloudScope
                             polylineTarget.Grips, polylineTarget.HoveredHandle, polylineTarget.ActiveHandle);
                 }
 
+                foreach (PlanarPolylineGripTarget polylineTarget in _planarPolylines)
+                {
+                    bool selected = ReferenceEquals(_selectedGripTarget, polylineTarget);
+                    Vector3[] points = PlanarPolylineGeometry.Tessellate(polylineTarget.Polyline);
+                    Vector4 polylineColor = selected
+                        ? new Vector4(0.18f, 0.78f, 1f, 1f)
+                        : new Vector4(0.98f, 0.86f, 0.22f, 1f);
+                    if (PlanarPolylineGeometry.HasWidth(polylineTarget.Polyline))
+                    {
+                        (Vector3[] left, Vector3[] right) =
+                            PlanarPolylineGeometry.TessellateWidthEdges(polylineTarget.Polyline);
+                        _overlayRenderer.RenderPolyline(frameData, ref view, ref proj,
+                            left, false, polylineColor, selected ? 2.5f : 2f);
+                        _overlayRenderer.RenderPolyline(frameData, ref view, ref proj,
+                            right, false, polylineColor, selected ? 2.5f : 2f);
+                    }
+                    else
+                    {
+                        _overlayRenderer.RenderPolyline(frameData, ref view, ref proj,
+                            points, false, polylineColor, selected ? 2.5f : 2f);
+                    }
+                    if (selected)
+                        _overlayRenderer.RenderGrips(frameData, ref view, ref proj, viewport.Camera,
+                            polylineTarget.Grips, polylineTarget.HoveredHandle, polylineTarget.ActiveHandle);
+                }
+
                 if (_polylineDraft.Count > 0)
                 {
                     IReadOnlyList<Vector3> draftPoints = _polylineDraft;
@@ -1400,6 +1741,34 @@ namespace CloudScope
                     }
                     _overlayRenderer.RenderPolyline(frameData, ref view, ref proj,
                         draftPoints, false, new Vector4(0.20f, 0.90f, 1f, 0.95f), 2f, depthTest: false);
+                }
+
+                if (_planarPolylineDraft.Count > 0)
+                {
+                    var vertices = new List<PlanarPolylineVertex>(_planarPolylineDraft);
+                    if (_planarDraftCursor is { } cursor)
+                    {
+                        Vector2 cursor2 = PlanarDraftToPlane(cursor);
+                        PlanarPolylineVertex last = vertices[^1];
+                        if (Vector2.DistanceSquared(last.Position, cursor2) > 1e-10f)
+                        {
+                            vertices[^1] = last with
+                            {
+                                Bulge = _planarDraftArcMode
+                                    ? PlanarPolylineGeometry.TangentArcBulge(
+                                        last.Position, cursor2, PlanarDraftTangent2D())
+                                    : 0f,
+                                StartWidth = _planarDraftStartWidth,
+                                EndWidth = _planarDraftEndWidth
+                            };
+                            vertices.Add(new PlanarPolylineVertex(cursor2));
+                        }
+                    }
+                    var planarPreview = new PlanarPolyline(0, "Preview", _planarDraftOrigin,
+                        Vector3.UnitX, Vector3.UnitY, vertices.ToArray());
+                    _overlayRenderer.RenderPolyline(frameData, ref view, ref proj,
+                        PlanarPolylineGeometry.Tessellate(planarPreview), false,
+                        new Vector4(1f, 0.76f, 0.12f, 0.98f), 2.5f, depthTest: false);
                 }
 
                 if (_crossSection is { } section && viewport.SectionMode == SectionDisplayMode.PlanGuide)
@@ -1673,6 +2042,8 @@ namespace CloudScope
                 _pointSnapViewport = -1;
                 _pointSnapPreview = default;
                 if (_polylineDraft.Count > 0) _polylineDraftCursor = _polylineDraft[^1];
+                if (_planarPolylineDraft.Count > 0)
+                    _planarDraftCursor = PlanarPolylineDraftLastPoint;
                 return;
             }
 
@@ -1680,6 +2051,12 @@ namespace CloudScope
             _pointSnapViewport = Array.IndexOf(_viewports, viewport);
             if (_polylineDraft.Count > 0)
                 _polylineDraftCursor = _pointSnapPreview.Position;
+            if (_planarPolylineDraft.Count > 0)
+            {
+                Vector3 point = _pointSnapPreview.Position;
+                point.Z = _planarDraftOrigin.Z;
+                _planarDraftCursor = point;
+            }
         }
 
         private ObjectSnapResult ResolvePromptPoint(ViewportState viewport, int localX, int localY)
@@ -1691,6 +2068,8 @@ namespace CloudScope
                 Vector3 planePoint = basePoint
                     ?? _crossSectionDraft?.Center
                     ?? (_polylineDraft.Count > 0 ? _polylineDraft[^1] : camera.Pivot);
+                if (_planarPolylineDraft.Count > 0)
+                    planePoint = PlanarPolylineDraftLastPoint;
                 rawPoint = camera.ScreenToWorldAtDepth(
                     localX, localY, camera.WorldToViewZ(planePoint));
             }
@@ -1731,6 +2110,9 @@ namespace CloudScope
             }
             if (_polylineDraft.Count > 0)
                 yield return new DraftSnapSource(_polylineDraft);
+            if (_planarPolylineDraft.Count > 0)
+                yield return new DraftSnapSource(
+                    _planarPolylineDraft.Select(vertex => PlanarDraftToWorld(vertex.Position)).ToArray());
         }
 
         private SectionClip SectionClipFor(ViewportState viewport) =>
@@ -1812,6 +2194,24 @@ namespace CloudScope
             if (select) SelectGripTarget(target);
         }
 
+        private void AddPlanarPolyline(PlanarPolyline polyline, bool select)
+        {
+            RemovePlanarPolyline(polyline.Id);
+            var target = new PlanarPolylineGripTarget(polyline);
+            _planarPolylines.Add(target);
+            RegisterGripTarget(target);
+            if (select) SelectGripTarget(target);
+        }
+
+        private void RemovePlanarPolyline(int id)
+        {
+            PlanarPolylineGripTarget? target = _planarPolylines
+                .FirstOrDefault(item => item.Polyline.Id == id);
+            if (target == null) return;
+            UnregisterGripTarget(target);
+            _planarPolylines.Remove(target);
+        }
+
         private void RemovePolyline(int id)
         {
             PolylineGripTarget? target = _polylines.FirstOrDefault(item => item.Polyline.Id == id);
@@ -1867,7 +2267,9 @@ namespace CloudScope
             SetCrossSectionState(null);
             ClearCrossSectionDraft();
             ClearPolylineDraft();
+            ClearPlanarPolylineDraft();
             _polylines.Clear();
+            _planarPolylines.Clear();
             _gripTargets.Clear();
             foreach (ViewportState viewport in _viewports)
                 viewport.SectionMode = SectionDisplayMode.None;

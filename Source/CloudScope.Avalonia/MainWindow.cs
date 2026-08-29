@@ -83,7 +83,10 @@ public sealed partial class MainWindow : Window
         {
             // The workspace comes back the way it was left, and it does so by issuing the
             // command that arranges it, not by setting viewer state behind the command's back.
-            if (_settings.CommandLineFloating)
+            // The macOS workspace always opens with the command line in its native docked
+            // position at the bottom. A floating palette saved by another shell (or by an
+            // earlier macOS session) must not detach it again during startup.
+            if (_settings.CommandLineFloating && !OperatingSystem.IsMacOS())
                 RunCommandFromUi("COMMANDLINE Float");
 
             _commandLine.FocusInput();

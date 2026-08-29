@@ -34,6 +34,9 @@ namespace CloudScope.Platform.Metal
         public MTLDevice Device => _context.Device;
         public int SampleCount => _context.SampleCount;
 
+        /// <summary>Sets physical pixels per logical UI pixel for Retina-sized overlays.</summary>
+        public void SetDisplayScale(float scale) => _context.SetDisplayScale(scale);
+
         public IPointCloudRenderer  CreatePointCloudRenderer()  => new MetalPointCloudRenderer(_context);
         public IPointTileCloudRenderer CreateStreamingPointCloudRenderer() => new MetalStreamingPointCloudRenderer(_context);
         public IHighlightRenderer   CreateHighlightRenderer()   => new MetalHighlightRenderer(_context);

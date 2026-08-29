@@ -109,8 +109,23 @@ namespace CloudScope.Platform.Metal.ObjC
             if (win != IntPtr.Zero)
             {
                 _pixelScale = Double_msgSend(win, sel_backingScaleFactor);
+                // AppKit does not send mouseMoved: events unless the owning window opts in.
+                // Drag callbacks still arrive, which made orbiting work while rubber-band
+                // previews stayed frozen whenever no mouse button was held.
+                ObjectiveC.objc_msgSend(win, "setAcceptsMouseMovedEvents:", true);
                 ObjectiveC.objc_msgSend(win, "makeFirstResponder:", NativePtr);
             }
+        }
+
+        /// <summary>
+        /// Enables ordinary hover movement on the current owning window. Embedded views can
+        /// acquire their NSWindow after construction, so hosts call this again after layout.
+        /// </summary>
+        public void EnableMouseMovedEvents()
+        {
+            var win = IntPtr_msgSend(NativePtr, sel_window);
+            if (win != IntPtr.Zero)
+                ObjectiveC.objc_msgSend(win, "setAcceptsMouseMovedEvents:", true);
         }
 
         public void UpdateDrawableSize(int width, int height)
@@ -118,7 +133,10 @@ namespace CloudScope.Platform.Metal.ObjC
             _drawableHeight = height;
             var win = IntPtr_msgSend(NativePtr, sel_window);
             if (win != IntPtr.Zero)
+            {
                 _pixelScale = Double_msgSend(win, sel_backingScaleFactor);
+                ObjectiveC.objc_msgSend(win, "setAcceptsMouseMovedEvents:", true);
+            }
         }
 
         public void Dispose()

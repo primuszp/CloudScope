@@ -15,6 +15,7 @@ using CloudScope.Ui;
 using SharpMetal.Metal;
 using SharpMetal.ObjectiveCCore;
 using SharpMetal.QuartzCore;
+using NSPoint = CloudScope.Platform.MacOS.ObjC.NSPoint;
 using NSRect = CloudScope.Platform.MacOS.ObjC.NSRect;
 
 namespace CloudScope.Avalonia.Hosting.Platform.MacOS;
@@ -136,7 +137,10 @@ public sealed class MacOsEmbeddedMetalHost : NativeControlHost, IEmbeddedViewerH
         int logicalHeight = Math.Max(1, (int)Math.Round(finalRect.Height));
         NSViewInterop.SetFrameSize(_view.NativePtr, logicalWidth, logicalHeight);
         NSViewInterop.SetNeedsDisplay(_view.NativePtr);
+        _view.EnableMouseMovedEvents();
         double scale = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
+        _renderBackend?.SetDisplayScale((float)scale);
+        _controller?.SetDisplayScale((float)scale);
         ResizeDrawable(
             Math.Max(1, (int)Math.Round(logicalWidth * scale)),
             Math.Max(1, (int)Math.Round(logicalHeight * scale)));
@@ -190,6 +194,7 @@ public sealed class MacOsEmbeddedMetalHost : NativeControlHost, IEmbeddedViewerH
         _pumpTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
         _pumpTimer.Tick += (_, _) =>
         {
+            PollPromptCursor();
             while (_actions.TryDequeue(out Action? action))
             {
                 action();
@@ -199,6 +204,33 @@ public sealed class MacOsEmbeddedMetalHost : NativeControlHost, IEmbeddedViewerH
                 RequestRedraw();
         };
         _pumpTimer.Start();
+    }
+
+    /// <summary>
+    /// Keeps point-command rubber bands locked to the real NSView cursor. AppKit can coalesce
+    /// or omit mouseMoved events while focus is in Avalonia's command TextBox; polling only
+    /// during a point prompt avoids both that gap and unnecessary idle redraws.
+    /// </summary>
+    private void PollPromptCursor()
+    {
+        if (_view == null || _controller == null || _commands?.AwaitsPoint != true)
+            return;
+        NSPoint? logical = NSViewInterop.GetMouseLocation(_view.NativePtr);
+        if (logical is not { } point || point.X < 0d || point.Y < 0d
+            || point.X >= Bounds.Width || point.Y >= Bounds.Height)
+            return;
+
+        double scaleX = Bounds.Width > 0d ? _drawableWidth / Bounds.Width : 1d;
+        double scaleY = Bounds.Height > 0d ? _drawableHeight / Bounds.Height : 1d;
+        int x = Math.Clamp((int)Math.Round(point.X * scaleX), 0, Math.Max(0, _drawableWidth - 1));
+        int y = Math.Clamp(_drawableHeight - 1 - (int)Math.Round(point.Y * scaleY),
+            0, Math.Max(0, _drawableHeight - 1));
+        if (x == _lastMouseX && y == _lastMouseY)
+            return;
+
+        RememberMouse(x, y);
+        _controller.MouseMove(x, y);
+        RequestRedraw();
     }
 
     private void RequestRedraw() => _view?.SetNeedsDisplay();

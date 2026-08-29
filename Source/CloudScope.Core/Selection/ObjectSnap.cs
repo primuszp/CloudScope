@@ -8,6 +8,7 @@ public enum ObjectSnapKind
     Endpoint,
     Midpoint,
     Center,
+    Quadrant,
     Grip,
     AxisX,
     AxisY,

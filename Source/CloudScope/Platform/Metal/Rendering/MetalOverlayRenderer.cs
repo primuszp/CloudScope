@@ -112,7 +112,10 @@ namespace CloudScope.Platform.Metal.Rendering
                         depthTest: false, lineWidthPixels: LineWidth.NativeMax);
                 }
             }
-            RenderPivotPoint(frame, ref view, ref proj, pivot, 11f + 11f * fade + flash * 14f, alpha);
+            // MSL point_size is measured in drawable pixels. Scale the OpenGL-equivalent
+            // logical diameter on Retina instead of letting it appear half-sized.
+            float pointSize = (11f + 11f * fade + flash * 14f) * _context.DisplayScale;
+            RenderPivotPoint(frame, ref view, ref proj, pivot, pointSize, alpha);
         }
 
         public void RenderCenterCrosshair(IRenderFrameData frameData, int width, int height, float alpha)
@@ -184,13 +187,14 @@ namespace CloudScope.Platform.Metal.Rendering
             _renderer.SetFrame(frame);
             int required = grips.Count * GripOverlayGeometry.FloatsPerGrip;
             if (_gripVertices.Length < required) _gripVertices = new float[required];
-            int count = GripOverlayGeometry.Fill(grips, camera, _gripVertices);
+            int count = GripOverlayGeometry.Fill(grips, camera, _gripVertices, _context.DisplayScale);
             _renderer.UpdateBuffer(ref _gripBuffer, _gripVertices);
             Matrix4 mvp = view * proj;
             for (int i = 0; i < count; i++)
                 _renderer.Draw(_gripBuffer, GripOverlayGeometry.VerticesPerGrip, MTLPrimitiveType.Line,
                     mvp, GripOverlayGeometry.Color(grips[i].Index, hovered, active), depthTest: false,
-                    firstVertex: i * GripOverlayGeometry.VerticesPerGrip, lineWidthPixels: 2f);
+                    firstVertex: i * GripOverlayGeometry.VerticesPerGrip,
+                    lineWidthPixels: 2f * _context.DisplayScale);
         }
 
         public void RenderPolyline(
@@ -221,14 +225,20 @@ namespace CloudScope.Platform.Metal.Rendering
                     GripOverlayGeometry.SnapColor(snap.Kind, 0.72f), 1.25f, depthTest: false);
 
             _renderer.SetFrame(frame);
-            GripKind kind = snap.Kind == ObjectSnapKind.Midpoint ? GripKind.Midpoint : GripKind.Endpoint;
+            GripKind kind = snap.Kind switch
+            {
+                ObjectSnapKind.Midpoint => GripKind.Midpoint,
+                ObjectSnapKind.Quadrant => GripKind.Quadrant,
+                ObjectSnapKind.Center => GripKind.Center,
+                _ => GripKind.Endpoint
+            };
             GripDescriptor[] marker = [new(0, kind, snap.Position, Vector3.Zero, GripConstraint.ViewPlane)];
             float[] vertices = new float[GripOverlayGeometry.FloatsPerGrip];
-            GripOverlayGeometry.Fill(marker, camera, vertices);
+            GripOverlayGeometry.Fill(marker, camera, vertices, _context.DisplayScale);
             _renderer.UpdateBuffer(ref _gripBuffer, vertices);
             _renderer.Draw(_gripBuffer, GripOverlayGeometry.VerticesPerGrip, MTLPrimitiveType.Line,
                 view * proj, GripOverlayGeometry.SnapColor(snap.Kind), depthTest: false,
-                lineWidthPixels: 2f);
+                lineWidthPixels: 2f * _context.DisplayScale);
         }
 
 

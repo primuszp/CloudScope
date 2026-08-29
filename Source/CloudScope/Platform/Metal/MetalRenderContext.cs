@@ -32,6 +32,12 @@ namespace CloudScope.Platform.Metal
         /// <summary>Raster samples shared by every Metal pipeline and render attachment.</summary>
         public int SampleCount { get; }
 
+        /// <summary>
+        /// Physical pixels per logical UI pixel. Metal point sizes are expressed in physical
+        /// pixels, so screen-space markers use this to retain their intended size on Retina.
+        /// </summary>
+        public float DisplayScale { get; private set; } = 1f;
+
         /// <summary>The depth attachment of the frame last rendered, for depth picking.</summary>
         public MTLTexture DepthTexture { get; private set; }
         private MTLTexture _resolvedDepthTexture;
@@ -79,6 +85,12 @@ namespace CloudScope.Platform.Metal
         {
             if (width > 0 && height > 0)
                 ViewportSize = (width, height);
+        }
+
+        public void SetDisplayScale(float scale)
+        {
+            if (float.IsFinite(scale) && scale > 0f)
+                DisplayScale = scale;
         }
 
         public void SetRenderCommandEncoder(MTLRenderCommandEncoder encoder)

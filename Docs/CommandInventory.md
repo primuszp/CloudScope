@@ -6,11 +6,11 @@ A program **teljes parancsfelülete**, közvetlenül a kódból kinyerve. A rend
 
 Ez a dokumentum ma már nem az egyetlen őre a lefedettségnek: a `COVERAGE` parancs (és a
 `Source/CloudScope.CommandChecks` futtatása) a fordított kódból állapítja meg, mely
-viewer-képességhez nem vezet parancs. **Jelenleg 51 az 51-ből elérhető.**
+viewer-képességhez nem vezet parancs. **Jelenleg 78 a 78-ből elérhető.**
 
-Összesen **51 parancs**, 34 aliasszal, hét csoportban: 50 a vieweré, egy (`HOSTSTATUS`) a
-héjé — az az egyetlen dolog, amit a héj tud és a viewer nem. Egy parancsértelmező futtatja
-mindet; az Avalonia-projekt UI-réteg, saját parancsot nem implementál és egyet sem kap el.
+Összesen **58 viewer-parancs** érhető el. A `Source/CloudScope.CommandChecks` futtatása
+ellenőrzi az aktuális neveket, aliasokat és menühivatkozásokat. Egy parancsértelmező futtatja
+mindet; az Avalonia-projekt UI-réteg, saját rajzolóparancsot nem implementál.
 
 
 ## Fájl és adat (7)
@@ -21,11 +21,13 @@ mindet; az Avalonia-projekt UI-réteg, saját parancsot nem implementál és egy
 | `INDEX` | – | `INDEX <las> [directory] [Source] [CHunk n] [Grid n] [MinPoints n] [SCratch dir]` | Indexes a LAS file into a point tile store of any size. |
 | `LAYER` | LA | `LAYER [List/ON/OFf/Close] <name>` | Lists layers, or turns one on, off or closed. |
 | `LOADLABELS` | QLLOAD | `LOADLABELS [path]` | Loads labels from a JSON file. |
+| `LOADPOLYLINES` | PLLOAD | `LOADPOLYLINES <path>` | Loads versioned planar-polyline JSON and records the import for undo. |
 | `OPEN` | – | `OPEN <path> [max points]` | Loads a LAS or LAZ point cloud into memory. |
 | `OPENSTORE` | – | `OPENSTORE <store directory>` | Streams an indexed point tile store straight off disk. |
 | `SAVELABELS` | QLSAVE | `SAVELABELS [Las] [path]` | Writes labels to JSON, or class codes into a copy of the LAS. |
+| `SAVEPOLYLINES` | PLSAVE | `SAVEPOLYLINES <path>` | Saves every planar polyline to versioned JSON. |
 
-## Szerkesztés (10)
+## Szerkesztés
 
 | Parancs | Alias | Szintaxis | Mit csinál |
 | --- | --- | --- | --- |
@@ -34,6 +36,9 @@ mindet; az Avalonia-projekt UI-réteg, saját parancsot nem implementál és egy
 | `FIT` | – | `FIT [Ground]` | Shrinks the selection volume onto the points inside it. |
 | `FITGROUND` | – | `FITGROUND` | Fits the selection volume, keeping its base on the ground. |
 | `MOVE` | M | `MOVE [X/Y/Z] <dx,dy,dz> \| <base point> <second point>` | Moves the selection volume by a displacement or between two points. |
+| `3DPOLY` | – | `3DPOLY <first point> <next point>... [Close/Undo]` | Creates a non-planar chain of straight 3D segments. |
+| `PLINE` | PL, POLYLINE | `PLINE <start point> <next point>... [Arc/Close/Halfwidth/Length/Undo/Width]` | Creates one planar object from line and tangent-arc segments, with optional tapered widths. |
+| `PEDIT` | PE | `PEDIT [Close/Join/Open/Reverse/Width]` | Edits the selected planar polyline. |
 | `REDO` | – | `REDO [<number>]` | Reapplies commands stepped back with UNDO. |
 | `ROTATE` | RO | `ROTATE [X/Y/Z] <angle in degrees>` | Rotates the selection volume about a world axis. |
 | `SCALE` | SC | `SCALE <factor> \| Reference <current> <new>` | Scales the selection volume by a factor. |
