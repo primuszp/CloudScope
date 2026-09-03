@@ -211,12 +211,12 @@ rétegállapot, változóírás. Erre épül az AutoCAD-szintű `UNDO` (`<szám>
 
 ### 2.5 CommandTable – egyetlen névtér, egyetlen igazságforrás
 
-Ma két executor (`ViewerCommands`, `HostCommands`) fut egy `CommandDispatcher`
-alatt, és a dispatcher futásidőben keresi az árnyékolt neveket – olyan hibát,
-amelyet indulásig nem lehet észrevenni. A terv: **egy tábla**, a parancs pedig
-deklarálja a hatókörét (`CommandScope.Application` / `Document` / `Viewer`),
-ahogy az AutoCAD `CommandFlags.Session`-je teszi. Az ütközés így regisztrációs
-hiba, nem futásidejű meglepetés.
+**Megvalósított állapot (2026-09-03):** a korábbi több-executoros
+`CommandDispatcher` és a külön `HostCommands` megszűnt. Minden shell és renderer ugyanazt a
+`ViewerCommandDispatcher`-t delegálja; az egyetlen runtime-regisztrációban a név- és
+aliasütközés azonnali hiba. A parancs deklarálja a hatókörét
+(`CommandScope.Application` / `Document` / `Viewer`), és ezt az indítás előtt a közös
+`CommandScopePolicy` érvényesíti.
 
 A `CommandMethodAttribute` kiegészül azzal, ami ma hiányzik és amiért a súgó
 elavul:
@@ -364,9 +364,9 @@ ott minden begépelt szöveg adat, különben egy `PEEK` nevű pont nevét nem l
 AutoCAD válasza az aposztróf-előtag (`'ZOOM`), és a rendszer most ezt követi. Keresztül-
 esett teszt derítette ki, nem tervezés.
 
-**2. A `HOSTHELP` megszűnt, a `STATUS` a viewerhez került.** A terv „a `STATUS` a Core-ba
-kerül" pontja azzal járt, hogy a héj saját `STATUS`-a útban volt; az lett `HOSTSTATUS`. A
-`HOSTHELP` pedig értelmét vesztette, amikor a `HELP` egyetlen táblából listáz mindent.
+**2. A `HOSTHELP` megszűnt, a `STATUS` a viewerhez került.** A `HOSTSTATUS` a későbbi
+egységesítésben szintén megszűnt: a shell nem birtokol saját parancsot. A `STATUS`, `HELP` és
+`COMMANDS` egyetlen viewer-parancstáblából szolgáltatja az állapotot, súgót és teljes leltárt.
 
 **3. A `PTMAX` él, a `PTRESIDENT` nem teljesen.** A képkockánkénti pontkeret futásidőben
 átállítható. A rezidens keret viszont csak a változás *után* megnyitott felhőkre hat: a már

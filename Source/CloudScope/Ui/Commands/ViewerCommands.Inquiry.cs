@@ -388,6 +388,18 @@ public sealed partial class ViewerCommands
             CommandCoverage.Analyse(Executor.Commands, typeof(ViewerController)).Describe());
     }
 
+    [CommandMethod("COMMANDS", Flags = CommandFlags.NoUndoMarker | CommandFlags.NoHistory | CommandFlags.Transparent,
+        Group = CommandGroup.Utility, Scope = CommandScope.Application,
+        Summary = "Lists every registered command, alias, scope, and usage.",
+        Syntax = "COMMANDS")]
+    public IEnumerable<PromptStep> Commands(CommandContext context)
+    {
+        context.Editor.WriteMessage(Executor == null
+            ? "The command table is not available."
+            : CommandInventory.Describe(Executor.Commands));
+        yield break;
+    }
+
     [CommandMethod("HELP", "?", Flags = CommandFlags.NoUndoMarker | CommandFlags.NoHistory | CommandFlags.Transparent,
         Group = CommandGroup.Utility, Scope = CommandScope.Application,
         Summary = "Lists the commands, or explains one of them.",

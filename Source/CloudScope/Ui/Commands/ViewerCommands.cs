@@ -80,8 +80,12 @@ public sealed partial class ViewerCommands
     [
         new("ALL", "All"),
         new("CENTER", "Center"),
+        new("DYNAMIC", "Dynamic"),
         new("EXTENTS", "Extents"),
         new("OBJECT", "Object"),
+        new("PREVIOUS", "PRevious"),
+        new("REALTIME", "RealTime"),
+        new("SCALE", "Scale"),
         new("WINDOW", "Window")
     ];
 
@@ -158,6 +162,11 @@ public sealed partial class ViewerCommands
             value = value[..^2];
         else if (value.EndsWith('X') || value.EndsWith('x'))
             value = value[..^1];
+        else
+        {
+            factor = 0f;
+            return false;
+        }
 
         return float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out factor) && factor > 0f;
     }

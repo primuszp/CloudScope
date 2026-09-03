@@ -1,19 +1,22 @@
 # CloudScope parancs-nyilvántartás
 
-A program **teljes parancsfelülete**, közvetlenül a kódból kinyerve. A rendszer felépítését a
+A program teljes parancsfelületének olvasható áttekintése. A futásidejű, kanonikus lista a
+`COMMANDS` parancs kimenete: ugyanabból a regisztrációs táblából készül, amely a parancsokat
+végrehajtja. A rendszer felépítését a
 [CommandSystem.md](CommandSystem.md), a hozzá vezető tervet a
 [CommandSystemPlan.md](CommandSystemPlan.md) írja le.
 
 Ez a dokumentum ma már nem az egyetlen őre a lefedettségnek: a `COVERAGE` parancs (és a
 `Source/CloudScope.CommandChecks` futtatása) a fordított kódból állapítja meg, mely
-viewer-képességhez nem vezet parancs. **Jelenleg 78 a 78-ből elérhető.**
+viewer-képességhez nem vezet parancs. **Jelenleg 87 a 87-ből elérhető.**
 
-Összesen **58 viewer-parancs** érhető el. A `Source/CloudScope.CommandChecks` futtatása
-ellenőrzi az aktuális neveket, aliasokat és menühivatkozásokat. Egy parancsértelmező futtatja
-mindet; az Avalonia-projekt UI-réteg, saját rajzolóparancsot nem implementál.
+Összesen **62 parancs** érhető el. A `Source/CloudScope.CommandChecks` futtatása ellenőrzi az
+aktuális neveket, aliasokat, az angol/ASCII parancsmetaadatokat és a menühivatkozásokat. Egy
+kanonikus `ViewerCommandDispatcher` futtatja mindet; az Avalonia-projekt UI-réteg, saját
+parancs-implementáció nélkül.
 
 
-## Fájl és adat (7)
+## Fájl és adat (9)
 
 | Parancs | Alias | Szintaxis | Mit csinál |
 | --- | --- | --- | --- |
@@ -45,42 +48,46 @@ mindet; az Avalonia-projekt UI-réteg, saját rajzolóparancsot nem implementál
 | `SELECT` | SEL | `SELECT [Box/Sphere/Cylinder/Undo/CONFirm/CANcel/Fit/GroundFit]` | Draws a selection volume and applies it to the current label. |
 | `UNDO` | U | `UNDO [<number>/Mark/Back]` | Steps back through completed commands. |
 
-## Címkézés (8)
+## Címkézés (10)
 
 | Parancs | Alias | Szintaxis | Mit csinál |
 | --- | --- | --- | --- |
 | `CLEARLABELS` | – | `CLEARLABELS` | Removes every label from the cloud. |
+| `GROUNDSEG` | SEGMENTGROUND, GROUND | `GROUNDSEG` | Separates terrain points with a progressive multi-scale ground filter. |
 | `INSTANCE` | INST | `INSTANCE <id> \| CLear` | Sets or clears the instance id new selections are given. |
 | `LABEL` | – | `LABEL <name> [instance id]` | Sets the label (and optionally the instance) new selections are given. |
 | `LABELDEF` | – | `LABELDEF <name> <class 0-255> [Color r,g,b] \| List \| DElete <name>` | Defines, colours, lists or deletes a label and its LAS class code. |
 | `LABELMODE` | L | `LABELMODE` | Toggles between label mode and navigation mode. |
 | `LABELS` | – | `LABELS` | Shows or hides the label registry window. |
 | `NAVIGATE` | NAV, N | `NAVIGATE` | Switches to navigation mode. |
+| `TREESEG` | SEGMENTTREE, TREE | `TREESEG <seed point>` | Segments one terrestrial/SLAM tree from a picked trunk seed. |
 | `UNLABEL` | ERASE | `UNLABEL` | Removes the labels of every point inside the active selection volume. |
 
-## Nézet (11)
+## Nézet (12)
 
 | Parancs | Alias | Szintaxis | Mit csinál |
 | --- | --- | --- | --- |
 | `COLORBY` | COLOR, CB | `COLORBY [Rgb/Height/Class/Intensity/ReTurn/CLear]` | Colours the cloud by one of its attributes. |
 | `FILTER` | FI | `FILTER [Class/Intensity/Return/Z/CLear] <values>` | Shows only the points matching an attribute filter. |
 | `ORBIT` | OR | `ORBIT <azimuth,elevation> \| Reset` | Orbits the camera by an angle, or resets the orbit. |
-| `PAN` | P | `PAN <dx,dy> \| Point <base> <target>` | Pans the view by a pixel offset or between two points. |
+| `PAN` | P | `PAN <base point> <second point> \| Displacement <dx,dy>` | Repositions the view in the active viewport. |
 | `PIVOT` | – | `PIVOT <x,y,z> \| Screen <x,y> \| Extents` | Sets the point the view orbits around. |
 | `POINTSIZE` | PSIZE | `POINTSIZE <size> \| + \| -` | Sets the on-screen size of a point, in pixels. |
 | `PROJECTION` | PROJ, PERSPECTIVE | `PROJECTION [Perspective/PArallel]` | Switches between perspective and parallel projection. |
 | `RESET` | – | `RESET` | Resets the viewer to its initial view and state. |
 | `VIEW` | V | `VIEW [Front/BAck/Left/Right/Top/Bottom/Isometric/Save/Restore/LIst/DElete]` | Sets a standard view, or saves and restores a named one. |
 | `VPORTS` | VP | `VPORTS [Single/Two/Plan/PRevious] [Vertical/Horizontal] [view]` | Splits the drawing area into viewports. |
-| `ZOOM` | Z | `ZOOM [All/Center/Extents/Object/Window] \| <scale> \| <nX> \| <corner> <corner>` | Zooms the view by a scale factor, to extents, or into a window. |
+| `XSECTION` | XS, CROSSSECTION | `XSECTION <first point> <second point> [width] \| [New/Width/Flip/View/List/CLear]` | Creates and displays a finite vertical point-cloud cross-section. |
+| `ZOOM` | Z | `ZOOM [All/Center/Dynamic/Extents/Object/PRevious/RealTime/Scale/Window] \| <corner>` | Changes magnification in the active viewport. |
 
-## Lekérdezés (7)
+## Lekérdezés (8)
 
 | Parancs | Alias | Szintaxis | Mit csinál |
 | --- | --- | --- | --- |
 | `ATTRIBUTES` | ATTRS | `ATTRIBUTES [All/Class/Intensity/Return/Z]` | Reports the distribution of an attribute across the cloud. |
 | `HISTORY` | – | `HISTORY` | Shows or hides the expanded command history window. |
-| `HOSTSTATUS` | – | `HOSTSTATUS` | Reports the shell's own status line. |
+| `COMMANDLINE` | – | `COMMANDLINE [On/Off/Toggle/Float/Dock]` | Shows, hides, floats or docks the command line. |
+| `COMMANDLINEHIDE` | – | `COMMANDLINEHIDE` | Hides the command line. |
 | `LABELSTAT` | – | `LABELSTAT` | Reports how many points carry each label. |
 | `STATUS` | – | `STATUS` | Reports what the viewer is currently showing and doing. |
 | `STOREINFO` | – | `STOREINFO` | Reports the structure of the open point tile stores. |
@@ -95,11 +102,12 @@ mindet; az Avalonia-projekt UI-réteg, saját rajzolóparancsot nem implementál
 | `POINTCLOUDCONFIG` | PTCONFIG | `POINTCLOUDCONFIG [Frame <points>/Resident <points>/Show]` | Shows or sets the per-frame and resident point budgets. |
 | `SETVAR` | SET | `SETVAR <name> <value> \| ? [pattern]` | Lists or changes a system variable. |
 
-## Segédparancsok (4)
+## Segédparancsok (5)
 
 | Parancs | Alias | Szintaxis | Mit csinál |
 | --- | --- | --- | --- |
 | `COVERAGE` | – | `COVERAGE` | Reports which viewer capabilities no command can reach. |
+| `COMMANDS` | – | `COMMANDS` | Lists every registered command, alias, scope, and usage. |
 | `HELP` | ? | `HELP [command]` | Lists the commands, or explains one of them. |
 | `QUIT` | EXIT | `QUIT` | Closes the viewer. |
 | `SCRIPT` | SCR | `SCRIPT <path>` | Runs a file of commands, one per line. |

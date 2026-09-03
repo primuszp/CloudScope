@@ -10,9 +10,9 @@ namespace CloudScope.Avalonia.Controls;
 
 /// <summary>
 /// The AutoCAD-style command window: a single live command line beneath scrolling output,
-/// autocomplete, input recall, and the space-vs-enter submission rule.  The prompt is an
-/// immutable prefix of the input, so it reads as one console line rather than a label beside a
-/// separate textbox.
+/// autocomplete, input recall, and the space-vs-enter submission rule.  The prompt is rendered
+/// beside the editable answer, never embedded in it: deleting an autocomplete candidate must not
+/// be able to duplicate or corrupt the prompt text.
 /// </summary>
 public sealed class CommandLineControl : UserControl
 {
@@ -29,14 +29,21 @@ public sealed class CommandLineControl : UserControl
         BorderThickness = new Thickness(0),
         FocusAdorner = null
     };
+    private readonly TextBlock _prompt = new()
+    {
+        Foreground = new SolidColorBrush(Color.FromRgb(0, 48, 150)),
+        FontFamily = new FontFamily(global::CloudScope.Ui.UiPalette.MonoFontStack),
+        FontSize = 12,
+        FontWeight = FontWeight.Normal,
+        HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Left,
+        VerticalAlignment = global::Avalonia.Layout.VerticalAlignment.Center
+    };
     private readonly Popup _completionPopup = new();
     private readonly ListBox _completionList = new();
 
     private IReadOnlyList<CommandCompletion> _completions = [];
     private string _completionPrefix = "";
-    private string _promptPrefix = "";
     private bool _settingInput;
-    private bool _clampingSelection;
 
     public CommandLineControl(CommandLineSession session, Func<string, Task> submit)
     {
@@ -54,38 +61,20 @@ public sealed class CommandLineControl : UserControl
         _input.Resources["TextControlBorderBrushPointerOver"] = Brushes.Transparent;
         _input.Resources["TextControlBorderBrushFocused"] = Brushes.Transparent;
         _input.Resources["TextControlBorderThemeThickness"] = new Thickness(0);
+        _input.Resources["TextControlBorderThemeThicknessPointerOver"] = new Thickness(0);
         _input.Resources["TextControlBorderThemeThicknessFocused"] = new Thickness(0);
+        _prompt.IsHitTestVisible = false;
+        _prompt.SizeChanged += (_, _) => SetPromptPadding();
 
         _transcript = new CommandTranscript(session, cadPalette: true);
         _transcript.CommandRecalled += Stage;
 
         _input.Classes.Add("commandInput");
         _input.KeyDown += OnInputKeyDown;
-        _input.PropertyChanged += (_, change) =>
-        {
-            if (change.Property == TextBox.SelectionStartProperty ||
-                change.Property == TextBox.SelectionEndProperty ||
-                change.Property == TextBox.CaretIndexProperty)
-                ClampSelectionToAnswer();
-        };
         _input.TextChanged += (_, _) =>
         {
             if (_settingInput)
                 return;
-
-            // The whole live line is one TextBox, like AutoCAD. The prompt is a protected
-            // prefix: edits may affect only the answer after it.
-            string displayed = _input.Text ?? "";
-            if (!displayed.StartsWith(_promptPrefix, StringComparison.Ordinal))
-            {
-                int prefixAt = displayed.IndexOf(_promptPrefix, StringComparison.Ordinal);
-                string editedInput = prefixAt >= 0
-                    ? displayed.Remove(prefixAt, _promptPrefix.Length)
-                    : displayed.TrimStart();
-                SetInput(editedInput, caretAtEnd: true);
-                return;
-            }
-
             RefreshCompletions();
         };
 
@@ -97,7 +86,9 @@ public sealed class CommandLineControl : UserControl
         {
             Background = Brushes.White,
             BorderBrush = new SolidColorBrush(Color.FromRgb(145, 145, 145)),
-            BorderThickness = new Thickness(1),
+            // The popup is placed immediately above the input.  Its bottom edge would read
+            // as an unwanted grey stripe across the top of the TextBox while typing.
+            BorderThickness = new Thickness(1, 1, 1, 0),
             Child = _completionList,
             MinWidth = 320,
             MaxHeight = 220
@@ -192,7 +183,7 @@ public sealed class CommandLineControl : UserControl
     {
         string current = InputText;
         int caret = IsKeyboardFocusWithin
-            ? Math.Clamp(_input.CaretIndex - _promptPrefix.Length, 0, current.Length)
+            ? Math.Clamp(_input.CaretIndex, 0, current.Length)
             : current.Length;
 
         SetInput(current[..caret] + text + current[caret..], caret + text.Length);
@@ -243,13 +234,22 @@ public sealed class CommandLineControl : UserControl
             }
         };
 
+        // The TextBox owns the complete width of the command row.  The prompt is only a
+        // non-interactive overlay; padding moves typed text past it without shrinking the
+        // actual edit control or leaving a differently styled strip at the left.
+        var inputLine = new Grid();
+        inputLine.Children.Add(_input);
+        inputLine.Children.Add(_prompt);
+
         var inputBorder = new Border
         {
             Background = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.FromRgb(145, 145, 145)),
-            BorderThickness = new Thickness(0, 1, 0, 0),
+            // Keep the command entry visually continuous with the transcript.  A one-pixel
+            // top border becomes conspicuous while the completion popup is dismissed by
+            // Backspace, especially at Retina scaling.
+            BorderThickness = new Thickness(0),
             Padding = new Thickness(7, 1, 8, 2),
-            Child = _input
+            Child = inputLine
         };
 
         var content = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };
@@ -268,15 +268,18 @@ public sealed class CommandLineControl : UserControl
         return root;
     }
 
-    private string InputText => (_input.Text ?? "").StartsWith(_promptPrefix, StringComparison.Ordinal)
-        ? (_input.Text ?? "")[_promptPrefix.Length..]
-        : "";
+    private string InputText => _input.Text ?? "";
 
     private void SetPromptPrefix()
     {
-        string input = InputText;
-        _promptPrefix = _session.Prompt.TrimEnd() + " ";
-        SetInput(input, caretAtEnd: true);
+        _prompt.Text = _session.Prompt.TrimEnd() + " ";
+        SetPromptPadding();
+    }
+
+    private void SetPromptPadding()
+    {
+        double left = Math.Ceiling(_prompt.Bounds.Width);
+        _input.Padding = new Thickness(left, 0, 0, 0);
     }
 
     private void SetInput(string text, bool caretAtEnd) => SetInput(text, caretAtEnd ? text.Length : 0);
@@ -286,38 +289,13 @@ public sealed class CommandLineControl : UserControl
         _settingInput = true;
         try
         {
-            _input.Text = _promptPrefix + text;
-            int absoluteCaret = _promptPrefix.Length + Math.Clamp(caret, 0, text.Length);
-            _input.SelectionStart = absoluteCaret;
-            _input.SelectionEnd = absoluteCaret;
-            _input.CaretIndex = absoluteCaret;
+            int position = Math.Clamp(caret, 0, text.Length);
+            _input.Text = text;
+            _input.SelectionStart = position;
+            _input.SelectionEnd = position;
+            _input.CaretIndex = position;
         }
         finally { _settingInput = false; }
-    }
-
-    /// <summary>
-    /// The prompt and answer share one native TextBox for the right visual and editing feel,
-    /// but only the answer is user-selectable. This also constrains Ctrl+A and mouse drags.
-    /// </summary>
-    private void ClampSelectionToAnswer()
-    {
-        if (_clampingSelection || _settingInput)
-            return;
-
-        int firstEditable = Math.Min(_promptPrefix.Length, (_input.Text ?? "").Length);
-        if (_input.SelectionStart >= firstEditable &&
-            _input.SelectionEnd >= firstEditable &&
-            _input.CaretIndex >= firstEditable)
-            return;
-
-        _clampingSelection = true;
-        try
-        {
-            _input.SelectionStart = Math.Max(firstEditable, _input.SelectionStart);
-            _input.SelectionEnd = Math.Max(firstEditable, _input.SelectionEnd);
-            _input.CaretIndex = Math.Max(firstEditable, _input.CaretIndex);
-        }
-        finally { _clampingSelection = false; }
     }
 
     private void OnInputKeyDown(object? sender, KeyEventArgs e)
@@ -325,32 +303,8 @@ public sealed class CommandLineControl : UserControl
         switch (e.Key)
         {
             case Key.Home:
-                _input.CaretIndex = _promptPrefix.Length;
+                _input.CaretIndex = 0;
                 e.Handled = true;
-                return;
-
-            case Key.Left:
-                if (_input.CaretIndex <= _promptPrefix.Length)
-                {
-                    _input.CaretIndex = _promptPrefix.Length;
-                    e.Handled = true;
-                }
-                return;
-
-            case Key.Back:
-                if (_input.CaretIndex <= _promptPrefix.Length)
-                {
-                    e.Handled = true;
-                    return;
-                }
-                return;
-
-            case Key.Delete:
-                if (_input.CaretIndex < _promptPrefix.Length)
-                {
-                    e.Handled = true;
-                    return;
-                }
                 return;
 
             case Key.Escape:

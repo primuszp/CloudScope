@@ -303,6 +303,30 @@ namespace CloudScope
         }
 
         /// <summary>
+        /// Re-centres the view on a picked screen position and sets the visible view height.
+        /// The same anchor calculation as <see cref="Zoom"/> is used so neither parallel nor
+        /// perspective projection introduces a screen-space jump.
+        /// </summary>
+        public bool ZoomCenter(int screenX, int screenY, float viewHeight)
+        {
+            if (viewHeight <= 0f || float.IsNaN(viewHeight) || float.IsInfinity(viewHeight))
+                return false;
+
+            PickDepthWindow(screenX, screenY, 21);
+            float viewZ = _picked.Z;
+            Vector3 anchorWorld = ViewToWorld(ScreenToView(screenX, screenY, viewZ));
+            double oldHalfViewSize = _hvs;
+            _hvs = Math.Clamp(viewHeight * 0.5f, 0.001, 1_000_000.0);
+            if (_vang != 0.0)
+                viewZ *= (float)(_hvs / oldHalfViewSize);
+            CalcViewVolume();
+            _trn = anchorWorld - MulDir(ScreenToView(_vpW / 2, _vpH / 2, viewZ), _vtw);
+            _orbitPivot = anchorWorld;
+            _picked = ScreenToView(_vpW / 2, _vpH / 2, viewZ);
+            return true;
+        }
+
+        /// <summary>
         /// Toggle ortho / perspective, preserving the point under the mouse.
         /// Uses pickedPointView.Z (= _picked.Z) exactly as in AdvancedZPR.
         /// </summary>

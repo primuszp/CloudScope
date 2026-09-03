@@ -33,6 +33,15 @@ try
     Check("every command has a summary", commands.All(c => c.Summary.Length > 0));
     Check("every command has a syntax", commands.All(c => c.Syntax.Length > 0),
         string.Join(",", commands.Where(c => c.Syntax.Length == 0).Select(c => c.GlobalName)));
+    Check("command names use the English command alphabet",
+        commands.All(c => c.GlobalName.All(ch => char.IsAsciiLetterOrDigit(ch) || ch == '_') &&
+                          c.Aliases.All(a => a == "?" || a.All(ch => char.IsAsciiLetterOrDigit(ch) || ch == '_'))));
+    Check("command metadata is ASCII English-facing text",
+        commands.All(c => c.Summary.All(char.IsAscii) && c.Syntax.All(char.IsAscii)));
+    string inventory = CommandInventory.Describe(commands);
+    Check("COMMANDS inventory contains every registered command",
+        commands.All(c => inventory.Contains(c.GlobalName, StringComparison.Ordinal) &&
+                          inventory.Contains(c.UsageLine, StringComparison.Ordinal)));
 
     foreach (var group in commands.GroupBy(c => c.Group).OrderBy(g => g.Key))
         Console.WriteLine($"       {group.Key,-9} {string.Join(" ", group.Select(c => c.GlobalName).OrderBy(n => n))}");
@@ -199,6 +208,60 @@ Check("deferred lines run after the command", r.Message.Contains("pong"), r.Mess
 // unknown command
 r = Run("NOSUCHCOMMAND");
 Check("unknown command reports", r.Message.Contains("Unknown command"), r.Message);
+
+// Scope is not merely documentation: a host policy rejects a Document command before its
+// coroutine starts, and the same command becomes available when a document opens.
+var documentClosed = new CommandRuntime(
+    log,
+    [new ProbeCommands()],
+    command => CommandScopePolicy.ExplainUnavailable(command, viewerAvailable: true, documentAvailable: false));
+r = documentClosed.Execute("DOCONLY");
+Check("document scope blocks commands without a cloud",
+    r.Status == CommandStatus.Ended && r.Message.Contains("requires an open point cloud"), r.Message);
+var documentOpen = new CommandRuntime(
+    log,
+    [new ProbeCommands()],
+    command => CommandScopePolicy.ExplainUnavailable(command, viewerAvailable: true, documentAvailable: true));
+r = documentOpen.Execute("DOCONLY");
+Check("document scope permits commands with a cloud", r.Message == "document command", r.Message);
+
+// The camera contract is shared by command-line ZOOM/PAN and the mouse.  Preserve an exact
+// world-space anchor through both operations in parallel and perspective projection; this is
+// the regression boundary that prevents pixel drift between the two code paths.
+foreach (bool perspective in new[] { false, true })
+{
+    var camera = new OrbitCamera();
+    camera.SetViewportSize(1280, 720);
+    camera.SetDepthPicker(new ConstantDepthPicker(0.5f));
+    camera.FitToCloud(100f);
+    if (!perspective)
+        camera.SetOrthographicStandardView("TOP", 100f);
+
+    const int fromX = 317, fromY = 241, toX = 861, toY = 509;
+    Vector3 zoomAnchor = camera.ScreenToWorldPoint(fromX, fromY).point;
+    camera.PickDepthWindow(fromX, fromY, 21);
+    camera.Zoom(fromX, fromY, 1.75f);
+    var (zoomX, zoomY, zoomBehind) = camera.WorldToScreen(zoomAnchor);
+    Check($"{(perspective ? "perspective" : "parallel")} zoom keeps cursor anchor",
+        !zoomBehind && MathF.Abs(zoomX - fromX) < 0.02f && MathF.Abs(zoomY - fromY) < 0.02f,
+        $"projected {zoomX:0.###},{zoomY:0.###}");
+
+    Vector3 panAnchor = camera.ScreenToWorldPoint(fromX, fromY).point;
+    camera.PickDepthWindow(fromX, fromY, 21);
+    camera.Pan(fromX, fromY, toX, toY);
+    var (panX, panY, panBehind) = camera.WorldToScreen(panAnchor);
+    Check($"{(perspective ? "perspective" : "parallel")} pan keeps drag anchor",
+        !panBehind && MathF.Abs(panX - toX) < 0.02f && MathF.Abs(panY - toY) < 0.02f,
+        $"projected {panX:0.###},{panY:0.###}");
+
+    Vector3 centerAnchor = camera.ScreenToWorldPoint(fromX, fromY).point;
+    Check($"{(perspective ? "perspective" : "parallel")} zoom center accepts positive height",
+        camera.ZoomCenter(fromX, fromY, 50f));
+    var (centerX, centerY, centerBehind) = camera.WorldToScreen(centerAnchor);
+    Check($"{(perspective ? "perspective" : "parallel")} zoom center recentres anchor",
+        !centerBehind && MathF.Abs(centerX - 640f) < 0.02f && MathF.Abs(centerY - 360f) < 0.02f,
+        $"projected {centerX:0.###},{centerY:0.###}");
+}
 
 // ---------- 2b. Prompt layout the shells draw ----------
 {
@@ -551,6 +614,14 @@ sealed class ProbeCommands
     [CommandMethod("PING", Summary = "Replies pong.", Syntax = "PING")]
     public IEnumerable<PromptStep> Ping(CommandContext c) { c.Editor.WriteMessage("pong"); yield break; }
 
+    [CommandMethod("DOCONLY", Scope = CommandScope.Document,
+        Summary = "Verifies document scope enforcement.", Syntax = "DOCONLY")]
+    public IEnumerable<PromptStep> DocumentOnly(CommandContext c)
+    {
+        c.Editor.WriteMessage("document command");
+        yield break;
+    }
+
     [CommandMethod("DIRECTIONPOINT", Summary = "Directional point probe.", Syntax = "DIRECTIONPOINT")]
     public IEnumerable<PromptStep> DirectionPoint(CommandContext c)
     {
@@ -648,5 +719,17 @@ sealed class ProbeCommands
         c.Editor.WriteMessage("queued");
         c.Editor.RunAfter("PING");
         yield break;
+    }
+}
+
+sealed class ConstantDepthPicker(float depth) : IDepthPicker
+{
+    public float ReadDepth(int x, int y) => depth;
+
+    public int ReadDepthWindow(int x, int y, int width, int height, float[] destination)
+    {
+        int count = Math.Min(width * height, destination.Length);
+        Array.Fill(destination, depth, 0, count);
+        return count;
     }
 }
