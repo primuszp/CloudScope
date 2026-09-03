@@ -43,6 +43,7 @@ public sealed class CommandRuntime : ICommandExecutor
     private readonly object _target;
     private readonly Editor _editor = new();
     private readonly CommandContext _context;
+    private readonly Func<CommandDescriptor, string?>? _availability;
     private readonly Dictionary<string, Descriptor> _commands = new(StringComparer.OrdinalIgnoreCase);
     private readonly Queue<string> _pending = new();
 
@@ -50,11 +51,22 @@ public sealed class CommandRuntime : ICommandExecutor
     private IEnumerator<PromptStep>? _steps;
     private PromptStep? _step;
 
-    public CommandRuntime(object target, params object[] commandClasses)
+    /// <param name="availability">
+    /// Optional host policy evaluated immediately before a command starts.  Registration stays
+    /// independent of a particular UI host, while Document-scoped commands can still refuse to
+    /// run until a cloud is open.
+    /// </param>
+    public CommandRuntime(object target, object[] commandClasses, Func<CommandDescriptor, string?>? availability = null)
     {
         _target = target;
         _context = new CommandContext(target, _editor);
+        _availability = availability;
         foreach (object commandClass in commandClasses) Register(commandClass);
+    }
+
+    public CommandRuntime(object target, params object[] commandClasses)
+        : this(target, commandClasses, availability: null)
+    {
     }
 
     public event EventHandler<CommandEventArgs>? CommandStarted;
@@ -214,6 +226,9 @@ public sealed class CommandRuntime : ICommandExecutor
 
     private CommandResult Start(Descriptor descriptor, Queue<string> arguments)
     {
+        if (_availability?.Invoke(descriptor.Info) is { Length: > 0 } unavailable)
+            return CommandResult.End(unavailable);
+
         _active = descriptor;
         _step = null;
         _editor.Reset();
@@ -495,10 +510,26 @@ public sealed class CommandRuntime : ICommandExecutor
     // is exactly the second source of truth this table exists to remove.
     private static void ValidateMetadata(MethodInfo method, CommandMethodAttribute attribute)
     {
+        if (!IsCommandName(attribute.GlobalName))
+            throw new InvalidOperationException(
+                $"{method.DeclaringType?.Name}.{method.Name} has invalid command name '{attribute.GlobalName}'. " +
+                "Command names must use ASCII letters, digits, or underscore.");
+
+        if (attribute.Aliases.Any(alias => !IsCommandAlias(alias)))
+            throw new InvalidOperationException(
+                $"{method.DeclaringType?.Name}.{method.Name} has an invalid command alias. " +
+                "Aliases must use ASCII letters, digits, underscore, or '?'.");
+
         if (attribute.Summary.Trim().Length == 0)
             throw new InvalidOperationException(
                 $"{method.DeclaringType?.Name}.{method.Name} ({attribute.GlobalName}) must declare a Summary.");
     }
+
+    private static bool IsCommandName(string name) =>
+        name.Length > 0 && name.All(c => c is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9' or '_');
+
+    private static bool IsCommandAlias(string alias) =>
+        alias == "?" || IsCommandName(alias);
 
     // ----- Text -----
 

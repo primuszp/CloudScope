@@ -637,6 +637,14 @@ namespace CloudScope
         public bool NeedsContinuousFrames =>
             _viewports.Any(v => v.Input.NeedsContinuousFrames) || _streamingRenderer.PendingCellCount > 0;
 
+        /// <summary>
+        /// True when a background operation has completed and its graphics-thread work is
+        /// waiting for <see cref="UpdateFrame"/>.  On-demand render hosts use this to wake
+        /// the next frame; otherwise a completed OPEN can remain queued indefinitely while
+        /// an idle window has no reason to redraw.
+        /// </summary>
+        public bool HasPendingFrameWork => !_pendingWork.IsEmpty;
+
         public InteractionMode Mode => _selection.Mode;
         public SelectionInteractionState SelectionInteractionState => _selection.InteractionState;
         public SelectionToolType ActiveToolType => _selection.ActiveTool.ToolType;
@@ -756,23 +764,62 @@ namespace CloudScope
 
         public bool UndoSelectionCommand() => _selection.UndoSelectionCommand();
 
-        public void ZoomExtents() => FitViewport(ActiveViewport);
+        public void ZoomExtents()
+        {
+            RememberView(ActiveViewport);
+            FitViewport(ActiveViewport);
+        }
+
+        /// <summary>CloudScope has no separate drawing limits, so All is the 3D extents view.</summary>
+        public void ZoomAll() => ZoomExtents();
 
         public void ZoomByFactor(float factor)
         {
             ViewportState viewport = ActiveViewport;
+            RememberView(viewport);
             int cx = viewport.Bounds.Width / 2;
             int cy = viewport.Bounds.Height / 2;
             viewport.Camera.PickDepthWindow(cx, cy, 11);
             viewport.Camera.Zoom(cx, cy, factor);
         }
 
-        public void ZoomWindow(int x0, int y0, int x1, int y1) => ActiveViewport.Camera.ZoomWindow(x0, y0, x1, y1);
+        public void ZoomWindow(int x0, int y0, int x1, int y1)
+        {
+            RememberView(ActiveViewport);
+            ActiveViewport.Camera.ZoomWindow(x0, y0, x1, y1);
+        }
+
+        public bool ZoomCenter(int x, int y, float height)
+        {
+            if (height <= 0f) return false;
+            RememberView(ActiveViewport);
+            return ActiveViewport.Camera.ZoomCenter(x, y, height);
+        }
+
+        public bool ZoomPrevious()
+        {
+            ViewportState viewport = ActiveViewport;
+            if (viewport.ViewHistory.Count == 0)
+                return false;
+            OrbitCamera.CameraState state = viewport.ViewHistory[^1];
+            viewport.ViewHistory.RemoveAt(viewport.ViewHistory.Count - 1);
+            viewport.Camera.RestoreState(state, animate: false);
+            return true;
+        }
 
         public string PanByPixels(int dx, int dy)
         {
+            RememberView(ActiveViewport);
             ActiveViewport.Camera.PanPixels(dx, dy);
             return $"Panned {dx},{dy} pixels.";
+        }
+
+        public string PanBetweenPoints(int fromX, int fromY, int toX, int toY)
+        {
+            RememberView(ActiveViewport);
+            ActiveViewport.Camera.PickDepthWindow(fromX, fromY, 11);
+            ActiveViewport.Camera.Pan(fromX, fromY, toX, toY);
+            return "Panned.";
         }
 
         public string OrbitBy(float azimuthDegrees, float elevationDegrees)
@@ -830,9 +877,10 @@ namespace CloudScope
                 ? "No saved views. Store one with VIEW Save."
                 : "Saved views: " + string.Join(", ", _namedViews.Keys.OrderBy(n => n, StringComparer.OrdinalIgnoreCase));
 
-        public void ZoomCenter()
+        public void ZoomObject()
         {
             ViewportState viewport = ActiveViewport;
+            RememberView(viewport);
             viewport.Camera.FocusOnCursor(viewport.Bounds.Width / 2, viewport.Bounds.Height / 2);
         }
 
@@ -965,7 +1013,7 @@ namespace CloudScope
         public string SetViewportLayout(ViewportLayoutKind layout, ViewportViewKind view)
         {
             if (layout == ViewportLayoutKind.Previous)
-                layout = _previousViewportLayout;
+                return RestorePreviousViewportLayout();
 
             _auxiliaryViewportView = view;
             _forceAuxiliaryViewRefresh = true;
@@ -978,6 +1026,25 @@ namespace CloudScope
             UpdateViewportLayout();
             ApplySectionCameras();
             return $"Viewport layout: {DescribeViewportLayout(_viewportLayout)}. View: {DescribeViewportView(_auxiliaryViewportView)}.";
+        }
+
+        /// <summary>
+        /// Restores the preceding viewport configuration without replacing the individual
+        /// cameras. In particular, VPORTS Previous must not refit or overwrite a view that a
+        /// user has panned or zoomed in another viewport.
+        /// </summary>
+        public string RestorePreviousViewportLayout()
+        {
+            ViewportLayoutKind layout = _previousViewportLayout;
+            if (layout == _viewportLayout)
+                return "No previous viewport configuration.";
+
+            _previousViewportLayout = _viewportLayout;
+            _viewportLayout = layout;
+            _forceAuxiliaryViewRefresh = false;
+            UpdateViewportLayout();
+            ApplySectionCameras();
+            return $"Viewport layout restored: {DescribeViewportLayout(_viewportLayout)}.";
         }
 
         public bool HasCrossSection => _crossSection.HasValue;
@@ -1571,7 +1638,13 @@ namespace CloudScope
                     allowRotate: viewport.SectionMode != SectionDisplayMode.Profile);
             }
             if (button != ViewerMouseButton.Left)
+            {
+                // Keep pointer navigation in the same per-viewport history as the
+                // command route.  The state is captured before the gesture, so ZOOM
+                // Previous restores the exact pre-pan camera in either projection.
+                RememberView(viewport);
                 viewport.Input.MouseDown(button, localX, localY, camera, false, false, Vector3.Zero);
+            }
         }
 
         public void MouseUp(ViewerMouseButton button, int mx, int my)
@@ -1656,6 +1729,9 @@ namespace CloudScope
             if (_selection.MouseWheel(offsetY))
                 return;
 
+            // Mouse-wheel zoom is camera navigation, not a selection edit.  Record
+            // its anchor-preserving camera state before the input controller changes it.
+            RememberView(viewport);
             viewport.Input.MouseWheel(localX, localY, offsetY, viewport.Camera, _cloudRadius);
         }
 
@@ -1930,6 +2006,15 @@ namespace CloudScope
         }
 
         private ViewportState ActiveViewport => _viewports[_activeViewportIndex];
+
+        /// <summary>Stores a bounded, per-viewport view history for ZOOM Previous.</summary>
+        private static void RememberView(ViewportState viewport)
+        {
+            const int maximumHistory = 20;
+            if (viewport.ViewHistory.Count == maximumHistory)
+                viewport.ViewHistory.RemoveAt(0);
+            viewport.ViewHistory.Add(viewport.Camera.SaveState());
+        }
 
         // Grip view constraint for a viewport: only the orthographic auxiliary viewport
         // looking along a world axis (Top/Bottom, Left/Right, Front/Back) constrains grips.
@@ -2471,6 +2556,7 @@ namespace CloudScope
             public ViewportBounds Bounds { get; set; } = new(0, 0, 1, 1);
             public bool IsInitialized { get; set; }
             public SectionDisplayMode SectionMode { get; set; }
+            public List<OrbitCamera.CameraState> ViewHistory { get; } = [];
         }
 
         private sealed class DraftSnapSource : IObjectSnapSource

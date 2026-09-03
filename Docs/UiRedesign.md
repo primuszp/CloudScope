@@ -255,10 +255,9 @@ not part of the shipping code paths.
   framebuffer edges the ImGui panels occupy, and the overlay reports them every frame. The
   centre crosshair, zoom-to-centre, the projection aspect ratio and picking all refer to the
   rectangle the user can actually see instead of the whole window.
-* **Shadowed commands are detected again.** An executor created after registration (an
-  embedded viewer host) reports no names at `Register` time, so the collision check had
-  nothing to compare. `CommandDispatcher` now re-runs it once every executor is populated and
-  reports the conflict on the command line instead of throwing mid-session.
+* **Historical note — shadowed commands.** This former multi-executor workaround was removed
+  on 2026-09-03. Every host now delegates the same `ViewerCommandDispatcher`, so registration
+  itself owns the one command namespace and detects collisions before a session begins.
 * **Typing `HISTORY` or `LABELS` in the Avalonia shell** opens the same windows the menu
   opens. Previously only the menu items worked and typing them silently toggled a flag in the
   embedded viewer that this shell never renders. The menu now has no special cases at all.

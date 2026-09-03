@@ -22,7 +22,7 @@ namespace CloudScope.Avalonia.Hosting.Platform.MacOS;
 
 /// <summary>Embeds CloudScope's Metal renderer in Avalonia through a native MTKView.</summary>
 [SupportedOSPlatform("macos")]
-public sealed class MacOsEmbeddedMetalHost : NativeControlHost, IEmbeddedViewerHost
+public sealed class MacOsEmbeddedMetalHost : NativeControlHost, IEmbeddedViewerHost, ICommandOutputSource
 {
     private readonly ConcurrentQueue<Action> _actions = new();
     private readonly ViewerKeyboardState _keyboard = new();
@@ -71,6 +71,7 @@ public sealed class MacOsEmbeddedMetalHost : NativeControlHost, IEmbeddedViewerH
         _commandQueue = device.NewCommandQueue();
         _controller = new ViewerController(1280, 800, _renderBackend);
         _commands = new ViewerCommandDispatcher(_controller);
+        _commands.OutputProduced += result => OutputProduced?.Invoke(result);
 
         _view = new MTKEventView(new NSRect(0, 0, 1280, 800), device)
         {
@@ -168,6 +169,12 @@ public sealed class MacOsEmbeddedMetalHost : NativeControlHost, IEmbeddedViewerH
     /// </summary>
     public ICommandExecutor Commands { get; }
 
+    /// <summary>
+    /// Forwards asynchronous viewer output (including completed OPEN operations) through the
+    /// native host, whose command wrapper exists before the viewer dispatcher is constructed.
+    /// </summary>
+    public event Action<CommandResult>? OutputProduced;
+
     public void ForwardKeyDown(ViewerKey key)
     {
         if (key == ViewerKey.Unknown || _controller == null)
@@ -200,7 +207,9 @@ public sealed class MacOsEmbeddedMetalHost : NativeControlHost, IEmbeddedViewerH
                 action();
                 RequestRedraw();
             }
-            if (_controller?.NeedsContinuousFrames == true)
+            // OPEN reads on a worker and queues the GPU upload for UpdateFrame.  Metal is
+            // otherwise on-demand, so that queued completion itself must request a frame.
+            if (_controller?.NeedsContinuousFrames == true || _controller?.HasPendingFrameWork == true)
                 RequestRedraw();
         };
         _pumpTimer.Start();

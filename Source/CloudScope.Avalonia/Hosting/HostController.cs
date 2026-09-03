@@ -5,8 +5,6 @@ namespace CloudScope.Avalonia.Hosting;
 
 public sealed class HostController
 {
-    private readonly CommandRuntime _hostRuntime;
-    private readonly CommandDispatcher _commands;
     private readonly DelegatingCommandExecutor _viewerCommands;
 
     private IEmbeddedViewerHost? _embeddedHost;
@@ -16,10 +14,10 @@ public sealed class HostController
     public event Action<string>? StatusChanged;
 
     public string StatusText => $"Points: {Status.LoadedCount:N0} | {_viewerState}";
-    public string CommandPrompt => _commands.CurrentPrompt;
+    public string CommandPrompt => _viewerCommands.CurrentPrompt;
 
     /// <summary>The command surface the command line completes against and submits to.</summary>
-    public ICommandExecutor Commands => _commands;
+    public ICommandExecutor Commands => _viewerCommands;
 
     /// <summary>
     /// Live viewer state for the inspector and status bar, straight from the viewer. The shell
@@ -41,10 +39,6 @@ public sealed class HostController
         _viewerCommands = new DelegatingCommandExecutor(
             () => _embeddedHost?.Commands,
             "Embedded renderer is not ready.");
-        _hostRuntime = new CommandRuntime(this, new HostCommands(this));
-        _commands = new CommandDispatcher(_viewerCommands.Execute);
-        _commands.Register(_hostRuntime);
-        _commands.Register(_viewerCommands);
     }
 
     /// <summary>
@@ -56,7 +50,9 @@ public sealed class HostController
     public void SetEmbeddedHost(IEmbeddedViewerHost embeddedHost)
     {
         _embeddedHost = embeddedHost;
-        if (embeddedHost.Commands is ICommandOutputSource output)
+        if (embeddedHost is ICommandOutputSource hostOutput)
+            hostOutput.OutputProduced += result => ViewerCommandOutput?.Invoke(result);
+        else if (embeddedHost.Commands is ICommandOutputSource output)
             output.OutputProduced += result => ViewerCommandOutput?.Invoke(result);
 
         _viewerState = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
@@ -67,7 +63,7 @@ public sealed class HostController
 
     public CommandResult ExecuteCommandResult(string commandText, bool publishResult = true)
     {
-        CommandResult result = _commands.Execute(commandText);
+        CommandResult result = _viewerCommands.Execute(commandText);
 
         if (publishResult && !string.IsNullOrWhiteSpace(result.Message))
             StatusChanged?.Invoke(result.Message);

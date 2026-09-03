@@ -6,7 +6,8 @@ menus, toolbars, shortcuts, scripts and viewport picks are ways of issuing one, 
 paths into the viewer.
 
 The runtime, the prompt API, the command table, the system variables and the undo manager
-live in `CloudScope.Core/Commands`. UI projects are adapters over them.
+live in `CloudScope.Core/Commands`. `ViewerCommandDispatcher` is the canonical command boundary
+for every renderer and shell; UI projects are adapters over it and add no commands.
 
 ## Writing a command
 
@@ -90,11 +91,14 @@ implementation.
 
 `CommandRuntime` builds a `CommandDescriptor` per command: global name, aliases, flags, group,
 scope, summary, syntax and the implementing method. It is the single source behind `HELP`,
-`HELP <command>`, autocomplete, the menu, and the coverage report. Duplicate names or aliases
-fail at registration.
+`COMMANDS`, autocomplete, the menu, and the coverage report. Duplicate names or aliases fail at
+registration. `COMMANDS` prints the complete command name, aliases, scope and usage directly
+from that table; it is the authoritative inventory, not a second hand-maintained list.
 
 `CommandScope` states what a command needs — `Application`, `Viewer` or `Document` — and
-`CommandGroup` orders the help and names the menu section it belongs to.
+`CommandGroup` orders the help and names the menu section it belongs to. Scope is enforced
+before a coroutine starts: a `Document` command reports in English that an open point cloud is
+required instead of entering a half-valid prompt.
 
 ## System variables
 

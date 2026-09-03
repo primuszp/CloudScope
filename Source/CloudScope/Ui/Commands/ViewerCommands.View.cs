@@ -8,30 +8,52 @@ public sealed partial class ViewerCommands
 {
     [CommandMethod("ZOOM", "Z", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.View, Scope = CommandScope.Viewer,
-        Summary = "Zooms the view by a scale factor, to extents, or into a window.",
-        Syntax = "ZOOM [All/Center/Extents/Object/Window] | <scale> | <nX> | <corner> <corner>")]
+        Summary = "Changes magnification in the active viewport.",
+        Syntax = "ZOOM [All/Center/Dynamic/Extents/Object/PRevious/RealTime/Scale/Window] | <corner>")]
     public IEnumerable<PromptStep> Zoom(CommandContext context)
     {
         var viewer = context.GetTarget<ViewerController>();
         Editor ed = context.Editor;
 
         PromptStringStep option = ed
-            .GetString("Specify corner of window, enter a scale factor (nX or nXP), or "
-                     + "[All/Center/Extents/Object/Window] <real time>:")
+            .GetString("Specify corner of window or [All/Center/Dynamic/Extents/Object/PRevious/RealTime/Scale/Window] <RealTime>:")
             .WithKeywords(ZoomKeywords);
         yield return option;
 
         switch (option.Keyword)
         {
-            case "ALL":
             case "EXTENTS":
                 viewer.ZoomExtents();
                 ed.WriteMessage("Zoom extents.");
                 yield break;
 
+            case "ALL":
+                viewer.ZoomAll();
+                ed.WriteMessage("Zoom all.");
+                yield break;
+
+            case "PREVIOUS":
+                ed.WriteMessage(viewer.ZoomPrevious() ? "Zoom previous." : "No previous view.");
+                yield break;
+
             case "CENTER":
+                foreach (PromptStep step in ZoomCenter(viewer, ed))
+                    yield return step;
+                yield break;
+
+            case "SCALE":
+                PromptStringStep scale = ed.GetString("Enter scale factor (nX):");
+                yield return scale;
+                if (scale.IsOk) ApplyZoomScale(viewer, ed, scale.Value);
+                yield break;
+
+            case "REALTIME":
+            case "DYNAMIC":
+                ed.WriteMessage("Use the mouse wheel for real-time zoom, or specify Window, Center, or Scale.");
+                yield break;
+
             case "OBJECT":
-                viewer.ZoomCenter();
+                viewer.ZoomObject();
                 ed.WriteMessage("Zoomed to object at viewport center.");
                 yield break;
 
@@ -52,10 +74,31 @@ public sealed partial class ViewerCommands
             yield break;
         }
 
-        if (!TryParseZoomFactor(option.Value, out float factor))
+        ApplyZoomScale(viewer, ed, option.Value);
+    }
+
+    private static IEnumerable<PromptStep> ZoomCenter(ViewerController viewer, Editor ed)
+    {
+        PromptScreenPointStep center = ed.GetScreenPoint("Specify center point:");
+        yield return center;
+        if (!center.IsOk) yield break;
+
+        PromptDoubleStep height = ed.GetDistance("Enter magnification or height of view:")
+            .WithRange(double.Epsilon, double.MaxValue);
+        yield return height;
+        if (!height.IsOk) yield break;
+
+        ed.WriteMessage(viewer.ZoomCenter(center.X, center.Y, height.Single)
+            ? "Zoom center."
+            : "Zoom center requires a positive view height.");
+    }
+
+    private static void ApplyZoomScale(ViewerController viewer, Editor ed, string value)
+    {
+        if (!TryParseZoomFactor(value, out float factor))
         {
-            ed.WriteMessage($"Requires a positive numeric scale factor: {option.Value}");
-            yield break;
+            ed.WriteMessage($"Enter a positive scale factor followed by X: {value}");
+            return;
         }
 
         viewer.ZoomByFactor(factor);
@@ -87,34 +130,32 @@ public sealed partial class ViewerCommands
 
     [CommandMethod("PAN", "P", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.View, Scope = CommandScope.Viewer,
-        Summary = "Pans the view by a pixel offset or between two points.",
-        Syntax = "PAN <dx,dy> | Point <base> <target>")]
+        Summary = "Repositions the view in the active viewport.",
+        Syntax = "PAN <base point> <second point> | Displacement <dx,dy>")]
     public IEnumerable<PromptStep> Pan(CommandContext context)
     {
         var viewer = context.GetTarget<ViewerController>();
         Editor ed = context.Editor;
 
-        PromptScreenPointStep offset = ed
-            .GetScreenPoint("Specify pan offset in pixels dx,dy or [Point]:")
-            .WithKeywords(new Keyword("POINT", "Point"));
-        yield return offset;
+        PromptScreenPointStep from = ed
+            .GetScreenPoint("Specify base point or [Displacement]:")
+            .WithKeywords(new Keyword("DISPLACEMENT", "Displacement"));
+        yield return from;
 
-        if (offset.Is("POINT"))
+        if (from.Is("DISPLACEMENT"))
         {
-            PromptScreenPointStep from = ed.GetScreenPoint("Specify base point:");
-            yield return from;
-            if (!from.IsOk) yield break;
-
-            PromptScreenPointStep to = ed.GetScreenPoint("Specify target point:");
-            yield return to;
-            if (!to.IsOk) yield break;
-
-            ed.WriteMessage(viewer.PanByPixels(to.X - from.X, to.Y - from.Y));
+            PromptScreenPointStep offset = ed.GetScreenPoint("Specify pan displacement in pixels dx,dy:");
+            yield return offset;
+            if (offset.IsOk)
+                ed.WriteMessage(viewer.PanByPixels(offset.X, offset.Y));
             yield break;
         }
 
-        if (!offset.IsOk) yield break;
-        ed.WriteMessage(viewer.PanByPixels(offset.X, offset.Y));
+        if (!from.IsOk) yield break;
+        PromptScreenPointStep to = ed.GetScreenPoint("Specify second point:");
+        yield return to;
+        if (to.IsOk)
+            ed.WriteMessage(viewer.PanBetweenPoints(from.X, from.Y, to.X, to.Y));
     }
 
     [CommandMethod("ORBIT", "OR", Flags = CommandFlags.NoUndoMarker,
@@ -453,8 +494,8 @@ public sealed partial class ViewerCommands
                 kind = ViewportLayoutKind.SingleTop;
                 break;
             case "PREVIOUS":
-                kind = ViewportLayoutKind.Previous;
-                break;
+                ed.WriteMessage(viewer.RestorePreviousViewportLayout());
+                yield break;
             case "TWO":
                 PromptStep arrangement = ed
                     .GetKeywords(

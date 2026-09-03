@@ -13,7 +13,7 @@ public sealed class ViewerCommandDispatcher : ICommandExecutor, ICommandOutputSo
     {
         _viewer = viewer;
         var commands = new ViewerCommands();
-        _runtime = new CommandRuntime(viewer, commands);
+        _runtime = new CommandRuntime(viewer, [commands], CheckAvailability);
         commands.Executor = _runtime;
         Session = new CommandLineSession(this);
         BindUndoMarks(viewer);
@@ -62,6 +62,9 @@ public sealed class ViewerCommandDispatcher : ICommandExecutor, ICommandOutputSo
     private bool MarksUndo(string commandName) =>
         _runtime.TryGetCommand(commandName, out CommandDescriptor command) &&
         !command.Flags.HasFlag(CommandFlags.NoUndoMarker);
+
+    private string? CheckAvailability(CommandDescriptor command) =>
+        CommandScopePolicy.ExplainUnavailable(command, viewerAvailable: true, _viewer.Status.HasCloud);
 
     public event EventHandler<CommandEventArgs>
         CommandStarted { add => _runtime.CommandStarted += value; remove => _runtime.CommandStarted -= value; }
