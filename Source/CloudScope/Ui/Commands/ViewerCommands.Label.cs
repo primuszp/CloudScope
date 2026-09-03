@@ -94,6 +94,31 @@ public sealed partial class ViewerCommands
         context.Editor.WriteMessage(viewer.SetActiveInstance(id.Value));
     }
 
+    [CommandMethod("TREESEG", "SEGMENTTREE", "TREE", Flags = CommandFlags.NoUndoMarker,
+        Group = CommandGroup.Label, Scope = CommandScope.Document,
+        Summary = "Segments one terrestrial/SLAM tree from a picked trunk seed.",
+        Syntax = "TREESEG <seed point>")]
+    public IEnumerable<PromptStep> SegmentTree(CommandContext context)
+    {
+        Editor ed = context.Editor;
+        PromptPointStep seed = ed.GetPoint("Pick a point on the tree trunk:");
+        yield return seed;
+        if (!seed.IsOk) yield break;
+
+        string message = context.GetTarget<ViewerController>().SegmentTree(seed.Value);
+        ed.WriteMessage(message);
+    }
+
+    [CommandMethod("GROUNDSEG", "SEGMENTGROUND", "GROUND", Flags = CommandFlags.NoUndoMarker,
+        Group = CommandGroup.Label, Scope = CommandScope.Document,
+        Summary = "Separates terrain points with a progressive multi-scale ground filter.",
+        Syntax = "GROUNDSEG")]
+    public IEnumerable<PromptStep> SegmentGround(CommandContext context)
+    {
+        context.Editor.WriteMessage(context.GetTarget<ViewerController>().SegmentGround());
+        yield break;
+    }
+
     [CommandMethod("LABELDEF", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.Label, Scope = CommandScope.Viewer,
         Summary = "Defines, colours, lists or deletes a label and its LAS class code.",

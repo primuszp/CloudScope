@@ -175,7 +175,7 @@ namespace CloudScope.Platform.Metal.Rendering
             MTLBuffer segments, int segmentCount,
             MTLBuffer joins, int joinCount,
             Matrix4 mvp, Vector4 color, bool depthTest, float lineWidthPixels,
-            bool occludedOnly = false)
+            bool occludedOnly = false, float dashPixels = 0f, bool depthBias = false)
         {
             if (segments.NativePtr == IntPtr.Zero || segmentCount <= 0 || !_initialized)
                 return;
@@ -184,8 +184,14 @@ namespace CloudScope.Platform.Metal.Rendering
             if (encoder.NativePtr == IntPtr.Zero)
                 return;
 
-            ulong offset = ReserveUniforms(mvp, color, lineWidthPixels);
+            ulong offset = ReserveUniforms(mvp, color, lineWidthPixels, dashPixels);
             encoder.SetDepthStencilState(occludedOnly ? _depthBehind : depthTest ? _depthOn : _depthOff);
+            // A line drawn on the surface of a point cloud wins or loses the depth test per
+            // frame as streaming swaps the level of detail underneath it, which reads as the
+            // stroke blinking. Biasing it towards the eye settles that without hiding a line
+            // that genuinely runs behind the cloud.
+            if (depthBias)
+                encoder.SetDepthBias(-2f, -2f, 0f);
             encoder.SetVertexBuffer(_uniformsBuffer, offset, 1);
             encoder.SetFragmentBuffer(_uniformsBuffer, offset, 1);
 
@@ -194,17 +200,21 @@ namespace CloudScope.Platform.Metal.Rendering
             encoder.DrawPrimitives(MTLPrimitiveType.TriangleStrip,
                 0, (ulong)PolylineRenderGeometry.VerticesPerSegment, (ulong)segmentCount);
 
-            if (joinCount <= 0 || joins.NativePtr == IntPtr.Zero)
-                return;
+            if (joinCount > 0 && joins.NativePtr != IntPtr.Zero)
+            {
+                encoder.SetRenderPipelineState(_joinedJoinPipeline);
+                encoder.SetVertexBuffer(joins, 0, 0);
+                encoder.DrawPrimitives(MTLPrimitiveType.Triangle,
+                    0, (ulong)PolylineRenderGeometry.VerticesPerJoin, (ulong)joinCount);
+            }
 
-            encoder.SetRenderPipelineState(_joinedJoinPipeline);
-            encoder.SetVertexBuffer(joins, 0, 0);
-            encoder.DrawPrimitives(MTLPrimitiveType.Triangle,
-                0, (ulong)PolylineRenderGeometry.VerticesPerJoin, (ulong)joinCount);
+            if (depthBias)
+                encoder.SetDepthBias(0f, 0f, 0f);
         }
 
         /// <summary>Writes one draw's uniforms into the ring buffer and returns its byte offset.</summary>
-        private unsafe ulong ReserveUniforms(Matrix4 mvp, Vector4 color, float lineWidthPixels)
+        private unsafe ulong ReserveUniforms(Matrix4 mvp, Vector4 color, float lineWidthPixels,
+            float dashPixels = 0f)
         {
             ulong offset = (ulong)_uniformOffset * UniformStride;
             int frameRegionEnd = (_bufferedFrameIndex + 1) * DrawsPerFrame;
@@ -219,7 +229,7 @@ namespace CloudScope.Platform.Metal.Rendering
             (int viewportWidth, int viewportHeight) = _context.ViewportSize;
             byte* ptr = (byte*)_uniformsBuffer.Contents.ToPointer();
             var uniforms = new MetalColorUniforms(mvp, color,
-                new Vector4(viewportWidth, viewportHeight, lineWidthPixels, 0f));
+                new Vector4(viewportWidth, viewportHeight, lineWidthPixels, dashPixels));
             Buffer.MemoryCopy(&uniforms, ptr + offset,
                 Unsafe.SizeOf<MetalColorUniforms>(), Unsafe.SizeOf<MetalColorUniforms>());
             _uniformOffset++;

@@ -65,7 +65,6 @@ public readonly record struct ObjectSnapResult(
 public sealed class ObjectSnapEngine
 {
     public float ObjectThresholdPixels { get; set; } = 14f;
-    public float AxisThresholdPixels { get; set; } = 10f;
 
     public ObjectSnapResult Resolve(
         Vector3 rawPoint,
@@ -73,15 +72,20 @@ public sealed class ObjectSnapEngine
         int mouseY,
         OrbitCamera camera,
         IEnumerable<IObjectSnapSource> sources,
-        Vector3? basePoint)
+        Vector3? basePoint,
+        bool orthoMode = false)
     {
         ObjectSnapResult objectResult = FindObjectSnap(mouseX, mouseY, camera, sources);
         if (objectResult.IsSnapped)
             return objectResult;
 
-        if (basePoint is { } origin)
+        // Axis tracking is what ORTHO does, so it only runs while ORTHO is on - and then it
+        // locks unconditionally onto the nearest world axis instead of waiting for the cursor
+        // to come within a few pixels of one, which is the behaviour ORTHO promises.
+        if (orthoMode && basePoint is { } origin)
         {
-            ObjectSnapResult axisResult = FindAxisSnap(mouseX, mouseY, camera, origin);
+            ObjectSnapResult axisResult = FindAxisSnap(mouseX, mouseY, camera, origin,
+                float.PositiveInfinity);
             if (axisResult.IsSnapped)
                 return axisResult;
         }
@@ -117,7 +121,8 @@ public sealed class ObjectSnapEngine
             : default;
     }
 
-    private ObjectSnapResult FindAxisSnap(int mouseX, int mouseY, OrbitCamera camera, Vector3 origin)
+    private ObjectSnapResult FindAxisSnap(int mouseX, int mouseY, OrbitCamera camera, Vector3 origin,
+        float thresholdPixels)
     {
         Vector3[] axes = [Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ];
         ObjectSnapKind[] kinds = [ObjectSnapKind.AxisX, ObjectSnapKind.AxisY, ObjectSnapKind.AxisZ];
@@ -131,7 +136,7 @@ public sealed class ObjectSnapEngine
         Vector3 rayDirection = rayEnd - rayStart;
         if (rayDirection.LengthSquared < 1e-10f) return default;
         rayDirection.Normalize();
-        float bestDistance = AxisThresholdPixels;
+        float bestDistance = thresholdPixels;
         ObjectSnapResult best = default;
         for (int axisIndex = 0; axisIndex < axes.Length; axisIndex++)
         {

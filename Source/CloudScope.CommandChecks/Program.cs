@@ -6,11 +6,13 @@
 // run anywhere the solution builds.
 
 using CloudScope.Commands;
+using CloudScope;
 using CloudScope.Ui.Commands;
 using CloudScope.Sections;
 using CloudScope.Selection;
 using CloudScope.Drawing;
 using CloudScope.Rendering;
+using CloudScope.Forestry;
 using OpenTK.Mathematics;
 
 int failures = 0;
@@ -349,9 +351,65 @@ Check("dragged endpoint snaps to another endpoint on its own polyline", !otherBe
 Vector3 axisTarget = new(4f, 0f, 0f);
 var (axisX, axisY, _) = dragCamera.WorldToScreen(axisTarget);
 ObjectSnapResult axisSnap = snapEngine.Resolve(axisTarget,
-    (int)axisX, (int)axisY, dragCamera, Array.Empty<IObjectSnapSource>(), Vector3.Zero);
-Check("axis tracking resolves the world X direction",
+    (int)axisX, (int)axisY, dragCamera, Array.Empty<IObjectSnapSource>(), Vector3.Zero,
+    orthoMode: true);
+Check("ortho locks point input onto the world X direction",
     axisSnap.Kind == ObjectSnapKind.AxisX && MathF.Abs(axisSnap.Position.X - 4f) < 0.1f);
+ObjectSnapResult freeSnap = snapEngine.Resolve(axisTarget,
+    (int)axisX + 40, (int)axisY + 40, dragCamera, Array.Empty<IObjectSnapSource>(), Vector3.Zero);
+Check("without ortho the cursor is never pulled onto an axis",
+    freeSnap.Kind == ObjectSnapKind.None && freeSnap.Position == axisTarget);
+var (offAxisX, offAxisY, _) = dragCamera.WorldToScreen(new Vector3(4f, 0f, 1.5f));
+ObjectSnapResult orthoFarSnap = snapEngine.Resolve(Vector3.Zero,
+    (int)offAxisX, (int)offAxisY, dragCamera, Array.Empty<IObjectSnapSource>(), Vector3.Zero,
+    orthoMode: true);
+Check("ortho locks onto the nearest axis even far from it",
+    orthoFarSnap.IsAxis && MathF.Abs(orthoFarSnap.Position.X - 4f) < 0.2f);
+
+var orbitCamera = new CloudScope.OrbitCamera();
+orbitCamera.SetViewportSize(800, 600);
+orbitCamera.SetOrthographicStandardView("ISOMETRIC", 50f);
+
+Vector3 verticalTarget = new(0f, 0f, 6f);
+var (verticalX, verticalY, verticalBehind) = orbitCamera.WorldToScreen(verticalTarget);
+ObjectSnapResult verticalSnap = snapEngine.Resolve(Vector3.Zero,
+    (int)verticalX, (int)verticalY, orbitCamera, Array.Empty<IObjectSnapSource>(), Vector3.Zero,
+    orthoMode: true);
+Check("ortho locks the world Z direction in a rotated view", !verticalBehind
+    && verticalSnap.Kind == ObjectSnapKind.AxisZ
+    && MathF.Abs(verticalSnap.Position.Z - 6f) < 0.25f
+    && verticalSnap.Position.Xy.Length < 0.05f);
+
+Vector3[] verticalArm = CursorCrosshairGeometry.Arm(verticalTarget, 2, orbitCamera);
+Vector3[] pickBox = CursorCrosshairGeometry.PickBox(verticalTarget, orbitCamera);
+float armLength = (verticalArm[1] - verticalArm[0]).Length
+    / orbitCamera.WorldUnitsPerPixel(verticalTarget);
+Check("cursor crosshair sizes the Z arm in pixels and keeps it vertical",
+    verticalArm.Length == 2
+    && (verticalArm[1] - verticalArm[0]).Xy.Length < 1e-4f
+    && MathF.Abs(armLength - 2f * CursorCrosshairGeometry.ArmPixels) < 0.5f);
+var (boxLeftX, boxLeftY, _) = orbitCamera.WorldToScreen(pickBox[0]);
+var (boxRightX, boxRightY, _) = orbitCamera.WorldToScreen(pickBox[1]);
+var (boxTopX, boxTopY, _) = orbitCamera.WorldToScreen(pickBox[2]);
+float boxWidth = MathF.Sqrt((boxRightX - boxLeftX) * (boxRightX - boxLeftX)
+    + (boxRightY - boxLeftY) * (boxRightY - boxLeftY));
+float boxHeight = MathF.Sqrt((boxTopX - boxRightX) * (boxTopX - boxRightX)
+    + (boxTopY - boxRightY) * (boxTopY - boxRightY));
+Check("cursor pick box stays a screen-aligned square in a rotated view",
+    pickBox.Length == 4
+    && MathF.Abs(boxWidth - boxHeight) < 0.01f
+    && MathF.Abs(boxWidth - 2f * CursorCrosshairGeometry.PickBoxPixels) < 0.5f
+    && MathF.Abs(boxRightY - boxLeftY) < 0.01f
+    && MathF.Abs(boxTopX - boxRightX) < 0.01f);
+Check("crosshair and axis snapping read their colour from the shared axis palette",
+    Enumerable.Range(0, 3).All(axis =>
+        CursorCrosshairGeometry.ArmColor(axis, CursorCrosshairGeometry.KindOf(axis)).Xyz
+            == AxisPalette.Of(axis)
+        && GripOverlayGeometry.SnapColor(CursorCrosshairGeometry.KindOf(axis)).Xyz
+            == AxisPalette.Of(axis)));
+Check("the locked axis is the only lit crosshair arm",
+    CursorCrosshairGeometry.ArmColor(2, ObjectSnapKind.AxisZ).W
+    > CursorCrosshairGeometry.ArmColor(0, ObjectSnapKind.AxisZ).W);
 
 int openSegments = PolylineRenderGeometry.SegmentCount(polyline.Vertices.Length, closed: false);
 int openJoins = PolylineRenderGeometry.JoinCount(polyline.Vertices.Length, closed: false);
@@ -446,6 +504,43 @@ Check("planar polyline JSON preserves plane, arc and tapered widths",
     && planarRoundTrip.AxisX == tapered.AxisX
     && planarRoundTrip.AxisY == tapered.AxisY
     && planarRoundTrip.Vertices.AsSpan().SequenceEqual(tapered.Vertices));
+
+// ---------- 6. Seeded individual-tree segmentation ----------
+var forest = new List<PointData>();
+for (int z = 0; z <= 30; z++)
+{
+    forest.Add(new PointData { X = 0f, Y = 0f, Z = z * 0.1f });
+    forest.Add(new PointData { X = 2f, Y = 0f, Z = z * 0.1f });
+}
+for (int x = 0; x <= 10; x++)
+{
+    forest.Add(new PointData { X = x * 0.2f, Y = 0f, Z = 3f });
+    forest.Add(new PointData { X = 2f - x * 0.2f, Y = 0.1f, Z = 3.1f });
+}
+TreeSegmentationResult tree = TreeSegmentation.Segment(forest, new Vector3(0f, 0f, 1.3f),
+    new TreeSegmentationOptions { ConnectionRadius = 0.23f, MinimumTrunkPoints = 8 });
+Check("tree segmentation grows from a trunk seed", tree.Succeeded && tree.PointIndices.Count > 20,
+    tree.FailureReason ?? tree.PointIndices.Count.ToString());
+Check("tree segmentation detects the neighbouring trunk as a competitor", tree.CompetitorCount > 0,
+    tree.CompetitorCount.ToString());
+Check("tree segmentation does not absorb the competing trunk",
+    tree.PointIndices.All(i => forest[i].X < 1.5f),
+    tree.PointIndices.Count.ToString());
+
+var terrainCloud = new List<PointData>();
+var expectedGround = new HashSet<int>();
+for (int x = 0; x < 9; x++) for (int y = 0; y < 9; y++)
+{
+    expectedGround.Add(terrainCloud.Count);
+    terrainCloud.Add(new PointData { X = x * 0.25f, Y = y * 0.25f, Z = x * 0.025f });
+    if ((x + y) % 3 == 0)
+        terrainCloud.Add(new PointData { X = x * 0.25f, Y = y * 0.25f, Z = 1.2f + x * 0.025f });
+}
+GroundSegmentationResult terrain = GroundSegmentation.Segment(terrainCloud);
+Check("ground segmentation follows a sloping terrain surface", terrain.Succeeded
+    && expectedGround.All(terrain.PointIndices.Contains), terrain.PointIndices.Count.ToString());
+Check("ground segmentation excludes vegetation above the surface",
+    terrain.PointIndices.All(expectedGround.Contains), terrain.PointIndices.Count.ToString());
 
 Console.WriteLine();
 Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : $"{failures} CHECK(S) FAILED");
