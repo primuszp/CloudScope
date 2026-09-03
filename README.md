@@ -15,6 +15,8 @@ A high-performance LAS (LiDAR) point cloud viewer built with C# and .NET 10.0.
   - W/A/S/D/Q/E: FPS Navigation
   - Num1/3/7/5: Standard views (Front/Right/Top/Isometric)
 - **Point Limit**: Load partial datasets for faster preview (default: 30M points)
+- **Individual-tree segmentation**: Pick a trunk seed in a terrestrial/SLAM cloud; multi-source
+  3D graph growth separates the selected tree from automatically detected neighbouring trunks
 
 ## Requirements
 
@@ -40,6 +42,16 @@ CloudScope.exe <path-to-file.las> [max-points]
 CloudScope.exe data.las                    # Load entire file
 CloudScope.exe data.las 5000000           # Load up to 5M points
 ```
+
+### Segmenting an individual tree
+
+Load a resident LAS/LAZ cloud and run `GROUNDSEG` first to classify terrain points with the
+progressive multi-scale ground filter. Then enter `TREESEG` (aliases: `TREE`, `SEGMENTTREE`) and click a
+point on the target trunk. The result is highlighted as a `Tree` annotation with an automatically
+assigned instance id, so it participates in the existing undo and label-save workflow. The current
+implementation is tuned for terrestrial/SLAM scans; streamed point-tile stores must first be loaded
+as a resident cloud. Ground points receive the standard LAS class 2 when labels are exported, and
+are excluded from tree graph growth.
 
 ## Project Structure
 

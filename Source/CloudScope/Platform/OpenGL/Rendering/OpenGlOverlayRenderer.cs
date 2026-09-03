@@ -310,7 +310,8 @@ void main()
 
         public void RenderPolyline(
             IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj,
-            IReadOnlyList<Vector3> points, bool closed, Vector4 color, float widthPixels, bool depthTest = true)
+            IReadOnlyList<Vector3> points, bool closed, Vector4 color, float widthPixels, bool depthTest = true,
+            float dashPixels = 0f)
         {
             int segmentCount = PolylineRenderGeometry.SegmentCount(points.Count, closed);
             if (segmentCount == 0) return;
@@ -318,12 +319,26 @@ void main()
             float[] segments = PolylineRenderGeometry.BuildSegmentInstances(points, closed);
             float[] joins = PolylineRenderGeometry.BuildJoinInstances(points, closed);
             Matrix4 mvp = view * proj;
-            if (depthTest) GL.Enable(EnableCap.DepthTest); else GL.Disable(EnableCap.DepthTest);
+            if (depthTest)
+            {
+                GL.Enable(EnableCap.DepthTest);
+                // A line lying on the surface of a point cloud wins or loses the depth test
+                // per frame as streaming swaps the level of detail underneath it, which reads
+                // as the stroke blinking. Offsetting it towards the eye settles that, while a
+                // line that genuinely runs behind the cloud is still occluded.
+                GL.Enable(EnableCap.PolygonOffsetFill);
+                GL.PolygonOffset(-1f, -2f);
+            }
+            else
+            {
+                GL.Disable(EnableCap.DepthTest);
+            }
             // Match Metal and the pivot renderer: test the line against the scene, but never
             // let its antialiased fragments write depth and mask the adjacent geometry.
             GL.DepthMask(false);
-            _joinedLines.Draw(segments, segmentCount, joins, joinCount, ref mvp, color, widthPixels);
+            _joinedLines.Draw(segments, segmentCount, joins, joinCount, ref mvp, color, widthPixels, dashPixels);
             GL.DepthMask(true);
+            GL.Disable(EnableCap.PolygonOffsetFill);
             GL.Enable(EnableCap.DepthTest);
         }
 

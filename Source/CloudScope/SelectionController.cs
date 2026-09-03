@@ -5,6 +5,7 @@ using CloudScope.Rendering;
 using CloudScope.Selection;
 using CloudScope.Store;
 using CloudScope.Sections;
+using CloudScope.Forestry;
 using OpenTK.Mathematics;
 using System.Linq;
 using System.Threading;
@@ -70,6 +71,39 @@ namespace CloudScope
         public LabelRegistry Registry => _registry;
         public string CurrentLabel => _currentLabel;
         public int? CurrentInstanceId => _currentInstanceId;
+
+        public TreeSegmentationResult SegmentTree(Vector3 seed, int instanceId, TreeSegmentationOptions? options = null)
+        {
+            if (_streamed != null)
+                return new([], seed, 0, "Tree segmentation currently requires a resident LAS/LAZ cloud, not a streamed store.");
+            if (_sourcePoints == null)
+                return new([], seed, 0, "No point cloud is loaded.");
+
+            var ground = new HashSet<int>();
+            if (_attributes != null)
+                for (int i = 0; i < Math.Min(_sourcePoints.Length, _attributes.Class.Length); i++)
+                    if (_attributes.Class[i] == (byte)ClassificationType.Ground) ground.Add(i);
+            foreach ((int index, PointAnnotation annotation) in _labelManager.AllAnnotations)
+                if (string.Equals(annotation.LabelName, "Ground", StringComparison.OrdinalIgnoreCase)) ground.Add(index);
+
+            TreeSegmentationResult result = TreeSegmentation.Segment(_sourcePoints, seed, options, ground);
+            if (result.Succeeded)
+                _labelManager.ApplyAnnotation(result.PointIndices, new PointAnnotation("Tree", instanceId));
+            return result;
+        }
+
+        public GroundSegmentationResult SegmentGround(GroundSegmentationOptions? options = null)
+        {
+            if (_streamed != null)
+                return new([], 0, 0, "Ground segmentation currently requires a resident LAS/LAZ cloud, not a streamed store.");
+            if (_sourcePoints == null)
+                return new([], 0, 0, "No point cloud is loaded.");
+
+            GroundSegmentationResult result = GroundSegmentation.Segment(_sourcePoints, options);
+            if (result.Succeeded)
+                _labelManager.ApplyAnnotation(result.PointIndices, new PointAnnotation("Ground", null));
+            return result;
+        }
 
         /// <summary>Display color for a label: the registry's code color, or a hashed fallback.</summary>
         public Vector3 ResolveLabelColor(string name) => _registry.ColorFor(name) ?? LabelColorPalette.GetColor(name);

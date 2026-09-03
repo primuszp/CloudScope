@@ -10,6 +10,7 @@ using CloudScope.Rendering;
 using CloudScope.Store;
 using CloudScope.Sections;
 using CloudScope.Drawing;
+using CloudScope.Forestry;
 
 namespace CloudScope
 {
@@ -49,6 +50,18 @@ namespace CloudScope
         private readonly List<ITransactionalGripTarget> _gripTargets = [];
         private readonly List<Vector3> _polylineDraft = [];
         private Vector3? _polylineDraftCursor;
+
+        /// <summary>The already placed part of a 3D polyline draft, drawn like a committed one.</summary>
+        private static readonly Vector4 DraftPolylineColor = new(0.92f, 0.92f, 0.96f, 1f);
+
+        /// <summary>The segment that follows the cursor: a wide yellow CAD rubber band.</summary>
+        private static readonly Vector4 RubberBandColor = new(1f, 0.84f, 0.16f, 0.98f);
+
+        /// <summary>One dash plus one gap of the rubber band, in pixels.</summary>
+        private const float RubberBandDashPixels = 12f;
+
+        /// <summary>The pick box of the 3D cursor; the arms carry the axis colours instead.</summary>
+        private static readonly Vector4 CursorCrosshairColor = new(0.94f, 0.94f, 0.98f, 0.92f);
         private int _nextPolylineId = 1;
         private readonly List<PlanarPolylineVertex> _planarPolylineDraft = [];
         private Vector3 _planarDraftOrigin;
@@ -130,8 +143,22 @@ namespace CloudScope
             if (!float.IsFinite(scale) || scale <= 0f) return;
             _objectGripSession.DisplayScale = scale;
             _objectSnap.ObjectThresholdPixels = 14f * scale;
-            _objectSnap.AxisThresholdPixels = 10f * scale;
         }
+
+        /// <summary>
+        /// ORTHO: while it is on, every point that has a base point is forced onto the world
+        /// axis nearest the cursor. Off - the default, as in AutoCAD - the cursor is free and
+        /// only object snaps move it.
+        /// </summary>
+        public bool OrthoMode { get; private set; }
+
+        public string SetOrthoMode(bool on)
+        {
+            OrthoMode = on;
+            return $"<Ortho {(on ? "on" : "off")}>";
+        }
+
+        public string ToggleOrthoMode() => SetOrthoMode(!OrthoMode);
 
         /// <summary>Command-level undo history; the runtime opens and closes its marks.</summary>
         public UndoManager UndoHistory { get; } = new();
@@ -628,6 +655,25 @@ namespace CloudScope
         public string CurrentLabel => _selection.CurrentLabel;
         public int LabelledPointCount => _selection.Labels.Count;
         public int? CurrentInstanceId => _selection.CurrentInstanceId;
+
+        public string SegmentTree(Vector3 seed, int? instanceId = null)
+        {
+            int id = instanceId ?? NextTreeInstanceId();
+            TreeSegmentationResult result = _selection.SegmentTree(seed, id);
+            if (!result.Succeeded) return $"Tree segmentation failed: {result.FailureReason}";
+            return $"Tree {id}: {result.PointIndices.Count:N0} points segmented; {result.CompetitorCount} competing trunk marker(s).";
+        }
+
+        public string SegmentGround()
+        {
+            GroundSegmentationResult result = _selection.SegmentGround();
+            if (!result.Succeeded) return $"Ground segmentation failed: {result.FailureReason}";
+            return $"Ground: {result.PointIndices.Count:N0} points in {result.GroundCellCount:N0} of {result.CellCount:N0} terrain cells.";
+        }
+
+        private int NextTreeInstanceId() => _selection.Labels.AllAnnotations.Values
+            .Where(a => string.Equals(a.LabelName, "Tree", StringComparison.OrdinalIgnoreCase) && a.InstanceId.HasValue)
+            .Select(a => a.InstanceId!.Value).DefaultIfEmpty(0).Max() + 1;
         public bool LabelWindowVisible { get; set; }
 
         /// <summary>Whether the expanded command-history panel (F2) is shown.</summary>
@@ -1731,16 +1777,17 @@ namespace CloudScope
 
                 if (_polylineDraft.Count > 0)
                 {
-                    IReadOnlyList<Vector3> draftPoints = _polylineDraft;
-                    Vector3[]? previewPoints = null;
+                    // AutoCAD draws the committed part of a 3D polyline solid and only the
+                    // segment that follows the cursor as a dashed rubber band, so the two are
+                    // separate strokes here as well.
+                    if (_polylineDraft.Count > 1)
+                        _overlayRenderer.RenderPolyline(frameData, ref view, ref proj,
+                            _polylineDraft, false, DraftPolylineColor, 2f, depthTest: false);
                     if (_polylineDraftCursor is { } cursor
                         && Vector3.DistanceSquared(_polylineDraft[^1], cursor) > 1e-10f)
-                    {
-                        previewPoints = [.. _polylineDraft, cursor];
-                        draftPoints = previewPoints;
-                    }
-                    _overlayRenderer.RenderPolyline(frameData, ref view, ref proj,
-                        draftPoints, false, new Vector4(0.20f, 0.90f, 1f, 0.95f), 2f, depthTest: false);
+                        _overlayRenderer.RenderPolyline(frameData, ref view, ref proj,
+                            [_polylineDraft[^1], cursor], false, RubberBandColor, 2f,
+                            depthTest: false, dashPixels: RubberBandDashPixels);
                 }
 
                 if (_planarPolylineDraft.Count > 0)
@@ -1764,11 +1811,26 @@ namespace CloudScope
                             vertices.Add(new PlanarPolylineVertex(cursor2));
                         }
                     }
-                    var planarPreview = new PlanarPolyline(0, "Preview", _planarDraftOrigin,
-                        Vector3.UnitX, Vector3.UnitY, vertices.ToArray());
-                    _overlayRenderer.RenderPolyline(frameData, ref view, ref proj,
-                        PlanarPolylineGeometry.Tessellate(planarPreview), false,
-                        new Vector4(1f, 0.76f, 0.12f, 0.98f), 2.5f, depthTest: false);
+                    // Same split as the 3D draft: what is already placed reads as drawing,
+                    // only the segment chasing the cursor is a dashed rubber band.
+                    if (_planarPolylineDraft.Count > 1)
+                    {
+                        var placed = new PlanarPolyline(0, "Placed", _planarDraftOrigin,
+                            Vector3.UnitX, Vector3.UnitY, [.. _planarPolylineDraft]);
+                        _overlayRenderer.RenderPolyline(frameData, ref view, ref proj,
+                            PlanarPolylineGeometry.Tessellate(placed), false,
+                            DraftPolylineColor, 2f, depthTest: false);
+                    }
+                    if (vertices.Count > _planarPolylineDraft.Count)
+                    {
+                        var rubberBand = new PlanarPolyline(0, "Rubber band", _planarDraftOrigin,
+                            Vector3.UnitX, Vector3.UnitY,
+                            [vertices[^2], vertices[^1]]);
+                        _overlayRenderer.RenderPolyline(frameData, ref view, ref proj,
+                            PlanarPolylineGeometry.Tessellate(rubberBand), false,
+                            RubberBandColor, 2f, depthTest: false,
+                            dashPixels: RubberBandDashPixels);
+                    }
                 }
 
                 if (_crossSection is { } section && viewport.SectionMode == SectionDisplayMode.PlanGuide)
@@ -1787,8 +1849,11 @@ namespace CloudScope
 
                 if (_pointSnapViewport == Array.IndexOf(_viewports, viewport)
                     && (CommandPrompts?.AwaitsPoint == true || _objectGripSession.IsDragging))
+                {
+                    RenderCursorCrosshair(frameData, ref view, ref proj, viewport.Camera);
                     _overlayRenderer.RenderSnapIndicator(frameData, ref view, ref proj,
                         viewport.Camera, _pointSnapPreview);
+                }
 
                 _overlayRenderer.RenderViewportBorder(frameData, viewport.Bounds.Width, viewport.Bounds.Height,
                     ReferenceEquals(viewport, ActiveViewport));
@@ -2053,20 +2118,53 @@ namespace CloudScope
                 _polylineDraftCursor = _pointSnapPreview.Position;
             if (_planarPolylineDraft.Count > 0)
             {
+                // The prompt point is already resolved in the draft plane; an object snap may
+                // still pull it off, and projecting that back keeps the preview planar.
                 Vector3 point = _pointSnapPreview.Position;
                 point.Z = _planarDraftOrigin.Z;
                 _planarDraftCursor = point;
             }
         }
 
+        /// <summary>
+        /// Draws the 3D crosshair under the point cursor: one arm per world axis plus the pick
+        /// box, with the arm the input is currently locked to lit up. Depth testing is off, so
+        /// the cursor stays readable over a dense cloud, exactly like a CAD crosshair.
+        /// </summary>
+        private void RenderCursorCrosshair(
+            IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj, OrbitCamera camera)
+        {
+            Vector3 position = _pointSnapPreview.Position;
+            for (int axis = 0; axis < CursorCrosshairGeometry.Axes.Length; axis++)
+                _overlayRenderer.RenderPolyline(frameData, ref view, ref proj,
+                    CursorCrosshairGeometry.Arm(position, axis, camera), false,
+                    CursorCrosshairGeometry.ArmColor(axis, _pointSnapPreview.Kind), 1.25f,
+                    depthTest: false);
+            _overlayRenderer.RenderPolyline(frameData, ref view, ref proj,
+                CursorCrosshairGeometry.PickBox(position, camera), true,
+                CursorCrosshairColor, 1.5f, depthTest: false);
+        }
+
         private ObjectSnapResult ResolvePromptPoint(ViewportState viewport, int localX, int localY)
         {
             OrbitCamera camera = viewport.Camera;
             Vector3? basePoint = (CommandPrompts?.PointPrompt as PromptPointStep)?.BasePoint;
-            if (!camera.TryPickWorldPoint(localX, localY, 11, out Vector3 rawPoint))
+            // Only the point that opens a command reads a depth from the cloud. Once a base
+            // point exists the cursor must stay under the mouse on the plane through that base
+            // point, or every mouse move would drag the rubber band to whatever happens to be
+            // behind the cursor and a polyline could not be drawn through open space at all.
+            Vector3 rawPoint;
+            // A planar polyline lives in one plane, so its cursor has to be the ray-plane
+            // intersection. Flattening a view-plane point onto it afterwards would leave the
+            // rubber band trailing the crosshair by exactly the height the cursor was dropped.
+            if (_planarPolylineDraft.Count > 0
+                && TryIntersectDraftPlane(camera, localX, localY, out Vector3 planarPoint))
+                rawPoint = planarPoint;
+            else if (basePoint is { } anchor)
+                rawPoint = camera.ScreenToWorldAtDepth(localX, localY, camera.WorldToViewZ(anchor));
+            else if (!camera.TryPickWorldPoint(localX, localY, 11, out rawPoint))
             {
-                Vector3 planePoint = basePoint
-                    ?? _crossSectionDraft?.Center
+                Vector3 planePoint = _crossSectionDraft?.Center
                     ?? (_polylineDraft.Count > 0 ? _polylineDraft[^1] : camera.Pivot);
                 if (_planarPolylineDraft.Count > 0)
                     planePoint = PlanarPolylineDraftLastPoint;
@@ -2075,7 +2173,7 @@ namespace CloudScope
             }
 
             ObjectSnapResult result = _objectSnap.Resolve(rawPoint, localX, localY, camera,
-                SnapSourcesFor(viewport), basePoint);
+                SnapSourcesFor(viewport), basePoint, OrthoMode);
             if (basePoint is { } origin)
             {
                 Vector3 direction = result.Position - origin;
@@ -2083,6 +2181,28 @@ namespace CloudScope
                     _lastPointInputDirection = direction.Normalized();
             }
             return result;
+        }
+
+        /// <summary>
+        /// Intersects the eye ray under the cursor with the horizontal plane the planar
+        /// polyline draft is being drawn in. Fails when the plane is edge-on, where the
+        /// intersection would run off to infinity.
+        /// </summary>
+        private bool TryIntersectDraftPlane(
+            OrbitCamera camera, int localX, int localY, out Vector3 point)
+        {
+            float viewZ = camera.WorldToViewZ(_planarDraftOrigin);
+            Vector3 near = camera.ScreenToWorldAtDepth(localX, localY, viewZ);
+            float step = MathF.Max(camera.WorldUnitsPerPixel(_planarDraftOrigin) * 100f, 1f);
+            Vector3 far = camera.ScreenToWorldAtDepth(localX, localY, viewZ - step);
+            Vector3 direction = far - near;
+            if (MathF.Abs(direction.Z) < 1e-6f)
+            {
+                point = default;
+                return false;
+            }
+            point = near + direction * ((_planarDraftOrigin.Z - near.Z) / direction.Z);
+            return true;
         }
 
         private ObjectSnapResult ResolveGripPoint(ViewportState viewport, int localX, int localY)
@@ -2093,7 +2213,8 @@ namespace CloudScope
             Vector3 raw = camera.ScreenToWorldAtDepth(
                 localX, localY, camera.WorldToViewZ(anchor));
             return _objectSnap.Resolve(raw, localX, localY, camera,
-                SnapSourcesFor(viewport, _selectedGripTarget, _selectedGripTarget.ActiveHandle), anchor);
+                SnapSourcesFor(viewport, _selectedGripTarget, _selectedGripTarget.ActiveHandle), anchor,
+                OrthoMode);
         }
 
         private IEnumerable<IObjectSnapSource> SnapSourcesFor(

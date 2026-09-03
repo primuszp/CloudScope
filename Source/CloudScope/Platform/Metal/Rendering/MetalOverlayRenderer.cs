@@ -199,7 +199,8 @@ namespace CloudScope.Platform.Metal.Rendering
 
         public void RenderPolyline(
             IRenderFrameData frameData, ref Matrix4 view, ref Matrix4 proj,
-            IReadOnlyList<Vector3> points, bool closed, Vector4 color, float widthPixels, bool depthTest = true)
+            IReadOnlyList<Vector3> points, bool closed, Vector4 color, float widthPixels, bool depthTest = true,
+            float dashPixels = 0f)
         {
             if (frameData is not MetalFrameState frame) return;
             int segmentCount = PolylineRenderGeometry.SegmentCount(points.Count, closed);
@@ -212,7 +213,8 @@ namespace CloudScope.Platform.Metal.Rendering
                 _renderer.UpdateBuffer(ref _polylineJoinBuffer,
                     PolylineRenderGeometry.BuildJoinInstances(points, closed));
             _renderer.DrawJoinedLine(_polylineBuffer, segmentCount, _polylineJoinBuffer, joinCount,
-                view * proj, color, depthTest, lineWidthPixels: widthPixels);
+                view * proj, color, depthTest, lineWidthPixels: widthPixels,
+                dashPixels: dashPixels, depthBias: depthTest);
         }
 
         public void RenderSnapIndicator(

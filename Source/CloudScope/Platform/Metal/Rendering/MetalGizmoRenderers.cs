@@ -27,9 +27,9 @@ namespace CloudScope.Platform.Metal.Rendering
 
         protected static readonly Vector4[] AxisColor =
         {
-            new(0.95f, 0.20f, 0.20f, 0.75f),
-            new(0.20f, 0.95f, 0.30f, 0.75f),
-            new(0.25f, 0.55f, 1.00f, 0.75f),
+            AxisPalette.Of(0, 0.75f),
+            AxisPalette.Of(1, 0.75f),
+            AxisPalette.Of(2, 0.75f),
         };
 
         public abstract void Render(IRenderFrameData frameData, ISelectionTool tool, Matrix4 view, Matrix4 proj, OrbitCamera camera);
@@ -191,9 +191,9 @@ namespace CloudScope.Platform.Metal.Rendering
 
         private static readonly Vector4[] FaceColors =
         {
-            new(0.95f, 0.20f, 0.20f, 0.07f), new(0.95f, 0.20f, 0.20f, 0.07f),
-            new(0.20f, 0.95f, 0.30f, 0.07f), new(0.20f, 0.95f, 0.30f, 0.07f),
-            new(0.25f, 0.55f, 1.00f, 0.07f), new(0.25f, 0.55f, 1.00f, 0.07f),
+            AxisPalette.Of(0, 0.07f), AxisPalette.Of(0, 0.07f),
+            AxisPalette.Of(1, 0.07f), AxisPalette.Of(1, 0.07f),
+            AxisPalette.Of(2, 0.07f), AxisPalette.Of(2, 0.07f),
         };
 
         private MTLBuffer _edgeBuffer;

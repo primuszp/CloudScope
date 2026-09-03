@@ -47,12 +47,12 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
         private static readonly Vector4[] FaceFillColor =
         {
-            new(0.95f, 0.20f, 0.20f, 0.07f),  // -X
-            new(0.95f, 0.20f, 0.20f, 0.07f),  // +X
-            new(0.20f, 0.95f, 0.30f, 0.07f),  // -Y
-            new(0.20f, 0.95f, 0.30f, 0.07f),  // +Y
-            new(0.25f, 0.55f, 1.00f, 0.07f),  // -Z
-            new(0.25f, 0.55f, 1.00f, 0.07f),  // +Z
+            AxisPalette.Of(0, 0.07f),  // -X
+            AxisPalette.Of(0, 0.07f),  // +X
+            AxisPalette.Of(1, 0.07f),  // -Y
+            AxisPalette.Of(1, 0.07f),  // +Y
+            AxisPalette.Of(2, 0.07f),  // -Z
+            AxisPalette.Of(2, 0.07f),  // +Z
         };
 
         // ── Public entry points ───────────────────────────────────────────────
