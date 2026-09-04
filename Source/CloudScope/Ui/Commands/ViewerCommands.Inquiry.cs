@@ -34,7 +34,7 @@ public sealed partial class ViewerCommands
         yield break;
     }
 
-    [CommandMethod("ATTRIBUTES", "ATTRS", Flags = CommandFlags.NoUndoMarker | CommandFlags.NoHistory,
+    [CommandMethod("ATTRIBUTES", Flags = CommandFlags.NoUndoMarker | CommandFlags.NoHistory,
         Group = CommandGroup.Inquiry, Scope = CommandScope.Document,
         Summary = "Reports the distribution of an attribute across the cloud.",
         Syntax = "ATTRIBUTES [All/Class/Intensity/Return/Z]")]
@@ -112,20 +112,6 @@ public sealed partial class ViewerCommands
             : "Command line hidden. Press Ctrl+9 to show it.");
     }
 
-    // AutoCAD spells hiding as its own command as well, and a script that wants the command
-    // line gone must not have to know whether it is currently up.
-    [CommandMethod("COMMANDLINEHIDE", Flags = CommandFlags.NoUndoMarker | CommandFlags.NoHistory | CommandFlags.Transparent,
-        Group = CommandGroup.Inquiry, Scope = CommandScope.Viewer,
-        Summary = "Hides the docked command window.",
-        Syntax = "COMMANDLINEHIDE")]
-    public IEnumerable<PromptStep> CommandLineHide(CommandContext context)
-    {
-        var viewer = context.GetTarget<ViewerController>();
-        viewer.CommandLineVisible = false;
-        context.Editor.WriteMessage("Command line hidden. Press Ctrl+9 to show it.");
-        yield break;
-    }
-
     [CommandMethod("UNDO", "U", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.Edit, Scope = CommandScope.Viewer,
         Summary = "Steps back through completed commands.",
@@ -191,7 +177,7 @@ public sealed partial class ViewerCommands
         context.Editor.WriteMessage(done == 0 ? "Nothing to redo." : $"Redid {done} operation(s).");
     }
 
-    [CommandMethod("SETVAR", "SET", Flags = CommandFlags.NoUndoMarker | CommandFlags.Transparent,
+    [CommandMethod("SETVAR", Flags = CommandFlags.NoUndoMarker | CommandFlags.Transparent,
         Group = CommandGroup.Settings, Scope = CommandScope.Viewer,
         Summary = "Lists or changes a system variable.",
         Syntax = "SETVAR <name> <value> | ? [pattern]")]
@@ -250,7 +236,7 @@ public sealed partial class ViewerCommands
         context.Editor.WriteMessage(context.GetTarget<ViewerController>().Variables.Read(name.Value));
     }
 
-    [CommandMethod("GRAPHICSCONFIG", "3DCONFIG", Flags = CommandFlags.NoUndoMarker,
+    [CommandMethod("GRAPHICSCONFIG", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.Settings, Scope = CommandScope.Viewer,
         Summary = "Reports the rendering backend and how to select one.",
         Syntax = "GRAPHICSCONFIG")]
@@ -267,7 +253,7 @@ public sealed partial class ViewerCommands
         yield break;
     }
 
-    [CommandMethod("POINTCLOUDCONFIG", "PTCONFIG", Flags = CommandFlags.NoUndoMarker,
+    [CommandMethod("POINTCLOUDCONFIG", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.Settings, Scope = CommandScope.Viewer,
         Summary = "Shows or sets the per-frame and resident point budgets.",
         Syntax = "POINTCLOUDCONFIG [Frame <points>/Resident <points>/Show]")]
@@ -338,7 +324,7 @@ public sealed partial class ViewerCommands
         ed.WriteMessage($"Running {queued} line(s) from {Path.GetFileName(path.Value)}.");
     }
 
-    [CommandMethod("QUIT", "EXIT", Flags = CommandFlags.NoUndoMarker,
+    [CommandMethod("QUIT", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.Utility, Scope = CommandScope.Application,
         Summary = "Closes the viewer.",
         Syntax = "QUIT")]

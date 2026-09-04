@@ -228,7 +228,7 @@ public sealed partial class ViewerCommands
         }
     }
 
-    [CommandMethod("PROJECTION", "PROJ", "PERSPECTIVE", Flags = CommandFlags.NoUndoMarker,
+    [CommandMethod("PROJECTION", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.View, Scope = CommandScope.Viewer,
         Summary = "Switches between perspective and parallel projection.",
         Syntax = "PROJECTION [Perspective/PArallel]")]
@@ -258,7 +258,7 @@ public sealed partial class ViewerCommands
         yield break;
     }
 
-    [CommandMethod("POINTSIZE", "PSIZE", Flags = CommandFlags.NoUndoMarker,
+    [CommandMethod("POINTSIZE", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.View, Scope = CommandScope.Viewer,
         Summary = "Sets the on-screen size of a point, in pixels.",
         Syntax = "POINTSIZE <size> | + | -")]
@@ -276,7 +276,7 @@ public sealed partial class ViewerCommands
         context.Editor.WriteMessage($"Point size: {viewer.PointSize:0.0}");
     }
 
-    [CommandMethod("COLORBY", "COLOR", "CB", Flags = CommandFlags.NoUndoMarker,
+    [CommandMethod("COLORBY", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.View, Scope = CommandScope.Document,
         Summary = "Colours the cloud by one of its attributes.",
         Syntax = "COLORBY [Rgb/Height/Class/Intensity/ReTurn/CLear]")]
@@ -295,7 +295,7 @@ public sealed partial class ViewerCommands
             : viewer.SetColorSource(MapColorSource(source.Keyword)));
     }
 
-    [CommandMethod("FILTER", "FI", Flags = CommandFlags.NoUndoMarker,
+    [CommandMethod("FILTER", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.View, Scope = CommandScope.Document,
         Summary = "Shows only the points matching an attribute filter.",
         Syntax = "FILTER [Class/Intensity/Return/Z/CLear] <values>")]

@@ -45,13 +45,6 @@
     </Style>
 
     <!-- Command window -->
-    <Style Selector="TextBlock.prompt">
-      <Setter Property="Foreground" Value="{DynamicResource CsAccent}" />
-      <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Margin" Value="0,0,8,0" />
-    </Style>
     <Style Selector="TextBox.commandInput">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
@@ -61,24 +54,6 @@
       <Setter Property="FontSize" Value="12" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="Padding" Value="0" />
-    </Style>
-    <Style Selector="Button.commandRailButton">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Foreground" Value="#333333" />
-      <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
-      <Setter Property="FontSize" Value="13" />
-      <Setter Property="Width" Value="20" />
-      <Setter Property="Height" Value="18" />
-      <Setter Property="MinWidth" Value="0" />
-      <Setter Property="MinHeight" Value="0" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
-      <Setter Property="HorizontalAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Button.commandRailButton:pointerover /template/ ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource CsAccentDim}" />
     </Style>
     <!-- A keyword sits inside the prompt's own "[...]", so it has to sit on the text's
          baseline and metrics rather than look like a button dropped into a sentence. -->

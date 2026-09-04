@@ -15,10 +15,10 @@ public sealed partial class ViewerCommands
 
     private static readonly Keyword ReferenceKeyword = new("REFERENCE", "Reference");
 
-    [CommandMethod("SELECT", "SEL",
+    [CommandMethod("SELECT",
         Group = CommandGroup.Edit, Scope = CommandScope.Document,
         Summary = "Draws a selection volume and applies it to the current label.",
-        Syntax = "SELECT [Box/Sphere/Cylinder/Undo/CONFirm/CANcel/Fit/GroundFit]")]
+        Syntax = "SELECT [Box/Sphere/Cylinder/Undo/CONFirm/CANcel/Fit/Ground]")]
     public IEnumerable<PromptStep> Select(CommandContext context)
     {
         var viewer = context.GetTarget<ViewerController>();
@@ -61,7 +61,7 @@ public sealed partial class ViewerCommands
             while (true)
             {
                 PromptStep adjust = ed.GetKeywords(
-                    "Adjust selection using grips or [CONFirm/Undo/CANcel/Fit/GroundFit/Box/Sphere/Cylinder]:",
+                    "Adjust selection using grips or [CONFirm/Undo/CANcel/Fit/Ground/Box/Sphere/Cylinder]:",
                     SelectKeywords);
                 yield return adjust;
 
@@ -104,7 +104,7 @@ public sealed partial class ViewerCommands
                         ed.WriteMessage(viewer.FitActiveSelection(useGround: false));
                         continue;
 
-                    case "FITGROUND":
+                    case "GROUND":
                         ed.WriteMessage(viewer.FitActiveSelection(useGround: true));
                         continue;
 
@@ -137,7 +137,7 @@ public sealed partial class ViewerCommands
         }
     }
 
-    [CommandMethod("CONFIRM", "ENTER", Flags = CommandFlags.NoHistory,
+    [CommandMethod("CONFIRM", Flags = CommandFlags.NoHistory,
         Group = CommandGroup.Edit, Scope = CommandScope.Document,
         Summary = "Applies the active selection to the current label.",
         Syntax = "CONFIRM")]
@@ -154,7 +154,7 @@ public sealed partial class ViewerCommands
         context.Editor.WriteMessage("Selection applied.");
     }
 
-    [CommandMethod("CANCEL", "ESC", "ESCAPE", Flags = CommandFlags.NoHistory | CommandFlags.NoUndoMarker,
+    [CommandMethod("CANCEL", "ESC", Flags = CommandFlags.NoHistory | CommandFlags.NoUndoMarker,
         Group = CommandGroup.Edit, Scope = CommandScope.Viewer,
         Summary = "Cancels the active command or selection.",
         Syntax = "CANCEL")]
@@ -178,16 +178,6 @@ public sealed partial class ViewerCommands
 
         context.Editor.WriteMessage(
             context.GetTarget<ViewerController>().FitActiveSelection(option.Is("GROUND")));
-    }
-
-    [CommandMethod("FITGROUND", Flags = CommandFlags.NoUndoMarker,
-        Group = CommandGroup.Edit, Scope = CommandScope.Document,
-        Summary = "Fits the selection volume, keeping its base on the ground.",
-        Syntax = "FITGROUND")]
-    public IEnumerable<PromptStep> FitGround(CommandContext context)
-    {
-        context.Editor.WriteMessage(context.GetTarget<ViewerController>().FitActiveSelection(useGround: true));
-        yield break;
     }
 
     [CommandMethod("MOVE", "M", Flags = CommandFlags.NoUndoMarker,

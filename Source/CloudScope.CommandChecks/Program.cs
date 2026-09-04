@@ -34,6 +34,41 @@ try
     Check("every command has a syntax", commands.All(c => c.Syntax.Length > 0),
         string.Join(",", commands.Where(c => c.Syntax.Length == 0).Select(c => c.GlobalName)));
 
+    // A command has one canonical name and may expose short, intentional aliases. Do not let
+    // aliases turn into a second command surface: the runtime rejects collisions at startup,
+    // while these checks make the catalogue's invariant explicit in the CI report.
+    var allNames = commands
+        .SelectMany(command => new[] { command.GlobalName }.Concat(command.Aliases)
+            .Select(name => (Name: name, Command: command.GlobalName)))
+        .ToArray();
+    var duplicateNames = allNames
+        .GroupBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+        .Where(group => group.Count() > 1)
+        .Select(group => group.Key)
+        .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+    Check("command names and aliases are unique", duplicateNames.Length == 0,
+        string.Join(", ", duplicateNames));
+
+    var duplicateHandlers = commands
+        .Where(command => command.Implementation != null)
+        .GroupBy(command => command.Implementation)
+        .Where(group => group.Count() > 1)
+        .Select(group => string.Join("/", group.Select(command => command.GlobalName)))
+        .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+    Check("each command has one implementation", duplicateHandlers.Length == 0,
+        string.Join(", ", duplicateHandlers));
+
+    var redundantAliases = commands
+        .Where(command => command.Aliases.Any(alias =>
+            alias.Equals(command.GlobalName, StringComparison.OrdinalIgnoreCase)))
+        .Select(command => command.GlobalName)
+        .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+    Check("aliases do not repeat their command name", redundantAliases.Length == 0,
+        string.Join(", ", redundantAliases));
+
     foreach (var group in commands.GroupBy(c => c.Group).OrderBy(g => g.Key))
         Console.WriteLine($"       {group.Key,-9} {string.Join(" ", group.Select(c => c.GlobalName).OrderBy(n => n))}");
 
@@ -536,11 +571,31 @@ for (int x = 0; x < 9; x++) for (int y = 0; y < 9; y++)
     if ((x + y) % 3 == 0)
         terrainCloud.Add(new PointData { X = x * 0.25f, Y = y * 0.25f, Z = 1.2f + x * 0.025f });
 }
-GroundSegmentationResult terrain = GroundSegmentation.Segment(terrainCloud);
-Check("ground segmentation follows a sloping terrain surface", terrain.Succeeded
+GroundSegmentationResult terrain = GroundSegmentation.Segment(terrainCloud, new GroundSegmentationOptions
+{
+    ClothResolution = 0.25f,
+    Rigidness = 3,
+    TimeStep = 0.65,
+    ClassThreshold = 0.5f,
+    Iterations = 500,
+    SlopeSmoothing = true
+});
+Check("CSF ground segmentation follows a sloping terrain surface", terrain.Succeeded
     && expectedGround.All(terrain.PointIndices.Contains), terrain.PointIndices.Count.ToString());
-Check("ground segmentation excludes vegetation above the surface",
+Check("CSF ground segmentation excludes vegetation above the surface",
     terrain.PointIndices.All(expectedGround.Contains), terrain.PointIndices.Count.ToString());
+GroundSegmentationResult relaxedCsf = GroundSegmentation.Segment(terrainCloud, new GroundSegmentationOptions
+{
+    ClothResolution = 0.25f,
+    ClassThreshold = 2f
+});
+Check("CSF classification threshold controls the terrain split",
+    relaxedCsf.Succeeded && relaxedCsf.PointIndices.Count > terrain.PointIndices.Count,
+    relaxedCsf.PointIndices.Count.ToString());
+GroundSegmentationResult invalidCsf = GroundSegmentation.Segment(terrainCloud,
+    new GroundSegmentationOptions { ClothResolution = 0.01f });
+Check("CSF rejects an unsafe cloth resolution", !invalidCsf.Succeeded && invalidCsf.FailureReason?.Contains("ClothResolution") == true,
+    invalidCsf.FailureReason ?? "");
 
 Console.WriteLine();
 Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : $"{failures} CHECK(S) FAILED");

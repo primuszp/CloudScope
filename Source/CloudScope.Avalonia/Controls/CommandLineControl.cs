@@ -9,10 +9,9 @@ using CloudScope.Commands;
 namespace CloudScope.Avalonia.Controls;
 
 /// <summary>
-/// The AutoCAD-style command window: a single live command line beneath scrolling output,
-/// autocomplete, input recall, and the space-vs-enter submission rule.  The prompt is an
-/// immutable prefix of the input, so it reads as one console line rather than a label beside a
-/// separate textbox.
+/// The AutoCAD-style command window used by the WPF shell: scrolling output above a fixed
+/// prompt and a separate input field.  Completion, input recall, and the space-vs-enter rule
+/// remain shell behaviour rather than being tied to the visual arrangement.
 /// </summary>
 public sealed class CommandLineControl : UserControl
 {
@@ -20,6 +19,13 @@ public sealed class CommandLineControl : UserControl
     private readonly Func<string, Task> _submit;
 
     private readonly CommandTranscript _transcript;
+    private readonly TextBlock _prompt = new()
+    {
+        Foreground = Brushes.Black,
+        VerticalAlignment = global::Avalonia.Layout.VerticalAlignment.Center,
+        FontFamily = new FontFamily(global::CloudScope.Ui.UiPalette.MonoFontStack),
+        FontSize = 12
+    };
     private readonly TextBox _input = new()
     {
         // Local values deliberately override the Fluent theme's focused TextBox state.
@@ -27,16 +33,15 @@ public sealed class CommandLineControl : UserControl
         Background = Brushes.White,
         BorderBrush = Brushes.Transparent,
         BorderThickness = new Thickness(0),
-        FocusAdorner = null
+        FocusAdorner = null,
+        TextWrapping = TextWrapping.Wrap
     };
     private readonly Popup _completionPopup = new();
     private readonly ListBox _completionList = new();
 
     private IReadOnlyList<CommandCompletion> _completions = [];
     private string _completionPrefix = "";
-    private string _promptPrefix = "";
     private bool _settingInput;
-    private bool _clampingSelection;
 
     public CommandLineControl(CommandLineSession session, Func<string, Task> submit)
     {
@@ -61,31 +66,10 @@ public sealed class CommandLineControl : UserControl
 
         _input.Classes.Add("commandInput");
         _input.KeyDown += OnInputKeyDown;
-        _input.PropertyChanged += (_, change) =>
-        {
-            if (change.Property == TextBox.SelectionStartProperty ||
-                change.Property == TextBox.SelectionEndProperty ||
-                change.Property == TextBox.CaretIndexProperty)
-                ClampSelectionToAnswer();
-        };
         _input.TextChanged += (_, _) =>
         {
             if (_settingInput)
                 return;
-
-            // The whole live line is one TextBox, like AutoCAD. The prompt is a protected
-            // prefix: edits may affect only the answer after it.
-            string displayed = _input.Text ?? "";
-            if (!displayed.StartsWith(_promptPrefix, StringComparison.Ordinal))
-            {
-                int prefixAt = displayed.IndexOf(_promptPrefix, StringComparison.Ordinal);
-                string editedInput = prefixAt >= 0
-                    ? displayed.Remove(prefixAt, _promptPrefix.Length)
-                    : displayed.TrimStart();
-                SetInput(editedInput, caretAtEnd: true);
-                return;
-            }
-
             RefreshCompletions();
         };
 
@@ -118,9 +102,6 @@ public sealed class CommandLineControl : UserControl
 
     /// <summary>Raised when the user asks for the expanded history window (F2).</summary>
     public event Action? HistoryRequested;
-
-    /// <summary>Raised by the docked command strip's close button.</summary>
-    public event Action? CloseRequested;
 
     // AutoCAD's command-line context menu: rerun something recent, or take the transcript.
     private ContextMenu BuildContextMenu()
@@ -192,7 +173,7 @@ public sealed class CommandLineControl : UserControl
     {
         string current = InputText;
         int caret = IsKeyboardFocusWithin
-            ? Math.Clamp(_input.CaretIndex - _promptPrefix.Length, 0, current.Length)
+            ? Math.Clamp(_input.CaretIndex, 0, current.Length)
             : current.Length;
 
         SetInput(current[..caret] + text + current[caret..], caret + text.Length);
@@ -219,64 +200,43 @@ public sealed class CommandLineControl : UserControl
 
     private Control BuildLayout()
     {
-        var close = new Button { Content = "×" };
-        close.Classes.Add("commandRailButton");
-        ToolTip.SetTip(close, "Hide command line");
-        close.Click += (_, _) => CloseRequested?.Invoke();
+        var inputRow = new DockPanel { LastChildFill = true };
+        inputRow.Children.Add(_prompt);
+        DockPanel.SetDock(_prompt, Dock.Left);
+        inputRow.Children.Add(_input);
 
-        var history = new Button { Content = "≡" };
-        history.Classes.Add("commandRailButton");
-        ToolTip.SetTip(history, "Command history (F2)");
-        history.Click += (_, _) => HistoryRequested?.Invoke();
-
-        var rail = new Border
-        {
-            Background = new SolidColorBrush(Color.FromRgb(184, 184, 184)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(145, 145, 145)),
-            BorderThickness = new Thickness(0, 0, 1, 0),
-            ClipToBounds = true,
-            Padding = new Thickness(1, 0, 1, 2),
-            Child = new StackPanel
-            {
-                VerticalAlignment = global::Avalonia.Layout.VerticalAlignment.Bottom,
-                Children = { close, history }
-            }
-        };
-
+        // Mirrors AeroCAD.View's WPF command control: the live prompt is pinned below the
+        // history, followed by a thin separator and a plain scrolling transcript.
         var inputBorder = new Border
         {
             Background = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.FromRgb(145, 145, 145)),
-            BorderThickness = new Thickness(0, 1, 0, 0),
-            Padding = new Thickness(7, 1, 8, 2),
-            Child = _input
+            Padding = new Thickness(4, 2),
+            Child = inputRow
         };
 
-        var content = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };
+        var content = new Grid { RowDefinitions = new RowDefinitions("*,1,Auto") };
         content.Children.Add(new Border
         {
-            Background = new SolidColorBrush(Color.FromRgb(199, 199, 199)),
+            Background = Brushes.White,
             Child = _transcript
         });
+        content.Children.Add(new Border
+        {
+            Margin = new Thickness(2, 0),
+            Background = new SolidColorBrush(Color.FromRgb(208, 208, 216))
+        });
+        Grid.SetRow(content.Children[^1], 1);
         content.Children.Add(inputBorder);
-        Grid.SetRow(inputBorder, 1);
-
-        var root = new Grid { ColumnDefinitions = new ColumnDefinitions("24,*") };
-        root.Children.Add(rail);
-        root.Children.Add(content);
-        Grid.SetColumn(content, 1);
-        return root;
+        Grid.SetRow(inputBorder, 2);
+        return content;
     }
 
-    private string InputText => (_input.Text ?? "").StartsWith(_promptPrefix, StringComparison.Ordinal)
-        ? (_input.Text ?? "")[_promptPrefix.Length..]
-        : "";
+    private string InputText => _input.Text ?? "";
 
     private void SetPromptPrefix()
     {
-        string input = InputText;
-        _promptPrefix = _session.Prompt.TrimEnd() + " ";
-        SetInput(input, caretAtEnd: true);
+        _prompt.Text = _session.Prompt.TrimEnd();
+        _prompt.Margin = new Thickness(0, 0, string.IsNullOrEmpty(_prompt.Text) ? 0 : 6, 0);
     }
 
     private void SetInput(string text, bool caretAtEnd) => SetInput(text, caretAtEnd ? text.Length : 0);
@@ -286,38 +246,10 @@ public sealed class CommandLineControl : UserControl
         _settingInput = true;
         try
         {
-            _input.Text = _promptPrefix + text;
-            int absoluteCaret = _promptPrefix.Length + Math.Clamp(caret, 0, text.Length);
-            _input.SelectionStart = absoluteCaret;
-            _input.SelectionEnd = absoluteCaret;
-            _input.CaretIndex = absoluteCaret;
+            _input.Text = text;
+            _input.CaretIndex = Math.Clamp(caret, 0, text.Length);
         }
         finally { _settingInput = false; }
-    }
-
-    /// <summary>
-    /// The prompt and answer share one native TextBox for the right visual and editing feel,
-    /// but only the answer is user-selectable. This also constrains Ctrl+A and mouse drags.
-    /// </summary>
-    private void ClampSelectionToAnswer()
-    {
-        if (_clampingSelection || _settingInput)
-            return;
-
-        int firstEditable = Math.Min(_promptPrefix.Length, (_input.Text ?? "").Length);
-        if (_input.SelectionStart >= firstEditable &&
-            _input.SelectionEnd >= firstEditable &&
-            _input.CaretIndex >= firstEditable)
-            return;
-
-        _clampingSelection = true;
-        try
-        {
-            _input.SelectionStart = Math.Max(firstEditable, _input.SelectionStart);
-            _input.SelectionEnd = Math.Max(firstEditable, _input.SelectionEnd);
-            _input.CaretIndex = Math.Max(firstEditable, _input.CaretIndex);
-        }
-        finally { _clampingSelection = false; }
     }
 
     private void OnInputKeyDown(object? sender, KeyEventArgs e)
@@ -325,20 +257,20 @@ public sealed class CommandLineControl : UserControl
         switch (e.Key)
         {
             case Key.Home:
-                _input.CaretIndex = _promptPrefix.Length;
+                _input.CaretIndex = 0;
                 e.Handled = true;
                 return;
 
             case Key.Left:
-                if (_input.CaretIndex <= _promptPrefix.Length)
+                if (_input.CaretIndex <= 0)
                 {
-                    _input.CaretIndex = _promptPrefix.Length;
+                    _input.CaretIndex = 0;
                     e.Handled = true;
                 }
                 return;
 
             case Key.Back:
-                if (_input.CaretIndex <= _promptPrefix.Length)
+                if (_input.CaretIndex <= 0)
                 {
                     e.Handled = true;
                     return;
@@ -346,11 +278,6 @@ public sealed class CommandLineControl : UserControl
                 return;
 
             case Key.Delete:
-                if (_input.CaretIndex < _promptPrefix.Length)
-                {
-                    e.Handled = true;
-                    return;
-                }
                 return;
 
             case Key.Escape:
