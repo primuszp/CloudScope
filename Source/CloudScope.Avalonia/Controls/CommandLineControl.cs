@@ -1,6 +1,5 @@
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Media;
@@ -31,16 +30,13 @@ public sealed class CommandLineControl : UserControl
         // Local values deliberately override the Fluent theme's focused TextBox state.
         // The CAD command line must not turn dark or acquire an accent outline on focus.
         Background = Brushes.White,
+        Foreground = Brushes.Black,
+        CaretBrush = Brushes.Black,
         BorderBrush = Brushes.Transparent,
         BorderThickness = new Thickness(0),
         FocusAdorner = null,
         TextWrapping = TextWrapping.Wrap
     };
-    private readonly Popup _completionPopup = new();
-    private readonly ListBox _completionList = new();
-
-    private IReadOnlyList<CommandCompletion> _completions = [];
-    private string _completionPrefix = "";
     private bool _settingInput;
 
     public CommandLineControl(CommandLineSession session, Func<string, Task> submit)
@@ -70,30 +66,7 @@ public sealed class CommandLineControl : UserControl
         {
             if (_settingInput)
                 return;
-            RefreshCompletions();
         };
-
-        _completionList.Background = Brushes.White;
-        _completionList.Foreground = Brushes.Black;
-
-        _completionList.DoubleTapped += (_, _) => AcceptCompletion(submitAfter: true);
-        _completionPopup.Child = new Border
-        {
-            Background = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.FromRgb(145, 145, 145)),
-            BorderThickness = new Thickness(1),
-            Child = _completionList,
-            MinWidth = 320,
-            MaxHeight = 220
-        };
-        // The list belongs directly above the text being typed, left-aligned with it, the way
-        // AutoCAD's suggestion list sits over the prompt — not floating off the input's end.
-        _completionPopup.PlacementTarget = _input;
-        _completionPopup.Placement = PlacementMode.AnchorAndGravity;
-        _completionPopup.PlacementAnchor = global::Avalonia.Controls.Primitives.PopupPositioning.PopupAnchor.TopLeft;
-        _completionPopup.PlacementGravity = global::Avalonia.Controls.Primitives.PopupPositioning.PopupGravity.TopRight;
-        _completionPopup.HorizontalOffset = 0;
-        _completionPopup.IsLightDismissEnabled = false;
 
         Content = BuildLayout();
         ContextMenu = BuildContextMenu();
@@ -178,7 +151,6 @@ public sealed class CommandLineControl : UserControl
 
         SetInput(current[..caret] + text + current[caret..], caret + text.Length);
         _input.Focus();
-        RefreshCompletions();
     }
 
     /// <summary>Puts a command in the input without submitting it, as menus and toolbars do.</summary>
@@ -281,9 +253,7 @@ public sealed class CommandLineControl : UserControl
                 return;
 
             case Key.Escape:
-                // Esc peels one layer at a time: list, then the active command, then the text.
-                if (_completionPopup.IsOpen) DismissCompletions();
-                else if (_session.ActiveOptions != null || InputText.Length == 0) SubmitText("CANCEL");
+                if (_session.ActiveOptions != null || InputText.Length == 0) SubmitText("CANCEL");
                 else SetInput("", caretAtEnd: true);
                 e.Handled = true;
                 return;
@@ -294,14 +264,12 @@ public sealed class CommandLineControl : UserControl
                 return;
 
             case Key.Up:
-                if (_completionPopup.IsOpen) CycleCompletion(-1);
-                else SetInput(_session.Recall(-1));
+                SetInput(_session.Recall(-1));
                 e.Handled = true;
                 return;
 
             case Key.Down:
-                if (_completionPopup.IsOpen) CycleCompletion(1);
-                else SetInput(_session.Recall(1));
+                SetInput(_session.Recall(1));
                 e.Handled = true;
                 return;
 
@@ -311,13 +279,6 @@ public sealed class CommandLineControl : UserControl
                 return;
 
             case Key.Enter:
-                if (_completionPopup.IsOpen && _completionList.SelectedIndex >= 0)
-                {
-                    AcceptCompletion(submitAfter: true);
-                    e.Handled = true;
-                    return;
-                }
-
                 SubmitText(InputText);
                 e.Handled = true;
                 return;
@@ -337,12 +298,10 @@ public sealed class CommandLineControl : UserControl
     private void SetInput(string text)
     {
         SetInput(text, caretAtEnd: true);
-        DismissCompletions();
     }
 
     private void SubmitText(string command)
     {
-        DismissCompletions();
         SetInput("", caretAtEnd: true);
         _ = SubmitAsync(command);
     }
@@ -354,71 +313,21 @@ public sealed class CommandLineControl : UserControl
         FocusInput();
     }
 
-    private void RefreshCompletions()
-    {
-        string typed = InputText.Trim();
-        if (typed == _completionPrefix)
-            return;
-
-        _completionPrefix = typed;
-
-        // Suggestions live only in the popup. Injecting the best candidate into the TextBox
-        // as selected text makes Backspace fight the autocomplete and can trap the input in
-        // a re-suggestion loop. Tab or Enter still accepts the selected candidate.
-        if (typed.Length == 0)
-        {
-            DismissCompletions();
-            return;
-        }
-
-        _completions = _session.Complete(typed);
-
-        if (_completions.Count == 0)
-        {
-            DismissCompletions();
-            return;
-        }
-
-        _completionList.ItemsSource = _completions.Select(c => $"{c.Display}   ({c.Detail})").ToArray();
-        _completionList.SelectedIndex = 0;
-        _completionPopup.IsOpen = true;
-    }
-
     private void CycleCompletion(int direction)
     {
-        if (!_completionPopup.IsOpen)
-        {
-            RefreshCompletions();
-            if (!_completionPopup.IsOpen)
-                return;
-        }
-
-        int count = _completions.Count;
-        _completionList.SelectedIndex = (_completionList.SelectedIndex + direction + count) % count;
-        AcceptCompletion(submitAfter: false);
-    }
-
-    private void AcceptCompletion(bool submitAfter)
-    {
-        int index = _completionList.SelectedIndex;
-        if (index < 0 || index >= _completions.Count)
+        string typed = InputText.Trim();
+        if (typed.Length == 0)
             return;
 
-        string insert = _completions[index].Insert;
+        IReadOnlyList<CommandCompletion> completions = _session.Complete(typed);
+        if (completions.Count == 0)
+            return;
+
+        // Keep completion in the input itself. The former Popup sat above this row and could
+        // leave a grey, empty strip while Avalonia was updating its placement during typing.
+        string insert = completions[direction < 0 ? completions.Count - 1 : 0].Insert;
         SetInput(insert, caretAtEnd: true);
-        _completionPrefix = insert;
-
-        if (submitAfter)
-            SubmitText(insert);
-        else
-            _input.Focus();
-    }
-
-    private void DismissCompletions()
-    {
-        _completionPopup.IsOpen = false;
-        _completions = [];
-        _completionPrefix = InputText.Trim();
+        _input.Focus();
     }
 
 }
