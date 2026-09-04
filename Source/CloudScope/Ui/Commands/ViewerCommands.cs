@@ -32,7 +32,7 @@ public sealed partial class ViewerCommands
         new("CONFIRM", "CONFirm"),
         new("CANCEL", "CANcel"),
         new("FIT", "Fit"),
-        new("FITGROUND", "GroundFit", "GF", "FITG")
+        new("GROUND", "Ground")
     ];
 
     private static readonly Keyword[] ViewKeywords =

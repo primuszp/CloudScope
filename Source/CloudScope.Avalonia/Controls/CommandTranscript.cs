@@ -39,7 +39,10 @@ public sealed class CommandTranscript : UserControl
             Content = _text,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Padding = new Thickness(10, 4, 10, 4)
+            // AeroCAD.View's WPF command history has no inner inset. Keep other transcript
+            // consumers comfortably padded, but make the CAD command surface line up with
+            // its prompt and input field.
+            Padding = cadPalette ? new Thickness(0) : new Thickness(10, 4, 10, 4)
         };
 
         // The text block selects a word on a double tap and marks the event handled, so the

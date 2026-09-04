@@ -36,7 +36,7 @@ public sealed partial class ViewerCommands
         new("WIDTH", "Width", "W")
     ];
 
-    [CommandMethod("PLINE", "POLYLINE", "PL",
+    [CommandMethod("PLINE", "PL",
         Group = CommandGroup.Edit, Scope = CommandScope.Viewer,
         Summary = "Draws a planar polyline made of connected line and tangent arc segments.",
         Syntax = "PLINE <start point> <next point>... [Arc/Close/Halfwidth/Length/Undo/Width]")]
@@ -287,7 +287,7 @@ public sealed partial class ViewerCommands
         }
     }
 
-    [CommandMethod("SAVEPOLYLINES", "PLSAVE",
+    [CommandMethod("SAVEPOLYLINES",
         Group = CommandGroup.File, Scope = CommandScope.Viewer,
         Summary = "Saves every planar polyline to a versioned JSON document.",
         Syntax = "SAVEPOLYLINES <path>")]
@@ -300,7 +300,7 @@ public sealed partial class ViewerCommands
                 .SavePlanarPolylines(path.Value));
     }
 
-    [CommandMethod("LOADPOLYLINES", "PLLOAD",
+    [CommandMethod("LOADPOLYLINES",
         Group = CommandGroup.File, Scope = CommandScope.Viewer,
         Summary = "Loads planar polylines from a versioned JSON document.",
         Syntax = "LOADPOLYLINES <path>")]

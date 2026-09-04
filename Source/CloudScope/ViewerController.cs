@@ -664,11 +664,12 @@ namespace CloudScope
             return $"Tree {id}: {result.PointIndices.Count:N0} points segmented; {result.CompetitorCount} competing trunk marker(s).";
         }
 
-        public string SegmentGround()
+        public string SegmentGround(GroundSegmentationOptions? options = null)
         {
-            GroundSegmentationResult result = _selection.SegmentGround();
+            GroundSegmentationResult result = _selection.SegmentGround(options);
             if (!result.Succeeded) return $"Ground segmentation failed: {result.FailureReason}";
-            return $"Ground: {result.PointIndices.Count:N0} points in {result.GroundCellCount:N0} of {result.CellCount:N0} terrain cells.";
+            return $"CSF ground: {result.PointIndices.Count:N0} ground and {result.NonGroundPointCount:N0} non-ground points; " +
+                   $"{result.ContactNodeCount:N0} / {result.ClothNodeCount:N0} cloth nodes contacted terrain.";
         }
 
         private int NextTreeInstanceId() => _selection.Labels.AllAnnotations.Values

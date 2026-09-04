@@ -1,4 +1,5 @@
 using CloudScope.Commands;
+using CloudScope.Forestry;
 using CloudScope.Selection;
 using OpenTK.Mathematics;
 
@@ -15,7 +16,7 @@ public sealed partial class ViewerCommands
 
     private static readonly Keyword LasKeyword = new("LAS", "Las");
 
-    [CommandMethod("NAVIGATE", "NAV", "N", Flags = CommandFlags.NoUndoMarker,
+    [CommandMethod("NAVIGATE", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.Label, Scope = CommandScope.Viewer,
         Summary = "Switches to navigation mode.",
         Syntax = "NAVIGATE")]
@@ -71,7 +72,7 @@ public sealed partial class ViewerCommands
         }
     }
 
-    [CommandMethod("INSTANCE", "INST", Flags = CommandFlags.NoUndoMarker,
+    [CommandMethod("INSTANCE", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.Label, Scope = CommandScope.Document,
         Summary = "Sets or clears the instance id new selections are given.",
         Syntax = "INSTANCE <id> | CLear")]
@@ -94,7 +95,7 @@ public sealed partial class ViewerCommands
         context.Editor.WriteMessage(viewer.SetActiveInstance(id.Value));
     }
 
-    [CommandMethod("TREESEG", "SEGMENTTREE", "TREE", Flags = CommandFlags.NoUndoMarker,
+    [CommandMethod("TREESEG", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.Label, Scope = CommandScope.Document,
         Summary = "Segments one terrestrial/SLAM tree from a picked trunk seed.",
         Syntax = "TREESEG <seed point>")]
@@ -109,14 +110,79 @@ public sealed partial class ViewerCommands
         ed.WriteMessage(message);
     }
 
-    [CommandMethod("GROUNDSEG", "SEGMENTGROUND", "GROUND", Flags = CommandFlags.NoUndoMarker,
+    [CommandMethod("GROUNDSEG", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.Label, Scope = CommandScope.Document,
-        Summary = "Separates terrain points with a progressive multi-scale ground filter.",
-        Syntax = "GROUNDSEG")]
+        Summary = "Separates terrain points with the CSF cloth-simulation ground filter.",
+        Syntax = "GROUNDSEG [clothResolution rigidness timeStep classThreshold iterations slopeSmooth]")]
     public IEnumerable<PromptStep> SegmentGround(CommandContext context)
     {
-        context.Editor.WriteMessage(context.GetTarget<ViewerController>().SegmentGround());
-        yield break;
+        Editor ed = context.Editor;
+        while (true)
+        {
+            PromptStringStep parameters = ed
+                .GetLine("CSF parameters [resolution rigidness timeStep threshold iterations slopeSmooth] <1 3 0.65 0.5 500 On>:")
+                .WithDefault("1 3 0.65 0.5 500 On");
+            yield return parameters;
+            if (!parameters.IsOk) yield break;
+
+            if (!TryParseGroundParameters(parameters.Value, out GroundSegmentationOptions options, out string error))
+            {
+                ed.WriteMessage(error);
+                continue;
+            }
+
+            ed.WriteMessage(context.GetTarget<ViewerController>().SegmentGround(options));
+            yield break;
+        }
+    }
+
+    private static bool TryParseGroundParameters(string text, out GroundSegmentationOptions options, out string error)
+    {
+        string[] values = text.Split([' ', ',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (values.Length != 6 ||
+            !float.TryParse(values.ElementAtOrDefault(0), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float resolution) ||
+            !int.TryParse(values.ElementAtOrDefault(1), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int rigidness) ||
+            !double.TryParse(values.ElementAtOrDefault(2), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double timeStep) ||
+            !float.TryParse(values.ElementAtOrDefault(3), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float threshold) ||
+            !int.TryParse(values.ElementAtOrDefault(4), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int iterations) ||
+            !TryParseOnOff(values.ElementAtOrDefault(5), out bool slopeSmoothing))
+        {
+            options = new GroundSegmentationOptions();
+            error = "Enter: clothResolution rigidness timeStep classThreshold iterations slopeSmooth. Example: 0.5 3 0.65 0.5 500 On.";
+            return false;
+        }
+
+        options = new GroundSegmentationOptions
+        {
+            ClothResolution = resolution,
+            Rigidness = rigidness,
+            TimeStep = timeStep,
+            ClassThreshold = threshold,
+            Iterations = iterations,
+            SlopeSmoothing = slopeSmoothing
+        };
+        error = "";
+        return true;
+    }
+
+    private static bool TryParseOnOff(string? text, out bool value)
+    {
+        if (string.Equals(text, "ON", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(text, "TRUE", StringComparison.OrdinalIgnoreCase))
+        {
+            value = true;
+            return true;
+        }
+
+        if (string.Equals(text, "OFF", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(text, "FALSE", StringComparison.OrdinalIgnoreCase))
+        {
+            value = false;
+            return true;
+        }
+
+        value = false;
+        return false;
     }
 
     [CommandMethod("LABELDEF", Flags = CommandFlags.NoUndoMarker,
@@ -200,7 +266,7 @@ public sealed partial class ViewerCommands
         yield break;
     }
 
-    [CommandMethod("UNLABEL", "ERASE",
+    [CommandMethod("UNLABEL",
         Group = CommandGroup.Label, Scope = CommandScope.Document,
         Summary = "Removes the labels of every point inside the active selection volume.",
         Syntax = "UNLABEL")]
@@ -210,7 +276,7 @@ public sealed partial class ViewerCommands
         yield break;
     }
 
-    [CommandMethod("SAVELABELS", "QLSAVE", Flags = CommandFlags.NoUndoMarker,
+    [CommandMethod("SAVELABELS", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.File, Scope = CommandScope.Document,
         Summary = "Writes labels to JSON, or class codes into a copy of the LAS.",
         Syntax = "SAVELABELS [Las] [path]")]
@@ -242,7 +308,7 @@ public sealed partial class ViewerCommands
             : "No source file is associated with the viewer.");
     }
 
-    [CommandMethod("LOADLABELS", "QLLOAD",
+    [CommandMethod("LOADLABELS",
         Group = CommandGroup.File, Scope = CommandScope.Document,
         Summary = "Loads labels from a JSON file.",
         Syntax = "LOADLABELS [path]")]
