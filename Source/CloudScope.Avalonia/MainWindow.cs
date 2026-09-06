@@ -341,7 +341,7 @@ public sealed partial class MainWindow : Window
     {
         _commandLine = new CommandLineControl(_commandSession, ExecuteCommandAsync);
         _commandLine.HistoryRequested += () => RunCommandFromUi("HISTORY");
-        _commandLine.CloseRequested += () => RunCommandFromUi("COMMANDLINEHIDE");
+        _commandLine.CloseRequested += () => RunCommandFromUi("COMMANDLINE Off");
         _commandLineHost.Content = _commandLine;
 
         _commandSession.SeedInputHistory(_settings.RecentInput);

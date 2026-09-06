@@ -17,7 +17,7 @@ public sealed partial class ViewerCommands
 
     private float _lastCrossSectionWidth = 1f;
 
-    [CommandMethod("XSECTION", "XS", "CROSSSECTION",
+    [CommandMethod("XSECTION", "XS",
         Group = CommandGroup.View, Scope = CommandScope.Document,
         Summary = "Creates and displays a finite vertical point-cloud cross-section.",
         Syntax = "XSECTION <first point> <second point> [width] | [New/Width/Flip/View/List/CLear]")]

@@ -95,9 +95,9 @@ namespace CloudScope
         public GroundSegmentationResult SegmentGround(GroundSegmentationOptions? options = null)
         {
             if (_streamed != null)
-                return new([], 0, 0, "Ground segmentation currently requires a resident LAS/LAZ cloud, not a streamed store.");
+                return new([], 0, 0, 0, "Ground segmentation currently requires a resident LAS/LAZ cloud, not a streamed store.");
             if (_sourcePoints == null)
-                return new([], 0, 0, "No point cloud is loaded.");
+                return new([], 0, 0, 0, "No point cloud is loaded.");
 
             GroundSegmentationResult result = GroundSegmentation.Segment(_sourcePoints, options);
             if (result.Succeeded)
