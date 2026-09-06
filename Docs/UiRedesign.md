@@ -274,8 +274,8 @@ not part of the shipping code paths.
 The shell had drifted into scattered per-control colour overrides and hardcoded hex
 (a white command-line strip over a dark workspace, blue-grey literals in the label
 registry, a solid-accent status bar). It is now one token-driven design system —
-AutoCAD's graphite dark theme over a deep-black canvas — described in
-[DesignSystem.md](DesignSystem.md).
+AutoCAD's neutral graphite dark chrome over a deep-black canvas, no accent hue —
+described in [DesignSystem.md](DesignSystem.md).
 
 * **`UiPalette` is the whole token set.** The 11 ad-hoc colours became the full
   graphite/deep-black scale plus semantic colours, and metric tokens (control/card
@@ -283,14 +283,19 @@ AutoCAD's graphite dark theme over a deep-black canvas — described in
   new `NamedMetrics` project every token into the Avalonia resource dictionary.
 * **One Avalonia control theme.** `Themes/Controls.axaml` is a `Styles` include
   layered over Fluent — shape and state only, colours by `DynamicResource`. `App.cs`
-  registers the tokens, repoints Fluent's `SystemAccentColor` family at the azure,
-  and forces the `TextBox` onto the sunken surface in every state, so the
-  per-instance white overrides in `CommandLineControl` are gone.
-* **The command window is dark.** Graphite well, hairline borders, azure prompt and
-  caret, light transcript, dark completion popup with an azure-filled selection.
-  `CommandTranscript` lost its white `cadPalette` branch.
+  registers the tokens, repoints Fluent's `SystemAccentColor` family at the neutral
+  emphasis greys, and forces the `TextBox` onto the sunken surface in every state,
+  so the per-instance white overrides in `CommandLineControl` are gone.
+* **No accent hue.** The palette is neutral greyscale — AutoCAD's dark chrome
+  carries no accent colour, and the Autodesk brand's UI neutrals are the charcoal
+  ramp. Emphasis (prompt, focus, active tool) is a bright neutral grey; only
+  `Ok` / `Warn` / `Error` are coloured. The font stack leads with Autodesk's
+  `Artifakt Element`, falling back to the system sans-serif.
+* **The command window is dark.** Graphite well, hairline borders, a bright-grey
+  prompt and caret, light transcript, dark completion popup with a graphite-filled
+  selection. `CommandTranscript` lost its white `cadPalette` branch.
 * **Chrome.** Tool strip and titlebar are one graphite band; the status bar is
-  graphite with dim text rather than a solid azure strip; the floating command
+  graphite with dim text rather than a solid coloured strip; the floating command
   window and label registry moved onto the tokens.
 * **ImGui parity.** `ImGuiTheme` pulls the same tokens, softens the corners to match
   the Avalonia radii, and makes the title/menu/tool bands the one graphite surface;

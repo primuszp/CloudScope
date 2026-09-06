@@ -7,67 +7,70 @@ namespace CloudScope.Ui;
 /// same product.
 ///
 /// The system is dark-only and reads as AutoCAD's graphite dark theme: near-black canvas,
-/// graphite-grey surfaces, hairline borders, one azure accent. A point-cloud viewport is
-/// judged against its surroundings, so the shell stays dark on every platform.
+/// neutral graphite-grey surfaces, hairline borders, and no accent hue — AutoCAD's dark
+/// chrome carries none, and the Autodesk brand's UI neutrals are the charcoal ramp. Emphasis
+/// (prompt text, focus, the active tool) is carried by a bright neutral grey; only the
+/// Ok / Warn / Error signals are coloured. A point-cloud viewport is judged against its
+/// surroundings, so the shell stays dark on every platform.
 /// </summary>
 public static class UiPalette
 {
-    // ── Colour tokens (0xRRGGBB) ────────────────────────────────────────────
+    // ── Colour tokens (0xRRGGBB) — neutral greyscale, no hue ────────────────
 
     /// <summary>The 3D canvas behind every viewport — the deepest black in the system.</summary>
-    public const uint ViewportBackdrop = 0x0E0F11;
+    public const uint ViewportBackdrop = 0x0F0F0F;
 
     /// <summary>Sunken wells: the command window body, popups, inset lists.</summary>
-    public const uint SurfaceDeep = 0x161719;
+    public const uint SurfaceDeep = 0x171717;
 
     /// <summary>Default panel body: the inspector, dialog surfaces.</summary>
-    public const uint Surface = 0x1E2022;
+    public const uint Surface = 0x1F1F1F;
 
     /// <summary>Raised surfaces: menu bar, status bar, cards.</summary>
-    public const uint SurfaceAlt = 0x26282B;
+    public const uint SurfaceAlt = 0x272727;
 
-    /// <summary>The unified titlebar / tool strip band.</summary>
-    public const uint Graphite = 0x303234;
+    /// <summary>The unified titlebar / tool strip band (≈ Autodesk charcoal-900).</summary>
+    public const uint Graphite = 0x323232;
 
     /// <summary>Pointer-over fill for buttons, rows and menu items.</summary>
-    public const uint SurfaceHover = 0x34373B;
+    public const uint SurfaceHover = 0x373737;
 
     /// <summary>Hairline dividers and control outlines at rest.</summary>
-    public const uint Border = 0x3A3D40;
+    public const uint Border = 0x3D3D3D;
 
     /// <summary>Outline of a focused or actively raised control.</summary>
-    public const uint BorderStrong = 0x4A4E52;
+    public const uint BorderStrong = 0x4E4E4E;
 
     /// <summary>Primary text.</summary>
-    public const uint Text = 0xD8DADE;
+    public const uint Text = 0xDADADA;
 
-    /// <summary>Secondary text: labels, captions, section headers.</summary>
-    public const uint TextDim = 0x8A8F96;
+    /// <summary>Secondary text: labels, captions, section headers (≈ Autodesk charcoal-700).</summary>
+    public const uint TextDim = 0x909090;
 
     /// <summary>Disabled text and faint separators.</summary>
-    public const uint TextFaint = 0x5C6167;
+    public const uint TextFaint = 0x616161;
 
-    /// <summary>The one accent: prompt text, active tool, focus, selection edge.</summary>
-    public const uint Accent = 0x3E8FD0;
+    /// <summary>Emphasis, not a hue: prompt text, active tool glyph, focus outline.</summary>
+    public const uint Accent = 0xC2C2C2;
 
-    /// <summary>Accent under the pointer.</summary>
-    public const uint AccentBright = 0x5BA6E4;
+    /// <summary>Emphasis under the pointer.</summary>
+    public const uint AccentBright = 0xDEDEDE;
 
-    /// <summary>Pressed accent and dim accent fills (e.g. the status strip tint).</summary>
-    public const uint AccentDim = 0x2C6B9E;
+    /// <summary>Lifted-graphite fill for a pressed or active control and the status strip.</summary>
+    public const uint AccentDim = 0x3E3E3E;
 
     /// <summary>Selected list row / highlighted completion candidate fill.</summary>
-    public const uint SelectionFill = 0x24384A;
+    public const uint SelectionFill = 0x343434;
 
     public const uint Error = 0xE06C6C;
     public const uint Ok = 0x5FB57A;
     public const uint Warn = 0xE0A24E;
 
     /// <summary>Echoed command lines are as quiet as secondary text.</summary>
-    public const uint EntryEcho = 0x8A8F96;
+    public const uint EntryEcho = 0x909090;
 
     /// <summary>Plain command output sits at primary-text weight.</summary>
-    public const uint EntryOutput = 0xD8DADE;
+    public const uint EntryOutput = 0xDADADA;
 
     // ── Metric tokens ──────────────────────────────────────────────────────
 
@@ -92,8 +95,12 @@ public static class UiPalette
 
     // ── Font stacks ────────────────────────────────────────────────────────
 
-    /// <summary>First family that exists on the platform wins.</summary>
-    public const string UiFontStack = "SF Pro Text, Helvetica Neue, Segoe UI Variable Text, Segoe UI, Inter, sans-serif";
+    /// <summary>
+    /// First family that exists on the platform wins. Artifakt Element is Autodesk's brand
+    /// typeface; it is listed first so a machine that has it picks it up, and the system
+    /// sans-serif otherwise.
+    /// </summary>
+    public const string UiFontStack = "Artifakt Element, SF Pro Text, Helvetica Neue, Segoe UI Variable Text, Segoe UI, Inter, Arial, sans-serif";
 
     public const string MonoFontStack = "SF Mono, Menlo, Cascadia Mono, Consolas, DejaVu Sans Mono, monospace";
 
@@ -103,7 +110,7 @@ public static class UiPalette
     public static uint EntryColor(Commands.CommandEntryKind kind) => kind switch
     {
         Commands.CommandEntryKind.Echo => EntryEcho,
-        Commands.CommandEntryKind.Prompt => Accent,
+        Commands.CommandEntryKind.Prompt => AccentBright,
         Commands.CommandEntryKind.Error => Error,
         Commands.CommandEntryKind.Banner => TextDim,
         _ => EntryOutput
