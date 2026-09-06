@@ -53,7 +53,8 @@ namespace CloudScope.Platform.OpenGL
         {
         }
 
-        public OpenTkViewerHost(int width, int height, IRenderBackend renderBackend, bool enableOverlay = true, bool startVisible = true)
+        public OpenTkViewerHost(int width, int height, IRenderBackend renderBackend, bool enableOverlay = true,
+            bool startVisible = true, bool decorated = true)
             : base(GameWindowSettings.Default, new NativeWindowSettings
             {
                 ClientSize = new Vector2i(width, height),
@@ -65,6 +66,12 @@ namespace CloudScope.Platform.OpenGL
                 // shader-based coverage path, so quality degrades gracefully if unavailable.
                 NumberOfSamples = 4,
                 StartVisible = startVisible,
+                // An embedded host re-parents this window into an Avalonia control. A decorated
+                // GLFW window keeps a one-pixel non-client frame that Windows paints in the
+                // system accent colour even after the caption style is cleared; creating it
+                // borderless means there is no frame to inherit. The viewport's visible edge is
+                // then drawn by the shell theme (CsViewportBorder).
+                WindowBorder = decorated ? WindowBorder.Resizable : WindowBorder.Hidden,
             })
         {
             _controller = new ViewerController(width, height, renderBackend);

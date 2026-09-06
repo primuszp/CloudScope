@@ -62,6 +62,14 @@ public static class UiPalette
     /// <summary>Selected list row / highlighted completion candidate fill.</summary>
     public const uint SelectionFill = 0x343434;
 
+    /// <summary>
+    /// The frame around the 3D viewport. Its own token so the visible edge of the viewport
+    /// can be tuned — colour here, thickness in <see cref="ViewportBorderThickness"/> — without
+    /// touching the shared hairline. The embedded GL child window is created borderless, so
+    /// this is the only line around the viewport.
+    /// </summary>
+    public const uint ViewportBorder = Border;
+
     public const uint Error = 0xE06C6C;
     public const uint Ok = 0x5FB57A;
     public const uint Warn = 0xE0A24E;
@@ -82,6 +90,10 @@ public static class UiPalette
 
     /// <summary>Thickness of every divider and control outline in the shell — one hairline.</summary>
     public const double HairlineThickness = 1;
+
+    /// <summary>Thickness of the <see cref="ViewportBorder"/> frame, in device-independent
+    /// pixels. Set to 0 to let the panel seams alone bound the viewport.</summary>
+    public const double ViewportBorderThickness = 1;
 
     public const double FontSizeBody = 12;
     public const double FontSizeSmall = 11;
@@ -133,6 +145,7 @@ public static class UiPalette
         ("CsSurfaceHover", SurfaceHover),
         ("CsGraphite", Graphite),
         ("CsViewportBackdrop", ViewportBackdrop),
+        ("CsViewportBorder", ViewportBorder),
         ("CsBorder", Border),
         ("CsBorderStrong", BorderStrong),
         ("CsText", Text),
@@ -149,8 +162,10 @@ public static class UiPalette
         ("CsRadiusControl", RadiusControl),
         ("CsRadiusCard", RadiusCard),
         ("CsHairline", HairlineThickness),
+        ("CsViewportBorderThickness", ViewportBorderThickness),
         ("CsFontSizeBody", FontSizeBody),
         ("CsFontSizeSmall", FontSizeSmall),
+        ("CsFontSizeMono", FontSizeMono),
         ("CsSpace1", Space1),
         ("CsSpace2", Space2),
         ("CsSpace3", Space3),

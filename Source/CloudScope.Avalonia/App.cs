@@ -29,6 +29,17 @@ public sealed class App : Application
     }
 
     /// <summary>
+    /// The design-token brush registered under <paramref name="key"/> — the code-behind way
+    /// of writing <c>{DynamicResource key}</c>, so a window built in C# reads the same
+    /// palette as one built in XAML rather than mixing its own colours in.
+    /// </summary>
+    public static IBrush Brush(string key) =>
+        Current is { } app && app.TryGetResource(key, app.ActualThemeVariant, out object? value) &&
+        value is IBrush brush
+            ? brush
+            : Brushes.Transparent;
+
+    /// <summary>
     /// Every colour, metric and font in the shell comes from <see cref="UiPalette"/>, the
     /// same source the ImGui viewer styles itself from, so the two shells cannot drift apart.
     /// Fluent's own accent-derived visuals (focus rings, checkmarks, sliders, selection) are
@@ -46,6 +57,10 @@ public sealed class App : Application
 
         Resources["CsCornerControl"] = new CornerRadius(UiPalette.RadiusControl);
         Resources["CsCornerCard"] = new CornerRadius(UiPalette.RadiusCard);
+
+        // The viewport frame is bindable as a Thickness so a window can set BorderThickness
+        // straight from the token; overrides the scalar the metrics loop registered.
+        Resources["CsViewportBorderThickness"] = new Thickness(UiPalette.ViewportBorderThickness);
 
         Resources["CsUiFont"] = new FontFamily(UiPalette.UiFontStack);
         Resources["CsMonoFont"] = new FontFamily(UiPalette.MonoFontStack);
