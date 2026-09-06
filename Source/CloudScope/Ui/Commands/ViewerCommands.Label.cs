@@ -113,76 +113,56 @@ public sealed partial class ViewerCommands
     [CommandMethod("GROUNDSEG", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.Label, Scope = CommandScope.Document,
         Summary = "Separates terrain points with the CSF cloth-simulation ground filter.",
-        Syntax = "GROUNDSEG [clothResolution rigidness timeStep classThreshold iterations slopeSmooth]")]
+        Syntax = "GROUNDSEG [resolution] [rigidness] [timeStep] [threshold] [iterations] [ON/OFF]")]
     public IEnumerable<PromptStep> SegmentGround(CommandContext context)
     {
         Editor ed = context.Editor;
-        while (true)
+        var d = new GroundSegmentationOptions();
+
+        // Each CSF parameter is its own prompt step: the runtime re-asks an out-of-range
+        // answer, applies the default on Enter, and still runs the whole thing in one line
+        // ("GROUNDSEG 0.5 3 0.65 0.5 500 On") by feeding the tokens to successive steps.
+        PromptDoubleStep resolution = ed.GetDouble($"Cloth resolution <{d.ClothResolution:0.###}>:")
+            .WithDefault(d.ClothResolution).WithRange(0.05, 1000);
+        yield return resolution;
+        if (resolution.IsCancelled) yield break;
+
+        PromptIntegerStep rigidness = ed.GetInteger($"Rigidness, 1 (steep) to 15 (flat) <{d.Rigidness}>:")
+            .WithDefault(d.Rigidness).WithRange(1, 15);
+        yield return rigidness;
+        if (rigidness.IsCancelled) yield break;
+
+        PromptDoubleStep timeStep = ed.GetDouble($"Time step <{d.TimeStep:0.###}>:")
+            .WithDefault(d.TimeStep).WithRange(0.05, 2);
+        yield return timeStep;
+        if (timeStep.IsCancelled) yield break;
+
+        PromptDoubleStep threshold = ed.GetDouble($"Classification threshold <{d.ClassThreshold:0.###}>:")
+            .WithDefault(d.ClassThreshold).WithRange(0.01, 100);
+        yield return threshold;
+        if (threshold.IsCancelled) yield break;
+
+        PromptIntegerStep iterations = ed.GetInteger($"Maximum iterations <{d.Iterations}>:")
+            .WithDefault(d.Iterations).WithRange(1, 5000);
+        yield return iterations;
+        if (iterations.IsCancelled) yield break;
+
+        PromptKeywordStep slopeSmooth = ed
+            .GetKeywords($"Smooth slopes [ON/OFF] <{(d.SlopeSmoothing ? "ON" : "OFF")}>:",
+                new Keyword("ON", "ON"), new Keyword("OFF", "OFF"))
+            .WithDefaultKeyword(d.SlopeSmoothing ? "ON" : "OFF");
+        yield return slopeSmooth;
+        if (slopeSmooth.IsCancelled) yield break;
+
+        ed.WriteMessage(context.GetTarget<ViewerController>().SegmentGround(new GroundSegmentationOptions
         {
-            PromptStringStep parameters = ed
-                .GetLine("CSF parameters [resolution rigidness timeStep threshold iterations slopeSmooth] <1 3 0.65 0.5 500 On>:")
-                .WithDefault("1 3 0.65 0.5 500 On");
-            yield return parameters;
-            if (!parameters.IsOk) yield break;
-
-            if (!TryParseGroundParameters(parameters.Value, out GroundSegmentationOptions options, out string error))
-            {
-                ed.WriteMessage(error);
-                continue;
-            }
-
-            ed.WriteMessage(context.GetTarget<ViewerController>().SegmentGround(options));
-            yield break;
-        }
-    }
-
-    private static bool TryParseGroundParameters(string text, out GroundSegmentationOptions options, out string error)
-    {
-        string[] values = text.Split([' ', ',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (values.Length != 6 ||
-            !float.TryParse(values.ElementAtOrDefault(0), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float resolution) ||
-            !int.TryParse(values.ElementAtOrDefault(1), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int rigidness) ||
-            !double.TryParse(values.ElementAtOrDefault(2), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double timeStep) ||
-            !float.TryParse(values.ElementAtOrDefault(3), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float threshold) ||
-            !int.TryParse(values.ElementAtOrDefault(4), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int iterations) ||
-            !TryParseOnOff(values.ElementAtOrDefault(5), out bool slopeSmoothing))
-        {
-            options = new GroundSegmentationOptions();
-            error = "Enter: clothResolution rigidness timeStep classThreshold iterations slopeSmooth. Example: 0.5 3 0.65 0.5 500 On.";
-            return false;
-        }
-
-        options = new GroundSegmentationOptions
-        {
-            ClothResolution = resolution,
-            Rigidness = rigidness,
-            TimeStep = timeStep,
-            ClassThreshold = threshold,
-            Iterations = iterations,
-            SlopeSmoothing = slopeSmoothing
-        };
-        error = "";
-        return true;
-    }
-
-    private static bool TryParseOnOff(string? text, out bool value)
-    {
-        if (string.Equals(text, "ON", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(text, "TRUE", StringComparison.OrdinalIgnoreCase))
-        {
-            value = true;
-            return true;
-        }
-
-        if (string.Equals(text, "OFF", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(text, "FALSE", StringComparison.OrdinalIgnoreCase))
-        {
-            value = false;
-            return true;
-        }
-
-        value = false;
-        return false;
+            ClothResolution = resolution.Single,
+            Rigidness = rigidness.Value,
+            TimeStep = timeStep.Value,
+            ClassThreshold = threshold.Single,
+            Iterations = iterations.Value,
+            SlopeSmoothing = slopeSmooth.Is("ON"),
+        }));
     }
 
     [CommandMethod("LABELDEF", Flags = CommandFlags.NoUndoMarker,

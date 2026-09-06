@@ -55,7 +55,7 @@ parancs-implementáció nélkül.
 | Parancs | Alias | Szintaxis | Mit csinál |
 | --- | --- | --- | --- |
 | `CLEARLABELS` | – | `CLEARLABELS` | Removes every label from the cloud. |
-| `GROUNDSEG` | – | `GROUNDSEG [clothResolution rigidness timeStep classThreshold iterations slopeSmooth]` | Separates terrain points with the CSF cloth-simulation ground filter. |
+| `GROUNDSEG` | – | `GROUNDSEG [resolution] [rigidness] [timeStep] [threshold] [iterations] [ON/OFF]` | Separates terrain points with the CSF cloth-simulation ground filter. |
 | `INSTANCE` | – | `INSTANCE <id> \| CLear` | Sets or clears the instance id new selections are given. |
 | `LABEL` | – | `LABEL <name> [instance id]` | Sets the label (and optionally the instance) new selections are given. |
 | `LABELDEF` | – | `LABELDEF <name> <class 0-255> [Color r,g,b] \| List \| DElete <name>` | Defines, colours, lists or deletes a label and its LAS class code. |
