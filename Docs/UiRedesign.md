@@ -267,3 +267,33 @@ not part of the shipping code paths.
   input control cannot render an inline selected suffix the way the Avalonia one does, so the
   candidate is displayed rather than pre-inserted.
 * Removed an empty `SelectionChanged` handler in the Avalonia completion list.
+
+
+## 10. Unified graphite design system (2026-09-06)
+
+The shell had drifted into scattered per-control colour overrides and hardcoded hex
+(a white command-line strip over a dark workspace, blue-grey literals in the label
+registry, a solid-accent status bar). It is now one token-driven design system —
+AutoCAD's graphite dark theme over a deep-black canvas — described in
+[DesignSystem.md](DesignSystem.md).
+
+* **`UiPalette` is the whole token set.** The 11 ad-hoc colours became the full
+  graphite/deep-black scale plus semantic colours, and metric tokens (control/card
+  radii, hairline, font sizes, the 4/8/12/16 spacing steps). `NamedColors` and the
+  new `NamedMetrics` project every token into the Avalonia resource dictionary.
+* **One Avalonia control theme.** `Themes/Controls.axaml` is a `Styles` include
+  layered over Fluent — shape and state only, colours by `DynamicResource`. `App.cs`
+  registers the tokens, repoints Fluent's `SystemAccentColor` family at the azure,
+  and forces the `TextBox` onto the sunken surface in every state, so the
+  per-instance white overrides in `CommandLineControl` are gone.
+* **The command window is dark.** Graphite well, hairline borders, azure prompt and
+  caret, light transcript, dark completion popup with an azure-filled selection.
+  `CommandTranscript` lost its white `cadPalette` branch.
+* **Chrome.** Tool strip and titlebar are one graphite band; the status bar is
+  graphite with dim text rather than a solid azure strip; the floating command
+  window and label registry moved onto the tokens.
+* **ImGui parity.** `ImGuiTheme` pulls the same tokens, softens the corners to match
+  the Avalonia radii, and makes the title/menu/tool bands the one graphite surface;
+  the overlay status bar is a graphite strip.
+* **macOS** stays approximated in Avalonia (system fonts, native menu, unified
+  titlebar, system-accent repoint) with no AppKit interop; Windows shares the look.
