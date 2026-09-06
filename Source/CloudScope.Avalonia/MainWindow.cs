@@ -290,7 +290,7 @@ public sealed partial class MainWindow : Window
         _toolStripPanel.Children.Add(new Border
         {
             Width = 1,
-            Margin = new Thickness(6, 4),
+            Margin = new Thickness(4, 6),
             [!BackgroundProperty] = new global::Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("CsBorder")
         });
 
@@ -310,9 +310,14 @@ public sealed partial class MainWindow : Window
 
     private void AddInspectorGroup(string title, params string[] rows)
     {
-        _inspectorPanel.Children.Add(new TextBlock { Text = title, Classes = { "sectionTitle" } });
+        _inspectorPanel.Children.Add(new TextBlock
+        {
+            Text = title,
+            Classes = { "sectionTitle" },
+            Margin = new Thickness(0, 4, 0, 2)
+        });
 
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("104,*"), RowSpacing = 5 };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("104,*"), RowSpacing = 6 };
         for (int i = 0; i < rows.Length; i++)
         {
             grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));

@@ -24,8 +24,7 @@ public sealed class CommandLineControl : UserControl
         UiPalette.R(color), UiPalette.G(color), UiPalette.B(color))).ToImmutable();
 
     private static readonly IBrush WellBrush = Frozen(UiPalette.SurfaceDeep);
-    private static readonly IBrush RailBrush = Frozen(UiPalette.SurfaceAlt);
-    private static readonly IBrush EdgeBrush = Frozen(UiPalette.Border);
+    private static readonly IBrush EdgeBrush = Frozen(UiPalette.BorderStrong);
     private static readonly IBrush AccentBrush = Frozen(UiPalette.Accent);
     private static readonly IBrush TextBrush = Frozen(UiPalette.Text);
 
@@ -210,29 +209,31 @@ public sealed class CommandLineControl : UserControl
 
     private Control BuildLayout()
     {
-        var close = new Button { Content = "×" };
-        close.Classes.Add("commandRailButton");
-        ToolTip.SetTip(close, "Hide command line");
-        close.Click += (_, _) => CloseRequested?.Invoke();
-
         var history = new Button { Content = "≡" };
         history.Classes.Add("commandRailButton");
         ToolTip.SetTip(history, "Command history (F2)");
         history.Click += (_, _) => HistoryRequested?.Invoke();
 
-        var rail = new Border
+        var close = new Button { Content = "×" };
+        close.Classes.Add("commandRailButton");
+        ToolTip.SetTip(close, "Hide command line");
+        close.Click += (_, _) => CloseRequested?.Invoke();
+
+        // The panel's two affordances sit quietly in the top-right corner over the transcript
+        // rather than in a bordered rail column, so the command window reads as one dark well.
+        var corner = new StackPanel
         {
-            Background = RailBrush,
-            BorderBrush = EdgeBrush,
-            BorderThickness = new Thickness(0, 0, 1, 0),
-            ClipToBounds = true,
-            Padding = new Thickness(1, 0, 1, 2),
-            Child = new StackPanel
-            {
-                VerticalAlignment = global::Avalonia.Layout.VerticalAlignment.Bottom,
-                Children = { close, history }
-            }
+            Orientation = global::Avalonia.Layout.Orientation.Horizontal,
+            Spacing = 2,
+            HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Right,
+            VerticalAlignment = global::Avalonia.Layout.VerticalAlignment.Top,
+            Margin = new Thickness(0, 4, 6, 0),
+            Children = { history, close }
         };
+
+        var transcriptLayer = new Grid();
+        transcriptLayer.Children.Add(_transcript);
+        transcriptLayer.Children.Add(corner);
 
         // The TextBox owns the complete width of the command row.  The prompt is only a
         // non-interactive overlay; padding moves typed text past it without shrinking the
@@ -243,29 +244,18 @@ public sealed class CommandLineControl : UserControl
 
         var inputBorder = new Border
         {
-            Background = WellBrush,
-            // A one-pixel top border becomes conspicuous while the completion popup is
-            // dismissed by Backspace, especially at Retina scaling; keep the entry visually
-            // continuous with the transcript instead.
-            BorderThickness = new Thickness(0),
-            Padding = new Thickness(7, 1, 8, 2),
+            // No borders anywhere: the entry is visually continuous with the transcript above
+            // it and the whole panel is one surface.
+            Padding = new Thickness(10, 4, 10, 5),
             Child = inputLine
         };
 
         var content = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };
-        content.Children.Add(new Border
-        {
-            Background = WellBrush,
-            Child = _transcript
-        });
+        content.Children.Add(transcriptLayer);
         content.Children.Add(inputBorder);
         Grid.SetRow(inputBorder, 1);
 
-        var root = new Grid { ColumnDefinitions = new ColumnDefinitions("24,*") };
-        root.Children.Add(rail);
-        root.Children.Add(content);
-        Grid.SetColumn(content, 1);
-        return root;
+        return new Border { Background = WellBrush, Child = content };
     }
 
     private string InputText => _input.Text ?? "";

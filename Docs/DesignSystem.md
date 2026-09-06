@@ -21,9 +21,16 @@ versions of the same product.
   tool strip in it, Fluent's accent-derived visuals repointed at the neutral
   emphasis greys. No AppKit interop — Windows gets the same look, only with its own
   window chrome.
+* **Regions are separated by tone, not lines.** The black viewport, the graphite
+  tool band, the sunken command well and the raised status strip each read as their
+  own plane; the shell draws no dividers between them. The only framed element is
+  the view badge (a card) and floating popups. Splitters are invisible grab strips.
+* **One radius, one hairline, a 4px grid.** Every corner is `RadiusControl` (3) or
+  `RadiusCard` (5); every drawn edge is a 1px hairline; every margin, padding and
+  gap is a multiple of 4.
 * **The command line is the audit trail.** Every editable control round-trips
-  through a command string; the command window wears the same graphite as
-  everything else rather than a white console strip.
+  through a command string; the command window is one dark well — transcript,
+  prompt line, and two quiet affordances in the corner — not a bordered console.
 
 ## Colour tokens
 
@@ -56,14 +63,14 @@ prompt → `AccentBright`, error → `Error`, banner/echo → `TextDim`, output 
 
 | Token | Value | Role |
 | --- | --- | --- |
-| `RadiusControl` | 5 | buttons, inputs, small controls (`CsCornerControl`) |
-| `RadiusCard` | 6 | cards, popups, grouped containers (`CsCornerCard`) |
-| `HairlineThickness` | 1 | dividers and outlines |
-| `FontSizeBody` / `FontSizeSmall` / `FontSizeMono` | 12 / 10 / 12 | |
+| `RadiusControl` | 3 | buttons, inputs, small controls (`CsCornerControl`) |
+| `RadiusCard` | 5 | cards, popups, grouped containers (`CsCornerCard`) |
+| `HairlineThickness` | 1 | every drawn edge in the shell |
+| `FontSizeBody` / `FontSizeSmall` / `FontSizeMono` | 12 / 11 / 12 | |
 | `Space1..Space4` | 4 / 8 / 12 / 16 | the only spacing steps a layout should use |
 
-The ImGui style mirrors these: `FrameRounding` 4, `WindowRounding` 6,
-`WindowBorderSize` 1, `WindowPadding` 10×8, `ItemSpacing` 8×6.
+The ImGui style mirrors these: `FrameRounding` 3, `WindowRounding` 5,
+`WindowBorderSize` 1, `WindowPadding` 12×8, `ItemSpacing` 8×6.
 
 ## Fonts
 

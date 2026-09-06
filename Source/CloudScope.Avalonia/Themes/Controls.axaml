@@ -21,7 +21,7 @@
     <Setter Property="BorderBrush" Value="{DynamicResource CsBorder}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="{DynamicResource CsCornerControl}" />
-    <Setter Property="Padding" Value="12,5" />
+    <Setter Property="Padding" Value="12,6" />
     <Setter Property="FontSize" Value="{DynamicResource CsFontSizeBody}" />
   </Style>
   <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
@@ -30,7 +30,7 @@
   </Style>
   <Style Selector="Button:pressed /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="{DynamicResource CsAccentDim}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource CsAccent}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource CsBorderStrong}" />
   </Style>
   <Style Selector="Button:disabled /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Foreground" Value="{DynamicResource CsTextFaint}" />
@@ -42,9 +42,9 @@
     <Setter Property="Foreground" Value="{DynamicResource CsText}" />
     <Setter Property="BorderThickness" Value="0" />
     <Setter Property="CornerRadius" Value="{DynamicResource CsCornerControl}" />
-    <Setter Property="Padding" Value="10,4" />
+    <Setter Property="Padding" Value="8,5" />
     <Setter Property="FontSize" Value="{DynamicResource CsFontSizeBody}" />
-    <Setter Property="MinWidth" Value="54" />
+    <Setter Property="MinWidth" Value="56" />
   </Style>
   <Style Selector="Button.tool:pointerover /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="{DynamicResource CsSurfaceHover}" />
@@ -73,12 +73,12 @@
     <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
     <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
     <Setter Property="FontSize" Value="13" />
-    <Setter Property="Width" Value="20" />
-    <Setter Property="Height" Value="18" />
+    <Setter Property="Width" Value="22" />
+    <Setter Property="Height" Value="20" />
     <Setter Property="MinWidth" Value="0" />
     <Setter Property="MinHeight" Value="0" />
     <Setter Property="Padding" Value="0" />
-    <Setter Property="CornerRadius" Value="3" />
+    <Setter Property="CornerRadius" Value="{DynamicResource CsCornerControl}" />
     <Setter Property="HorizontalContentAlignment" Value="Center" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
     <Setter Property="HorizontalAlignment" Value="Center" />
@@ -193,10 +193,12 @@
   </Style>
   <Style Selector="ScrollBar /template/ Thumb">
     <Setter Property="Background" Value="{DynamicResource CsTextFaint}" />
+    <Setter Property="CornerRadius" Value="2" />
   </Style>
 
+  <!-- Regions are separated by surface tone, so a splitter is a grab strip, never a bar. -->
   <Style Selector="GridSplitter">
-    <Setter Property="Background" Value="{DynamicResource CsBorder}" />
+    <Setter Property="Background" Value="Transparent" />
   </Style>
 
   <Style Selector="ToolTip">
