@@ -340,6 +340,7 @@ public sealed class CommandRuntime : ICommandExecutor
         return CommandResult.Continue(_step.Options, message);
     }
 
+    private readonly Queue<string> _drainQueue = new();
     private bool _draining;
 
     private CommandResult Complete(Descriptor descriptor)
@@ -348,9 +349,11 @@ public sealed class CommandRuntime : ICommandExecutor
         bool cancelled = _editor.CancelRequested;
 
         // Lines a command queued (SCRIPT) run once it has finished, so they start as ordinary
-        // commands rather than being blocked by the command that asked for them.
-        var deferred = new Queue<string>();
-        while (_editor.HasDeferred) deferred.Enqueue(_editor.TakeDeferred());
+        // commands rather than being blocked by the command that asked for them. Take them off
+        // the editor before ResetActive clears it, but only hand them on if the command did
+        // not cancel — a cancelled SCRIPT drops the rest of its file.
+        var queued = new List<string>();
+        while (_editor.HasDeferred) queued.Add(_editor.TakeDeferred());
 
         ResetActive();
 
@@ -360,32 +363,42 @@ public sealed class CommandRuntime : ICommandExecutor
             return CommandResult.Cancel(message.Length > 0 ? message : "*Cancel*");
         }
 
+        // Append to the shared drain queue rather than a local one: a SCRIPT run from inside
+        // another SCRIPT enqueues its lines here too, and the single drain loop below keeps
+        // going until the queue is empty instead of dropping the nested file.
+        foreach (string line in queued)
+            _drainQueue.Enqueue(line);
+
         if (!descriptor.Flags.HasFlag(CommandFlags.NoHistory))
             LastCompletedCommand = descriptor.Name;
 
         CommandEnded?.Invoke(this, new CommandEventArgs(descriptor.Name));
-        return RunDeferred(deferred, message);
+        return DrainQueued(message);
     }
 
-    private CommandResult RunDeferred(Queue<string> lines, string message)
+    private CommandResult DrainQueued(string message)
     {
-        if (lines.Count == 0 || _draining)
+        if (_draining || _drainQueue.Count == 0)
             return CommandResult.End(message);
 
         _draining = true;
         try
         {
             CommandResult last = CommandResult.End(message);
-            while (lines.Count > 0)
+            while (_drainQueue.Count > 0)
             {
-                CommandResult result = Execute(lines.Dequeue());
+                CommandResult result = Execute(_drainQueue.Dequeue());
                 message = Join(message, result.Message);
                 last = result;
 
                 // A line that failed or cancelled stops the rest, the way a script stops on
-                // an error instead of running on against a state it did not expect.
+                // an error instead of running on against a state it did not expect. Drop any
+                // lines a nested SCRIPT had already queued behind it.
                 if (result.Status is CommandStatus.Failed or CommandStatus.Cancelled)
+                {
+                    _drainQueue.Clear();
                     return result with { Message = message };
+                }
             }
 
             return last with { Message = message };
@@ -523,6 +536,10 @@ public sealed class CommandRuntime : ICommandExecutor
         if (attribute.Summary.Trim().Length == 0)
             throw new InvalidOperationException(
                 $"{method.DeclaringType?.Name}.{method.Name} ({attribute.GlobalName}) must declare a Summary.");
+
+        if (attribute.Syntax.Trim().Length == 0)
+            throw new InvalidOperationException(
+                $"{method.DeclaringType?.Name}.{method.Name} ({attribute.GlobalName}) must declare a Syntax.");
     }
 
     private static bool IsCommandName(string name) =>

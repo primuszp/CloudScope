@@ -102,7 +102,7 @@ public sealed partial class ViewerCommands
                 }
                 if (next.Is("ANGLE"))
                 {
-                    PromptDoubleStep angle = editor.GetAngle("Specify included angle:");
+                    PromptDoubleStep angle = editor.GetDouble("Specify included angle:");
                     yield return angle;
                     if (!angle.IsOk) yield break;
                     PromptPointStep endpoint = editor.GetCorner("Specify endpoint of arc:",

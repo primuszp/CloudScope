@@ -94,9 +94,6 @@ public sealed class Editor
     public PromptDistanceOrPointStep GetDistanceOrPoint(string message, Func<Vector3, double> measure) =>
         new(message, measure);
 
-    /// <summary>An angle in degrees.</summary>
-    public PromptDoubleStep GetAngle(string message) => new(message);
-
     public PromptPointStep GetPoint(string message) => new(message);
 
     /// <summary>The opposite corner of a window, rubber-banded from <paramref name="basePoint"/>.</summary>

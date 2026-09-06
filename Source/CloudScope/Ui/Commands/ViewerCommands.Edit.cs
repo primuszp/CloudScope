@@ -249,7 +249,7 @@ public sealed partial class ViewerCommands
             .WithDefaultKeyword("Z");
         yield return axis;
 
-        PromptDoubleStep angle = ed.GetAngle("Specify rotation angle in degrees:");
+        PromptDoubleStep angle = ed.GetDouble("Specify rotation angle in degrees:");
         yield return angle;
         if (!angle.IsOk) yield break;
 
