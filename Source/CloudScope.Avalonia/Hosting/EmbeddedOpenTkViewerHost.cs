@@ -17,7 +17,7 @@ public sealed class EmbeddedOpenTkViewerHost : OpenTkViewerHost
     private bool _shutdown;
 
     public EmbeddedOpenTkViewerHost(int width, int height, IRenderBackend renderBackend)
-        : base(width, height, renderBackend, enableOverlay: false, startVisible: false)
+        : base(width, height, renderBackend, enableOverlay: false, startVisible: false, decorated: false)
     {
     }
 

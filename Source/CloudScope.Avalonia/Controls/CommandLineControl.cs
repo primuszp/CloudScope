@@ -24,7 +24,6 @@ public sealed class CommandLineControl : UserControl
         UiPalette.R(color), UiPalette.G(color), UiPalette.B(color))).ToImmutable();
 
     private static readonly IBrush WellBrush = Frozen(UiPalette.SurfaceDeep);
-    private static readonly IBrush HairlineBrush = Frozen(UiPalette.Border);
     private static readonly IBrush EdgeBrush = Frozen(UiPalette.BorderStrong);
     private static readonly IBrush AccentBrush = Frozen(UiPalette.Accent);
     private static readonly IBrush TextBrush = Frozen(UiPalette.Text);
@@ -255,16 +254,25 @@ public sealed class CommandLineControl : UserControl
         inputLine.Children.Add(_input);
         inputLine.Children.Add(_prompt);
 
-        var inputBorder = new Border
-        {
-            // One low-contrast hairline divides the history from the live entry, the way
-            // AutoCAD's docked command line separates its scrollback from the input row.
-            Background = WellBrush,
-            BorderBrush = HairlineBrush,
-            BorderThickness = new Thickness(0, 1, 0, 0),
-            Padding = new Thickness(10, 4, 10, 5),
-            Child = inputLine
-        };
+        // The chevron marks where typing lands, as AutoCAD's command field does. It is its
+        // own column rather than part of the prompt overlay, so the prompt stays exactly the
+        // text the session asked for and the caret padding keeps measuring only that.
+        var chevron = new TextBlock { Text = "❯", IsHitTestVisible = false };
+        chevron.Classes.Add("commandChevron");
+
+        var inputRow = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+        inputRow.Children.Add(chevron);
+        inputRow.Children.Add(inputLine);
+        Grid.SetColumn(inputLine, 1);
+
+        // The live entry sits one tone above the scrollback well, divided by the panel's one
+        // hairline — the way AutoCAD's docked command line separates history from input.
+        // The line and the chevron lift while the caret is in the row, so what is lit is
+        // what you are typing into.
+        var inputBorder = new Border { Child = inputRow };
+        inputBorder.Classes.Add("commandInputRow");
+        _input.GotFocus += (_, _) => inputBorder.Classes.Add("focused");
+        _input.LostFocus += (_, _) => inputBorder.Classes.Remove("focused");
 
         var content = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };
         content.Children.Add(transcriptLayer);

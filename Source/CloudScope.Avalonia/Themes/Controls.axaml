@@ -196,9 +196,97 @@
     <Setter Property="CornerRadius" Value="2" />
   </Style>
 
-  <!-- Regions are separated by surface tone, so a splitter is a grab strip, never a bar. -->
+  <!-- ── Panel seams ─────────────────────────────────────────────────────────
+       A seam between two workspace panels is drawn by the splitter that resizes it, so the
+       line the eye reads as the division is exactly the line the pointer can grab. At rest
+       it is one hairline; under the pointer it lifts to the strong tone and a short grip
+       appears in the middle of the run, the way AutoCAD's command window announces that its
+       top edge can be dragged for more or fewer lines of history. -->
   <Style Selector="GridSplitter">
     <Setter Property="Background" Value="Transparent" />
+  </Style>
+
+  <Style Selector="GridSplitter.rowSeam">
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Panel Background="{TemplateBinding Background}">
+          <Border x:Name="Seam" Height="1" VerticalAlignment="Center"
+                  Background="{DynamicResource CsBorder}">
+            <Border.Transitions>
+              <Transitions><BrushTransition Property="Background" Duration="0:0:0.10" /></Transitions>
+            </Border.Transitions>
+          </Border>
+          <Border x:Name="Grip" Width="36" Height="3" Opacity="0" CornerRadius="2"
+                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                  Background="{DynamicResource CsBorderStrong}">
+            <Border.Transitions>
+              <Transitions><DoubleTransition Property="Opacity" Duration="0:0:0.10" /></Transitions>
+            </Border.Transitions>
+          </Border>
+        </Panel>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+
+  <Style Selector="GridSplitter.columnSeam">
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Panel Background="{TemplateBinding Background}">
+          <Border x:Name="Seam" Width="1" HorizontalAlignment="Center"
+                  Background="{DynamicResource CsBorder}">
+            <Border.Transitions>
+              <Transitions><BrushTransition Property="Background" Duration="0:0:0.10" /></Transitions>
+            </Border.Transitions>
+          </Border>
+          <Border x:Name="Grip" Width="3" Height="36" Opacity="0" CornerRadius="2"
+                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                  Background="{DynamicResource CsBorderStrong}">
+            <Border.Transitions>
+              <Transitions><DoubleTransition Property="Opacity" Duration="0:0:0.10" /></Transitions>
+            </Border.Transitions>
+          </Border>
+        </Panel>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+
+  <Style Selector="GridSplitter.rowSeam:pointerover /template/ Border#Seam,
+                   GridSplitter.columnSeam:pointerover /template/ Border#Seam">
+    <Setter Property="Background" Value="{DynamicResource CsBorderStrong}" />
+  </Style>
+  <Style Selector="GridSplitter.rowSeam:pointerover /template/ Border#Grip,
+                   GridSplitter.columnSeam:pointerover /template/ Border#Grip">
+    <Setter Property="Opacity" Value="1" />
+  </Style>
+
+  <!-- ── Command window ──────────────────────────────────────────────────────
+       The transcript is a sunken well; the live command row sits one tone above it,
+       divided by a single hairline. That hairline is the only line in the panel, and it
+       brightens while the caret is in the input, so the row you type into is the row that
+       is lit. -->
+  <Style Selector="Border.commandInputRow">
+    <Setter Property="Background" Value="{DynamicResource CsSurface}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource CsBorder}" />
+    <Setter Property="BorderThickness" Value="0,1,0,0" />
+    <Setter Property="Padding" Value="10,5,10,6" />
+    <Setter Property="Transitions">
+      <Transitions><BrushTransition Property="BorderBrush" Duration="0:0:0.10" /></Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="Border.commandInputRow.focused">
+    <Setter Property="BorderBrush" Value="{DynamicResource CsBorderStrong}" />
+  </Style>
+
+  <!-- The chevron that marks where typing goes, quiet until the row has focus. -->
+  <Style Selector="TextBlock.commandChevron">
+    <Setter Property="Foreground" Value="{DynamicResource CsTextFaint}" />
+    <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
+    <Setter Property="FontSize" Value="{DynamicResource CsFontSizeMono}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Margin" Value="0,0,7,0" />
+  </Style>
+  <Style Selector="Border.commandInputRow.focused TextBlock.commandChevron">
+    <Setter Property="Foreground" Value="{DynamicResource CsAccent}" />
   </Style>
 
   <Style Selector="ToolTip">

@@ -10,9 +10,10 @@
         FontFamily="{DynamicResource CsUiFont}">
 
   <!--
-    Deliberate 1px hairlines in the neutral CsBorder tone, never the system accent: one
-    under the tool strip, one down the viewport / inspector seam, and one above and below
-    the command console. Everything else is separated by surface tone.
+    Every division between two resizable regions is drawn by the splitter that resizes it:
+    one hairline in the neutral CsBorder tone that lifts and grows a grip under the pointer.
+    The only line that is not a splitter is the one under the tool strip, which nothing can
+    drag. Everything else is separated by surface tone alone.
   -->
   <Grid x:Name="WorkspaceGrid" RowDefinitions="30,Auto,*,70,26">
     <!-- Row 0 is collapsed on macOS, where the menu lives in the system menu bar. -->
@@ -25,8 +26,12 @@
     </Border>
 
     <Grid x:Name="ContentGrid" Grid.Row="2" ColumnDefinitions="*,280">
+      <!-- The embedded GL child window is borderless; this frame — colour and thickness both
+           from the theme (CsViewportBorder / CsViewportBorderThickness) — is the viewport's
+           only visible edge. -->
       <Border Background="{DynamicResource CsViewportBackdrop}"
-              BorderBrush="{DynamicResource CsBorder}" BorderThickness="0,0,1,0">
+              BorderBrush="{DynamicResource CsViewportBorder}"
+              BorderThickness="{DynamicResource CsViewportBorderThickness}">
         <Grid>
           <ContentControl x:Name="ViewportHost" />
           <Border x:Name="ViewBadge" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12"
@@ -51,20 +56,27 @@
         </ScrollViewer>
       </Border>
 
-      <!-- A transparent grab strip straddling the column edge — no gutter, no drawn line. -->
-      <GridSplitter Grid.Column="1" HorizontalAlignment="Left" Width="6" Margin="-3,0,0,0"
+      <!-- A transparent grab strip straddling the column edge. It draws no line of its own:
+           the viewport's own frame already closes this seam, and a second hairline one pixel
+           away from it would read as a two-pixel rule. -->
+      <GridSplitter Grid.Column="1" HorizontalAlignment="Left"
+                    Width="7" Margin="-3,0,0,0" Cursor="SizeWestEast"
                     Background="Transparent" ResizeDirection="Columns" ZIndex="10" />
     </Grid>
 
-    <!-- The command console reads as one boxed unit, AutoCAD-style: hairline above and below. -->
+    <!-- The command console is one sunken well, bounded like AutoCAD's: the top edge is the
+         seam the splitter draws, the bottom one closes it against the status strip. -->
     <Border x:Name="CommandLineBorder" Grid.Row="3" MinHeight="48"
             Background="{DynamicResource CsSurfaceDeep}"
-            BorderBrush="{DynamicResource CsBorder}" BorderThickness="0,1,0,1">
+            BorderBrush="{DynamicResource CsBorder}" BorderThickness="0,0,0,1">
       <ContentControl x:Name="CommandLineHost" />
     </Border>
 
-    <!-- Declared after the command panel so it stays above it and receives the drag. -->
-    <GridSplitter x:Name="CommandLineSplitter" Grid.Row="3" Height="6" VerticalAlignment="Top"
+    <!-- Declared after the command panel so it stays above it and receives the drag. It
+         straddles the seam, so the line under the pointer is the line being dragged —
+         AutoCAD's "drag the edge for more or fewer lines of history". -->
+    <GridSplitter x:Name="CommandLineSplitter" Grid.Row="3" Classes="rowSeam"
+                  Height="7" Margin="0,-3,0,0" VerticalAlignment="Top"
                   Background="Transparent" Cursor="SizeNorthSouth" ResizeDirection="Rows"
                   ZIndex="10" />
 
