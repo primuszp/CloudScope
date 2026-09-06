@@ -10,21 +10,23 @@
         FontFamily="{DynamicResource CsUiFont}">
 
   <!--
-    Regions are separated by surface tone, not lines: the black viewport, the graphite
-    tool band, the sunken command well and the raised status strip each read as their own
-    plane. The only drawn edge in the shell is the view badge, which is a card.
+    Deliberate 1px hairlines in the neutral CsBorder tone, never the system accent: one
+    under the tool strip, one down the viewport / inspector seam, and one above and below
+    the command console. Everything else is separated by surface tone.
   -->
   <Grid x:Name="WorkspaceGrid" RowDefinitions="30,Auto,*,70,26">
     <!-- Row 0 is collapsed on macOS, where the menu lives in the system menu bar. -->
     <Menu x:Name="MainMenuBar" Grid.Row="0" />
 
     <!-- Tool strip: unified with the titlebar on macOS, a flat command strip elsewhere. -->
-    <Border x:Name="ToolStripBorder" Grid.Row="1" Background="{DynamicResource CsGraphite}">
+    <Border x:Name="ToolStripBorder" Grid.Row="1" Background="{DynamicResource CsGraphite}"
+            BorderBrush="{DynamicResource CsBorder}" BorderThickness="0,0,0,1">
       <StackPanel x:Name="ToolStripPanel" Orientation="Horizontal" Margin="8,6" Spacing="2" />
     </Border>
 
     <Grid x:Name="ContentGrid" Grid.Row="2" ColumnDefinitions="*,280">
-      <Border Background="{DynamicResource CsViewportBackdrop}">
+      <Border Background="{DynamicResource CsViewportBackdrop}"
+              BorderBrush="{DynamicResource CsBorder}" BorderThickness="0,0,1,0">
         <Grid>
           <ContentControl x:Name="ViewportHost" />
           <Border x:Name="ViewBadge" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12"
@@ -54,8 +56,10 @@
                     Background="Transparent" ResizeDirection="Columns" ZIndex="10" />
     </Grid>
 
+    <!-- The command console reads as one boxed unit, AutoCAD-style: hairline above and below. -->
     <Border x:Name="CommandLineBorder" Grid.Row="3" MinHeight="48"
-            Background="{DynamicResource CsSurfaceDeep}">
+            Background="{DynamicResource CsSurfaceDeep}"
+            BorderBrush="{DynamicResource CsBorder}" BorderThickness="0,1,0,1">
       <ContentControl x:Name="CommandLineHost" />
     </Border>
 

@@ -24,6 +24,7 @@ public sealed class CommandLineControl : UserControl
         UiPalette.R(color), UiPalette.G(color), UiPalette.B(color))).ToImmutable();
 
     private static readonly IBrush WellBrush = Frozen(UiPalette.SurfaceDeep);
+    private static readonly IBrush HairlineBrush = Frozen(UiPalette.Border);
     private static readonly IBrush EdgeBrush = Frozen(UiPalette.BorderStrong);
     private static readonly IBrush AccentBrush = Frozen(UiPalette.Accent);
     private static readonly IBrush TextBrush = Frozen(UiPalette.Text);
@@ -256,8 +257,11 @@ public sealed class CommandLineControl : UserControl
 
         var inputBorder = new Border
         {
-            // No borders anywhere: the entry is visually continuous with the transcript above
-            // it and the whole panel is one surface.
+            // One low-contrast hairline divides the history from the live entry, the way
+            // AutoCAD's docked command line separates its scrollback from the input row.
+            Background = WellBrush,
+            BorderBrush = HairlineBrush,
+            BorderThickness = new Thickness(0, 1, 0, 0),
             Padding = new Thickness(10, 4, 10, 5),
             Child = inputLine
         };
