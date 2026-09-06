@@ -25,14 +25,12 @@ public sealed class CommandTranscript : UserControl
 
     private readonly ScrollViewer _scroll;
     private readonly CommandLineSession _session;
-    private readonly bool _cadPalette;
     private readonly List<CommandLineEntry> _shown = [];
     private long _syncedTotal;
 
-    public CommandTranscript(CommandLineSession session, bool cadPalette = false)
+    public CommandTranscript(CommandLineSession session)
     {
         _session = session;
-        _cadPalette = cadPalette;
 
         _scroll = new ScrollViewer
         {
@@ -164,10 +162,10 @@ public sealed class CommandTranscript : UserControl
         ScrollToTail();
     }
 
-    private Run RunFor(CommandLineEntry entry) =>
+    private static Run RunFor(CommandLineEntry entry) =>
         new(entry.Text + Environment.NewLine)
         {
-            Foreground = _cadPalette ? CadBrushFor(entry.Kind) : BrushFor(entry.Kind)
+            Foreground = BrushFor(entry.Kind)
         };
 
     // Only follow the tail when the user is already reading the tail — never yank the view
@@ -193,17 +191,4 @@ public sealed class CommandTranscript : UserControl
             });
 
     private static IBrush BrushFor(CommandEntryKind kind) => EntryBrushes[kind];
-
-    private static IBrush CadBrushFor(CommandEntryKind kind) => kind switch
-    {
-        CommandEntryKind.Prompt => CadPromptBrush,
-        CommandEntryKind.Error => CadErrorBrush,
-        CommandEntryKind.Banner => CadDimBrush,
-        _ => CadTextBrush
-    };
-
-    private static readonly IBrush CadTextBrush = new SolidColorBrush(Color.FromRgb(20, 20, 20)).ToImmutable();
-    private static readonly IBrush CadPromptBrush = new SolidColorBrush(Color.FromRgb(0, 48, 150)).ToImmutable();
-    private static readonly IBrush CadErrorBrush = new SolidColorBrush(Color.FromRgb(160, 0, 0)).ToImmutable();
-    private static readonly IBrush CadDimBrush = new SolidColorBrush(Color.FromRgb(90, 90, 90)).ToImmutable();
 }
