@@ -1,10 +1,10 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <!--
-    The CloudScope control theme: one graphite-over-black surface set, hairline borders and
-    a single azure accent, layered over Fluent. Every colour and metric is a DynamicResource
-    fed from CloudScope.Core/Ui/UiPalette, so this file describes shape and state, never the
-    palette itself. See Docs/DesignSystem.md.
+    The CloudScope control theme: one neutral graphite-over-black surface set, hairline
+    borders and no accent hue, layered over Fluent. Every colour and metric is a
+    DynamicResource fed from CloudScope.Core/Ui/UiPalette, so this file describes shape and
+    state, never the palette itself. See Docs/DesignSystem.md.
   -->
 
   <!-- Windows theme to the workspace surface unless a window sets its own. -->

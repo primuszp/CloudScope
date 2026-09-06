@@ -10,13 +10,17 @@ versions of the same product.
 
 * **Dark only.** A point-cloud viewport is judged against its surroundings, so the
   shell stays dark on every platform. There is no light variant.
-* **Graphite over deep black.** AutoCAD's dark theme: a near-black canvas, graphite
-  surfaces stacked in tiers, hairline borders, one azure accent. No gradients, no
-  drop shadows in the shell chrome.
-* **macOS-native, approximated.** System font stack (`SF Pro Text` first), the menu
-  in the system menu bar, a unified titlebar with the tool strip in it, Fluent's
-  accent-derived visuals repointed at the CloudScope azure. No AppKit interop —
-  Windows gets the same look, only with its own window chrome.
+* **Graphite over deep black, no accent hue.** AutoCAD's dark chrome carries no
+  accent colour and neither does this — a near-black canvas, neutral graphite
+  surfaces stacked in tiers, hairline borders. Emphasis (prompt text, focus, the
+  active tool) is a bright neutral grey; only `Ok` / `Warn` / `Error` are coloured.
+  The neutrals track the Autodesk brand's charcoal ramp. No gradients, no drop
+  shadows in the shell chrome.
+* **macOS-native, approximated.** Font stack led by Autodesk's `Artifakt Element`
+  then `SF Pro Text`, the menu in the system menu bar, a unified titlebar with the
+  tool strip in it, Fluent's accent-derived visuals repointed at the neutral
+  emphasis greys. No AppKit interop — Windows gets the same look, only with its own
+  window chrome.
 * **The command line is the audit trail.** Every editable control round-trips
   through a command string; the command window wears the same graphite as
   everything else rather than a white console strip.
@@ -28,25 +32,25 @@ versions of the same product.
 
 | Token | Hex | Role |
 | --- | --- | --- |
-| `ViewportBackdrop` | `0E0F11` | the 3D canvas — deepest black |
-| `SurfaceDeep` | `161719` | command well, popups, inset lists |
-| `Surface` | `1E2022` | inspector, dialog bodies |
-| `SurfaceAlt` | `26282B` | status bar, cards, raised buttons |
-| `Graphite` | `303234` | unified titlebar / tool strip band |
-| `SurfaceHover` | `34373B` | pointer-over fill |
-| `Border` | `3A3D40` | hairline dividers and outlines |
-| `BorderStrong` | `4A4E52` | focused / raised edges |
-| `Text` | `D8DADE` | primary text |
-| `TextDim` | `8A8F96` | labels, captions, section headers |
-| `TextFaint` | `5C6167` | disabled text, faint separators |
-| `Accent` | `3E8FD0` | prompt, active tool, focus, selection edge |
-| `AccentBright` | `5BA6E4` | accent under the pointer |
-| `AccentDim` | `2C6B9E` | pressed accent, dim accent fills |
-| `SelectionFill` | `24384A` | selected list row / completion candidate |
-| `Error` / `Ok` / `Warn` | `E06C6C` / `5FB57A` / `E0A24E` | semantic |
+| `ViewportBackdrop` | `0F0F0F` | the 3D canvas — deepest black |
+| `SurfaceDeep` | `171717` | command well, popups, inset lists |
+| `Surface` | `1F1F1F` | inspector, dialog bodies |
+| `SurfaceAlt` | `272727` | status bar, cards, raised buttons |
+| `Graphite` | `323232` | unified titlebar / tool strip band (≈ Autodesk charcoal-900) |
+| `SurfaceHover` | `373737` | pointer-over fill |
+| `Border` | `3D3D3D` | hairline dividers and outlines |
+| `BorderStrong` | `4E4E4E` | focused / raised edges |
+| `Text` | `DADADA` | primary text |
+| `TextDim` | `909090` | labels, captions, section headers (≈ Autodesk charcoal-700) |
+| `TextFaint` | `616161` | disabled text, faint separators |
+| `Accent` | `C2C2C2` | emphasis, not a hue: prompt, active tool glyph, focus outline |
+| `AccentBright` | `DEDEDE` | emphasis under the pointer; prompt lines in the transcript |
+| `AccentDim` | `3E3E3E` | lifted-graphite fill for a pressed / active control, status strip |
+| `SelectionFill` | `343434` | selected list row / completion candidate |
+| `Error` / `Ok` / `Warn` | `E06C6C` / `5FB57A` / `E0A24E` | semantic — the only colours in the UI |
 
 Command-line entry colours derive from these via `UiPalette.EntryColor`:
-prompt → `Accent`, error → `Error`, banner/echo → `TextDim`, output → `Text`.
+prompt → `AccentBright`, error → `Error`, banner/echo → `TextDim`, output → `Text`.
 
 ## Metric tokens
 

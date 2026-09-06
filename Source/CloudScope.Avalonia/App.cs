@@ -32,8 +32,9 @@ public sealed class App : Application
     /// Every colour, metric and font in the shell comes from <see cref="UiPalette"/>, the
     /// same source the ImGui viewer styles itself from, so the two shells cannot drift apart.
     /// Fluent's own accent-derived visuals (focus rings, checkmarks, sliders, selection) are
-    /// repointed at the CloudScope azure by overriding the SystemAccentColor family, and the
-    /// TextBox is forced onto the sunken surface in every state.
+    /// repointed at CloudScope's neutral emphasis greys by overriding the SystemAccentColor
+    /// family — the shell carries no accent hue — and the TextBox is forced onto the sunken
+    /// surface in every state.
     /// </summary>
     private void RegisterDesignTokens()
     {
