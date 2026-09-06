@@ -261,7 +261,7 @@ namespace CloudScope
             float clusterMaxZ = float.MinValue;
             foreach (int v in viewIdx)
             {
-                var p = new Vector3(_points[v].X, _points[v].Y, _points[v].Z);
+                var p = new Vector3(points[v].X, points[v].Y, points[v].Z);
                 pts.Add(p);
                 if (p.Z > clusterMaxZ) clusterMaxZ = p.Z;
             }
