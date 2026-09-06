@@ -190,6 +190,7 @@ namespace CloudScope.Ui
             ImGui.SetNextWindowPos(new Vector2(0f, top), ImGuiCond.Always);
             ImGui.SetNextWindowSize(new Vector2(width, height), ImGuiCond.Always);
             ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(8f * _scale, 5f * _scale));
+            ImGui.PushStyleColor(ImGuiCol.WindowBg, ImGuiTheme.Graphite);
 
             if (ImGui.Begin("##CloudScopeToolStrip", FixedPanelFlags))
             {
@@ -210,6 +211,7 @@ namespace CloudScope.Ui
             }
 
             ImGui.End();
+            ImGui.PopStyleColor();
             ImGui.PopStyleVar();
             return height;
         }
@@ -333,7 +335,7 @@ namespace CloudScope.Ui
             ImGui.SetNextWindowPos(new Vector2(0f, top), floating ? ImGuiCond.FirstUseEver : ImGuiCond.Always);
             ImGui.SetNextWindowSize(new Vector2(width, height), floating ? ImGuiCond.FirstUseEver : ImGuiCond.Always);
             ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(10f * _scale, 6f * _scale));
-            ImGui.PushStyleColor(ImGuiCol.WindowBg, ImGuiTheme.Surface);
+            ImGui.PushStyleColor(ImGuiCol.WindowBg, ImGuiTheme.SurfaceDeep);
             ImGui.Begin(floating ? "Command" : "##CloudScopeCommandLine",
                 floating ? ImGuiWindowFlags.NoSavedSettings : FixedPanelFlags);
 
@@ -615,7 +617,8 @@ namespace CloudScope.Ui
             ImGui.SetNextWindowPos(new Vector2(0f, height - barHeight), ImGuiCond.Always);
             ImGui.SetNextWindowSize(new Vector2(width, barHeight), ImGuiCond.Always);
             ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(10f * _scale, 2f * _scale));
-            ImGui.PushStyleColor(ImGuiCol.WindowBg, ImGuiTheme.Accent with { W = 0.85f });
+            // A graphite strip, like the Avalonia status bar — not a solid accent band.
+            ImGui.PushStyleColor(ImGuiCol.WindowBg, ImGuiTheme.SurfaceAlt);
 
             if (ImGui.Begin("##CloudScopeStatusBar", FixedPanelFlags))
             {

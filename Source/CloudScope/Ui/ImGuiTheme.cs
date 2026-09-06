@@ -13,17 +13,22 @@ namespace CloudScope.Ui
     /// </summary>
     public static class ImGuiTheme
     {
-        // Same palette the Avalonia shell builds its brushes from.
-        public static readonly Vector4 Accent      = Rgb(UiPalette.Accent);
-        public static readonly Vector4 AccentDim   = Rgb(UiPalette.AccentDim);
-        public static readonly Vector4 Surface     = Rgb(UiPalette.Surface);
-        public static readonly Vector4 SurfaceAlt  = Rgb(UiPalette.SurfaceAlt);
-        public static readonly Vector4 SurfaceDeep = Rgb(UiPalette.SurfaceDeep);
-        public static readonly Vector4 Border      = Rgb(UiPalette.Border);
-        public static readonly Vector4 Text        = Rgb(UiPalette.Text);
-        public static readonly Vector4 TextDim     = Rgb(UiPalette.TextDim);
-        public static readonly Vector4 Error       = Rgb(UiPalette.Error);
-        public static readonly Vector4 Ok          = Rgb(UiPalette.Ok);
+        // Same design tokens the Avalonia shell builds its brushes from.
+        public static readonly Vector4 Accent        = Rgb(UiPalette.Accent);
+        public static readonly Vector4 AccentBright  = Rgb(UiPalette.AccentBright);
+        public static readonly Vector4 AccentDim     = Rgb(UiPalette.AccentDim);
+        public static readonly Vector4 SelectionFill = Rgb(UiPalette.SelectionFill);
+        public static readonly Vector4 Surface       = Rgb(UiPalette.Surface);
+        public static readonly Vector4 SurfaceAlt    = Rgb(UiPalette.SurfaceAlt);
+        public static readonly Vector4 SurfaceDeep   = Rgb(UiPalette.SurfaceDeep);
+        public static readonly Vector4 SurfaceHover  = Rgb(UiPalette.SurfaceHover);
+        public static readonly Vector4 Graphite      = Rgb(UiPalette.Graphite);
+        public static readonly Vector4 Border        = Rgb(UiPalette.Border);
+        public static readonly Vector4 BorderStrong  = Rgb(UiPalette.BorderStrong);
+        public static readonly Vector4 Text          = Rgb(UiPalette.Text);
+        public static readonly Vector4 TextDim       = Rgb(UiPalette.TextDim);
+        public static readonly Vector4 Error         = Rgb(UiPalette.Error);
+        public static readonly Vector4 Ok            = Rgb(UiPalette.Ok);
 
         private static Vector4 Rgb(uint color) =>
             new(UiPalette.R(color) / 255f, UiPalette.G(color) / 255f, UiPalette.B(color) / 255f, 1f);
@@ -42,18 +47,19 @@ namespace CloudScope.Ui
             ImGui.StyleColorsDark();
             ImGuiStylePtr style = ImGui.GetStyle();
 
-            style.WindowRounding = 0f;
-            style.ChildRounding = 0f;
-            style.FrameRounding = 2f;
-            style.GrabRounding = 2f;
-            style.PopupRounding = 2f;
-            style.ScrollbarRounding = 2f;
+            // Softer corners than before, matching the Avalonia RadiusControl / RadiusCard.
+            style.WindowRounding = 6f;
+            style.ChildRounding = 4f;
+            style.FrameRounding = 4f;
+            style.GrabRounding = 4f;
+            style.PopupRounding = 4f;
+            style.ScrollbarRounding = 4f;
             style.WindowBorderSize = 1f;
             style.FrameBorderSize = 0f;
             style.WindowPadding = new Vector2(10f, 8f);
             style.FramePadding = new Vector2(7f, 4f);
             style.ItemSpacing = new Vector2(8f, 6f);
-            style.ScrollbarSize = 12f;
+            style.ScrollbarSize = 10f;
 
             Set(ImGuiCol.WindowBg, Surface);
             Set(ImGuiCol.ChildBg, SurfaceDeep);
@@ -62,20 +68,21 @@ namespace CloudScope.Ui
             Set(ImGuiCol.Text, Text);
             Set(ImGuiCol.TextDisabled, TextDim);
             Set(ImGuiCol.FrameBg, SurfaceDeep);
-            Set(ImGuiCol.FrameBgHovered, new Vector4(0.176f, 0.204f, 0.235f, 1f));
-            Set(ImGuiCol.FrameBgActive, new Vector4(0.204f, 0.239f, 0.275f, 1f));
-            Set(ImGuiCol.TitleBg, SurfaceDeep);
-            Set(ImGuiCol.TitleBgActive, SurfaceAlt);
-            Set(ImGuiCol.MenuBarBg, SurfaceAlt);
-            Set(ImGuiCol.Header, new Vector4(0.196f, 0.243f, 0.286f, 1f));
-            Set(ImGuiCol.HeaderHovered, new Vector4(0.235f, 0.298f, 0.353f, 1f));
+            Set(ImGuiCol.FrameBgHovered, SurfaceHover);
+            Set(ImGuiCol.FrameBgActive, BorderStrong);
+            // The title / menu band is the one graphite surface, top to bottom.
+            Set(ImGuiCol.TitleBg, Graphite);
+            Set(ImGuiCol.TitleBgActive, Graphite);
+            Set(ImGuiCol.MenuBarBg, Graphite);
+            Set(ImGuiCol.Header, SelectionFill);
+            Set(ImGuiCol.HeaderHovered, SurfaceHover);
             Set(ImGuiCol.HeaderActive, Accent with { W = 0.55f });
-            Set(ImGuiCol.Button, new Vector4(0.176f, 0.204f, 0.235f, 1f));
-            Set(ImGuiCol.ButtonHovered, new Vector4(0.227f, 0.267f, 0.306f, 1f));
-            Set(ImGuiCol.ButtonActive, Accent with { W = 0.65f });
+            Set(ImGuiCol.Button, SurfaceAlt);
+            Set(ImGuiCol.ButtonHovered, SurfaceHover);
+            Set(ImGuiCol.ButtonActive, AccentDim);
             Set(ImGuiCol.CheckMark, Accent);
-            Set(ImGuiCol.SliderGrab, Accent with { W = 0.8f });
-            Set(ImGuiCol.SliderGrabActive, Accent);
+            Set(ImGuiCol.SliderGrab, Accent with { W = 0.85f });
+            Set(ImGuiCol.SliderGrabActive, AccentBright);
             Set(ImGuiCol.Separator, Border);
             Set(ImGuiCol.ResizeGrip, Border with { W = 0.6f });
             Set(ImGuiCol.ResizeGripHovered, Accent with { W = 0.7f });
