@@ -28,7 +28,7 @@ public IEnumerable<PromptStep> Rotate(CommandContext context)
                         .WithDefaultKeyword("Z");
     yield return axis;
 
-    PromptDoubleStep angle = ed.GetAngle("Specify rotation angle in degrees:");
+    PromptDoubleStep angle = ed.GetDouble("Specify rotation angle in degrees:");
     yield return angle;
     if (!angle.IsOk) yield break;
 
@@ -56,7 +56,7 @@ table and a hand-written command list is the thing that rots.
 | --- | --- |
 | `GetKeywords` | one of the prompt's keywords |
 | `GetString`, `GetLine` | free text (`GetLine` takes the rest of the line, spaces included) |
-| `GetInteger`, `GetDouble`, `GetDistance`, `GetAngle` | a number, optionally ranged |
+| `GetInteger`, `GetDouble`, `GetDistance` | a number, optionally ranged (`GetDistance` is non-negative) |
 | `GetPoint`, `GetCorner` | a world point, typed as `x,y,z` **or picked in the viewport** |
 | `GetScreenPoint` | a viewport pixel position, typed as `x,y` or clicked |
 | `GetFileNameForOpen`, `GetFileNameForSave`, `GetDirectory` | a path, typed or chosen in the shell's file dialog |

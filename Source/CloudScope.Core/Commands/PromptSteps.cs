@@ -91,8 +91,8 @@ public sealed class PromptIntegerStep(string message) : PromptStep(message, allo
 }
 
 /// <summary>
-/// A prompt that accepts a real number. <c>GetDistance</c> and <c>GetAngle</c> return this
-/// type too; they differ only in the range they accept and in how the value is read.
+/// A prompt that accepts a real number. <c>GetDistance</c> returns this type too; it differs
+/// only in the range it accepts.
 /// </summary>
 public sealed class PromptDoubleStep(string message) : PromptStep(message, allowArbitraryInput: true)
 {

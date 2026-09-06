@@ -34,7 +34,7 @@ public static class CommandCompletionSource
     /// partial name completes against the variable table rather than the command table, which
     /// is the only place a variable name is a valid thing to type.
     /// </summary>
-    private static readonly string[] VariableCommands = ["SETVAR", "SET", "GETVAR"];
+    private static readonly string[] VariableCommands = ["SETVAR", "GETVAR"];
 
     public static IReadOnlyList<CommandCompletion> Complete(
         string prefix,
