@@ -357,7 +357,7 @@ public sealed partial class MainWindow : Window
         }
         _workspaceGrid.RowDefinitions[3].Height = new GridLength(
             Math.Clamp(_settings.HeightInLines, 1, 20) * CommandLineTextLineHeight + CommandLineChromeHeight);
-        _contentGrid.ColumnDefinitions[2].Width = new GridLength(Math.Clamp(_settings.InspectorWidth, 180, 640));
+        _contentGrid.ColumnDefinitions[1].Width = new GridLength(Math.Clamp(_settings.InspectorWidth, 180, 640));
     }
 
     /// <summary>
@@ -455,7 +455,7 @@ public sealed partial class MainWindow : Window
         // A hidden command window must not persist as a zero-line one.
         double pixels = _commandLineVisible ? _workspaceGrid.RowDefinitions[3].ActualHeight : _hiddenCommandLineHeight;
         _settings.HeightInLines = Math.Max(1, (pixels - CommandLineChromeHeight) / CommandLineTextLineHeight);
-        _settings.InspectorWidth = _contentGrid.ColumnDefinitions[2].ActualWidth;
+        _settings.InspectorWidth = _contentGrid.ColumnDefinitions[1].ActualWidth;
         _settings.RecentInput = _commandSession.InputHistory.ToList();
         _settings.CommandLineFloating = _floatingCommandLine != null;
         if (_floatingCommandLine != null)

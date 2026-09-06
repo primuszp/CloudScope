@@ -67,6 +67,18 @@ public sealed class CommandLineControl : UserControl
         _transcript = new CommandTranscript(session);
         _transcript.CommandRecalled += Stage;
 
+        // Fluent styles the TextBox's inner PART_BorderElement directly, so a class alone
+        // cannot flatten it. Kill the border and the focused-state fill at the control itself,
+        // in every state, so the command line is a bare caret on the panel's own surface with
+        // no box around it — this survives being reparented into the floating window too.
+        foreach (string state in new[] { "", "PointerOver", "Focused", "Disabled" })
+        {
+            _input.Resources["TextControlBackground" + state] = Brushes.Transparent;
+            _input.Resources["TextControlBorderBrush" + state] = Brushes.Transparent;
+        }
+        _input.Resources["TextControlBorderThemeThickness"] = new Thickness(0);
+        _input.Resources["TextControlBorderThemeThicknessFocused"] = new Thickness(0);
+
         _input.Classes.Add("commandInput");
         _input.KeyDown += OnInputKeyDown;
         _input.TextChanged += (_, _) =>
