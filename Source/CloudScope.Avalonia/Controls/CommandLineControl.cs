@@ -25,7 +25,7 @@ public sealed class CommandLineControl : UserControl
 
     private static readonly IBrush WellBrush = Frozen(UiPalette.SurfaceDeep);
     private static readonly IBrush RailBrush = Frozen(UiPalette.SurfaceAlt);
-    private static readonly IBrush BorderBrush = Frozen(UiPalette.Border);
+    private static readonly IBrush EdgeBrush = Frozen(UiPalette.Border);
     private static readonly IBrush AccentBrush = Frozen(UiPalette.Accent);
     private static readonly IBrush TextBrush = Frozen(UiPalette.Text);
 
@@ -84,7 +84,7 @@ public sealed class CommandLineControl : UserControl
         _completionPopup.Child = new Border
         {
             Background = WellBrush,
-            BorderBrush = BorderBrush,
+            BorderBrush = EdgeBrush,
             // The popup is placed immediately above the input.  Its bottom edge would read
             // as an unwanted stripe across the top of the TextBox while typing.
             BorderThickness = new Thickness(1, 1, 1, 0),
@@ -223,7 +223,7 @@ public sealed class CommandLineControl : UserControl
         var rail = new Border
         {
             Background = RailBrush,
-            BorderBrush = BorderBrush,
+            BorderBrush = EdgeBrush,
             BorderThickness = new Thickness(0, 0, 1, 0),
             ClipToBounds = true,
             Padding = new Thickness(1, 0, 1, 2),

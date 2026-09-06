@@ -34,9 +34,14 @@ public sealed class CommandLineWindow : Window
                     Material = new ExperimentalAcrylicMaterial
                     {
                         BackgroundSource = AcrylicBackgroundSource.Digger,
-                        TintColor = Colors.Black,
+                        // Graphite rather than pure black, so the floating window reads as the
+                        // same surface as the docked command line it detached from.
+                        TintColor = Color.FromRgb(
+                            global::CloudScope.Ui.UiPalette.R(global::CloudScope.Ui.UiPalette.Graphite),
+                            global::CloudScope.Ui.UiPalette.G(global::CloudScope.Ui.UiPalette.Graphite),
+                            global::CloudScope.Ui.UiPalette.B(global::CloudScope.Ui.UiPalette.Graphite)),
                         TintOpacity = 1,
-                        MaterialOpacity = 0.7
+                        MaterialOpacity = 0.78
                     }
                 },
                 Host

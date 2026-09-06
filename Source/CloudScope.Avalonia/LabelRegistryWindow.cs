@@ -4,6 +4,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using CloudScope.Avalonia.Hosting;
 using CloudScope.Labeling;
+using CloudScope.Ui;
 
 namespace CloudScope.Avalonia;
 
@@ -19,6 +20,9 @@ public sealed class LabelRegistryWindow : Window
     private readonly StackPanel _list = new() { Spacing = 2 };
     private readonly TextBox _nameBox = new() { PlaceholderText = "Label name", Width = 180 };
     private readonly NumericUpDown _codeBox = new() { Minimum = 0, Maximum = 255, Value = 6, Width = 110 };
+
+    private static IBrush Brush(uint color) => new SolidColorBrush(Color.FromRgb(
+        UiPalette.R(color), UiPalette.G(color), UiPalette.B(color))).ToImmutable();
 
     public LabelRegistryWindow(HostController host, Action<string> run)
     {
@@ -41,15 +45,16 @@ public sealed class LabelRegistryWindow : Window
         root.Children.Add(new TextBlock
         {
             Text = "Map label names to LAS classification codes. Set instances with INSTANCE <id> or LABEL \"name\" <id>.",
-            Foreground = new SolidColorBrush(Color.FromRgb(0xAA, 0xB6, 0xC2))
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush(UiPalette.TextDim)
         });
         root.Children.Add(new ScrollViewer
         {
             Height = 250,
             Content = _list
         });
-        root.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.FromRgb(0x46, 0x51, 0x5B)) });
-        root.Children.Add(new TextBlock { Text = "Add / update", Foreground = Brushes.White });
+        root.Children.Add(new Border { Height = 1, Background = Brush(UiPalette.Border) });
+        root.Children.Add(new TextBlock { Text = "Add / update", Foreground = Brush(UiPalette.Text) });
         var entry = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         entry.Children.Add(_nameBox);
         entry.Children.Add(_codeBox);
@@ -78,6 +83,8 @@ public sealed class LabelRegistryWindow : Window
             Width = 14,
             Height = 14,
             CornerRadius = new global::Avalonia.CornerRadius(2),
+            BorderBrush = Brush(UiPalette.Border),
+            BorderThickness = new global::Avalonia.Thickness(1),
             Background = new SolidColorBrush(Color.FromRgb(
                 (byte)(def.Color.X * 255f), (byte)(def.Color.Y * 255f), (byte)(def.Color.Z * 255f)))
         };
@@ -85,7 +92,7 @@ public sealed class LabelRegistryWindow : Window
         var text = new TextBlock
         {
             Text = $"{def.Name}  (class {def.Code}){(active ? "  •" : "")}",
-            Foreground = Brushes.White,
+            Foreground = Brush(UiPalette.Text),
             VerticalAlignment = VerticalAlignment.Center
         };
 
@@ -98,7 +105,8 @@ public sealed class LabelRegistryWindow : Window
             Content = content,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Left,
-            Background = active ? new SolidColorBrush(Color.FromRgb(0x33, 0x3E, 0x49)) : Brushes.Transparent
+            BorderThickness = new global::Avalonia.Thickness(0),
+            Background = active ? Brush(UiPalette.SelectionFill) : Brushes.Transparent
         };
         string name = def.Name;
         row.Click += (_, _) => { _run($"LABEL \"{name}\""); Refresh(); };
