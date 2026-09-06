@@ -252,7 +252,10 @@ void main()
             float insetY = 1f / Math.Max(height, 1);
             float left = -1f + insetX, right = 1f - insetX;
             float bottom = -1f + insetY, top = 1f - insetY;
-            Vector3 color = active ? new Vector3(0.10f, 0.72f, 1f) : new Vector3(0.34f, 0.37f, 0.41f);
+            (float r, float g, float b, float a) = active
+                ? RenderPalette.ViewportBorderActive
+                : RenderPalette.ViewportBorderInactive;
+            var color = new Vector3(r, g, b);
             WriteBorderVertex(0, left, top, color);
             WriteBorderVertex(1, right, top, color);
             WriteBorderVertex(2, right, bottom, color);
@@ -267,9 +270,9 @@ void main()
             Matrix4 identity = Matrix4.Identity;
             GL.UniformMatrix4(_uViewLine, false, ref identity);
             GL.UniformMatrix4(_uProjLine, false, ref identity);
-            GL.Uniform1(_uAlphaLine, active ? 1f : 0.9f);
+            GL.Uniform1(_uAlphaLine, a);
             GL.Disable(EnableCap.DepthTest);
-            GL.LineWidth(1f);
+            GL.LineWidth(RenderPalette.ViewportBorderWidth);
             GL.DrawArrays(PrimitiveType.LineStrip, 0, 5);
             GL.Enable(EnableCap.DepthTest);
         }
