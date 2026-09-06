@@ -1,0 +1,217 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!--
+    The CloudScope control theme: one graphite-over-black surface set, hairline borders and
+    a single azure accent, layered over Fluent. Every colour and metric is a DynamicResource
+    fed from CloudScope.Core/Ui/UiPalette, so this file describes shape and state, never the
+    palette itself. See Docs/DesignSystem.md.
+  -->
+
+  <!-- Windows theme to the workspace surface unless a window sets its own. -->
+  <Style Selector="Window">
+    <Setter Property="Background" Value="{DynamicResource CsSurface}" />
+    <Setter Property="FontFamily" Value="{DynamicResource CsUiFont}" />
+    <Setter Property="FontSize" Value="{DynamicResource CsFontSizeBody}" />
+  </Style>
+
+  <!-- ── Buttons ─────────────────────────────────────────────────────────── -->
+  <Style Selector="Button">
+    <Setter Property="Background" Value="{DynamicResource CsSurfaceAlt}" />
+    <Setter Property="Foreground" Value="{DynamicResource CsText}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource CsBorder}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{DynamicResource CsCornerControl}" />
+    <Setter Property="Padding" Value="12,5" />
+    <Setter Property="FontSize" Value="{DynamicResource CsFontSizeBody}" />
+  </Style>
+  <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource CsSurfaceHover}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource CsBorderStrong}" />
+  </Style>
+  <Style Selector="Button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource CsAccentDim}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource CsAccent}" />
+  </Style>
+  <Style Selector="Button:disabled /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Foreground" Value="{DynamicResource CsTextFaint}" />
+  </Style>
+
+  <!-- Tool strip: NSToolbar-like on macOS, a flat command strip elsewhere. -->
+  <Style Selector="Button.tool">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource CsText}" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="{DynamicResource CsCornerControl}" />
+    <Setter Property="Padding" Value="10,4" />
+    <Setter Property="FontSize" Value="{DynamicResource CsFontSizeBody}" />
+    <Setter Property="MinWidth" Value="54" />
+  </Style>
+  <Style Selector="Button.tool:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource CsSurfaceHover}" />
+  </Style>
+  <Style Selector="Button.tool.active /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource CsAccentDim}" />
+  </Style>
+  <Style Selector="Button.tool TextBlock.glyph">
+    <Setter Property="FontSize" Value="17" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="Foreground" Value="{DynamicResource CsAccent}" />
+  </Style>
+  <Style Selector="Button.tool.active TextBlock.glyph">
+    <Setter Property="Foreground" Value="{DynamicResource CsAccentBright}" />
+  </Style>
+  <Style Selector="Button.tool TextBlock.caption">
+    <Setter Property="FontSize" Value="{DynamicResource CsFontSizeSmall}" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
+  </Style>
+
+  <!-- The command window's close / history rail. -->
+  <Style Selector="Button.commandRailButton">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
+    <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="Width" Value="20" />
+    <Setter Property="Height" Value="18" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="CornerRadius" Value="3" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Button.commandRailButton:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource CsSurfaceHover}" />
+    <Setter Property="Foreground" Value="{DynamicResource CsText}" />
+  </Style>
+
+  <!-- A keyword sits inside the prompt's own "[...]", on the text baseline, not a button
+       dropped into a sentence. -->
+  <Style Selector="Button.keywordLink">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="3,0" />
+    <Setter Property="Margin" Value="0" />
+    <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
+    <Setter Property="FontSize" Value="{DynamicResource CsFontSizeBody}" />
+    <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
+  </Style>
+  <Style Selector="Button.keywordLink:pointerover">
+    <Setter Property="Foreground" Value="{DynamicResource CsAccent}" />
+  </Style>
+  <Style Selector="Button.keywordLink.defaultKeyword">
+    <Setter Property="Foreground" Value="{DynamicResource CsAccent}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+
+  <!-- ── Text ────────────────────────────────────────────────────────────── -->
+  <Style Selector="TextBlock.prompt">
+    <Setter Property="Foreground" Value="{DynamicResource CsAccent}" />
+    <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
+    <Setter Property="FontSize" Value="{DynamicResource CsFontSizeBody}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Margin" Value="0,0,8,0" />
+  </Style>
+  <Style Selector="TextBlock.sectionTitle">
+    <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
+    <Setter Property="FontSize" Value="{DynamicResource CsFontSizeSmall}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="TextBlock.propertyName">
+    <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
+    <Setter Property="FontSize" Value="11" />
+  </Style>
+  <Style Selector="TextBlock.propertyValue">
+    <Setter Property="Foreground" Value="{DynamicResource CsText}" />
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style Selector="TextBlock.statusItem">
+    <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
+    <Setter Property="FontSize" Value="{DynamicResource CsFontSizeSmall}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Margin" Value="8,0" />
+  </Style>
+
+  <!-- ── Text input ──────────────────────────────────────────────────────── -->
+  <Style Selector="TextBox">
+    <Setter Property="CornerRadius" Value="{DynamicResource CsCornerControl}" />
+    <Setter Property="FontSize" Value="{DynamicResource CsFontSizeBody}" />
+  </Style>
+  <Style Selector="TextBox.commandInput">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="0" />
+    <Setter Property="Foreground" Value="{DynamicResource CsText}" />
+    <Setter Property="CaretBrush" Value="{DynamicResource CsAccent}" />
+    <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
+    <Setter Property="FontSize" Value="{DynamicResource CsFontSizeMono}" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Padding" Value="0" />
+  </Style>
+
+  <!-- ── Menus ───────────────────────────────────────────────────────────── -->
+  <Style Selector="Menu">
+    <Setter Property="Background" Value="{DynamicResource CsGraphite}" />
+    <Setter Property="Foreground" Value="{DynamicResource CsText}" />
+  </Style>
+  <Style Selector="MenuItem">
+    <Setter Property="FontSize" Value="{DynamicResource CsFontSizeBody}" />
+  </Style>
+  <Style Selector="MenuItem:selected /template/ Border#PART_LayoutRoot">
+    <Setter Property="Background" Value="{DynamicResource CsSelectionFill}" />
+  </Style>
+  <Style Selector="MenuFlyoutPresenter, ContextMenu">
+    <Setter Property="Background" Value="{DynamicResource CsSurfaceDeep}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource CsBorder}" />
+    <Setter Property="CornerRadius" Value="{DynamicResource CsCornerCard}" />
+  </Style>
+
+  <!-- ── Lists ───────────────────────────────────────────────────────────── -->
+  <Style Selector="ListBox">
+    <Setter Property="Background" Value="{DynamicResource CsSurfaceDeep}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource CsBorder}" />
+  </Style>
+  <Style Selector="ListBoxItem">
+    <Setter Property="Foreground" Value="{DynamicResource CsText}" />
+    <Setter Property="Padding" Value="8,4" />
+    <Setter Property="MinHeight" Value="0" />
+  </Style>
+  <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource CsSelectionFill}" />
+  </Style>
+  <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource CsSurfaceHover}" />
+  </Style>
+
+  <!-- ── Chrome ──────────────────────────────────────────────────────────── -->
+  <Style Selector="ScrollBar">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="ScrollBar /template/ Thumb">
+    <Setter Property="Background" Value="{DynamicResource CsTextFaint}" />
+  </Style>
+
+  <Style Selector="GridSplitter">
+    <Setter Property="Background" Value="{DynamicResource CsBorder}" />
+  </Style>
+
+  <Style Selector="ToolTip">
+    <Setter Property="Background" Value="{DynamicResource CsSurfaceDeep}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource CsBorder}" />
+    <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
+    <Setter Property="CornerRadius" Value="{DynamicResource CsCornerControl}" />
+    <Setter Property="FontSize" Value="11" />
+  </Style>
+
+  <!-- A framed content group: inspector cards, dialog sections. -->
+  <Style Selector="Border.card">
+    <Setter Property="Background" Value="{DynamicResource CsSurface}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource CsBorder}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{DynamicResource CsCornerCard}" />
+  </Style>
+</Styles>
