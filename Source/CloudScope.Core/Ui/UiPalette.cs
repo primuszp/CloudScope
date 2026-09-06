@@ -74,17 +74,17 @@ public static class UiPalette
 
     // ── Metric tokens ──────────────────────────────────────────────────────
 
-    /// <summary>Corner radius for buttons, inputs and small controls.</summary>
-    public const double RadiusControl = 5;
+    /// <summary>Corner radius for buttons, inputs and small controls — tight and technical.</summary>
+    public const double RadiusControl = 3;
 
     /// <summary>Corner radius for cards, popups and grouped containers.</summary>
-    public const double RadiusCard = 6;
+    public const double RadiusCard = 5;
 
-    /// <summary>Thickness of a hairline divider or control outline.</summary>
+    /// <summary>Thickness of every divider and control outline in the shell — one hairline.</summary>
     public const double HairlineThickness = 1;
 
     public const double FontSizeBody = 12;
-    public const double FontSizeSmall = 10;
+    public const double FontSizeSmall = 11;
     public const double FontSizeMono = 12;
 
     /// <summary>The 4 / 8 / 12 / 16 spacing steps every layout is built from.</summary>

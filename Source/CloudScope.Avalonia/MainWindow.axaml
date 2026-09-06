@@ -9,39 +9,41 @@
         Background="{DynamicResource CsSurface}"
         FontFamily="{DynamicResource CsUiFont}">
 
-  <Grid x:Name="WorkspaceGrid" RowDefinitions="30,Auto,*,70,24">
+  <!--
+    Regions are separated by surface tone, not lines: the black viewport, the graphite
+    tool band, the sunken command well and the raised status strip each read as their own
+    plane. The only drawn edge in the shell is the view badge, which is a card.
+  -->
+  <Grid x:Name="WorkspaceGrid" RowDefinitions="30,Auto,*,70,26">
     <!-- Row 0 is collapsed on macOS, where the menu lives in the system menu bar. -->
     <Menu x:Name="MainMenuBar" Grid.Row="0" />
 
     <!-- Tool strip: unified with the titlebar on macOS, a flat command strip elsewhere. -->
-    <Border x:Name="ToolStripBorder" Grid.Row="1"
-            Background="{DynamicResource CsGraphite}"
-            BorderBrush="{DynamicResource CsBorder}" BorderThickness="0,0,0,1">
-      <StackPanel x:Name="ToolStripPanel" Orientation="Horizontal" Margin="10,6" Spacing="2" />
+    <Border x:Name="ToolStripBorder" Grid.Row="1" Background="{DynamicResource CsGraphite}">
+      <StackPanel x:Name="ToolStripPanel" Orientation="Horizontal" Margin="8,6" Spacing="2" />
     </Border>
 
-    <Grid x:Name="ContentGrid" Grid.Row="2" ColumnDefinitions="*,Auto,280">
+    <Grid x:Name="ContentGrid" Grid.Row="2" ColumnDefinitions="*,6,280">
       <Border Background="{DynamicResource CsViewportBackdrop}">
         <Grid>
           <ContentControl x:Name="ViewportHost" />
           <Border x:Name="ViewBadge" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12"
-                  Background="{DynamicResource CsSurfaceDeep}" Opacity="0.82"
+                  Background="{DynamicResource CsSurfaceDeep}"
                   BorderBrush="{DynamicResource CsBorder}" BorderThickness="1"
-                  CornerRadius="{DynamicResource CsCornerCard}" Padding="8,5">
-            <StackPanel>
+                  CornerRadius="{DynamicResource CsCornerCard}" Padding="10,6">
+            <StackPanel Spacing="1">
               <TextBlock x:Name="ViewBadgeTitle" Text="Perspective" Foreground="{DynamicResource CsText}"
-                         FontSize="11" FontWeight="SemiBold" />
-              <TextBlock x:Name="ViewBadgeSubtitle" Text="Single viewport" Classes="sectionTitle" />
+                         FontSize="12" FontWeight="SemiBold" />
+              <TextBlock x:Name="ViewBadgeSubtitle" Text="Single viewport"
+                         Foreground="{DynamicResource CsTextDim}" FontSize="11" />
             </StackPanel>
           </Border>
         </Grid>
       </Border>
 
-      <GridSplitter Grid.Column="1" Width="4" Background="{DynamicResource CsBorder}"
-                    ResizeDirection="Columns" />
+      <GridSplitter Grid.Column="1" Background="Transparent" ResizeDirection="Columns" />
 
-      <Border Grid.Column="2" Background="{DynamicResource CsSurface}"
-              BorderBrush="{DynamicResource CsBorder}" BorderThickness="1,0,0,0">
+      <Border Grid.Column="2" Background="{DynamicResource CsSurface}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel x:Name="InspectorPanel" Margin="12" Spacing="8" />
         </ScrollViewer>
@@ -49,8 +51,7 @@
     </Grid>
 
     <Border x:Name="CommandLineBorder" Grid.Row="3" MinHeight="48"
-            Background="{DynamicResource CsSurfaceDeep}"
-            BorderBrush="{DynamicResource CsBorder}" BorderThickness="0,1,0,1">
+            Background="{DynamicResource CsSurfaceDeep}">
       <ContentControl x:Name="CommandLineHost" />
     </Border>
 
@@ -59,9 +60,8 @@
                   Background="Transparent" Cursor="SizeNorthSouth" ResizeDirection="Rows"
                   ZIndex="10" />
 
-    <Border Grid.Row="4" Background="{DynamicResource CsSurfaceAlt}"
-            BorderBrush="{DynamicResource CsBorder}" BorderThickness="0,1,0,0">
-      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto">
+    <Border Grid.Row="4" Background="{DynamicResource CsSurfaceAlt}">
+      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto" Margin="8,0">
         <TextBlock x:Name="StatusPoints" Classes="statusItem" Text="No point cloud" />
         <TextBlock x:Name="StatusMode" Grid.Column="1" Classes="statusItem" Text="Navigate" />
         <TextBlock x:Name="StatusLabel" Grid.Column="2" Classes="statusItem" Text="Label: —" />

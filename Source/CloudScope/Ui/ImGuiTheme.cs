@@ -47,17 +47,17 @@ namespace CloudScope.Ui
             ImGui.StyleColorsDark();
             ImGuiStylePtr style = ImGui.GetStyle();
 
-            // Softer corners than before, matching the Avalonia RadiusControl / RadiusCard.
-            style.WindowRounding = 6f;
-            style.ChildRounding = 4f;
-            style.FrameRounding = 4f;
-            style.GrabRounding = 4f;
-            style.PopupRounding = 4f;
-            style.ScrollbarRounding = 4f;
+            // Tight, technical corners matching the Avalonia RadiusControl / RadiusCard (3 / 5).
+            style.WindowRounding = 5f;
+            style.ChildRounding = 5f;
+            style.FrameRounding = 3f;
+            style.GrabRounding = 3f;
+            style.PopupRounding = 5f;
+            style.ScrollbarRounding = 3f;
             style.WindowBorderSize = 1f;
             style.FrameBorderSize = 0f;
-            style.WindowPadding = new Vector2(10f, 8f);
-            style.FramePadding = new Vector2(7f, 4f);
+            style.WindowPadding = new Vector2(12f, 8f);
+            style.FramePadding = new Vector2(8f, 4f);
             style.ItemSpacing = new Vector2(8f, 6f);
             style.ScrollbarSize = 10f;
 

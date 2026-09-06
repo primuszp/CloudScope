@@ -41,7 +41,7 @@ public sealed class LabelRegistryWindow : Window
         var saveLas = new Button { Content = "Save labels to LAS" };
         saveLas.Click += (_, _) => { _run("SAVELABELS Las"); };
 
-        var root = new StackPanel { Margin = new global::Avalonia.Thickness(12), Spacing = 10 };
+        var root = new StackPanel { Margin = new global::Avalonia.Thickness(16), Spacing = 12 };
         root.Children.Add(new TextBlock
         {
             Text = "Map label names to LAS classification codes. Set instances with INSTANCE <id> or LABEL \"name\" <id>.",
@@ -55,7 +55,7 @@ public sealed class LabelRegistryWindow : Window
         });
         root.Children.Add(new Border { Height = 1, Background = Brush(UiPalette.Border) });
         root.Children.Add(new TextBlock { Text = "Add / update", Foreground = Brush(UiPalette.Text) });
-        var entry = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        var entry = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         entry.Children.Add(_nameBox);
         entry.Children.Add(_codeBox);
         entry.Children.Add(define);
@@ -82,7 +82,7 @@ public sealed class LabelRegistryWindow : Window
         {
             Width = 14,
             Height = 14,
-            CornerRadius = new global::Avalonia.CornerRadius(2),
+            CornerRadius = new global::Avalonia.CornerRadius(UiPalette.RadiusControl),
             BorderBrush = Brush(UiPalette.Border),
             BorderThickness = new global::Avalonia.Thickness(1),
             Background = new SolidColorBrush(Color.FromRgb(

@@ -37,7 +37,9 @@ public sealed class CommandTranscript : UserControl
             Content = _text,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Padding = new Thickness(10, 4, 10, 4)
+            // Left inset matches the command input below, so the transcript and what you type
+            // share one left margin.
+            Padding = new Thickness(10, 6, 10, 4)
         };
 
         // The text block selects a word on a double tap and marks the event handled, so the
