@@ -8,125 +8,14 @@
         MinHeight="680"
         Background="{DynamicResource CsSurface}"
         FontFamily="{DynamicResource CsUiFont}">
-  <Window.Styles>
-    <Style Selector="Menu">
-      <Setter Property="Background" Value="{DynamicResource CsSurfaceAlt}" />
-      <Setter Property="Foreground" Value="{DynamicResource CsText}" />
-    </Style>
-    <Style Selector="MenuItem">
-      <Setter Property="FontSize" Value="12" />
-    </Style>
-
-    <!-- Tool strip: NSToolbar-like on macOS, a flat command strip elsewhere. -->
-    <Style Selector="Button.tool">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="{DynamicResource CsText}" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="CornerRadius" Value="5" />
-      <Setter Property="Padding" Value="10,4" />
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="MinWidth" Value="54" />
-    </Style>
-    <Style Selector="Button.tool:pointerover /template/ ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource CsSurfaceAlt}" />
-    </Style>
-    <Style Selector="Button.tool.active /template/ ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource CsAccentDim}" />
-    </Style>
-    <Style Selector="Button.tool TextBlock.glyph">
-      <Setter Property="FontSize" Value="17" />
-      <Setter Property="HorizontalAlignment" Value="Center" />
-      <Setter Property="Foreground" Value="{DynamicResource CsAccent}" />
-    </Style>
-    <Style Selector="Button.tool TextBlock.caption">
-      <Setter Property="FontSize" Value="10" />
-      <Setter Property="HorizontalAlignment" Value="Center" />
-      <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
-    </Style>
-
-    <!-- Command window -->
-    <Style Selector="TextBlock.prompt">
-      <Setter Property="Foreground" Value="{DynamicResource CsAccent}" />
-      <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Margin" Value="0,0,8,0" />
-    </Style>
-    <Style Selector="TextBox.commandInput">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Foreground" Value="#111111" />
-      <Setter Property="CaretBrush" Value="#111111" />
-      <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
-      <Setter Property="Padding" Value="0" />
-    </Style>
-    <Style Selector="Button.commandRailButton">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Foreground" Value="#333333" />
-      <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
-      <Setter Property="FontSize" Value="13" />
-      <Setter Property="Width" Value="20" />
-      <Setter Property="Height" Value="18" />
-      <Setter Property="MinWidth" Value="0" />
-      <Setter Property="MinHeight" Value="0" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
-      <Setter Property="HorizontalAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Button.commandRailButton:pointerover /template/ ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource CsAccentDim}" />
-    </Style>
-    <!-- A keyword sits inside the prompt's own "[...]", so it has to sit on the text's
-         baseline and metrics rather than look like a button dropped into a sentence. -->
-    <Style Selector="Button.keywordLink">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="3,0" />
-      <Setter Property="Margin" Value="0" />
-      <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
-    </Style>
-    <Style Selector="Button.keywordLink:pointerover">
-      <Setter Property="Foreground" Value="{DynamicResource CsAccent}" />
-    </Style>
-    <Style Selector="Button.keywordLink.defaultKeyword">
-      <Setter Property="Foreground" Value="{DynamicResource CsAccent}" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
-
-    <Style Selector="TextBlock.sectionTitle">
-      <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
-      <Setter Property="FontSize" Value="10" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
-    <Style Selector="TextBlock.propertyName">
-      <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
-      <Setter Property="FontSize" Value="11" />
-    </Style>
-    <Style Selector="TextBlock.propertyValue">
-      <Setter Property="Foreground" Value="{DynamicResource CsText}" />
-      <Setter Property="FontSize" Value="11" />
-      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-    </Style>
-    <Style Selector="TextBlock.statusItem">
-      <Setter Property="Foreground" Value="White" />
-      <Setter Property="FontSize" Value="10" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-      <Setter Property="Margin" Value="8,0" />
-    </Style>
-  </Window.Styles>
 
   <Grid x:Name="WorkspaceGrid" RowDefinitions="30,Auto,*,70,24">
     <!-- Row 0 is collapsed on macOS, where the menu lives in the system menu bar. -->
     <Menu x:Name="MainMenuBar" Grid.Row="0" />
 
+    <!-- Tool strip: unified with the titlebar on macOS, a flat command strip elsewhere. -->
     <Border x:Name="ToolStripBorder" Grid.Row="1"
-            Background="{DynamicResource CsSurfaceAlt}"
+            Background="{DynamicResource CsGraphite}"
             BorderBrush="{DynamicResource CsBorder}" BorderThickness="0,0,0,1">
       <StackPanel x:Name="ToolStripPanel" Orientation="Horizontal" Margin="10,6" Spacing="2" />
     </Border>
@@ -137,7 +26,8 @@
           <ContentControl x:Name="ViewportHost" />
           <Border x:Name="ViewBadge" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12"
                   Background="{DynamicResource CsSurfaceDeep}" Opacity="0.82"
-                  BorderBrush="{DynamicResource CsBorder}" BorderThickness="1" CornerRadius="4" Padding="8,5">
+                  BorderBrush="{DynamicResource CsBorder}" BorderThickness="1"
+                  CornerRadius="{DynamicResource CsCornerCard}" Padding="8,5">
             <StackPanel>
               <TextBlock x:Name="ViewBadgeTitle" Text="Perspective" Foreground="{DynamicResource CsText}"
                          FontSize="11" FontWeight="SemiBold" />
@@ -159,7 +49,7 @@
     </Grid>
 
     <Border x:Name="CommandLineBorder" Grid.Row="3" MinHeight="48"
-            Background="{DynamicResource CsSurface}"
+            Background="{DynamicResource CsSurfaceDeep}"
             BorderBrush="{DynamicResource CsBorder}" BorderThickness="0,1,0,1">
       <ContentControl x:Name="CommandLineHost" />
     </Border>
@@ -169,7 +59,8 @@
                   Background="Transparent" Cursor="SizeNorthSouth" ResizeDirection="Rows"
                   ZIndex="10" />
 
-    <Border Grid.Row="4" Background="{DynamicResource CsAccentDim}">
+    <Border Grid.Row="4" Background="{DynamicResource CsSurfaceAlt}"
+            BorderBrush="{DynamicResource CsBorder}" BorderThickness="0,1,0,0">
       <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto">
         <TextBlock x:Name="StatusPoints" Classes="statusItem" Text="No point cloud" />
         <TextBlock x:Name="StatusMode" Grid.Column="1" Classes="statusItem" Text="Navigate" />
