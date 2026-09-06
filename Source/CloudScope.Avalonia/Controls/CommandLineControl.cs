@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Media;
 using CloudScope.Commands;
+using CloudScope.Ui;
 
 namespace CloudScope.Avalonia.Controls;
 
@@ -13,26 +14,37 @@ namespace CloudScope.Avalonia.Controls;
 /// autocomplete, input recall, and the space-vs-enter submission rule.  The prompt is rendered
 /// beside the editable answer, never embedded in it: deleting an autocomplete candidate must not
 /// be able to duplicate or corrupt the prompt text.
+///
+/// It wears the workspace's graphite theme rather than a white console strip, so the command
+/// window reads as part of the same product as the viewport it sits under.
 /// </summary>
 public sealed class CommandLineControl : UserControl
 {
+    private static IBrush Frozen(uint color) => new SolidColorBrush(Color.FromRgb(
+        UiPalette.R(color), UiPalette.G(color), UiPalette.B(color))).ToImmutable();
+
+    private static readonly IBrush WellBrush = Frozen(UiPalette.SurfaceDeep);
+    private static readonly IBrush RailBrush = Frozen(UiPalette.SurfaceAlt);
+    private static readonly IBrush BorderBrush = Frozen(UiPalette.Border);
+    private static readonly IBrush AccentBrush = Frozen(UiPalette.Accent);
+    private static readonly IBrush TextBrush = Frozen(UiPalette.Text);
+
     private readonly CommandLineSession _session;
     private readonly Func<string, Task> _submit;
 
     private readonly CommandTranscript _transcript;
     private readonly TextBox _input = new()
     {
-        // Local values deliberately override the Fluent theme's focused TextBox state.
-        // The CAD command line must not turn dark or acquire an accent outline on focus.
-        Background = Brushes.White,
+        // The "commandInput" class and the app-wide TextControl* resources keep this dark,
+        // borderless and stable across hover/focus; only the focus adorner is cleared here.
         BorderBrush = Brushes.Transparent,
         BorderThickness = new Thickness(0),
         FocusAdorner = null
     };
     private readonly TextBlock _prompt = new()
     {
-        Foreground = new SolidColorBrush(Color.FromRgb(0, 48, 150)),
-        FontFamily = new FontFamily(global::CloudScope.Ui.UiPalette.MonoFontStack),
+        Foreground = AccentBrush,
+        FontFamily = new FontFamily(UiPalette.MonoFontStack),
         FontSize = 12,
         FontWeight = FontWeight.Normal,
         HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Left,
@@ -50,23 +62,10 @@ public sealed class CommandLineControl : UserControl
         _session = session;
         _submit = submit;
 
-        // Fluent styles the TextBox's internal PART_BorderElement directly for hover and
-        // focus, bypassing the outer control values. Override those theme resources at the
-        // TextBox itself so every state remains the same plain white CAD input line. Keeping
-        // this local also makes it work after the control is moved into the floating window.
-        _input.Resources["TextControlBackground"] = Brushes.White;
-        _input.Resources["TextControlBackgroundPointerOver"] = Brushes.White;
-        _input.Resources["TextControlBackgroundFocused"] = Brushes.White;
-        _input.Resources["TextControlBorderBrush"] = Brushes.Transparent;
-        _input.Resources["TextControlBorderBrushPointerOver"] = Brushes.Transparent;
-        _input.Resources["TextControlBorderBrushFocused"] = Brushes.Transparent;
-        _input.Resources["TextControlBorderThemeThickness"] = new Thickness(0);
-        _input.Resources["TextControlBorderThemeThicknessPointerOver"] = new Thickness(0);
-        _input.Resources["TextControlBorderThemeThicknessFocused"] = new Thickness(0);
         _prompt.IsHitTestVisible = false;
         _prompt.SizeChanged += (_, _) => SetPromptPadding();
 
-        _transcript = new CommandTranscript(session, cadPalette: true);
+        _transcript = new CommandTranscript(session);
         _transcript.CommandRecalled += Stage;
 
         _input.Classes.Add("commandInput");
@@ -78,17 +77,18 @@ public sealed class CommandLineControl : UserControl
             RefreshCompletions();
         };
 
-        _completionList.Background = Brushes.White;
-        _completionList.Foreground = Brushes.Black;
+        _completionList.Background = WellBrush;
+        _completionList.Foreground = TextBrush;
 
         _completionList.DoubleTapped += (_, _) => AcceptCompletion(submitAfter: true);
         _completionPopup.Child = new Border
         {
-            Background = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.FromRgb(145, 145, 145)),
+            Background = WellBrush,
+            BorderBrush = BorderBrush,
             // The popup is placed immediately above the input.  Its bottom edge would read
-            // as an unwanted grey stripe across the top of the TextBox while typing.
+            // as an unwanted stripe across the top of the TextBox while typing.
             BorderThickness = new Thickness(1, 1, 1, 0),
+            CornerRadius = new CornerRadius(UiPalette.RadiusCard, UiPalette.RadiusCard, 0, 0),
             Child = _completionList,
             MinWidth = 320,
             MaxHeight = 220
@@ -222,8 +222,8 @@ public sealed class CommandLineControl : UserControl
 
         var rail = new Border
         {
-            Background = new SolidColorBrush(Color.FromRgb(184, 184, 184)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(145, 145, 145)),
+            Background = RailBrush,
+            BorderBrush = BorderBrush,
             BorderThickness = new Thickness(0, 0, 1, 0),
             ClipToBounds = true,
             Padding = new Thickness(1, 0, 1, 2),
@@ -243,10 +243,10 @@ public sealed class CommandLineControl : UserControl
 
         var inputBorder = new Border
         {
-            Background = Brushes.White,
-            // Keep the command entry visually continuous with the transcript.  A one-pixel
-            // top border becomes conspicuous while the completion popup is dismissed by
-            // Backspace, especially at Retina scaling.
+            Background = WellBrush,
+            // A one-pixel top border becomes conspicuous while the completion popup is
+            // dismissed by Backspace, especially at Retina scaling; keep the entry visually
+            // continuous with the transcript instead.
             BorderThickness = new Thickness(0),
             Padding = new Thickness(7, 1, 8, 2),
             Child = inputLine
@@ -255,7 +255,7 @@ public sealed class CommandLineControl : UserControl
         var content = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };
         content.Children.Add(new Border
         {
-            Background = new SolidColorBrush(Color.FromRgb(199, 199, 199)),
+            Background = WellBrush,
             Child = _transcript
         });
         content.Children.Add(inputBorder);
