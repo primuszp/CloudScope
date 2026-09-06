@@ -23,7 +23,7 @@
       <StackPanel x:Name="ToolStripPanel" Orientation="Horizontal" Margin="8,6" Spacing="2" />
     </Border>
 
-    <Grid x:Name="ContentGrid" Grid.Row="2" ColumnDefinitions="*,6,280">
+    <Grid x:Name="ContentGrid" Grid.Row="2" ColumnDefinitions="*,280">
       <Border Background="{DynamicResource CsViewportBackdrop}">
         <Grid>
           <ContentControl x:Name="ViewportHost" />
@@ -41,13 +41,17 @@
         </Grid>
       </Border>
 
-      <GridSplitter Grid.Column="1" Background="Transparent" ResizeDirection="Columns" />
-
-      <Border Grid.Column="2" Background="{DynamicResource CsSurface}">
+      <!-- The inspector sits at the same near-black tone as the command well, so the viewport
+           is not boxed in by a lighter panel. -->
+      <Border Grid.Column="1" Background="{DynamicResource CsSurfaceDeep}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
-          <StackPanel x:Name="InspectorPanel" Margin="12" Spacing="8" />
+          <StackPanel x:Name="InspectorPanel" Margin="14,12" Spacing="8" />
         </ScrollViewer>
       </Border>
+
+      <!-- A transparent grab strip straddling the column edge — no gutter, no drawn line. -->
+      <GridSplitter Grid.Column="1" HorizontalAlignment="Left" Width="6" Margin="-3,0,0,0"
+                    Background="Transparent" ResizeDirection="Columns" ZIndex="10" />
     </Grid>
 
     <Border x:Name="CommandLineBorder" Grid.Row="3" MinHeight="48"
