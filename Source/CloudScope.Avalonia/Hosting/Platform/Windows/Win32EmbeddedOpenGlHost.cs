@@ -48,22 +48,45 @@ public sealed unsafe class Win32EmbeddedOpenGlHost : EmbeddedOpenGlNativeHostBas
     private static void ConfigureChildWindow(IntPtr child, IntPtr parent)
     {
         SetParent(child, parent);
+
         nint style = GetWindowLongPtr(child, GwlStyle);
-        style &= ~(WsPopup | WsCaption | WsThickFrame);
+        style &= ~(WsPopup | WsCaption | WsBorder | WsDlgFrame | WsThickFrame);
         style |= WsChild | WsVisible;
         SetWindowLongPtr(child, GwlStyle, style);
+
+        // GLFW's window keeps WS_EX_* frame edges that paint a 1px line in the system accent
+        // colour along the viewport border. Clear them too.
+        nint exStyle = GetWindowLongPtr(child, GwlExStyle);
+        exStyle &= ~(WsExClientEdge | WsExStaticEdge | WsExWindowEdge | WsExDlgModalFrame);
+        SetWindowLongPtr(child, GwlExStyle, exStyle);
+
+        // Style edits only repaint the non-client frame after a frame-changed SetWindowPos;
+        // without this the child keeps the frame line it had as a top-level window.
+        SetWindowPos(child, IntPtr.Zero, 0, 0, 0, 0,
+            SwpNoMove | SwpNoSize | SwpNoZOrder | SwpNoActivate | SwpFrameChanged);
+
         ShowWindow(child, SwShow);
         SetFocus(child);
     }
 
     private const int GwlStyle = -16;
+    private const int GwlExStyle = -20;
     private const nint WsChild = 0x40000000;
     private const nint WsVisible = 0x10000000;
     private static readonly nint WsPopup = unchecked((nint)0x80000000);
     private const nint WsCaption = 0x00C00000;
+    private const nint WsBorder = 0x00800000;
+    private const nint WsDlgFrame = 0x00400000;
     private const nint WsThickFrame = 0x00040000;
+    private const nint WsExDlgModalFrame = 0x00000001;
+    private const nint WsExWindowEdge = 0x00000100;
+    private const nint WsExClientEdge = 0x00000200;
+    private const nint WsExStaticEdge = 0x00020000;
+    private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoMove = 0x0002;
     private const uint SwpNoZOrder = 0x0004;
     private const uint SwpNoActivate = 0x0010;
+    private const uint SwpFrameChanged = 0x0020;
     private const int SwShow = 5;
 
     [DllImport("user32.dll")]
