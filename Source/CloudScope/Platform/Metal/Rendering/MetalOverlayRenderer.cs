@@ -159,11 +159,11 @@ namespace CloudScope.Platform.Metal.Rendering
             WriteBorderVertex(_viewportBorderVertices, 3, left, bottom);
             WriteBorderVertex(_viewportBorderVertices, 4, left, top);
             _renderer.UpdateBuffer(ref _viewportBorderBuffer, _viewportBorderVertices);
-            Vector4 color = active
-                ? new Vector4(0.10f, 0.72f, 1f, 1f)
-                : new Vector4(0.34f, 0.37f, 0.41f, 0.9f);
+            (float r, float g, float b, float a) = active
+                ? RenderPalette.ViewportBorderActive
+                : RenderPalette.ViewportBorderInactive;
             _renderer.Draw(_viewportBorderBuffer, 5, MTLPrimitiveType.LineStrip,
-                Matrix4.Identity, color, depthTest: false);
+                Matrix4.Identity, new Vector4(r, g, b, a), depthTest: false);
         }
 
         public void RenderSectionGuide(

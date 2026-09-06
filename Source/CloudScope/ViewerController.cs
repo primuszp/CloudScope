@@ -1932,8 +1932,12 @@ namespace CloudScope
                         viewport.Camera, _pointSnapPreview);
                 }
 
-                _overlayRenderer.RenderViewportBorder(frameData, viewport.Bounds.Width, viewport.Bounds.Height,
-                    ReferenceEquals(viewport, ActiveViewport));
+                // The tile border exists to say which viewport is active, so it is only drawn
+                // when the drawing area is actually split. With a single viewport the shell's
+                // own frame is the edge, and a second line inside it just doubles the rule.
+                if (_viewports.Length > 1)
+                    _overlayRenderer.RenderViewportBorder(frameData, viewport.Bounds.Width, viewport.Bounds.Height,
+                        ReferenceEquals(viewport, ActiveViewport));
             }
 
             int loadedCount = StoredPointCount ?? _dataset?.LoadedCount ?? _pointRenderer.PointCount;

@@ -70,6 +70,12 @@ public static class UiPalette
     /// </summary>
     public const uint ViewportBorder = Border;
 
+    /// <summary>
+    /// The edge of the viewport that currently has focus, when the drawing area is split into
+    /// tiles. Bright but still neutral — which tile is active is shown by contrast, not a hue.
+    /// </summary>
+    public const uint ViewportBorderActive = Accent;
+
     public const uint Error = 0xE06C6C;
     public const uint Ok = 0x5FB57A;
     public const uint Warn = 0xE0A24E;
