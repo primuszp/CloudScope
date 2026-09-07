@@ -85,7 +85,12 @@ public sealed class ViewerCommandDispatcher : ICommandExecutor, ICommandOutputSo
     public bool HasActiveCommand => _runtime.HasActiveCommand;
     public PromptOptions? ActiveOptions => _runtime.ActiveOptions;
     public bool IsTransparentCommand(string name) => _runtime.IsTransparentCommand(name);
-    public CommandResult Execute(string input) => _runtime.Execute(input);
+    public CommandResult Execute(string input)
+    {
+        CommandResult result = _runtime.Execute(input);
+        _viewer.RefreshCommandPromptPreview();
+        return result;
+    }
     public CommandResult CancelActive() => _runtime.CancelActive();
     public PromptStep? ActiveStep => _runtime.ActiveStep;
     public bool AwaitsPoint => _runtime.AwaitsPoint;
@@ -98,6 +103,7 @@ public sealed class ViewerCommandDispatcher : ICommandExecutor, ICommandOutputSo
     {
         PromptStep? answered = _runtime.PointPrompt;
         CommandResult result = _runtime.SupplyPoint(world, screenX, screenY);
+        _viewer.RefreshCommandPromptPreview();
 
         if (answered != null)
             Session.AddHistory($"Command: {answered.Text}", CommandEntryKind.Echo);

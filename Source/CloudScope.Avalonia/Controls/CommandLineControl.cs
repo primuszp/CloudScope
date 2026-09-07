@@ -38,7 +38,11 @@ public sealed class CommandLineControl : UserControl
         // borderless and stable across hover/focus; only the focus adorner is cleared here.
         BorderBrush = Brushes.Transparent,
         BorderThickness = new Thickness(0),
-        FocusAdorner = null
+        FocusAdorner = null,
+        // This is a local value on purpose. It remains readable even if a host window
+        // supplies an older commandInput style with a dark foreground.
+        Foreground = TextBrush,
+        CaretBrush = AccentBrush
     };
     private readonly TextBlock _prompt = new()
     {
@@ -50,11 +54,27 @@ public sealed class CommandLineControl : UserControl
         VerticalAlignment = global::Avalonia.Layout.VerticalAlignment.Center
     };
     private readonly Popup _completionPopup = new();
-    private readonly ListBox _completionList = new();
+    private readonly StackPanel _completionRows = new();
+    private readonly ScrollViewer _completionScroll = new()
+    {
+        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        // A popup is hosted in its own native surface; do not let the platform's default
+        // light ScrollViewer brush show through around its top edge.
+        Background = WellBrush
+    };
 
     private IReadOnlyList<CommandCompletion> _completions = [];
     private string _completionPrefix = "";
+    private int _completionIndex;
     private bool _settingInput;
+
+    // A Popup measures its child independently of the command panel. Avalonia's virtualised
+    // ListBox can otherwise report zero desired height on its first open, leaving only the
+    // popup border visible. Keep the small CAD-style list explicitly sized, with scrolling
+    // taking over after seven rows.
+    private const double CompletionRowHeight = 29;
+    private const double CompletionMaxHeight = 220;
 
     public CommandLineControl(CommandLineSession session, Func<string, Task> submit)
     {
@@ -88,10 +108,7 @@ public sealed class CommandLineControl : UserControl
             RefreshCompletions();
         };
 
-        _completionList.Background = WellBrush;
-        _completionList.Foreground = TextBrush;
-
-        _completionList.DoubleTapped += (_, _) => AcceptCompletion(submitAfter: true);
+        _completionScroll.Content = _completionRows;
         _completionPopup.Child = new Border
         {
             Background = WellBrush,
@@ -99,8 +116,10 @@ public sealed class CommandLineControl : UserControl
             // The popup is placed immediately above the input.  Its bottom edge would read
             // as an unwanted stripe across the top of the TextBox while typing.
             BorderThickness = new Thickness(1, 1, 1, 0),
-            CornerRadius = new CornerRadius(UiPalette.RadiusCard, UiPalette.RadiusCard, 0, 0),
-            Child = _completionList,
+            // Square popup corners avoid anti-aliased light pixels from the native popup
+            // surface and match the crisp AutoCAD completion-list treatment.
+            CornerRadius = new CornerRadius(0),
+            Child = _completionScroll,
             MinWidth = 320,
             MaxHeight = 220
         };
@@ -352,7 +371,7 @@ public sealed class CommandLineControl : UserControl
                 return;
 
             case Key.Enter:
-                if (_completionPopup.IsOpen && _completionList.SelectedIndex >= 0)
+                if (_completionPopup.IsOpen && _completionIndex >= 0)
                 {
                     AcceptCompletion(submitAfter: true);
                     e.Handled = true;
@@ -403,6 +422,15 @@ public sealed class CommandLineControl : UserControl
 
         _completionPrefix = typed;
 
+        // Once a command is running, its one-letter options (PLINE: U, A, C, …) are
+        // immediate command answers, not a command-search task. Keep the CAD prompt quiet
+        // so the typed option and its next prompt remain the only thing in view.
+        if (_session.ActiveOptions != null)
+        {
+            DismissCompletions();
+            return;
+        }
+
         // Suggestions live only in the popup. Injecting the best candidate into the TextBox
         // as selected text makes Backspace fight the autocomplete and can trap the input in
         // a re-suggestion loop. Tab or Enter still accepts the selected candidate.
@@ -420,8 +448,10 @@ public sealed class CommandLineControl : UserControl
             return;
         }
 
-        _completionList.ItemsSource = _completions.Select(c => $"{c.Display}   ({c.Detail})").ToArray();
-        _completionList.SelectedIndex = 0;
+        _completionIndex = 0;
+        BuildCompletionRows();
+        _completionScroll.Height = Math.Min(CompletionMaxHeight,
+            Math.Max(CompletionRowHeight, _completions.Count * CompletionRowHeight));
         _completionPopup.IsOpen = true;
     }
 
@@ -435,13 +465,14 @@ public sealed class CommandLineControl : UserControl
         }
 
         int count = _completions.Count;
-        _completionList.SelectedIndex = (_completionList.SelectedIndex + direction + count) % count;
+        _completionIndex = (_completionIndex + direction + count) % count;
+        BuildCompletionRows();
         AcceptCompletion(submitAfter: false);
     }
 
     private void AcceptCompletion(bool submitAfter)
     {
-        int index = _completionList.SelectedIndex;
+        int index = _completionIndex;
         if (index < 0 || index >= _completions.Count)
             return;
 
@@ -459,7 +490,44 @@ public sealed class CommandLineControl : UserControl
     {
         _completionPopup.IsOpen = false;
         _completions = [];
+        _completionRows.Children.Clear();
+        _completionIndex = 0;
         _completionPrefix = InputText.Trim();
+    }
+
+    private void BuildCompletionRows()
+    {
+        _completionRows.Children.Clear();
+        for (int index = 0; index < _completions.Count; index++)
+        {
+            int selectedIndex = index;
+            CommandCompletion completion = _completions[index];
+            var row = new Border
+            {
+                Height = CompletionRowHeight,
+                Padding = new Thickness(9, 5),
+                Background = index == _completionIndex ? Frozen(UiPalette.SelectionFill) : WellBrush,
+                Child = new TextBlock
+                {
+                    Text = $"{completion.Display}   ({completion.Detail})",
+                    Foreground = TextBrush,
+                    FontFamily = new FontFamily(UiPalette.MonoFontStack),
+                    FontSize = 12,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    VerticalAlignment = global::Avalonia.Layout.VerticalAlignment.Center
+                }
+            };
+            row.PointerPressed += (_, e) =>
+            {
+                if (!e.GetCurrentPoint(row).Properties.IsLeftButtonPressed)
+                    return;
+                _completionIndex = selectedIndex;
+                BuildCompletionRows();
+                AcceptCompletion(submitAfter: e.ClickCount == 2);
+                e.Handled = true;
+            };
+            _completionRows.Children.Add(row);
+        }
     }
 
 }

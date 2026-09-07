@@ -7,7 +7,7 @@ using OpenTK.Mathematics;
 
 namespace CloudScope.Avalonia.Hosting;
 
-public abstract class EmbeddedOpenGlNativeHostBase : NativeControlHost, IEmbeddedViewerHost
+public abstract class EmbeddedOpenGlNativeHostBase : NativeControlHost, IEmbeddedViewerHost, ICommandOutputSource
 {
     private DispatcherTimer? _pumpTimer;
 
@@ -28,6 +28,13 @@ public abstract class EmbeddedOpenGlNativeHostBase : NativeControlHost, IEmbedde
     public string ActiveLabel => Viewer?.ActiveLabel ?? "";
     public int? ActiveInstanceId => Viewer?.ActiveInstanceId;
 
+    /// <summary>
+    /// Relays results produced inside the native viewport — chiefly point picks — to the
+    /// Avalonia command-line shell. Typed commands already return through the shell, but a
+    /// click is delivered directly to the viewer dispatcher and therefore needs this bridge.
+    /// </summary>
+    public event Action<CommandResult>? OutputProduced;
+
     public void ForwardKeyDown(ViewerKey key) => Viewer?.ForwardKeyDown(key);
 
     public void ForwardKeyUp(ViewerKey key) => Viewer?.SetKeyState(key, false);
@@ -40,6 +47,9 @@ public abstract class EmbeddedOpenGlNativeHostBase : NativeControlHost, IEmbedde
         {
             LogicalMousePositionProvider = logicalMousePositionProvider
         };
+
+        if (Viewer.Commands is ICommandOutputSource output)
+            output.OutputProduced += result => OutputProduced?.Invoke(result);
 
         return Viewer;
     }
