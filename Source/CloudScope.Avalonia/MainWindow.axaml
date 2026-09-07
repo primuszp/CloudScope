@@ -9,6 +9,7 @@
         Background="{DynamicResource CsSurface}"
         FontFamily="{DynamicResource CsUiFont}">
 
+  <Window.Styles>
     <!-- Tool strip: NSToolbar-like on macOS, a flat command strip elsewhere. -->
     <Style Selector="Button.tool">
       <Setter Property="Background" Value="Transparent" />
