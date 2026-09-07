@@ -65,7 +65,7 @@ public readonly record struct ViewerStatusSnapshot
 
     /// <summary>
     /// Whether the docked command window is shown. It starts visible and only COMMANDLINE
-    /// changes it, so a shell never hides the command line on its own.
+    /// and COMMANDLINEHIDE change it, so a shell never hides the command line on its own.
     /// </summary>
     public bool CommandLineVisible { get; init; } = true;
 
