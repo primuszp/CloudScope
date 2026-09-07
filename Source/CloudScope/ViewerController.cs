@@ -91,6 +91,9 @@ namespace CloudScope
 
         private int _width;
         private int _height;
+        private int _lastMouseX;
+        private int _lastMouseY;
+        private bool _hasMousePosition;
         private ViewportInset _inset;
 
         public ViewerController(int width, int height, IRenderBackend renderBackend)
@@ -1582,6 +1585,7 @@ namespace CloudScope
 
         public void MouseDown(ViewerMouseButton button, int mx, int my)
         {
+            RememberMousePosition(mx, my);
             if (!TryActivateViewport(mx, my, out ViewportState viewport, out int localX, out int localY))
                 return;
 
@@ -1686,6 +1690,7 @@ namespace CloudScope
 
         public void MouseMove(int mx, int my)
         {
+            RememberMousePosition(mx, my);
             ViewportState viewport;
             int localX, localY;
             if (_pointerCaptureViewport != null)
@@ -1720,6 +1725,40 @@ namespace CloudScope
                 _selectedGripTarget.HoveredHandle = -1;
             _selection.MouseMove(localX, localY, viewport.Camera);
             viewport.Input.MouseMove(localX, localY, viewport.Camera);
+        }
+
+        /// <summary>
+        /// Re-evaluates the CAD cursor at its last screen position when a keyboard answer
+        /// advances a command. Without this, a new point prompt shows its rubber band only
+        /// after the user nudges the mouse, even though the cursor already has a position.
+        /// </summary>
+        public void RefreshCommandPromptPreview()
+        {
+            if (!_hasMousePosition)
+                return;
+
+            ViewportState viewport;
+            int localX, localY;
+            if (_pointerCaptureViewport != null)
+            {
+                viewport = _pointerCaptureViewport;
+                GetViewportLocal(viewport, _lastMouseX, _lastMouseY, out localX, out localY);
+            }
+            else if (!TryGetViewportLocal(_lastMouseX, _lastMouseY, out viewport, out localX, out localY))
+            {
+                viewport = ActiveViewport;
+                GetViewportLocal(viewport, _lastMouseX, _lastMouseY, out localX, out localY);
+            }
+
+            UpdatePointInputPreview(viewport, localX, localY);
+            UpdateCrossSectionDraft(viewport, localX, localY);
+        }
+
+        private void RememberMousePosition(int x, int y)
+        {
+            _lastMouseX = x;
+            _lastMouseY = y;
+            _hasMousePosition = true;
         }
 
         public void MouseWheel(int mx, int my, float offsetY)

@@ -130,6 +130,10 @@ public sealed class CommandTranscript : UserControl
         if (total == _syncedTotal)
             return;
 
+        // Capture this before appending. Checking after a new prompt increased Extent.Height
+        // makes a user who was reading the last line look as if they had scrolled away, so
+        // the next step of a multi-step command remains out of view.
+        bool followTail = IsAtBottom();
         InlineCollection inlines = _text.Inlines ??= [];
         IReadOnlyList<CommandLineEntry> history = _session.History;
         long added = total - _syncedTotal;
@@ -161,7 +165,8 @@ public sealed class CommandTranscript : UserControl
         }
 
         _syncedTotal = total;
-        ScrollToTail();
+        if (followTail)
+            ScrollToTail();
     }
 
     private static Run RunFor(CommandLineEntry entry) =>
@@ -172,11 +177,12 @@ public sealed class CommandTranscript : UserControl
 
     // Only follow the tail when the user is already reading the tail — never yank the view
     // away from history they scrolled back to.
+    private bool IsAtBottom() =>
+        _scroll.Offset.Y >= _scroll.Extent.Height - _scroll.Viewport.Height - 4;
+
     private void ScrollToTail()
     {
-        bool atBottom = _scroll.Offset.Y >= _scroll.Extent.Height - _scroll.Viewport.Height - 4;
-        if (atBottom)
-            Dispatcher.UIThread.Post(() => _scroll.ScrollToEnd(), DispatcherPriority.Background);
+        Dispatcher.UIThread.Post(() => _scroll.ScrollToEnd(), DispatcherPriority.Background);
     }
 
     // One frozen brush per kind: a new brush per line would allocate for every line of output.
