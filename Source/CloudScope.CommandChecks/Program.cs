@@ -13,6 +13,7 @@ using CloudScope.Selection;
 using CloudScope.Drawing;
 using CloudScope.Rendering;
 using CloudScope.Forestry;
+using CloudScope.Loading;
 using OpenTK.Mathematics;
 
 int failures = 0;
@@ -20,6 +21,62 @@ void Check(string name, bool ok, string detail = "")
 {
     Console.WriteLine($"{(ok ? "  ok  " : "FAIL  ")}{name}{(ok || detail.Length == 0 ? "" : "  -> " + detail)}");
     if (!ok) failures++;
+}
+
+// ---------- PLY import: coordinates, attributes, format parity and truncation ----------
+{
+    string asciiPath = Path.Combine(Path.GetTempPath(), $"cloudscope-{Guid.NewGuid():N}.ply");
+    string binaryPath = Path.Combine(Path.GetTempPath(), $"cloudscope-{Guid.NewGuid():N}.ply");
+    const string header = "ply\nformat {0} 1.0\nelement vertex 2\nproperty double x\nproperty float y\nproperty float z\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nproperty uchar classification\nend_header\n";
+    try
+    {
+        File.WriteAllText(asciiPath, string.Format(header, "ascii") +
+            "1000 2 3 255 0 0 2\n1002 4 5 0 128 255 6\n");
+        using (var stream = File.Create(binaryPath))
+        using (var writer = new BinaryWriter(stream))
+        {
+            writer.Write(System.Text.Encoding.ASCII.GetBytes(string.Format(header, "binary_little_endian")));
+            writer.Write(1000d); writer.Write(2f); writer.Write(3f);
+            writer.Write((byte)255); writer.Write((byte)0); writer.Write((byte)0); writer.Write((byte)2);
+            writer.Write(1002d); writer.Write(4f); writer.Write(5f);
+            writer.Write((byte)0); writer.Write((byte)128); writer.Write((byte)255); writer.Write((byte)6);
+        }
+        foreach (string path in new[] { asciiPath, binaryPath })
+        {
+            LoadedPointCloud cloud = PlyPointCloudLoader.Load(path);
+            Check($"PLY {Path.GetFileName(path)} coordinates and attributes",
+                cloud.LoadedCount == 2 && cloud.HasColor &&
+                cloud.Points[0].X == -1f && cloud.Points[1].X == 1f &&
+                cloud.Points[0].R == 1f && cloud.Points[1].B == 1f &&
+                cloud.Attributes.Class.SequenceEqual(new byte[] { 2, 6 }));
+            Check($"PLY {Path.GetFileName(path)} point limit", PlyPointCloudLoader.Load(path, 1).LoadedCount == 1);
+        }
+    }
+    catch (Exception ex) { Check("PLY import", false, ex.ToString()); }
+    finally { File.Delete(asciiPath); File.Delete(binaryPath); }
+}
+
+// ---------- XYZ import: delimiters, optional attributes and strict malformed-row handling ----------
+{
+    string path = Path.Combine(Path.GetTempPath(), $"cloudscope-{Guid.NewGuid():N}.xyz");
+    try
+    {
+        File.WriteAllText(path, "# scan\nX,Y,Z,I,R,G,B\n1000,2,3,128,255,0,0\n1002,4,5,255,0,128,255\n");
+        LoadedPointCloud cloud = XyzPointCloudLoader.Load(path);
+        Check("XYZ coordinates, RGB and intensity",
+            cloud.LoadedCount == 2 && cloud.HasColor &&
+            cloud.Points[0].X == -1f && cloud.Points[1].X == 1f &&
+            cloud.Points[0].R == 1f && cloud.Points[1].B == 1f &&
+            cloud.Attributes.Intensity[0] == 32896 && cloud.Attributes.Intensity[1] == 65535);
+        Check("XYZ point limit", XyzPointCloudLoader.Load(path, 1).LoadedCount == 1);
+        File.WriteAllText(path, "0 0 0\n1 bad 1\n");
+        bool rejected = false;
+        try { XyzPointCloudLoader.Load(path); }
+        catch (InvalidDataException) { rejected = true; }
+        Check("XYZ rejects malformed numeric rows", rejected);
+    }
+    catch (Exception ex) { Check("XYZ import", false, ex.ToString()); }
+    finally { File.Delete(path); }
 }
 
 // ---------- 1. Registration of the real command set ----------

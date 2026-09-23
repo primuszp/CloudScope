@@ -55,6 +55,8 @@ public static class CommandMenu
     [
         CommandMenuEntry.Submenu("File",
             CommandMenuEntry.Action("Open point cloud...", "OPEN", "Mod+O"),
+            CommandMenuEntry.Action("Open PLY point cloud...", "OPENPLY"),
+            CommandMenuEntry.Action("Open XYZ point cloud...", "OPENXYZ"),
             CommandMenuEntry.Action("Open tile store...", "OPENSTORE"),
             CommandMenuEntry.Action("Add tile store as layer...", "ADDSTORE"),
             CommandMenuEntry.Action("Index a LAS file...", "INDEX"),

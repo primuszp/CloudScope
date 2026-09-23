@@ -36,6 +36,40 @@ public sealed partial class ViewerCommands
         ed.WriteMessage(context.GetTarget<ViewerController>().OpenPointCloud(path.Value, maxPoints));
     }
 
+    [CommandMethod("OPENPLY", Flags = CommandFlags.NoUndoMarker,
+        Group = CommandGroup.File, Scope = CommandScope.Viewer,
+        Summary = "Loads ASCII or little-endian binary PLY vertices into memory.",
+        Syntax = "OPENPLY <path> [max points]")]
+    public IEnumerable<PromptStep> OpenPly(CommandContext context)
+    {
+        Editor ed = context.Editor;
+        PromptFileStep path = ed.GetFileNameForOpen("Enter PLY file path:").Filtering("ply").Requiring();
+        yield return path;
+        if (!path.IsOk) yield break;
+
+        PromptIntegerStep limit = ed.GetInteger("Enter maximum point count <all>:")
+            .WithRange(1, int.MaxValue).WithDefault(0);
+        yield return limit;
+        ed.WriteMessage(context.GetTarget<ViewerController>().OpenPlyPointCloud(path.Value, limit.IsOk ? limit.Value : 0));
+    }
+
+    [CommandMethod("OPENXYZ", Flags = CommandFlags.NoUndoMarker,
+        Group = CommandGroup.File, Scope = CommandScope.Viewer,
+        Summary = "Loads an XYZ text point cloud into memory.",
+        Syntax = "OPENXYZ <path> [max points]")]
+    public IEnumerable<PromptStep> OpenXyz(CommandContext context)
+    {
+        Editor ed = context.Editor;
+        PromptFileStep path = ed.GetFileNameForOpen("Enter XYZ file path:").Filtering("xyz").Requiring();
+        yield return path;
+        if (!path.IsOk) yield break;
+
+        PromptIntegerStep limit = ed.GetInteger("Enter maximum point count <all>:")
+            .WithRange(1, int.MaxValue).WithDefault(0);
+        yield return limit;
+        ed.WriteMessage(context.GetTarget<ViewerController>().OpenXyzPointCloud(path.Value, limit.IsOk ? limit.Value : 0));
+    }
+
     [CommandMethod("OPENSTORE", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.File, Scope = CommandScope.Viewer,
         Summary = "Streams an indexed point tile store straight off disk.",

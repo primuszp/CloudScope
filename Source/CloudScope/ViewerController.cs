@@ -358,6 +358,52 @@ namespace CloudScope
             return $"Reading {name}...";
         }
 
+        /// <summary>Loads PLY vertices through the same resident-cloud rendering path as LAS.</summary>
+        public string OpenPlyPointCloud(string path, long maxPoints = 0)
+            => OpenTextOrPlyPointCloud(path, maxPoints, "OPENPLY", "PLY", PlyPointCloudLoader.Load);
+
+        /// <summary>Loads an XYZ text cloud through the resident-cloud rendering path.</summary>
+        public string OpenXyzPointCloud(string path, long maxPoints = 0)
+            => OpenTextOrPlyPointCloud(path, maxPoints, "OPENXYZ", "XYZ", XyzPointCloudLoader.Load);
+
+        private string OpenTextOrPlyPointCloud(string path, long maxPoints, string command,
+            string format, Func<string, long, IProgress<int>?, LoadedPointCloud> loader)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return $"{command} requires a file path.";
+            if (!File.Exists(path)) return $"File not found: {path}";
+            if (LoadProgress >= 0) return "A point cloud is already loading.";
+
+            LoadProgress = 0;
+            string name = Path.GetFileName(path);
+            _ = Task.Run(() =>
+            {
+                var sw = Stopwatch.StartNew();
+                try
+                {
+                    var progress = new Progress<int>(percent => LoadProgress = percent);
+                    LoadedPointCloud cloud = loader(path, maxPoints, progress);
+                    PointCloudDataset dataset = cloud.ToDataset();
+                    sw.Stop();
+                    _pendingWork.Enqueue(() =>
+                    {
+                        LoadPointCloud(dataset);
+                        SetLasFilePath(string.Empty);
+                        LoadProgress = -1;
+                        BackgroundMessage?.Invoke($"Loaded {cloud.LoadedCount:N0} {format} points from {name} ({sw.Elapsed.TotalSeconds:0.0}s).");
+                    });
+                }
+                catch (Exception ex)
+                {
+                    _pendingWork.Enqueue(() =>
+                    {
+                        LoadProgress = -1;
+                        BackgroundMessage?.Invoke($"{format} load failed: {ex.Message}");
+                    });
+                }
+            });
+            return $"Reading {name}...";
+        }
+
         /// <summary>
         /// Opens an indexed cloud and draws it straight off disk, whatever its size.
         /// </summary>

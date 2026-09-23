@@ -11,6 +11,8 @@ Console.WriteLine("  Escape         - Exit");
 Console.WriteLine();
 Console.WriteLine("Command line:");
 Console.WriteLine("  OPEN <path> [max-points]    - Load a .las/.laz point cloud");
+Console.WriteLine("  OPENPLY <path> [max-points] - Load ASCII or binary PLY vertices");
+Console.WriteLine("  OPENXYZ <path> [max-points] - Load XYZ text points");
 Console.WriteLine("  INDEX <path> [dir] [Source] - Index a cloud of any size; Source keeps LAS record numbers");
 Console.WriteLine("  OPENSTORE <store dir>       - Stream an indexed cloud straight off disk");
 Console.WriteLine("  SCRIPT <path>               - Run a file of commands, one per line");
