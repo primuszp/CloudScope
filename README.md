@@ -15,6 +15,8 @@ A high-performance LAS (LiDAR) point cloud viewer built with C# and .NET 10.0.
   - W/A/S/D/Q/E: FPS Navigation
   - Num1/3/7/5: Standard views (Front/Right/Top/Isometric)
 - **Point Limit**: Load partial datasets for faster preview (default: 30M points)
+- **PLY Import**: Load ASCII or little-endian binary PLY vertices with optional RGB, intensity, and classification using `OPENPLY`
+- **XYZ Import**: Load XYZ text points with optional intensity and RGB columns using `OPENXYZ`
 - **Individual-tree segmentation**: Pick a trunk seed in a terrestrial/SLAM cloud; multi-source
   3D graph growth separates the selected tree from automatically detected neighbouring trunks
 
