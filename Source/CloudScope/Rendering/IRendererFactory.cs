@@ -11,6 +11,7 @@ namespace CloudScope.Rendering
         IPointTileCloudRenderer CreateStreamingPointCloudRenderer();
         IHighlightRenderer CreateHighlightRenderer();
         IOverlayRenderer CreateOverlayRenderer();
+        ISurfaceRenderer CreateSurfaceRenderer();
         SelectionGizmoRenderers CreateSelectionGizmoRenderers();
         IDepthPicker CreateDepthPicker();
     }

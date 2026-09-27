@@ -41,6 +41,7 @@ namespace CloudScope.Platform.Metal
         public IPointTileCloudRenderer CreateStreamingPointCloudRenderer() => new MetalStreamingPointCloudRenderer(_context);
         public IHighlightRenderer   CreateHighlightRenderer()   => new MetalHighlightRenderer(_context);
         public IOverlayRenderer     CreateOverlayRenderer()     => new MetalOverlayRenderer(_context);
+        public ISurfaceRenderer CreateSurfaceRenderer() => new MetalSurfaceRenderer(_context);
         public SelectionGizmoRenderers CreateSelectionGizmoRenderers()
             => new(new MetalBoxGizmoRenderer(_context),
                    new MetalSphereGizmoRenderer(_context),

@@ -79,7 +79,58 @@ void Check(string name, bool ok, string detail = "")
     finally { File.Delete(path); }
 }
 
+// ---------- PTS import: count header and signed scanner intensity ----------
+{
+    string path = Path.Combine(Path.GetTempPath(), $"cloudscope-{Guid.NewGuid():N}.pts");
+    try
+    {
+        File.WriteAllText(path, "2\n1000 2 3 -2048 255 0 0\n1002 4 5 2047 0 0 255\n");
+        LoadedPointCloud cloud = PtsPointCloudLoader.Load(path);
+        Check("PTS count, coordinates, RGB and signed intensity",
+            cloud.LoadedCount == 2 && cloud.HasColor && cloud.Points[0].X == -1 &&
+            cloud.Points[1].Z == 1 && cloud.Points[0].R == 1 && cloud.Points[1].B == 1 &&
+            cloud.Attributes.Intensity.SequenceEqual(new ushort[] { 0, 65535 }));
+        Check("PTS point limit", PtsPointCloudLoader.Load(path, 1).LoadedCount == 1);
+        File.WriteAllText(path, "0 0 0\n1 1 1\n");
+        Check("PTS without count or attributes", !PtsPointCloudLoader.Load(path).HasColor);
+        File.WriteAllText(path, "3\n0 0 0\n1 1 1\n");
+        bool rejected = false;
+        try { PtsPointCloudLoader.Load(path); }
+        catch (InvalidDataException) { rejected = true; }
+        Check("PTS rejects truncated declared point count", rejected);
+    }
+    catch (Exception ex) { Check("PTS import", false, ex.ToString()); }
+    finally { File.Delete(path); }
+}
+
+// ---------- Thinning preserves source identity and composes with attribute filters ----------
+{
+    var points = Enumerable.Range(0, 100).Select(i => new PointData { X = i, R = i / 100f }).ToArray();
+    var attributes = new PointCloudAttributes(
+        Enumerable.Range(0, 100).Select(i => (byte)(i % 2)).ToArray(),
+        new ushort[100], new byte[100], new double[100], 0, 0);
+    var dataset = new PointCloudDataset(points, 100, 50, true, 1, attributes);
+    dataset.SetThinning(25);
+    int[] sample = dataset.ViewToSource!.ToArray();
+    Check("THIN keeps exact sample count and source identity", sample.Length == 25 &&
+        sample.Distinct().Count() == 25 && dataset.SourcePoints.Length == 100 &&
+        dataset.ViewPoints.Select(p => (int)p.X).SequenceEqual(sample));
+    dataset.SetThinning(25);
+    Check("THIN is repeatable", dataset.ViewToSource!.SequenceEqual(sample));
+    dataset.ApplyFilter(new ClassFilter([1]));
+    Check("THIN composes with class filter", dataset.VisibleCount == 12 &&
+        dataset.ViewToSource!.All(i => attributes.Class[i] == 1));
+    int[] filteredSample = dataset.ViewToSource!.ToArray();
+    dataset.SetColorSource(ColorSource.Class);
+    Check("THIN color changes preserve point mapping", dataset.ViewToSource!.SequenceEqual(filteredSample));
+    dataset.SetThinning(100);
+    Check("THIN 100 restores filtered density", dataset.VisibleCount == 50);
+    dataset.ApplyFilter(null);
+    Check("THIN and FILTER clear restore full source", dataset.VisibleCount == 100 && dataset.ViewToSource == null);
+}
+
 // ---------- 1. Registration of the real command set ----------
+await ExchangeChecks.Run(Check);
 try
 {
     var runtime = new CommandRuntime(new object(), new ViewerCommands());
