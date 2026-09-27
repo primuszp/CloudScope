@@ -11,6 +11,8 @@ namespace CloudScope.Loading
         private readonly bool _hasColor;
         private readonly float _colorScale;
         private PointFilter? _filter;
+        private double _keepPercentage = 100;
+        private System.Collections.BitArray? _thinMask;
         private ColorSource _colorSource;
         private const int RenderOrderSeed = 42;
 
@@ -20,7 +22,8 @@ namespace CloudScope.Loading
             float radius,
             bool hasColor,
             float colorScale,
-            PointCloudAttributes attributes)
+            PointCloudAttributes attributes,
+            double originX = 0, double originY = 0, double originZ = 0)
         {
             _sourcePoints = sourcePoints;
             LoadedCount = loadedCount;
@@ -28,6 +31,7 @@ namespace CloudScope.Loading
             _hasColor = hasColor;
             _colorScale = colorScale;
             Attributes = attributes;
+            OriginX = originX; OriginY = originY; OriginZ = originZ;
             _colorSource = hasColor ? ColorSource.Rgb : ColorSource.Height;
             ViewPoints = sourcePoints;
             VisibleCount = loadedCount;
@@ -36,6 +40,10 @@ namespace CloudScope.Loading
         }
 
         public int LoadedCount { get; }
+        public double OriginX { get; }
+        public double OriginY { get; }
+        public double OriginZ { get; }
+        public bool HasColor => _hasColor;
         public int VisibleCount { get; private set; }
         public float Radius { get; }
         public PointCloudAttributes Attributes { get; }
@@ -49,7 +57,9 @@ namespace CloudScope.Loading
         public int[]? ViewToSource { get; private set; }
         /// <summary>Visible-point draw order. The prefix is an unbiased overview sample for budgeted rendering.</summary>
         public ProgressivePointOrder? RenderOrder { get; private set; }
-        public string FilterDescription => _filter?.Description ?? "None";
+        public string FilterDescription => (_filter?.Description ?? "None") +
+            (_keepPercentage < 100 ? string.Create(CultureInfo.InvariantCulture, $"; keep {_keepPercentage:0.###}%") : "");
+        public double KeepPercentage => _keepPercentage;
         public ColorSource CurrentColorSource => _colorSource;
         public ColorSource DefaultColorSource => _hasColor ? ColorSource.Rgb : ColorSource.Height;
         public string ColorDescription => _colorSource.ToDisplayName();
@@ -70,6 +80,17 @@ namespace CloudScope.Loading
             return $"Color: {_colorSource.ToDisplayName()}.";
         }
 
+        /// <summary>Builds a repeatable sample without deleting source points or changing label indices.</summary>
+        public string SetThinning(double keepPercentage)
+        {
+            if (!double.IsFinite(keepPercentage) || keepPercentage < 1 || keepPercentage > 100)
+                throw new ArgumentOutOfRangeException(nameof(keepPercentage), "Keep percentage must be in 1..100.");
+            _keepPercentage = keepPercentage;
+            RebuildView(recolor: true);
+            return string.Create(CultureInfo.InvariantCulture,
+                $"Keep {_keepPercentage:0.###}%: {VisibleCount:N0} / {LoadedCount:N0} source points visible.");
+        }
+
         public string ClearColorSource(bool recolor = true)
         {
             _colorSource = DefaultColorSource;
@@ -83,7 +104,8 @@ namespace CloudScope.Loading
 
         private void RebuildView(bool recolor = true)
         {
-            if (_filter == null)
+            BuildThinMask();
+            if (_filter == null && _thinMask == null)
             {
                 if (recolor)
                 {
@@ -105,7 +127,7 @@ namespace CloudScope.Loading
             var map = new List<int>(points.Capacity);
             for (int i = 0; i < LoadedCount; i++)
             {
-                if (!_filter.Matches(Attributes, i))
+                if (!MatchesView(i))
                     continue;
 
                 PointData point = _sourcePoints[i];
@@ -119,6 +141,30 @@ namespace CloudScope.Loading
             ViewToSource = map.ToArray();
             VisibleCount = ViewPoints.Length;
             RenderOrder = BuildProgressiveRenderOrder(VisibleCount, RenderOrderSeed);
+        }
+
+        private bool MatchesView(int index) =>
+            (_filter == null || _filter.Matches(Attributes, index)) &&
+            (_thinMask == null || _thinMask[index]);
+
+        private void BuildThinMask()
+        {
+            _thinMask = null;
+            if (_keepPercentage >= 100) return;
+            int eligible = 0;
+            for (int i = 0; i < LoadedCount; i++)
+                if (_filter == null || _filter.Matches(Attributes, i)) eligible++;
+            int remaining = eligible;
+            int needed = eligible == 0 ? 0 : Math.Max(1, (int)Math.Round(eligible * _keepPercentage / 100));
+            var random = new Random(RenderOrderSeed);
+            var mask = new System.Collections.BitArray(LoadedCount);
+            for (int i = 0; i < LoadedCount; i++)
+            {
+                if (_filter != null && !_filter.Matches(Attributes, i)) continue;
+                if (random.Next(remaining) < needed) { mask[i] = true; needed--; }
+                remaining--;
+            }
+            _thinMask = mask;
         }
 
         private static ProgressivePointOrder? BuildProgressiveRenderOrder(int count, int seed)
@@ -161,7 +207,7 @@ namespace CloudScope.Loading
         {
             for (int sourceIndex = 0, viewIndex = 0; sourceIndex < LoadedCount && viewIndex < points.Length; sourceIndex++)
             {
-                if (filter != null && !filter.Matches(Attributes, sourceIndex))
+                if (!MatchesView(sourceIndex))
                     continue;
 
                 ApplyColor(ref points[viewIndex], sourceIndex);

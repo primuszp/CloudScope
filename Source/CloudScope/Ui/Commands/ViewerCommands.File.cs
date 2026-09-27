@@ -70,6 +70,22 @@ public sealed partial class ViewerCommands
         ed.WriteMessage(context.GetTarget<ViewerController>().OpenXyzPointCloud(path.Value, limit.IsOk ? limit.Value : 0));
     }
 
+    [CommandMethod("OPENPTS", Flags = CommandFlags.NoUndoMarker,
+        Group = CommandGroup.File, Scope = CommandScope.Viewer,
+        Summary = "Loads PTS text points with optional intensity and RGB.",
+        Syntax = "OPENPTS <path> [max points]")]
+    public IEnumerable<PromptStep> OpenPts(CommandContext context)
+    {
+        Editor ed = context.Editor;
+        PromptFileStep path = ed.GetFileNameForOpen("Enter PTS file path:").Filtering("pts").Requiring();
+        yield return path;
+        if (!path.IsOk) yield break;
+        PromptIntegerStep limit = ed.GetInteger("Enter maximum point count <all>:")
+            .WithRange(1, int.MaxValue).WithDefault(0);
+        yield return limit;
+        ed.WriteMessage(context.GetTarget<ViewerController>().OpenPtsPointCloud(path.Value, limit.IsOk ? limit.Value : 0));
+    }
+
     [CommandMethod("OPENSTORE", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.File, Scope = CommandScope.Viewer,
         Summary = "Streams an indexed point tile store straight off disk.",

@@ -8,7 +8,14 @@ public static class XyzPointCloudLoader
     private readonly record struct Row(double X, double Y, double Z, double Intensity, double R, double G, double B);
 
     public static LoadedPointCloud Load(string path, long maxPoints = 0, IProgress<int>? progress = null)
+        => LoadText(path, maxPoints, progress, pts: false);
+
+    internal static LoadedPointCloud LoadText(string path, long maxPoints, IProgress<int>? progress, bool pts)
     {
+        string format = pts ? "PTS" : "XYZ";
+        long? declaredCount = null;
+        bool firstDataLine = true;
+        double minIntensity = 0;
         var rows = new List<Row>();
         int columns = 0;
         double minX = double.PositiveInfinity, minY = double.PositiveInfinity, minZ = double.PositiveInfinity;
@@ -31,43 +38,58 @@ public static class XyzPointCloudLoader
                     continue;
 
                 string[] parts = line.Split([',', ';', ' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
-                if (columns == 0 && !double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out _))
+                if (pts && firstDataLine && parts.Length == 1)
+                {
+                    if (!long.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out long count))
+                        throw new InvalidDataException("Invalid PTS point count.");
+                    declaredCount = count;
+                    firstDataLine = false;
+                    continue;
+                }
+                firstDataLine = false;
+                if (!pts && columns == 0 && !double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out _))
                     continue; // One optional column-name row.
                 if (columns == 0)
                 {
                     columns = parts.Length;
                     if (columns is not (3 or 4 or 6 or 7))
-                        throw new InvalidDataException("XYZ rows must have 3, 4, 6 or 7 columns.");
+                        throw new InvalidDataException($"{format} rows must have 3, 4, 6 or 7 columns.");
                 }
                 if (parts.Length != columns)
-                    throw new InvalidDataException($"XYZ line {lineNumber} has {parts.Length} columns; expected {columns}.");
+                    throw new InvalidDataException($"{format} line {lineNumber} has {parts.Length} columns; expected {columns}.");
 
                 var values = new double[columns];
                 for (int i = 0; i < columns; i++)
                 {
                     if (!double.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out values[i]) ||
                         !double.IsFinite(values[i]))
-                        throw new InvalidDataException($"XYZ line {lineNumber} has an invalid number in column {i + 1}.");
+                        throw new InvalidDataException($"{format} line {lineNumber} has an invalid number in column {i + 1}.");
                 }
                 double intensity = columns is 4 or 7 ? values[3] : 0;
                 int rgb = columns == 6 ? 3 : 4;
                 double r = columns >= 6 ? values[rgb] : 0;
                 double g = columns >= 6 ? values[rgb + 1] : 0;
                 double b = columns >= 6 ? values[rgb + 2] : 0;
-                if (intensity < 0 || r < 0 || g < 0 || b < 0)
-                    throw new InvalidDataException($"XYZ line {lineNumber} has a negative intensity or color.");
+                if ((!pts && intensity < 0) || intensity < -2048 || r < 0 || g < 0 || b < 0)
+                    throw new InvalidDataException($"{format} line {lineNumber} has a negative intensity or color.");
                 rows.Add(new Row(values[0], values[1], values[2], intensity, r, g, b));
                 minX = Math.Min(minX, values[0]); maxX = Math.Max(maxX, values[0]);
                 minY = Math.Min(minY, values[1]); maxY = Math.Max(maxY, values[1]);
                 minZ = Math.Min(minZ, values[2]); maxZ = Math.Max(maxZ, values[2]);
                 maxColor = Math.Max(maxColor, Math.Max(r, Math.Max(g, b)));
                 maxIntensity = Math.Max(maxIntensity, intensity);
+                minIntensity = Math.Min(minIntensity, intensity);
                 int percent = (int)(stream.Position * 100 / Math.Max(fileLength, 1));
                 if (percent / 5 != lastPercent / 5) { lastPercent = percent; progress?.Report(percent); }
             }
         }
 
-        if (rows.Count == 0) throw new InvalidDataException("XYZ file contains no points.");
+        if (declaredCount.HasValue && rows.Count != Math.Min(declaredCount.Value, limit))
+            throw new InvalidDataException($"PTS declares {declaredCount} points but {rows.Count} were read.");
+        if (rows.Count == 0) throw new InvalidDataException($"{format} file contains no points.");
+        bool signedIntensity = pts && minIntensity < 0;
+        if (signedIntensity && maxIntensity > 2047)
+            throw new InvalidDataException("Signed PTS intensity must be in -2048..2047.");
         bool hasColor = columns >= 6;
         float colorScale = maxColor <= 1 ? 1f : maxColor <= 255 ? 1f / 255 : 1f / 65535;
         double intensityScale = maxIntensity <= 1 ? 65535 : maxIntensity <= 255 ? 257 : 1;
@@ -84,7 +106,7 @@ public static class XyzPointCloudLoader
             points[i].Y = (float)(row.Y - cy);
             points[i].Z = (float)(row.Z - cz);
             heights[i] = row.Z;
-            intensities[i] = (ushort)Math.Clamp(Math.Round(row.Intensity * intensityScale), 0, ushort.MaxValue);
+            intensities[i] = (ushort)Math.Clamp(Math.Round(signedIntensity ? (row.Intensity + 2048) * 65535 / 4095 : row.Intensity * intensityScale), 0, ushort.MaxValue);
             if (hasColor)
             {
                 points[i].R = Math.Clamp((float)row.R * colorScale, 0, 1);
