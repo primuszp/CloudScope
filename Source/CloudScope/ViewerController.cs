@@ -1029,7 +1029,6 @@ namespace CloudScope
         {
             if (_dataset == null) return "Reconstruction requires a resident point cloud.";
             if (_reconstruction != null) return "A reconstruction is already running.";
-            if (_dataset.VisibleCount > 200_000) return "Use THIN or FILTER to keep reconstruction at or below 200,000 points.";
             int version = _geometryVersion;
             var points = _dataset.ViewPoints.Take(_dataset.VisibleCount).ToArray();
             var snapshot = new PointCloudDataset(points, points.Length, _dataset.Radius, _dataset.HasColor, 1,

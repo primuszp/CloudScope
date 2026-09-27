@@ -6,10 +6,10 @@ public sealed partial class ViewerCommands
 {
     [CommandMethod("RECONSTRUCT", Flags = CommandFlags.NoUndoMarker, Group = CommandGroup.Utility, Scope = CommandScope.Document,
         Summary = "Builds an approximate surface using PCA normals and greedy projection.",
-        Syntax = "RECONSTRUCT <neighbors 3..32> <maximum edge length; 0 = auto>")]
+        Syntax = "RECONSTRUCT <neighbors >= 3> <maximum edge length; 0 = auto>")]
     public IEnumerable<PromptStep> Reconstruct(CommandContext context)
     {
-        var neighbors = context.Editor.GetInteger("Neighbors <15>:").WithRange(3, 32).WithDefault(15);
+        var neighbors = context.Editor.GetInteger("Neighbors <15>:").WithRange(3, int.MaxValue).WithDefault(15);
         yield return neighbors;
         if (!neighbors.IsOk) yield break;
         var edge = context.Editor.GetDouble("Maximum edge length <0 = auto>:").WithRange(0, float.MaxValue).WithDefault(0);
