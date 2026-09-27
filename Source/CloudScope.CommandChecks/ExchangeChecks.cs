@@ -8,6 +8,9 @@ using CloudScope.Loading;
 
 internal static class ExchangeChecks
 {
+    private sealed record SurfaceFixture(string Name, float[] Positions, int Neighbors, float MaximumEdge, int[] Indices, float[] Normals);
+    private sealed class DirectProgress(Action<int> report) : IProgress<int> { public void Report(int value) => report(value); }
+
     public static async Task Run(Action<string, bool, string> check)
     {
         string dir = Path.Combine(Path.GetTempPath(), "cloudscope-exchange-" + Guid.NewGuid().ToString("N"));
@@ -67,6 +70,41 @@ internal static class ExchangeChecks
                         mesh.Vertices[mesh.Indices[t * 3 + 2]] - mesh.Vertices[mesh.Indices[t * 3]]).Z > 0), "");
             var obj = new StringWriter(); MeshExporter.WriteObj(obj, mesh);
             check("OBJ exports world coordinates and one-based faces", obj.ToString().Contains("v 100 200 300") && obj.ToString().Contains("\nf "), "");
+
+            var fixtures = JsonSerializer.Deserialize<SurfaceFixture[]>(File.ReadAllText(
+                Path.Combine(AppContext.BaseDirectory, "Fixtures", "surface-reference.json")),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+            foreach (var fixture in fixtures)
+            {
+                int count = fixture.Positions.Length / 3;
+                var sample = Enumerable.Range(0, count).Select(i => new PointData
+                { X = fixture.Positions[i * 3], Y = fixture.Positions[i * 3 + 1], Z = fixture.Positions[i * 3 + 2] }).ToArray();
+                var data = new PointCloudDataset(sample, count, 100, false, 1,
+                    new PointCloudAttributes(new byte[count], new ushort[count], new byte[count], new double[count], 0, 0));
+                var reconstructed = SurfaceReconstruction.Build(data, fixture.Neighbors, fixture.MaximumEdge);
+                check($"Reference surface {fixture.Name}: triangle indices and winding", reconstructed.Indices.SequenceEqual(fixture.Indices),
+                    $"actual={reconstructed.Indices.Length / 3}; expected={fixture.Indices.Length / 3}");
+                check($"Reference surface {fixture.Name}: PCA normals", Enumerable.Range(0, count).All(i =>
+                    Math.Abs(reconstructed.Normals[i].X - fixture.Normals[i * 3]) < 1e-5 &&
+                    Math.Abs(reconstructed.Normals[i].Y - fixture.Normals[i * 3 + 1]) < 1e-5 &&
+                    Math.Abs(reconstructed.Normals[i].Z - fixture.Normals[i * 3 + 2]) < 1e-5), "");
+            }
+            using (var stop = new CancellationTokenSource())
+            {
+                int count = 200_001;
+                var sample = Enumerable.Range(0, count).Select(i => new PointData { X = i % 501, Y = i / 501 }).ToArray();
+                var data = new PointCloudDataset(sample, count, 1000, false, 1,
+                    new PointCloudAttributes(new byte[count], new ushort[count], new byte[count], new double[count], 0, 0));
+                bool cancelled = false;
+                try { SurfaceReconstruction.Build(data, cancellation: stop.Token,
+                    progress: new DirectProgress(p => { if (p == 10) stop.Cancel(); })); }
+                catch (OperationCanceledException) { cancelled = true; }
+                check("Reconstruction accepts more than 200,000 points and cancels during indexing", cancelled, "");
+            }
+            check("OBJ exports per-vertex normals and indexed normal references", obj.ToString().Contains("\nvn ") && obj.ToString().Contains("//"), "");
+            var colored = mesh with { Colors = Enumerable.Repeat(new OpenTK.Mathematics.Vector3(1, 0, 0), mesh.Vertices.Length).ToArray() };
+            var coloredObj = new StringWriter(); MeshExporter.WriteObj(coloredObj, colored);
+            check("OBJ exports optional vertex colors", coloredObj.ToString().Contains("v 100 200 300 1 0 0"), "");
 
             int port;
             var socket = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0); socket.Start();
