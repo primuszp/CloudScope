@@ -54,7 +54,8 @@ versions of the same product.
 | `AccentBright` | `DEDEDE` | emphasis under the pointer; prompt lines in the transcript |
 | `AccentDim` | `3E3E3E` | lifted-graphite fill for a pressed / active control, status strip |
 | `SelectionFill` | `343434` | selected list row / completion candidate |
-| `Error` / `Ok` / `Warn` | `E06C6C` / `5FB57A` / `E0A24E` | semantic — the only colours in the UI |
+| `Error` / `Ok` / `Warn` | `E06C6C` / `5FB57A` / `E0A24E` | semantic — the only colours in the chrome |
+| `DataRed` … `DataPurple` | `E06C6C` `5FB57A` `E0A24E` `6C9EE0` `E0C24E` `B07CE0` | data colours, used only by icons whose subject is colour (COLORBY modes) |
 
 Command-line entry colours derive from these via `UiPalette.EntryColor`:
 prompt → `AccentBright`, error → `Error`, banner/echo → `TextDim`, output → `Text`.
@@ -92,8 +93,12 @@ Retina.
    family, and forces the `TextBox` onto `SurfaceDeep` in every visual state. A new
    token added to `UiPalette.NamedColors` / `NamedMetrics` reaches the shell
    automatically.
-4. A framed group of content is `Classes="card"`; a toolbar button is
-   `Classes="tool"`.
+4. A framed group of content is `Classes="card"`. Ribbon buttons are
+   `ribbonLarge` / `ribbonSmall`, palette headers `paletteHeader`, status-bar
+   toggles `statusToggle`; a lit (mode-active) button adds the `active` class.
+5. Icons come from `Controls/Icons.cs` — 24-unit line drawings keyed by
+   `RibbonIcons`. Their stroke is the `Path.icon` style, so a button's state
+   recolours its icon; only the COLORBY glyphs use the `Data*` palette tokens.
 
 ## Adding to the ImGui viewer
 

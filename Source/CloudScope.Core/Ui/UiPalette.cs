@@ -80,6 +80,15 @@ public static class UiPalette
     public const uint Ok = 0x5FB57A;
     public const uint Warn = 0xE0A24E;
 
+    // Data colours. The chrome carries no hue; these exist only for the few icons whose
+    // subject is colour itself (the COLORBY modes), so a glyph can show what it will paint.
+    public const uint DataRed = Error;
+    public const uint DataGreen = Ok;
+    public const uint DataOrange = Warn;
+    public const uint DataBlue = 0x6C9EE0;
+    public const uint DataYellow = 0xE0C24E;
+    public const uint DataPurple = 0xB07CE0;
+
     /// <summary>Echoed command lines are as quiet as secondary text.</summary>
     public const uint EntryEcho = 0x909090;
 

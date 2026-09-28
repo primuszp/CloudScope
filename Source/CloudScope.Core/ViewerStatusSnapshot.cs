@@ -73,6 +73,41 @@ public readonly record struct ViewerStatusSnapshot
     /// <summary>Whether the command window floats free of the workspace instead of docking.</summary>
     public bool CommandLineFloating { get; init; }
 
+    /// <summary>Whether the explorer palette (open clouds and scene objects) is shown.</summary>
+    public bool ExplorerVisible { get; init; } = true;
+
+    /// <summary>Whether the properties palette is shown.</summary>
+    public bool PropertiesVisible { get; init; } = true;
+
+    /// <summary>Whether the ribbon's tool panels are shown.</summary>
+    public bool RibbonVisible { get; init; } = true;
+
+    /// <summary>Whether the explorer and properties palettes dock on the right-hand side.</summary>
+    public bool PalettesOnRight { get; init; }
+
+    /// <summary>Full path of the resident cloud's file, empty for streamed layers or nothing.</summary>
+    public string SourcePath { get; init; } = "";
+
+    /// <summary>True when the scene is drawn from point tile store layers, not a resident cloud.</summary>
+    public bool IsStreamed { get; init; }
+
+    /// <summary>Whether the resident cloud is drawn (LAYER ON/OFF on its name).</summary>
+    public bool ResidentVisible { get; init; } = true;
+
+    /// <summary>Whether the resident cloud carries RGB colour.</summary>
+    public bool HasColor { get; init; }
+
+    /// <summary>THIN keep percentage of the resident cloud (100 = full density).</summary>
+    public double KeepPercentage { get; init; } = 100;
+
+    public bool OrthoMode { get; init; }
+    public bool SurfaceVisible { get; init; } = true;
+    public int PolylineCount { get; init; }
+    public IReadOnlyList<string> NamedViews { get; init; } = Array.Empty<string>();
+
+    /// <summary>Number of points carrying a label annotation.</summary>
+    public int LabelledPoints { get; init; }
+
     /// <summary>
     /// Whether the viewer has been asked to close (QUIT). A shell that owns its own window
     /// closes it when it sees this; the GameWindow shell ends its loop on the same flag.

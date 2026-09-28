@@ -24,7 +24,7 @@ parancs-implementáció nélkül.
 | --- | --- | --- | --- |
 | `ADDSTORE` | – | `ADDSTORE <store directory>` | Adds another point tile store as a layer beside the open ones. |
 | `INDEX` | – | `INDEX <las> [directory] [Source] [CHunk n] [Grid n] [MinPoints n] [SCratch dir]` | Indexes a LAS file into a point tile store of any size. |
-| `LAYER` | LA | `LAYER [List/ON/OFf/Close] <name>` | Lists layers, or turns one on, off or closed. |
+| `LAYER` | LA | `LAYER [List/ON/OFf/Close] <name>` | Lists the open point clouds and layers, or turns one on, off or closed. |
 | `LOADLABELS` | – | `LOADLABELS [path]` | Loads labels from a JSON file. |
 | `LOADPOLYLINES` | – | `LOADPOLYLINES <path>` | Loads versioned planar-polyline JSON and records the import for undo. |
 | `OPEN` | – | `OPEN <path> [max points]` | Loads a LAS or LAZ point cloud into memory. |
@@ -40,7 +40,7 @@ parancs-implementáció nélkül.
 | `CONFIRM` | – | `CONFIRM` | Applies the active selection to the current label. |
 | `FIT` | – | `FIT [Ground]` | Shrinks the selection volume onto the points inside it. |
 | `MOVE` | M | `MOVE [X/Y/Z] <dx,dy,dz> \| <base point> <second point>` | Moves the selection volume by a displacement or between two points. |
-| `ORTHO` | – | `ORTHO [ON/OFF] <toggle>` | Turns axis locking for point input on or off. |
+| `ORTHO` | – | `ORTHO [ON/OFF/Toggle] <toggle>` | Turns axis locking for point input on or off. |
 | `3DPOLY` | – | `3DPOLY <first point> <next point>... [Close/Undo]` | Creates a non-planar chain of straight 3D segments. |
 | `PLINE` | PL | `PLINE <start point> <next point>... [Arc/Close/Halfwidth/Length/Undo/Width]` | Creates one planar object from line and tangent-arc segments, with optional tapered widths. |
 | `PEDIT` | PE | `PEDIT [Close/Join/Open/Reverse/Width]` | Edits the selected planar polyline. |
@@ -82,13 +82,16 @@ parancs-implementáció nélkül.
 | `XSECTION` | XS | `XSECTION <first point> <second point> [width] \| [New/Width/Flip/View/List/CLear]` | Creates and displays a finite vertical point-cloud cross-section. |
 | `ZOOM` | Z | `ZOOM [All/Center/Dynamic/Extents/Object/PRevious/RealTime/Scale/Window] \| <corner>` | Changes magnification in the active viewport. |
 
-## Lekérdezés (7)
+## Lekérdezés (10)
 
 | Parancs | Alias | Szintaxis | Mit csinál |
 | --- | --- | --- | --- |
 | `ATTRIBUTES` | – | `ATTRIBUTES [All/Class/Intensity/Return/Z]` | Reports the distribution of an attribute across the cloud. |
 | `HISTORY` | – | `HISTORY` | Shows or hides the expanded command history window. |
 | `COMMANDLINE` | – | `COMMANDLINE [On/Off/Toggle/Float/Dock]` | Shows, hides, floats or docks the command window. |
+| `EXPLORER` | EX | `EXPLORER [On/Off/Toggle/Left/Right]` | Shows, hides or docks the explorer of open point clouds and scene objects. |
+| `PROPERTIES` | PR | `PROPERTIES [On/Off/Toggle]` | Shows or hides the properties palette of the explorer selection. |
+| `RIBBON` | – | `RIBBON [On/Off/Toggle]` | Shows the ribbon's tool panels, or minimises it to its tabs. |
 | `LABELSTAT` | – | `LABELSTAT` | Reports how many points carry each label. |
 | `STATUS` | – | `STATUS` | Reports what the viewer is currently showing and doing. |
 | `STOREINFO` | – | `STOREINFO` | Reports the structure of the open point tile stores. |

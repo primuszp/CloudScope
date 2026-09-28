@@ -2,200 +2,117 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="CloudScope.Avalonia.MainWindow"
         Title="CloudScope"
-        Width="1440"
-        Height="900"
+        Width="1480"
+        Height="920"
         MinWidth="1040"
         MinHeight="680"
         Background="{DynamicResource CsSurface}"
         FontFamily="{DynamicResource CsUiFont}">
 
-  <Window.Styles>
-    <!-- Tool strip: NSToolbar-like on macOS, a flat command strip elsewhere. -->
-    <Style Selector="Button.tool">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="{DynamicResource CsText}" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="CornerRadius" Value="5" />
-      <Setter Property="Padding" Value="10,4" />
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="MinWidth" Value="54" />
-    </Style>
-    <Style Selector="Button.tool:pointerover /template/ ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource CsSurfaceAlt}" />
-    </Style>
-    <Style Selector="Button.tool.active /template/ ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource CsAccentDim}" />
-    </Style>
-    <Style Selector="Button.tool TextBlock.glyph">
-      <Setter Property="FontSize" Value="17" />
-      <Setter Property="HorizontalAlignment" Value="Center" />
-      <Setter Property="Foreground" Value="{DynamicResource CsAccent}" />
-    </Style>
-    <Style Selector="Button.tool TextBlock.caption">
-      <Setter Property="FontSize" Value="10" />
-      <Setter Property="HorizontalAlignment" Value="Center" />
-      <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
-    </Style>
-
-    <!-- Command window -->
-    <Style Selector="TextBlock.prompt">
-      <Setter Property="Foreground" Value="{DynamicResource CsAccent}" />
-      <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Margin" Value="0,0,8,0" />
-    </Style>
-    <Style Selector="TextBox.commandInput">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <!-- Keep the live command text legible against the graphite input well.  These
-           values deliberately use the shared palette: literal near-black makes typing
-           look as though the command line has stopped accepting input. -->
-      <Setter Property="Foreground" Value="{DynamicResource CsText}" />
-      <Setter Property="CaretBrush" Value="{DynamicResource CsAccent}" />
-      <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
-      <Setter Property="Padding" Value="0" />
-    </Style>
-    <Style Selector="Button.commandRailButton">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
-      <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
-      <Setter Property="FontSize" Value="13" />
-      <Setter Property="Width" Value="20" />
-      <Setter Property="Height" Value="18" />
-      <Setter Property="MinWidth" Value="0" />
-      <Setter Property="MinHeight" Value="0" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
-      <Setter Property="HorizontalAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Button.commandRailButton:pointerover /template/ ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource CsAccentDim}" />
-    </Style>
-    <!-- A keyword sits inside the prompt's own "[...]", so it has to sit on the text's
-         baseline and metrics rather than look like a button dropped into a sentence. -->
-    <Style Selector="Button.keywordLink">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="3,0" />
-      <Setter Property="Margin" Value="0" />
-      <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
-    </Style>
-    <Style Selector="Button.keywordLink:pointerover">
-      <Setter Property="Foreground" Value="{DynamicResource CsAccent}" />
-    </Style>
-    <Style Selector="Button.keywordLink.defaultKeyword">
-      <Setter Property="Foreground" Value="{DynamicResource CsAccent}" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
-
-    <Style Selector="TextBlock.sectionTitle">
-      <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
-      <Setter Property="FontSize" Value="10" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
-    <Style Selector="TextBlock.propertyName">
-      <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
-      <Setter Property="FontSize" Value="11" />
-    </Style>
-    <Style Selector="TextBlock.propertyValue">
-      <Setter Property="Foreground" Value="{DynamicResource CsText}" />
-      <Setter Property="FontSize" Value="11" />
-      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-    </Style>
-    <Style Selector="TextBlock.statusItem">
-      <Setter Property="Foreground" Value="White" />
-      <Setter Property="FontSize" Value="10" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-      <Setter Property="Margin" Value="8,0" />
-    </Style>
-  </Window.Styles>
-
   <!--
-    Every division between two resizable regions is drawn by the splitter that resizes it:
-    one hairline in the neutral CsBorder tone that lifts and grows a grip under the pointer.
-    The only line that is not a splitter is the one under the tool strip, which nothing can
-    drag. Everything else is separated by surface tone alone.
+    A CAD workspace for point clouds, arranged the way AutoCAD and CloudCompare users expect:
+
+      menu bar (system menu bar on macOS)
+      ribbon — tabs over titled tool panels
+      palettes (explorer tree over properties) | viewport header + viewport
+      command window — transcript and live prompt
+      status bar — counts, mode, drafting toggles, frame rate
+
+    Every division between two resizable regions is drawn by the splitter that resizes it.
+    Colours and metrics come from UiPalette through Cs* resources; shapes and states live in
+    Themes/Controls.axaml. Everything interactive in this window submits a command string.
   -->
-  <Grid x:Name="WorkspaceGrid" RowDefinitions="30,Auto,*,70,26">
+  <Grid x:Name="WorkspaceGrid" RowDefinitions="Auto,Auto,*,96,26">
     <!-- Row 0 is collapsed on macOS, where the menu lives in the system menu bar. -->
     <Menu x:Name="MainMenuBar" Grid.Row="0" />
 
-    <!-- Tool strip: unified with the titlebar on macOS, a flat command strip elsewhere. -->
-    <Border x:Name="ToolStripBorder" Grid.Row="1" Background="{DynamicResource CsGraphite}"
-            BorderBrush="{DynamicResource CsBorder}" BorderThickness="0,0,0,1">
-      <StackPanel x:Name="ToolStripPanel" Orientation="Horizontal" Margin="8,6" Spacing="2" />
-    </Border>
+    <ContentControl x:Name="RibbonHost" Grid.Row="1" />
 
-    <Grid x:Name="ContentGrid" Grid.Row="2" ColumnDefinitions="*,280">
-      <!-- The embedded GL child window is borderless; this frame — colour and thickness both
-           from the theme (CsViewportBorder / CsViewportBorderThickness) — is the viewport's
-           only visible edge. -->
-      <Border Background="{DynamicResource CsViewportBackdrop}"
-              BorderBrush="{DynamicResource CsViewportBorder}"
-              BorderThickness="{DynamicResource CsViewportBorderThickness}">
-        <Grid>
-          <ContentControl x:Name="ViewportHost" />
-          <Border x:Name="ViewBadge" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12"
-                  Background="{DynamicResource CsSurfaceDeep}"
-                  BorderBrush="{DynamicResource CsBorder}" BorderThickness="1"
-                  CornerRadius="{DynamicResource CsCornerCard}" Padding="10,6">
-            <StackPanel Spacing="1">
-              <TextBlock x:Name="ViewBadgeTitle" Text="Perspective" Foreground="{DynamicResource CsText}"
-                         FontSize="12" FontWeight="SemiBold" />
-              <TextBlock x:Name="ViewBadgeSubtitle" Text="Single viewport"
-                         Foreground="{DynamicResource CsTextDim}" FontSize="11" />
-            </StackPanel>
+    <Grid x:Name="ContentGrid" Grid.Row="2" ColumnDefinitions="300,Auto,*">
+      <!-- Palette column: the explorer tree over the properties palette. -->
+      <Border x:Name="PaletteColumn" Grid.Column="0" Classes="paletteColumn">
+        <Grid x:Name="PaletteGrid" RowDefinitions="Auto,45*,Auto,55*">
+          <Border x:Name="ExplorerHeader" Grid.Row="0" Classes="paletteHeader">
+            <DockPanel>
+              <StackPanel x:Name="ExplorerTools" DockPanel.Dock="Right" Orientation="Horizontal" Spacing="2" />
+              <TextBlock Text="EXPLORER" Classes="paletteTitle" />
+            </DockPanel>
           </Border>
+          <ContentControl x:Name="ExplorerHost" Grid.Row="1" />
+
+          <!-- The splitter sits between the two star rows it trades height between; the
+               properties header rides along with its palette. -->
+          <GridSplitter x:Name="PaletteSplitter" Grid.Row="2" Classes="rowSeam" Height="5"
+                        Background="Transparent" Cursor="SizeNorthSouth" ResizeDirection="Rows" />
+
+          <DockPanel Grid.Row="3">
+            <Border x:Name="PropertiesHeader" DockPanel.Dock="Top" Classes="paletteHeader">
+              <DockPanel>
+                <StackPanel x:Name="PropertiesTools" DockPanel.Dock="Right" Orientation="Horizontal" Spacing="2" />
+                <TextBlock Text="PROPERTIES" Classes="paletteTitle" />
+              </DockPanel>
+            </Border>
+            <ContentControl x:Name="PropertiesHost" />
+          </DockPanel>
         </Grid>
       </Border>
 
-      <!-- The inspector sits at the same near-black tone as the command well, so the viewport
-           is not boxed in by a lighter panel. -->
-      <Border Grid.Column="1" Background="{DynamicResource CsSurfaceDeep}">
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-          <StackPanel x:Name="InspectorPanel" Margin="14,12" Spacing="8" />
-        </ScrollViewer>
-      </Border>
+      <GridSplitter x:Name="PaletteColumnSplitter" Grid.Column="1" Classes="columnSeam"
+                    Width="5" Background="Transparent" Cursor="SizeWestEast" ResizeDirection="Columns" />
 
-      <!-- A transparent grab strip straddling the column edge. It draws no line of its own:
-           the viewport's own frame already closes this seam, and a second hairline one pixel
-           away from it would read as a two-pixel rule. -->
-      <GridSplitter Grid.Column="1" HorizontalAlignment="Left"
-                    Width="7" Margin="-3,0,0,0" Cursor="SizeWestEast"
-                    Background="Transparent" ResizeDirection="Columns" ZIndex="10" />
+      <!-- The drawing area: a header strip with the document tab and AutoCAD-style viewport
+           controls, over the embedded GPU viewport. The controls live in the strip, not over
+           the picture, because the viewport is a native child window that would hide them. -->
+      <DockPanel x:Name="ViewportColumn" Grid.Column="2">
+        <Border DockPanel.Dock="Top" Classes="viewportHeader">
+          <DockPanel>
+            <StackPanel x:Name="ViewportControls" DockPanel.Dock="Right" Orientation="Horizontal" Spacing="2" />
+            <Border Classes="documentTab">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <ContentControl x:Name="DocumentIcon" VerticalAlignment="Center" />
+                <TextBlock x:Name="DocumentTitle" Classes="documentTitle" Text="No point cloud" />
+                <TextBlock x:Name="DocumentDetail" Classes="documentDetail" Text="" />
+              </StackPanel>
+            </Border>
+          </DockPanel>
+        </Border>
+
+        <!-- The embedded GL/Metal child window is borderless; this frame is the viewport's
+             only visible edge. -->
+        <Border Background="{DynamicResource CsViewportBackdrop}"
+                BorderBrush="{DynamicResource CsViewportBorder}"
+                BorderThickness="{DynamicResource CsViewportBorderThickness}">
+          <ContentControl x:Name="ViewportHost" />
+        </Border>
+      </DockPanel>
     </Grid>
 
-    <!-- The command console is one sunken well, bounded like AutoCAD's: the top edge is the
-         seam the splitter draws, the bottom one closes it against the status strip. -->
+    <!-- The command console is one sunken well, bounded like AutoCAD's. -->
     <Border x:Name="CommandLineBorder" Grid.Row="3" MinHeight="48"
             Background="{DynamicResource CsSurfaceDeep}"
             BorderBrush="{DynamicResource CsBorder}" BorderThickness="0,0,0,1">
       <ContentControl x:Name="CommandLineHost" />
     </Border>
 
-    <!-- Declared after the command panel so it stays above it and receives the drag. It
-         straddles the seam, so the line under the pointer is the line being dragged —
+    <!-- Straddles the seam, so the line under the pointer is the line being dragged —
          AutoCAD's "drag the edge for more or fewer lines of history". -->
     <GridSplitter x:Name="CommandLineSplitter" Grid.Row="3" Classes="rowSeam"
                   Height="7" Margin="0,-3,0,0" VerticalAlignment="Top"
                   Background="Transparent" Cursor="SizeNorthSouth" ResizeDirection="Rows"
                   ZIndex="10" />
 
-    <Border Grid.Row="4" Background="{DynamicResource CsSurfaceAlt}">
-      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto" Margin="8,0">
+    <Border Grid.Row="4" Classes="statusBar">
+      <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto">
         <TextBlock x:Name="StatusPoints" Classes="statusItem" Text="No point cloud" />
         <TextBlock x:Name="StatusMode" Grid.Column="1" Classes="statusItem" Text="Navigate" />
         <TextBlock x:Name="StatusLabel" Grid.Column="2" Classes="statusItem" Text="Label: —" />
-        <TextBlock x:Name="StatusProjection" Grid.Column="3" Classes="statusItem" Text="Perspective" />
-        <TextBlock x:Name="StatusText" Grid.Column="4" Classes="statusItem" TextTrimming="CharacterEllipsis" />
-        <TextBlock x:Name="StatusFps" Grid.Column="5" Classes="statusItem" Text="" />
+        <TextBlock x:Name="StatusText" Grid.Column="3" Classes="statusItem" TextTrimming="CharacterEllipsis" />
+        <ProgressBar x:Name="StatusProgress" Grid.Column="4" Classes="statusProgress" IsVisible="False"
+                     Minimum="0" Maximum="100" />
+        <StackPanel x:Name="StatusToggles" Grid.Column="5" Orientation="Horizontal" Spacing="1"
+                    VerticalAlignment="Center" Margin="8,0" />
+        <TextBlock x:Name="StatusFps" Grid.Column="6" Classes="statusItem" MinWidth="48"
+                   TextAlignment="Right" Text="" />
       </Grid>
     </Border>
   </Grid>
