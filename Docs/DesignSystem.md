@@ -10,12 +10,16 @@ versions of the same product.
 
 * **Dark only.** A point-cloud viewport is judged against its surroundings, so the
   shell stays dark on every platform. There is no light variant.
-* **Graphite over deep black, no accent hue.** AutoCAD's dark chrome carries no
-  accent colour and neither does this — a near-black canvas, neutral graphite
-  surfaces stacked in tiers, hairline borders. Emphasis (prompt text, focus, the
-  active tool) is a bright neutral grey; only `Ok` / `Warn` / `Error` are coloured.
-  The neutrals track the Autodesk brand's charcoal ramp. No gradients, no drop
-  shadows in the shell chrome.
+* **Warm graphite, no accent hue.** Like AutoCAD's dark chrome the surfaces are a
+  graphite with a slight brown cast (red > green > blue by a few steps), tiered from
+  a deep warm canvas up to the lighter ribbon band, with hairline borders. The ramp
+  is deliberately lighter than pure charcoal so panels read as material, and low in
+  chroma so point-cloud colours are still judged against near-neutral. Emphasis
+  (prompt text, focus, the active tool) is a warm off-white; only `Ok` / `Warn` /
+  `Error` are coloured. No gradients, no drop shadows in the shell chrome.
+* **Fine typography.** Regular and Medium weights only (no SemiBold/Bold), 12px body,
+  11px captions, 10px letter-spaced upper-case section and palette titles, 13px
+  palette headings; icons are 1.25px line drawings.
 * **macOS-native, approximated.** Font stack led by Autodesk's `Artifakt Element`
   then `SF Pro Text`, the menu in the system menu bar, a unified titlebar with the
   tool strip in it, Fluent's accent-derived visuals repointed at the neutral
@@ -39,21 +43,21 @@ versions of the same product.
 
 | Token | Hex | Role |
 | --- | --- | --- |
-| `ViewportBackdrop` | `0F0F0F` | the 3D canvas — deepest black |
-| `SurfaceDeep` | `171717` | command well, popups, inset lists |
-| `Surface` | `1F1F1F` | inspector, dialog bodies |
-| `SurfaceAlt` | `272727` | status bar, cards, raised buttons |
-| `Graphite` | `323232` | unified titlebar / tool strip band (≈ Autodesk charcoal-900) |
-| `SurfaceHover` | `373737` | pointer-over fill |
-| `Border` | `3D3D3D` | hairline dividers and outlines |
-| `BorderStrong` | `4E4E4E` | focused / raised edges |
-| `Text` | `DADADA` | primary text |
-| `TextDim` | `909090` | labels, captions, section headers (≈ Autodesk charcoal-700) |
-| `TextFaint` | `616161` | disabled text, faint separators |
-| `Accent` | `C2C2C2` | emphasis, not a hue: prompt, active tool glyph, focus outline |
-| `AccentBright` | `DEDEDE` | emphasis under the pointer; prompt lines in the transcript |
-| `AccentDim` | `3E3E3E` | lifted-graphite fill for a pressed / active control, status strip |
-| `SelectionFill` | `343434` | selected list row / completion candidate |
+| `ViewportBackdrop` | `1F1D1B` | the 3D canvas — deepest warm tone |
+| `SurfaceDeep` | `2A2724` | menu / ribbon tab band, command well, palettes, popups |
+| `Surface` | `33302C` | viewport header, dialog bodies |
+| `SurfaceAlt` | `3B3733` | palette headers, status bar, cards, raised buttons |
+| `Graphite` | `46413B` | ribbon body and selected tab — the warm graphite band |
+| `SurfaceHover` | `4B463F` | pointer-over fill |
+| `Border` | `4A453F` | hairline dividers and outlines |
+| `BorderStrong` | `645D55` | focused / raised edges, scrollbar thumb |
+| `Text` | `E6E1D9` | primary text — warm off-white |
+| `TextDim` | `A9A197` | labels, captions, section headers |
+| `TextFaint` | `7A736A` | disabled text, faint separators |
+| `Accent` | `D6CEC2` | emphasis, not a hue: prompt, icons, focus outline |
+| `AccentBright` | `F3EEE7` | emphasis under the pointer; active icons; prompt lines |
+| `AccentDim` | `5A5248` | lifted fill for a pressed / active control |
+| `SelectionFill` | `524B43` | selected row, completion candidate, ribbon hover |
 | `Error` / `Ok` / `Warn` | `E06C6C` / `5FB57A` / `E0A24E` | semantic — the only colours in the chrome |
 | `DataRed` … `DataPurple` | `E06C6C` `5FB57A` `E0A24E` `6C9EE0` `E0C24E` `B07CE0` | data colours, used only by icons whose subject is colour (COLORBY modes) |
 
