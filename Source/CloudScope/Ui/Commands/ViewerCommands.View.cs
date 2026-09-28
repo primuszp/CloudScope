@@ -336,6 +336,19 @@ public sealed partial class ViewerCommands
             : viewer.SetColorSource(MapColorSource(source.Keyword)));
     }
 
+    [CommandMethod("THIN", Flags = CommandFlags.NoUndoMarker,
+        Group = CommandGroup.View, Scope = CommandScope.Document,
+        Summary = "Shows a repeatable sample of the filtered resident cloud; 100 restores all points.",
+        Syntax = "THIN <keep percentage 1..100>")]
+    public IEnumerable<PromptStep> Thin(CommandContext context)
+    {
+        PromptDoubleStep percentage = context.Editor.GetDouble("Enter percentage of points to keep <100>:")
+            .WithRange(1, 100).WithDefault(100);
+        yield return percentage;
+        if (!percentage.IsOk) yield break;
+        context.Editor.WriteMessage(context.GetTarget<ViewerController>().ThinPointCloud(percentage.Value));
+    }
+
     [CommandMethod("FILTER", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.View, Scope = CommandScope.Document,
         Summary = "Shows only the points matching an attribute filter.",

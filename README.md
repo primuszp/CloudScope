@@ -15,6 +15,11 @@ A high-performance LAS (LiDAR) point cloud viewer built with C# and .NET 10.0.
   - W/A/S/D/Q/E: FPS Navigation
   - Num1/3/7/5: Standard views (Front/Right/Top/Isometric)
 - **Point Limit**: Load partial datasets for faster preview (default: 30M points)
+- **PLY Import**: Load ASCII or little-endian binary PLY vertices with optional RGB, intensity, and classification using `OPENPLY`
+- **XYZ Import**: Load XYZ text points with optional intensity and RGB columns using `OPENXYZ`
+- **PTS Import**: Load PTS text points with an optional count header, RGB and intensity using `OPENPTS`. Signed scanner intensity is normalized from -2048..2047 when negative values are present.
+- **Point thinning**: `THIN 25` shows a repeatable 25% sample of the filtered resident cloud. Source points and label indices are preserved; `THIN 100` restores full density.
+- **PTX / E57 import, exports, surfaces and local automation**: see [integrated exchange tools](docs/OpenPointcloudIntegration.md).
 - **Individual-tree segmentation**: Pick a trunk seed in a terrestrial/SLAM cloud; multi-source
   3D graph growth separates the selected tree from automatically detected neighbouring trunks
 

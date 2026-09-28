@@ -23,6 +23,7 @@ public readonly record struct ViewerStatusSnapshot
 
     /// <summary>File name of the loaded point cloud, empty when nothing is loaded.</summary>
     public string SourceName { get; init; } = "";
+    public IReadOnlyList<CloudLayerSnapshot> Layers { get; init; } = Array.Empty<CloudLayerSnapshot>();
 
     /// <summary>Points loaded into the viewer.</summary>
     public int LoadedCount { get; init; }
@@ -80,6 +81,8 @@ public readonly record struct ViewerStatusSnapshot
 
     /// <summary>Percentage of a load in progress, or -1 when nothing is loading.</summary>
     public int LoadProgress { get; init; } = -1;
+    public int SurfaceProgress { get; init; } = -1;
+    public int SurfaceTriangles { get; init; }
 
     public bool IsLoading => LoadProgress >= 0;
 
@@ -93,3 +96,5 @@ public readonly record struct ViewerStatusSnapshot
         ? $"{LoadedCount:N0}"
         : $"{VisibleCount:N0} / {LoadedCount:N0}";
 }
+
+public sealed record CloudLayerSnapshot(string Name, long PointCount, bool Visible);

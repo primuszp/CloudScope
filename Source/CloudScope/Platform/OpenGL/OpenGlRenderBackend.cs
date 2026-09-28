@@ -14,6 +14,7 @@ namespace CloudScope.Platform.OpenGL
         public IHighlightRenderer CreateHighlightRenderer() => new OpenGlHighlightRenderer();
 
         public IOverlayRenderer CreateOverlayRenderer() => new OpenGlOverlayRenderer();
+        public ISurfaceRenderer CreateSurfaceRenderer() => new OpenGlSurfaceRenderer();
 
         public SelectionGizmoRenderers CreateSelectionGizmoRenderers() =>
             new(new OpenGlBoxGizmoRenderer(), new OpenGlSphereGizmoRenderer(), new OpenGlCylinderGizmoRenderer());

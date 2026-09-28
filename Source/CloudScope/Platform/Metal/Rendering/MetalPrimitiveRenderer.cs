@@ -26,6 +26,7 @@ namespace CloudScope.Platform.Metal.Rendering
         private MTLRenderPipelineState _joinedSegmentPipeline;
         private MTLRenderPipelineState _joinedJoinPipeline;
         private MTLDepthStencilState _depthOn;
+        private MTLDepthStencilState _depthWrite;
         private MTLDepthStencilState _depthBehind;
         private MTLDepthStencilState _depthOff;
         private MTLBuffer _uniformsBuffer;
@@ -59,6 +60,7 @@ namespace CloudScope.Platform.Metal.Rendering
             _joinedSegmentPipeline = MetalShaderLibrary.CreateJoinedLineSegmentPipeline(device, colorFmt, depthFmt, _context.SampleCount);
             _joinedJoinPipeline = MetalShaderLibrary.CreateJoinedLineJoinPipeline(device, colorFmt, depthFmt, _context.SampleCount);
             _depthOn  = MetalShaderLibrary.CreateDepthState(device, depthWrite: false);
+            _depthWrite = MetalShaderLibrary.CreateDepthState(device, depthWrite: true);
             _depthBehind = MetalShaderLibrary.CreateDepthState(device, depthWrite: false, MTLCompareFunction.Greater);
             _depthOff = CreateDepthAlwaysState(device);
 
@@ -111,7 +113,7 @@ namespace CloudScope.Platform.Metal.Rendering
             MTLPrimitiveType primitiveType,
             Matrix4 mvp, Vector4 color, bool depthTest,
             int firstVertex = 0,
-            float lineWidthPixels = LineWidth.NativeMax)
+            float lineWidthPixels = LineWidth.NativeMax, bool writeDepth = false)
         {
             if (vertexBuffer.NativePtr == IntPtr.Zero || vertexCount <= 0 || !_initialized)
                 return;
@@ -145,7 +147,7 @@ namespace CloudScope.Platform.Metal.Rendering
             _uniformOffset++;
 
             encoder.SetRenderPipelineState(expandLines ? _wideLinePipeline : _pipeline);
-            encoder.SetDepthStencilState(depthTest ? _depthOn : _depthOff);
+            encoder.SetDepthStencilState(depthTest ? (writeDepth ? _depthWrite : _depthOn) : _depthOff);
             // ColorUniforms is consumed by both the vertex and the fragment function.
             // Binding only the vertex stage leaves the fragment color undefined,
             // making all primitive-based gizmos and line overlays disappear.
@@ -244,6 +246,7 @@ namespace CloudScope.Platform.Metal.Rendering
             MetalResources.Release(_joinedSegmentPipeline.NativePtr);
             MetalResources.Release(_joinedJoinPipeline.NativePtr);
             MetalResources.Release(_depthOn.NativePtr);
+            MetalResources.Release(_depthWrite.NativePtr);
             MetalResources.Release(_depthBehind.NativePtr);
             MetalResources.Release(_depthOff.NativePtr);
             _pipeline = default;
@@ -251,6 +254,7 @@ namespace CloudScope.Platform.Metal.Rendering
             _joinedSegmentPipeline = default;
             _joinedJoinPipeline = default;
             _depthOn = default;
+            _depthWrite = default;
             _depthBehind = default;
             _depthOff = default;
             _initialized = false;

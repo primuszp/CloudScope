@@ -32,6 +32,8 @@ public sealed partial class MainWindow : Window
     private Grid _workspaceGrid = null!;
     private StackPanel _toolStripPanel = null!;
     private StackPanel _inspectorPanel = null!;
+    private readonly StackPanel _cloudPanel = new() { Spacing = 4 };
+    private string _cloudPanelSignature = "";
     private Grid _contentGrid = null!;
     private ContentControl _commandLineHost = null!;
     private Border _commandLineBorder = null!;
@@ -298,9 +300,11 @@ public sealed partial class MainWindow : Window
 
     private void BuildInspector()
     {
+        _inspectorPanel.Children.Add(new TextBlock { Text = "POINT CLOUDS", Classes = { "sectionTitle" } });
+        _inspectorPanel.Children.Add(_cloudPanel);
         AddInspectorGroup("GENERAL", "File", "Points", "Filter", "Section");
         AddInspectorGroup("VIEW", "Projection", "View", "Layout", "FPS");
-        AddInspectorGroup("DISPLAY", "Color by", "Point size");
+        AddInspectorGroup("DISPLAY", "Color by", "Point size", "Surface");
         AddInspectorGroup("LABELING", "Mode", "Tool", "State", "Label", "Instance");
 
         var registry = new Button { Content = "Label registry...", HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -644,6 +648,7 @@ public sealed partial class MainWindow : Window
     private void RefreshViewerState()
     {
         ViewerStatusSnapshot status = _hostController.Status;
+        RefreshCloudPanel(status);
 
         // FPS moves every tick, so it is written on its own; everything else is rewritten
         // only when it actually changed, instead of invalidating layout a few times a second.
@@ -656,6 +661,8 @@ public sealed partial class MainWindow : Window
 
         if (status.IsLoading)
             _statusText.Text = $"Loading {status.LoadProgress}%";
+        else if (_lastStatus?.IsLoading == true)
+            _statusText.Text = "Ready";
 
         if (_lastStatus is { } previous && status == previous with { Fps = status.Fps })
             return;
@@ -671,6 +678,7 @@ public sealed partial class MainWindow : Window
         SetValue("Layout", status.ViewportLayout);
         SetValue("Color by", status.ColorSource.ToDisplayName());
         SetValue("Point size", $"{status.PointSize:0.0} px");
+        SetValue("Surface", status.SurfaceProgress >= 0 ? $"Building {status.SurfaceProgress}%" : $"{status.SurfaceTriangles:N0} triangles");
         SetValue("Mode", status.Mode.ToString());
         SetValue("Tool", status.ActiveTool.ToString());
         SetValue("State", status.InteractionState.ToString());
@@ -702,6 +710,38 @@ public sealed partial class MainWindow : Window
     {
         if (_inspectorValues.TryGetValue(row, out TextBlock? block))
             block.Text = value;
+    }
+
+    private void RefreshCloudPanel(ViewerStatusSnapshot status)
+    {
+        string signature = System.Text.Json.JsonSerializer.Serialize(new { status.SourceName, status.LoadedCount, status.LoadProgress, status.Layers });
+        if (signature == _cloudPanelSignature) return;
+        _cloudPanelSignature = signature;
+        _cloudPanel.Children.Clear();
+        if (status.IsLoading)
+            _cloudPanel.Children.Add(new TextBlock { Text = $"Loading {status.LoadProgress}%" });
+        if (status.Layers.Count == 0)
+        {
+            _cloudPanel.Children.Add(new TextBlock
+            {
+                Text = status.HasCloud ? $"{status.SourceName} · {status.LoadedCount:N0} points" : "No point cloud loaded",
+                TextWrapping = global::Avalonia.Media.TextWrapping.Wrap
+            });
+        }
+        foreach (CloudLayerSnapshot layer in status.Layers)
+        {
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+            var toggle = new CheckBox { Content = new TextBlock { Text = $"{layer.Name} · {layer.PointCount:N0}", TextWrapping = global::Avalonia.Media.TextWrapping.Wrap }, IsChecked = layer.Visible };
+            toggle.Click += (_, _) => RunCommandFromUi($"LAYER {(toggle.IsChecked == true ? "ON" : "OFF")} {'"' + layer.Name + '"'}");
+            var close = new Button { Content = "×" };
+            close.Click += (_, _) => RunCommandFromUi($"LAYER Close {'"' + layer.Name + '"'}");
+            Grid.SetColumn(close, 1);
+            row.Children.Add(toggle); row.Children.Add(close);
+            _cloudPanel.Children.Add(row);
+        }
+        var add = new Button { Content = "Add tile store...", HorizontalAlignment = HorizontalAlignment.Stretch };
+        add.Click += (_, _) => RunCommandFromUi("ADDSTORE");
+        _cloudPanel.Children.Add(add);
     }
 
     // ── Input ───────────────────────────────────────────────────────────────

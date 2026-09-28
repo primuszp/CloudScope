@@ -20,6 +20,14 @@ namespace CloudScope
         private readonly IPointCloudRenderer _pointRenderer;
         private readonly IPointTileCloudRenderer _streamingRenderer;
         private readonly IOverlayRenderer _overlayRenderer;
+        private readonly ISurfaceRenderer _surfaceRenderer;
+        private SurfaceMesh? _surface;
+        private bool _surfaceVisible = true;
+        private CancellationTokenSource? _reconstruction;
+        private int _geometryVersion;
+        private int _surfaceProgress = -1;
+        private LocalCommandServer? _api;
+        internal ICommandExecutor? ApiCommands { get; set; }
         private readonly IHighlightRenderer _highlightRenderer;
         private readonly SelectionGizmoRenderers _selectionGizmoRenderers;
         private readonly FrameTimingDiagnostics _frameTiming = new();
@@ -85,6 +93,7 @@ namespace CloudScope
         /// </remarks>
         private readonly List<PointTileLayer> _layers = [];
         private string _sourceName = "";
+        private string _sourcePath = "";
         private float _smoothedFps;
 
         private bool _suppressEscapeClose;
@@ -104,6 +113,7 @@ namespace CloudScope
             _pointRenderer = renderBackend.CreatePointCloudRenderer();
             _streamingRenderer = renderBackend.CreateStreamingPointCloudRenderer();
             _overlayRenderer = renderBackend.CreateOverlayRenderer();
+            _surfaceRenderer = renderBackend.CreateSurfaceRenderer();
             _highlightRenderer = renderBackend.CreateHighlightRenderer();
             _selectionGizmoRenderers = renderBackend.CreateSelectionGizmoRenderers();
             _selection = new SelectionController(_highlightRenderer.MarkDirty);
@@ -261,6 +271,7 @@ namespace CloudScope
 
         public void LoadPointCloud(PointData[] pts, float cloudRadius = 50f)
         {
+            InvalidateSurface();
             DiscardCrossSection();
             CloseLayers();
             _dataset = null;
@@ -330,7 +341,7 @@ namespace CloudScope
                 var sw = Stopwatch.StartNew();
                 try
                 {
-                    var progress = new Progress<int>(percent => LoadProgress = percent);
+                    var progress = new InlineProgress<int>(percent => LoadProgress = percent);
                     using var reader = new LasReader(path);
                     LoadedPointCloud cloud = PointCloudLoader.Load(reader, maxPoints, progress: progress);
                     PointCloudDataset dataset = cloud.ToDataset();
@@ -355,6 +366,64 @@ namespace CloudScope
                 }
             });
 
+            return $"Reading {name}...";
+        }
+
+        /// <summary>Loads PLY vertices through the same resident-cloud rendering path as LAS.</summary>
+        public string OpenPlyPointCloud(string path, long maxPoints = 0)
+            => OpenTextOrPlyPointCloud(path, maxPoints, "OPENPLY", "PLY", PlyPointCloudLoader.Load);
+
+        /// <summary>Loads an XYZ text cloud through the resident-cloud rendering path.</summary>
+        public string OpenXyzPointCloud(string path, long maxPoints = 0)
+            => OpenTextOrPlyPointCloud(path, maxPoints, "OPENXYZ", "XYZ", XyzPointCloudLoader.Load);
+
+        /// <summary>Loads PTS text points with optional intensity and RGB.</summary>
+        public string OpenPtsPointCloud(string path, long maxPoints = 0)
+            => OpenTextOrPlyPointCloud(path, maxPoints, "OPENPTS", "PTS", PtsPointCloudLoader.Load);
+
+        public string OpenPtxPointCloud(string path, long maxPoints = 0)
+            => OpenTextOrPlyPointCloud(path, maxPoints, "OPENPTX", "PTX", PtxPointCloudLoader.Load);
+
+        public string OpenE57PointCloud(string path, long maxPoints = 0)
+            => OpenTextOrPlyPointCloud(path, maxPoints, "OPENE57", "E57", E57PointCloudLoader.Load);
+
+        private string OpenTextOrPlyPointCloud(string path, long maxPoints, string command,
+            string format, Func<string, long, IProgress<int>?, LoadedPointCloud> loader)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return $"{command} requires a file path.";
+            if (!File.Exists(path)) return $"File not found: {path}";
+            if (LoadProgress >= 0) return "A point cloud is already loading.";
+
+            LoadProgress = 0;
+            string name = Path.GetFileName(path);
+            _ = Task.Run(() =>
+            {
+                var sw = Stopwatch.StartNew();
+                try
+                {
+                    var progress = new InlineProgress<int>(percent => LoadProgress = percent);
+                    LoadedPointCloud cloud = loader(path, maxPoints, progress);
+                    PointCloudDataset dataset = cloud.ToDataset();
+                    sw.Stop();
+                    _pendingWork.Enqueue(() =>
+                    {
+                        LoadPointCloud(dataset);
+                        SetLasFilePath(string.Empty);
+                        _sourceName = name;
+                        _sourcePath = Path.GetFullPath(path);
+                        LoadProgress = -1;
+                        BackgroundMessage?.Invoke($"Loaded {cloud.LoadedCount:N0} {format} points from {name} ({sw.Elapsed.TotalSeconds:0.0}s).");
+                    });
+                }
+                catch (Exception ex)
+                {
+                    _pendingWork.Enqueue(() =>
+                    {
+                        LoadProgress = -1;
+                        BackgroundMessage?.Invoke($"{format} load failed: {ex.Message}");
+                    });
+                }
+            });
             return $"Reading {name}...";
         }
 
@@ -383,6 +452,7 @@ namespace CloudScope
         /// </remarks>
         public string OpenPointTileStore(string directory, bool replace)
         {
+            InvalidateSurface();
             if (string.IsNullOrWhiteSpace(directory))
                 return "OPENSTORE requires a store directory.";
 
@@ -563,6 +633,7 @@ namespace CloudScope
         public void SetLasFilePath(string path)
         {
             _sourceName = Path.GetFileName(path);
+            _sourcePath = path.Length == 0 ? "" : Path.GetFullPath(path);
             _selection.SetLasFilePath(path);
         }
 
@@ -573,6 +644,9 @@ namespace CloudScope
         public ViewerStatusSnapshot Status => new()
         {
             SourceName = _sourceName,
+            Layers = _layers.Select(layer => new CloudLayerSnapshot(layer.Name, layer.PointCount, layer.Visible)).ToArray(),
+            SurfaceProgress = _surfaceProgress,
+            SurfaceTriangles = _surface?.Indices.Length / 3 ?? 0,
             LoadedCount = StoredPointCount ?? _dataset?.LoadedCount ?? _pointRenderer.PointCount,
             VisibleCount = StoredPointCount ?? _dataset?.VisibleCount ?? _pointRenderer.PointCount,
             Filter = _dataset is { FilterDescription: not "None" } filtered ? filtered.FilterDescription : "",
@@ -618,11 +692,13 @@ namespace CloudScope
 
         public void Reset()
         {
+            InvalidateSurface();
             DiscardCrossSection();
             CloseLayers();
             _cloudRadius = 50f;
             _dataset = null;
             _sourceName = "";
+            _sourcePath = "";
             _selection.Reset();
             foreach (ViewportState viewport in _viewports)
                 FitViewport(viewport);
@@ -921,6 +997,108 @@ namespace CloudScope
             return result;
         }
 
+        /// <summary>Samples the resident cloud while preserving source indices and annotations.</summary>
+        public string ThinPointCloud(double keepPercentage)
+        {
+            if (_dataset == null) return "THIN requires a resident point cloud.";
+            string result = _dataset.SetThinning(keepPercentage);
+            LoadDatasetIntoSelection();
+            UploadDatasetView();
+            return result;
+        }
+
+        public string ExportPointCloud(string path, PointCloudExportFormat format)
+        {
+            if (_dataset == null) return "Export requires a resident point cloud.";
+            if (Path.GetFullPath(path) == _sourcePath) return "Choose an export path different from the source file.";
+            string temporary = Path.GetFullPath(path) + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                using (var stream = File.Create(temporary))
+                    PointCloudExporter.Write(stream, _dataset, format, index =>
+                        _selection.Labels.GetAnnotation(index) is { } annotation
+                            ? _selection.Registry.CodeFor(annotation.LabelName) ?? _dataset.Attributes.Class[index]
+                            : _dataset.Attributes.Class[index]);
+                File.Move(temporary, path, overwrite: true);
+                return $"Exported {_dataset.VisibleCount:N0} points to {path}.";
+            }
+            finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        }
+
+        public string ReconstructSurface(int neighbors = 15, float maximumEdge = 0)
+        {
+            if (_dataset == null) return "Reconstruction requires a resident point cloud.";
+            if (_reconstruction != null) return "A reconstruction is already running.";
+            int version = _geometryVersion;
+            var points = _dataset.ViewPoints.Take(_dataset.VisibleCount).ToArray();
+            var snapshot = new PointCloudDataset(points, points.Length, _dataset.Radius, _dataset.HasColor, 1,
+                new PointCloudAttributes(new byte[points.Length], new ushort[points.Length], new byte[points.Length], new double[points.Length], 0, 0),
+                _dataset.OriginX, _dataset.OriginY, _dataset.OriginZ);
+            var cancellation = new CancellationTokenSource();
+            _reconstruction = cancellation;
+            _surfaceProgress = 0;
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    var progress = new InlineProgress<int>(p => _surfaceProgress = p);
+                    SurfaceMesh mesh = SurfaceReconstruction.Build(snapshot, neighbors, maximumEdge, cancellation.Token, progress);
+                    _pendingWork.Enqueue(() =>
+                    {
+                        if (version != _geometryVersion || cancellation.IsCancellationRequested) return;
+                        _surface = mesh; _surfaceVisible = true; _surfaceRenderer.Upload(mesh);
+                        BackgroundMessage?.Invoke($"Reconstructed {mesh.Indices.Length / 3:N0} triangles. EXPORTOBJ saves the mesh.");
+                    });
+                }
+                catch (Exception ex)
+                {
+                    _pendingWork.Enqueue(() => BackgroundMessage?.Invoke(ex is OperationCanceledException ? "Reconstruction cancelled." : $"Reconstruction failed: {ex.Message}"));
+                }
+                finally
+                {
+                    _pendingWork.Enqueue(() => { if (_reconstruction == cancellation) { _reconstruction = null; _surfaceProgress = -1; } cancellation.Dispose(); });
+                }
+            });
+            return "Reconstructing surface...";
+        }
+
+        public string SetSurfaceVisibility(bool visible) { _surfaceVisible = visible; return $"Surface {(visible ? "shown" : "hidden")}."; }
+        public string ConfigureLocalApi(bool enabled, int port = 47830)
+        {
+            if (!enabled) { _api?.Dispose(); _api = null; return "Local command API stopped."; }
+            if (_api != null) return $"API already listening on 127.0.0.1:{_api.Port}.";
+            _api = new LocalCommandServer(port, (command, token) =>
+            {
+                var completion = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _pendingWork.Enqueue(() =>
+                {
+                    if (token.IsCancellationRequested) { completion.TrySetCanceled(token); return; }
+                    try { completion.TrySetResult(command == null ? (object)Status : ApiCommands?.Execute(command) ?? CommandResult.End("Command runtime unavailable.")); }
+                    catch (Exception ex) { completion.TrySetException(ex); }
+                });
+                return completion.Task;
+            });
+            return $"API listening on 127.0.0.1:{_api.Port}. Token and discovery: {_api.DiscoveryFile}";
+        }
+        public string ClearSurface() { InvalidateSurface(); return "Surface cleared; reconstruction cancelled."; }
+        private void InvalidateSurface()
+        {
+            _geometryVersion++; _reconstruction?.Cancel(); _surface = null; _surfaceRenderer.Upload(null);
+        }
+        public string ExportSurfaceObj(string path)
+        {
+            if (_surface == null) return "Run RECONSTRUCT first.";
+            if (Path.GetFullPath(path) == _sourcePath) return "Choose a path different from the source file.";
+            string temporary = Path.GetFullPath(path) + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                using (var writer = new StreamWriter(temporary)) MeshExporter.WriteObj(writer, _surface);
+                File.Move(temporary, path, overwrite: true);
+                return $"Exported {_surface.Indices.Length / 3:N0} triangles to {path}.";
+            }
+            finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        }
+
         public string SetColorSource(ColorSource source)
         {
             if (_dataset == null)
@@ -966,6 +1144,7 @@ namespace CloudScope
 
         private void UploadDatasetView()
         {
+            InvalidateSurface();
             if (_dataset == null)
                 return;
 
@@ -1817,6 +1996,7 @@ namespace CloudScope
                     ? _pointRenderer.Render(frameData, in renderView)
                     : _streamingRenderer.Render(frameData, in renderView);
                 totalDrawCount += drawCount;
+                if (_surfaceVisible) _surfaceRenderer.Render(frameData, ref view, ref proj);
 
                 Breadcrumb("highlight");
                 if (_selection.SourcePoints != null && _selection.Labels.Count > 0)
@@ -2038,6 +2218,9 @@ namespace CloudScope
 
         public void Dispose()
         {
+            _api?.Dispose();
+            _reconstruction?.Cancel();
+            _surfaceRenderer.Dispose();
             CloseLayers();
             _streamingRenderer.Dispose();
             _pointRenderer.Dispose();
@@ -2685,4 +2868,9 @@ namespace CloudScope
         Back,
         Isometric
     }
+    internal sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) => report(value);
+    }
+
 }
