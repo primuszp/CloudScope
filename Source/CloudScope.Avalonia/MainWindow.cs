@@ -21,32 +21,36 @@ public sealed partial class MainWindow : Window
     private readonly bool _useNativeMenu = OperatingSystem.IsMacOS();
     private readonly CommandLineSession _commandSession;
     private readonly DispatcherTimer _statusTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
-    private readonly List<(Button Button, string CheckState)> _toolButtons = [];
-    private readonly Dictionary<string, TextBlock> _inspectorValues = new(StringComparer.Ordinal);
+    private readonly List<(Button Button, string CheckState)> _statusToggles = [];
     private readonly ShellSettings _settings = ShellSettings.Load();
 
     private CommandLineControl _commandLine = null!;
+    private readonly RibbonControl _ribbon = new();
+    private readonly ExplorerPanel _explorer = new();
+    private readonly PropertiesPanel _properties = new();
 
     // Cached control references — resolved once after InitializeComponent
     private Menu _mainMenuControl = null!;
     private Grid _workspaceGrid = null!;
-    private StackPanel _toolStripPanel = null!;
-    private StackPanel _inspectorPanel = null!;
-    private readonly StackPanel _cloudPanel = new() { Spacing = 4 };
-    private string _cloudPanelSignature = "";
     private Grid _contentGrid = null!;
+    private Grid _paletteGrid = null!;
+    private Border _paletteColumn = null!;
+    private GridSplitter _paletteColumnSplitter = null!;
+    private DockPanel _viewportColumn = null!;
     private ContentControl _commandLineHost = null!;
     private Border _commandLineBorder = null!;
     private GridSplitter _commandSplitter = null!;
     private ContentControl _viewportContainer = null!;
+    private StackPanel _viewportControls = null!;
+    private TextBlock _documentTitle = null!;
+    private TextBlock _documentDetail = null!;
     private TextBlock _statusText = null!;
     private TextBlock _statusPoints = null!;
     private TextBlock _statusMode = null!;
     private TextBlock _statusLabel = null!;
-    private TextBlock _statusProjection = null!;
     private TextBlock _statusFps = null!;
-    private TextBlock _viewBadgeTitle = null!;
-    private TextBlock _viewBadgeSubtitle = null!;
+    private ProgressBar _statusProgress = null!;
+    private StackPanel _statusTogglePanel = null!;
 
     public MainWindow()
     {
@@ -63,8 +67,10 @@ public sealed partial class MainWindow : Window
 
         ConfigureWindowChrome();
         BuildMenu();
-        BuildToolStrip();
-        BuildInspector();
+        BuildRibbon();
+        BuildPalettes();
+        BuildViewportHeader();
+        BuildStatusToggles();
         BuildCommandLine();
         _hostController.ViewerCommandOutput += OnViewerCommandOutput;
 
@@ -81,18 +87,7 @@ public sealed partial class MainWindow : Window
         _statusTimer.Tick += (_, _) => RefreshViewerState();
         _statusTimer.Start();
 
-        Opened += (_, _) =>
-        {
-            // The workspace comes back the way it was left, and it does so by issuing the
-            // command that arranges it, not by setting viewer state behind the command's back.
-            // The macOS workspace always opens with the command line in its native docked
-            // position at the bottom. A floating palette saved by another shell (or by an
-            // earlier macOS session) must not detach it again during startup.
-            if (_settings.CommandLineFloating && !OperatingSystem.IsMacOS())
-                RunCommandFromUi("COMMANDLINE Float");
-
-            _commandLine.FocusInput();
-        };
+        Opened += (_, _) => _commandLine.FocusInput();
         Closing += (_, _) => SaveShellSettings();
     }
 
@@ -100,23 +95,27 @@ public sealed partial class MainWindow : Window
 
     private void ResolveControls()
     {
-        _workspaceGrid      = Find<Grid>("WorkspaceGrid");
-        _mainMenuControl    = Find<Menu>("MainMenuBar");
-        _toolStripPanel     = Find<StackPanel>("ToolStripPanel");
-        _inspectorPanel     = Find<StackPanel>("InspectorPanel");
-        _contentGrid        = Find<Grid>("ContentGrid");
-        _commandLineHost    = Find<ContentControl>("CommandLineHost");
-        _commandLineBorder  = Find<Border>("CommandLineBorder");
-        _commandSplitter    = Find<GridSplitter>("CommandLineSplitter");
-        _viewportContainer  = Find<ContentControl>("ViewportHost");
-        _statusText         = Find<TextBlock>("StatusText");
-        _statusPoints       = Find<TextBlock>("StatusPoints");
-        _statusMode         = Find<TextBlock>("StatusMode");
-        _statusLabel        = Find<TextBlock>("StatusLabel");
-        _statusProjection   = Find<TextBlock>("StatusProjection");
-        _statusFps          = Find<TextBlock>("StatusFps");
-        _viewBadgeTitle     = Find<TextBlock>("ViewBadgeTitle");
-        _viewBadgeSubtitle  = Find<TextBlock>("ViewBadgeSubtitle");
+        _workspaceGrid         = Find<Grid>("WorkspaceGrid");
+        _mainMenuControl       = Find<Menu>("MainMenuBar");
+        _contentGrid           = Find<Grid>("ContentGrid");
+        _paletteGrid           = Find<Grid>("PaletteGrid");
+        _paletteColumn         = Find<Border>("PaletteColumn");
+        _paletteColumnSplitter = Find<GridSplitter>("PaletteColumnSplitter");
+        _viewportColumn        = Find<DockPanel>("ViewportColumn");
+        _commandLineHost       = Find<ContentControl>("CommandLineHost");
+        _commandLineBorder     = Find<Border>("CommandLineBorder");
+        _commandSplitter       = Find<GridSplitter>("CommandLineSplitter");
+        _viewportContainer     = Find<ContentControl>("ViewportHost");
+        _viewportControls      = Find<StackPanel>("ViewportControls");
+        _documentTitle         = Find<TextBlock>("DocumentTitle");
+        _documentDetail        = Find<TextBlock>("DocumentDetail");
+        _statusText            = Find<TextBlock>("StatusText");
+        _statusPoints          = Find<TextBlock>("StatusPoints");
+        _statusMode            = Find<TextBlock>("StatusMode");
+        _statusLabel           = Find<TextBlock>("StatusLabel");
+        _statusFps             = Find<TextBlock>("StatusFps");
+        _statusProgress        = Find<ProgressBar>("StatusProgress");
+        _statusTogglePanel     = Find<StackPanel>("StatusToggles");
     }
 
     private T Find<T>(string name) where T : Control =>
@@ -129,14 +128,13 @@ public sealed partial class MainWindow : Window
         if (!_useNativeMenu)
             return;
 
-        // macOS: the menu belongs in the system menu bar, and the tool strip sits in a
-        // unified titlebar so the window reads like a native document app.
+        // macOS: the menu belongs in the system menu bar, and the ribbon's tab row is the
+        // unified titlebar, so the window reads like a native document app.
         _mainMenuControl.IsVisible = false;
-        _workspaceGrid.RowDefinitions[0].Height = new GridLength(0);
 
         ExtendClientAreaToDecorationsHint = true;
         ExtendClientAreaTitleBarHeightHint = -1;
-        Find<Border>("ToolStripBorder").Padding = new Thickness(78, 0, 0, 0);
+        _ribbon.TitleBarInset = 78;
     }
 
     // ── Menu ────────────────────────────────────────────────────────────────
@@ -245,99 +243,229 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    // ── Tool strip ──────────────────────────────────────────────────────────
+    // ── Ribbon ──────────────────────────────────────────────────────────────
 
-    private void BuildToolStrip()
+    private void BuildRibbon()
     {
-        AddToolButton("⌸", "Open", "OPEN", "");
-        AddToolSeparator();
-        AddToolButton("✥", "Navigate", "NAVIGATE", CommandMenu.CheckStates.ModeNavigate);
-        AddToolButton("✎", "Label", "LABELMODE", CommandMenu.CheckStates.ModeLabel);
-        AddToolSeparator();
-        AddToolButton("▭", "Box", "SELECT Box", CommandMenu.CheckStates.ToolBox);
-        AddToolButton("○", "Sphere", "SELECT Sphere", CommandMenu.CheckStates.ToolSphere);
-        AddToolButton("◍", "Cylinder", "SELECT Cylinder", CommandMenu.CheckStates.ToolCylinder);
-        AddToolSeparator();
-        AddToolButton("⤢", "Fit", "FIT", "");
-        AddToolButton("✓", "Confirm", "CONFIRM", "");
-        AddToolButton("✕", "Cancel", "CANCEL", "");
-        AddToolSeparator();
-        AddToolButton("⛶", "Extents", "ZOOM Extents", "");
+        _ribbon.CommandRequested += Activate;
+        _ribbon.TabChanged += tab => _settings.RibbonTab = tab;
+        _ribbon.SelectTab(_settings.RibbonTab);
+        Find<ContentControl>("RibbonHost").Content = _ribbon;
     }
 
-    private void AddToolButton(string glyph, string caption, string command, string checkState)
-    {
-        var button = new Button
-        {
-            Classes = { "tool" },
-            Content = new StackPanel
-            {
-                Children =
-                {
-                    new TextBlock { Text = glyph, Classes = { "glyph" } },
-                    new TextBlock { Text = caption, Classes = { "caption" } }
-                }
-            }
-        };
+    // ── Palettes ────────────────────────────────────────────────────────────
 
-        ToolTip.SetTip(button, $"{caption}  ·  {command}");
+    private void BuildPalettes()
+    {
+        _explorer.CommandRequested += Activate;
+        _explorer.SelectionChanged += _ => RefreshProperties(_hostController.Status);
+        _properties.CommandRequested += Activate;
+        Find<ContentControl>("ExplorerHost").Content = _explorer;
+        Find<ContentControl>("PropertiesHost").Content = _properties;
+
+        StackPanel explorerTools = Find<StackPanel>("ExplorerTools");
+        explorerTools.Children.Add(PaletteButton(RibbonIcons.Open, "Open point cloud  ·  OPEN", "OPEN"));
+        explorerTools.Children.Add(PaletteButton(RibbonIcons.Layers, "Add tile store  ·  ADDSTORE", "ADDSTORE"));
+        explorerTools.Children.Add(PaletteButton(RibbonIcons.Cancel, "Close explorer  ·  EXPLORER Off", "EXPLORER Off"));
+
+        StackPanel propertyTools = Find<StackPanel>("PropertiesTools");
+        propertyTools.Children.Add(PaletteButton(RibbonIcons.Cancel, "Close properties  ·  PROPERTIES Off", "PROPERTIES Off"));
+
+        double share = Math.Clamp(_settings.ExplorerShare, 0.15, 0.85);
+        _paletteGrid.RowDefinitions[1].Height = new GridLength(share, GridUnitType.Star);
+        _paletteGrid.RowDefinitions[3].Height = new GridLength(1 - share, GridUnitType.Star);
+    }
+
+    private Button PaletteButton(string icon, string tip, string command)
+    {
+        var button = new Button { Classes = { "paletteTool" }, Content = Icons.Create(icon, 14) };
+        ToolTip.SetTip(button, tip);
         button.Click += (_, _) => Activate(command);
-        _toolStripPanel.Children.Add(button);
-
-        if (checkState.Length > 0)
-            _toolButtons.Add((button, checkState));
+        return button;
     }
 
-    private void AddToolSeparator() =>
-        _toolStripPanel.Children.Add(new Border
-        {
-            Width = 1,
-            Margin = new Thickness(4, 6),
-            [!BackgroundProperty] = new global::Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("CsBorder")
-        });
+    private bool? _palettesOnRight;
+    private (bool Explorer, bool Properties)? _paletteVisibility;
 
-    // ── Inspector ───────────────────────────────────────────────────────────
-
-    private void BuildInspector()
+    /// <summary>
+    /// Shows, hides and docks the palette column to match the viewer's EXPLORER, PROPERTIES
+    /// state. Hiding one palette gives its room to the other; hiding both gives it all to the
+    /// viewport. The column's width survives being hidden.
+    /// </summary>
+    private void ProjectPalettes(ViewerStatusSnapshot status)
     {
-        _inspectorPanel.Children.Add(new TextBlock { Text = "POINT CLOUDS", Classes = { "sectionTitle" } });
-        _inspectorPanel.Children.Add(_cloudPanel);
-        AddInspectorGroup("GENERAL", "File", "Points", "Filter", "Section");
-        AddInspectorGroup("VIEW", "Projection", "View", "Layout", "FPS");
-        AddInspectorGroup("DISPLAY", "Color by", "Point size", "Surface");
-        AddInspectorGroup("LABELING", "Mode", "Tool", "State", "Label", "Instance");
-
-        var registry = new Button { Content = "Label registry...", HorizontalAlignment = HorizontalAlignment.Stretch };
-        registry.Click += (_, _) => RunCommandFromUi("LABELS");
-        _inspectorPanel.Children.Add(registry);
-    }
-
-    private void AddInspectorGroup(string title, params string[] rows)
-    {
-        _inspectorPanel.Children.Add(new TextBlock
+        if (_palettesOnRight != status.PalettesOnRight)
         {
-            Text = title,
-            Classes = { "sectionTitle" },
-            Margin = new Thickness(0, 4, 0, 2)
-        });
+            _palettesOnRight = status.PalettesOnRight;
+            double width = _contentGrid.ColumnDefinitions[status.PalettesOnRight ? 0 : 2].Width.IsAbsolute
+                ? _contentGrid.ColumnDefinitions[status.PalettesOnRight ? 0 : 2].Width.Value
+                : PaletteWidth();
 
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("104,*"), RowSpacing = 6 };
-        for (int i = 0; i < rows.Length; i++)
-        {
-            grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
-
-            var name = new TextBlock { Text = rows[i], Classes = { "propertyName" } };
-            var value = new TextBlock { Text = "—", Classes = { "propertyValue" } };
-            Grid.SetRow(name, i);
-            Grid.SetRow(value, i);
-            Grid.SetColumn(value, 1);
-            grid.Children.Add(name);
-            grid.Children.Add(value);
-            _inspectorValues[rows[i]] = value;
+            // Column 1 is always the splitter; the palette and the viewport trade 0 and 2.
+            Grid.SetColumn(_paletteColumn, status.PalettesOnRight ? 2 : 0);
+            Grid.SetColumn(_viewportColumn, status.PalettesOnRight ? 0 : 2);
+            _contentGrid.ColumnDefinitions[status.PalettesOnRight ? 0 : 2].Width = GridLength.Star;
+            _contentGrid.ColumnDefinitions[status.PalettesOnRight ? 2 : 0].Width = new GridLength(width);
+            _paletteVisibility = null;
         }
 
-        _inspectorPanel.Children.Add(grid);
+        (bool, bool) visibility = (status.ExplorerVisible, status.PropertiesVisible);
+        if (_paletteVisibility == visibility)
+            return;
+
+        // The column width is remembered before it is collapsed, not after.
+        if (_paletteVisibility is { } previous && (previous.Explorer || previous.Properties))
+            _paletteWidth = PaletteWidth();
+        _paletteVisibility = visibility;
+
+        bool any = status.ExplorerVisible || status.PropertiesVisible;
+        _paletteColumn.IsVisible = any;
+        _paletteColumnSplitter.IsVisible = any;
+        ColumnDefinition paletteColumn = _contentGrid.ColumnDefinitions[status.PalettesOnRight ? 2 : 0];
+        paletteColumn.Width = any ? new GridLength(_paletteWidth) : new GridLength(0);
+
+        bool both = status.ExplorerVisible && status.PropertiesVisible;
+        foreach (int row in new[] { 0, 1 })
+            SetPaletteRowVisible(row, status.ExplorerVisible);
+        SetPaletteRowVisible(3, status.PropertiesVisible);
+        Find<GridSplitter>("PaletteSplitter").IsVisible = both;
+
+        double share = Math.Clamp(_settings.ExplorerShare, 0.15, 0.85);
+        _paletteGrid.RowDefinitions[1].Height = status.ExplorerVisible
+            ? new GridLength(both ? share : 1, GridUnitType.Star) : new GridLength(0);
+        _paletteGrid.RowDefinitions[3].Height = status.PropertiesVisible
+            ? new GridLength(both ? 1 - share : 1, GridUnitType.Star) : new GridLength(0);
     }
+
+    private double _paletteWidth = 300;
+
+    private void SetPaletteRowVisible(int row, bool visible)
+    {
+        foreach (Control child in _paletteGrid.Children.OfType<Control>().Where(c => Grid.GetRow(c) == row))
+            child.IsVisible = visible;
+    }
+
+    private double PaletteWidth()
+    {
+        ColumnDefinition column = _contentGrid.ColumnDefinitions[_palettesOnRight == true ? 2 : 0];
+        return column.ActualWidth > 40 ? column.ActualWidth : _paletteWidth;
+    }
+
+    private void RefreshProperties(ViewerStatusSnapshot status) =>
+        _properties.Refresh(_explorer.SelectedNode, status, _hostController.LabelDefinitions, _hostController.ActiveLabel);
+
+    // ── Viewport header ─────────────────────────────────────────────────────
+
+    private Button _viewControl = null!;
+    private Button _projectionControl = null!;
+    private Button _layoutControl = null!;
+    private Button _colorControl = null!;
+
+    /// <summary>
+    /// AutoCAD's in-canvas viewport controls ("[Top][Parallel]"), moved into the strip over
+    /// the viewport so the native render surface cannot cover them.
+    /// </summary>
+    private void BuildViewportHeader()
+    {
+        Find<ContentControl>("DocumentIcon").Content = Icons.Create(RibbonIcons.Cloud, 14);
+
+        _viewControl = ViewportControl("View",
+            ("Top", "VIEW Top"), ("Bottom", "VIEW Bottom"), ("Front", "VIEW Front"), ("Back", "VIEW BAck"),
+            ("Left", "VIEW Left"), ("Right", "VIEW Right"), ("Isometric", "VIEW Isometric"),
+            ("", ""), ("Zoom extents", "ZOOM Extents"), ("Save view...", "VIEW Save"));
+        _projectionControl = ViewportControl("Projection",
+            ("Perspective", "PROJECTION Perspective"), ("Parallel", "PROJECTION PArallel"));
+        _layoutControl = ViewportControl("Viewports",
+            ("Single", "VPORTS Single Top"), ("Two vertical", "VPORTS Two Vertical Top"),
+            ("Two horizontal", "VPORTS Two Horizontal Top"), ("Four", "VPORTS 4 Top"),
+            ("Nine", "VPORTS 9 Top"), ("", ""), ("Previous", "VPORTS PRevious Top"));
+        _colorControl = ViewportControl("Color",
+            ("RGB", "COLORBY Rgb"), ("Height", "COLORBY Height"), ("Classification", "COLORBY Class"),
+            ("Intensity", "COLORBY Intensity"), ("Return", "COLORBY ReTurn"), ("", ""), ("Default", "COLORBY CLear"));
+
+        _viewportControls.Children.Add(_viewControl);
+        _viewportControls.Children.Add(_projectionControl);
+        _viewportControls.Children.Add(_layoutControl);
+        _viewportControls.Children.Add(_colorControl);
+    }
+
+    private Button ViewportControl(string tip, params (string Header, string Command)[] items)
+    {
+        var flyout = new MenuFlyout();
+        foreach ((string header, string command) in items)
+        {
+            if (command.Length == 0)
+            {
+                flyout.Items.Add(new Separator());
+                continue;
+            }
+
+            var item = new MenuItem { Header = header };
+            ToolTip.SetTip(item, command);
+            item.Click += (_, _) => Activate(command);
+            flyout.Items.Add(item);
+        }
+
+        var button = new Button { Classes = { "viewportControl" }, Flyout = flyout };
+        ToolTip.SetTip(button, tip);
+        return button;
+    }
+
+    private static void SetViewportControlText(Button button, string text)
+    {
+        if (button.Tag as string == text)
+            return;
+
+        button.Tag = text;
+        button.Content = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 4,
+            Children =
+            {
+                new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center },
+                Icons.Create(Icons.ChevronDown, 10)
+            }
+        };
+    }
+
+    // ── Status bar ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// AutoCAD's status-bar toggles: each one lit while its state is on, and each click the
+    /// command that flips it.
+    /// </summary>
+    private void BuildStatusToggles()
+    {
+        AddStatusToggle("ORTHO", "Ortho — lock point input to axes  ·  ORTHO (F8)", "ORTHO Toggle", CommandMenu.CheckStates.Ortho);
+        AddStatusToggle("PERSP", "Perspective projection  ·  PROJECTION", "PROJECTION", CommandMenu.CheckStates.Perspective);
+        AddStatusToggle("LABEL", "Label mode  ·  LABELMODE / NAVIGATE", "", CommandMenu.CheckStates.ModeLabel);
+        AddStatusSeparator();
+        AddStatusToggle("EXPL", "Explorer palette  ·  EXPLORER", "EXPLORER Toggle", CommandMenu.CheckStates.Explorer);
+        AddStatusToggle("PROPS", "Properties palette  ·  PROPERTIES", "PROPERTIES Toggle", CommandMenu.CheckStates.Properties);
+        AddStatusToggle("RIBBON", "Ribbon  ·  RIBBON", "RIBBON Toggle", CommandMenu.CheckStates.Ribbon);
+        AddStatusToggle("CMD", "Command line  ·  COMMANDLINE (Ctrl+9)", "COMMANDLINE Toggle", CommandMenu.CheckStates.CommandLine);
+    }
+
+    private void AddStatusToggle(string caption, string tip, string command, string checkState)
+    {
+        var button = new Button { Classes = { "statusToggle" }, Content = caption };
+        ToolTip.SetTip(button, tip);
+        button.Click += (_, _) =>
+        {
+            // Label mode has two commands rather than a toggle; the button picks the one that
+            // flips the current state, so what lands in the history is still a plain command.
+            if (command.Length == 0)
+                Activate(CommandMenu.IsChecked(checkState, _hostController.Status) ? "NAVIGATE" : "LABELMODE");
+            else
+                Activate(command);
+        };
+        _statusTogglePanel.Children.Add(button);
+        _statusToggles.Add((button, checkState));
+    }
+
+    private void AddStatusSeparator() =>
+        _statusTogglePanel.Children.Add(new Border { Classes = { "statusSeparator" } });
 
     // ── Command line ────────────────────────────────────────────────────────
 
@@ -361,7 +489,8 @@ public sealed partial class MainWindow : Window
         }
         _workspaceGrid.RowDefinitions[3].Height = new GridLength(
             Math.Clamp(_settings.HeightInLines, 1, 20) * CommandLineTextLineHeight + CommandLineChromeHeight);
-        _contentGrid.ColumnDefinitions[1].Width = new GridLength(Math.Clamp(_settings.InspectorWidth, 180, 640));
+        _paletteWidth = Math.Clamp(_settings.InspectorWidth, 200, 640);
+        _contentGrid.ColumnDefinitions[0].Width = new GridLength(_paletteWidth);
     }
 
     /// <summary>
@@ -459,7 +588,27 @@ public sealed partial class MainWindow : Window
         // A hidden command window must not persist as a zero-line one.
         double pixels = _commandLineVisible ? _workspaceGrid.RowDefinitions[3].ActualHeight : _hiddenCommandLineHeight;
         _settings.HeightInLines = Math.Max(1, (pixels - CommandLineChromeHeight) / CommandLineTextLineHeight);
-        _settings.InspectorWidth = _contentGrid.ColumnDefinitions[1].ActualWidth;
+        ViewerStatusSnapshot status = _hostController.Status;
+        _settings.InspectorWidth = status.ExplorerVisible || status.PropertiesVisible ? PaletteWidth() : _paletteWidth;
+        _settings.RibbonTab = _ribbon.SelectedTabTitle;
+
+        // Until the viewer existed the snapshot is only defaults; saving it would forget
+        // the arrangement the user left.
+        if (_workspaceRestored)
+        {
+            _settings.ExplorerVisible = status.ExplorerVisible;
+            _settings.PropertiesVisible = status.PropertiesVisible;
+            _settings.RibbonVisible = status.RibbonVisible;
+            _settings.PalettesOnRight = status.PalettesOnRight;
+        }
+
+        if (status.ExplorerVisible && status.PropertiesVisible)
+        {
+            double explorer = _paletteGrid.RowDefinitions[1].ActualHeight;
+            double properties = _paletteGrid.RowDefinitions[3].ActualHeight;
+            if (explorer + properties > 0)
+                _settings.ExplorerShare = explorer / (explorer + properties);
+        }
         _settings.RecentInput = _commandSession.InputHistory.ToList();
         _settings.CommandLineFloating = _floatingCommandLine != null;
         if (_floatingCommandLine != null)
@@ -645,103 +794,92 @@ public sealed partial class MainWindow : Window
 
     private ViewerStatusSnapshot? _lastStatus;
 
+    private bool _workspaceRestored;
+
+    /// <summary>
+    /// The workspace comes back the way it was left, and it does so by issuing the commands
+    /// that arrange it, not by setting viewer state behind the commands' back. It waits for
+    /// the embedded viewer to exist, since that is where the palette and window state lives.
+    /// </summary>
+    private async Task RestoreWorkspaceAsync()
+    {
+        if (_workspaceRestored || !_hostController.Commands.IsKnownCommand("EXPLORER"))
+            return;
+
+        _workspaceRestored = true;
+        var commands = new List<string>();
+
+        // The macOS workspace always opens with the command line in its native docked
+        // position; a floating palette saved by another shell must not detach it there.
+        if (_settings.CommandLineFloating && !OperatingSystem.IsMacOS())
+            commands.Add("COMMANDLINE Float");
+        if (_settings.PalettesOnRight)
+            commands.Add("EXPLORER Right");
+        if (!_settings.ExplorerVisible)
+            commands.Add("EXPLORER Off");
+        if (!_settings.PropertiesVisible)
+            commands.Add("PROPERTIES Off");
+        if (!_settings.RibbonVisible)
+            commands.Add("RIBBON Off");
+
+        foreach (string command in commands)
+            await ExecuteCommandAsync(command);
+
+        _commandLine.Refresh();
+    }
+
     private void RefreshViewerState()
     {
+        _ = RestoreWorkspaceAsync();
         ViewerStatusSnapshot status = _hostController.Status;
-        RefreshCloudPanel(status);
 
-        // FPS moves every tick, so it is written on its own; everything else is rewritten
-        // only when it actually changed, instead of invalidating layout a few times a second.
-        _statusFps.Text = status.Fps > 0f ? $"{status.Fps:0} fps" : "";
-        SetValue("FPS", status.Fps > 0f ? $"{status.Fps:0}" : "—");
-
-        // Windows follow viewer state rather than deciding for themselves. LABELS and HISTORY
-        // are viewer commands in both shells; this one draws what they asked for.
+        // Windows and palettes follow viewer state rather than deciding for themselves.
+        // LABELS, HISTORY, EXPLORER and friends are viewer commands in both shells; this one
+        // draws what they asked for.
         ProjectViewerWindows(status);
+        ProjectPalettes(status);
 
+        _explorer.Refresh(status, _hostController.LabelDefinitions, _hostController.ActiveLabel);
+        RefreshProperties(status);
+
+        // FPS moves every tick, so it is written on its own.
+        _statusFps.Text = status.Fps > 0f ? $"{status.Fps:0} fps" : "";
+
+        _statusProgress.IsVisible = status.IsLoading || status.SurfaceProgress >= 0;
+        _statusProgress.Value = status.IsLoading ? status.LoadProgress : Math.Max(0, status.SurfaceProgress);
         if (status.IsLoading)
             _statusText.Text = $"Loading {status.LoadProgress}%";
-        else if (_lastStatus?.IsLoading == true)
+        else if (status.SurfaceProgress >= 0)
+            _statusText.Text = $"Reconstructing surface {status.SurfaceProgress}%";
+        else if (_lastStatus is { } last && (last.IsLoading || last.SurfaceProgress >= 0))
             _statusText.Text = "Ready";
-
-        if (_lastStatus is { } previous && status == previous with { Fps = status.Fps })
-            return;
 
         _lastStatus = status;
 
-        SetValue("File", status.SourceName.Length > 0 ? status.SourceName : "—");
-        SetValue("Points", status.HasCloud ? status.PointCountText : "—");
-        SetValue("Filter", status.Filter.Length > 0 ? status.Filter : "None");
-        SetValue("Section", status.CrossSection.Length > 0 ? status.CrossSection : "None");
-        SetValue("Projection", status.ProjectionText);
-        SetValue("View", status.ViewName);
-        SetValue("Layout", status.ViewportLayout);
-        SetValue("Color by", status.ColorSource.ToDisplayName());
-        SetValue("Point size", $"{status.PointSize:0.0} px");
-        SetValue("Surface", status.SurfaceProgress >= 0 ? $"Building {status.SurfaceProgress}%" : $"{status.SurfaceTriangles:N0} triangles");
-        SetValue("Mode", status.Mode.ToString());
-        SetValue("Tool", status.ActiveTool.ToString());
-        SetValue("State", status.InteractionState.ToString());
-        SetValue("Label", status.CurrentLabel.Length > 0 ? status.CurrentLabel : "—");
-        SetValue("Instance", status.InstanceText);
+        _ribbon.UpdateState(status);
+
+        _documentTitle.Text = status.HasCloud
+            ? status.SourceName
+            : status.IsLoading ? "Loading…" : "No point cloud";
+        _documentDetail.Text = status.HasCloud
+            ? $"{status.PointCountText} pts{(status.Filter.Length > 0 ? "  ·  filtered" : "")}"
+            : "";
+        Title = status.HasCloud ? $"{status.SourceName} — CloudScope" : "CloudScope";
+
+        SetViewportControlText(_viewControl, status.ViewName);
+        SetViewportControlText(_projectionControl, status.ProjectionText);
+        SetViewportControlText(_layoutControl, status.ViewportLayout);
+        SetViewportControlText(_colorControl, status.HasCloud ? status.ColorSource.ToDisplayName() : "Color");
+        _colorControl.IsEnabled = status.HasCloud;
 
         _statusPoints.Text = status.HasCloud ? $"{status.PointCountText} pts" : "No point cloud";
         _statusMode.Text = $"{status.Mode} · {status.ActiveTool}";
         _statusLabel.Text = status.CurrentLabel.Length > 0
             ? $"Label: {status.CurrentLabel} ({status.InstanceText})"
             : "Label: —";
-        _statusProjection.Text = status.ProjectionText;
 
-        _viewBadgeTitle.Text = status.ViewName;
-        _viewBadgeSubtitle.Text = status.ViewportLayout;
-
-        foreach ((Button button, string checkState) in _toolButtons)
-        {
-            bool active = CommandMenu.IsChecked(checkState, status);
-            if (active != button.Classes.Contains("active"))
-            {
-                if (active) button.Classes.Add("active");
-                else button.Classes.Remove("active");
-            }
-        }
-    }
-
-    private void SetValue(string row, string value)
-    {
-        if (_inspectorValues.TryGetValue(row, out TextBlock? block))
-            block.Text = value;
-    }
-
-    private void RefreshCloudPanel(ViewerStatusSnapshot status)
-    {
-        string signature = System.Text.Json.JsonSerializer.Serialize(new { status.SourceName, status.LoadedCount, status.LoadProgress, status.Layers });
-        if (signature == _cloudPanelSignature) return;
-        _cloudPanelSignature = signature;
-        _cloudPanel.Children.Clear();
-        if (status.IsLoading)
-            _cloudPanel.Children.Add(new TextBlock { Text = $"Loading {status.LoadProgress}%" });
-        if (status.Layers.Count == 0)
-        {
-            _cloudPanel.Children.Add(new TextBlock
-            {
-                Text = status.HasCloud ? $"{status.SourceName} · {status.LoadedCount:N0} points" : "No point cloud loaded",
-                TextWrapping = global::Avalonia.Media.TextWrapping.Wrap
-            });
-        }
-        foreach (CloudLayerSnapshot layer in status.Layers)
-        {
-            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-            var toggle = new CheckBox { Content = new TextBlock { Text = $"{layer.Name} · {layer.PointCount:N0}", TextWrapping = global::Avalonia.Media.TextWrapping.Wrap }, IsChecked = layer.Visible };
-            toggle.Click += (_, _) => RunCommandFromUi($"LAYER {(toggle.IsChecked == true ? "ON" : "OFF")} {'"' + layer.Name + '"'}");
-            var close = new Button { Content = "×" };
-            close.Click += (_, _) => RunCommandFromUi($"LAYER Close {'"' + layer.Name + '"'}");
-            Grid.SetColumn(close, 1);
-            row.Children.Add(toggle); row.Children.Add(close);
-            _cloudPanel.Children.Add(row);
-        }
-        var add = new Button { Content = "Add tile store...", HorizontalAlignment = HorizontalAlignment.Stretch };
-        add.Click += (_, _) => RunCommandFromUi("ADDSTORE");
-        _cloudPanel.Children.Add(add);
+        foreach ((Button button, string checkState) in _statusToggles)
+            button.Classes.Set("active", CommandMenu.IsChecked(checkState, status));
     }
 
     // ── Input ───────────────────────────────────────────────────────────────

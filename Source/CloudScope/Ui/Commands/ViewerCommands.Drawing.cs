@@ -316,20 +316,22 @@ public sealed partial class ViewerCommands
     [CommandMethod("ORTHO",
         Group = CommandGroup.Edit, Scope = CommandScope.Viewer,
         Summary = "Turns axis locking for point input on or off.",
-        Syntax = "ORTHO [ON/OFF] <toggle>")]
+        Syntax = "ORTHO [ON/OFF/Toggle] <toggle>")]
     public IEnumerable<PromptStep> Ortho(CommandContext context)
     {
         ViewerController viewer = context.GetTarget<ViewerController>();
         Editor editor = context.Editor;
 
         PromptKeywordStep option = editor.GetKeywords(
-            $"Enter mode [ON/OFF] <{(viewer.OrthoMode ? "ON" : "OFF")}>:",
+            $"Enter mode [ON/OFF/Toggle] <{(viewer.OrthoMode ? "ON" : "OFF")}>:",
             new Keyword("ON", "ON"),
-            new Keyword("OFF", "OFF"));
+            new Keyword("OFF", "OFF"),
+            new Keyword("TOGGLE", "Toggle"));
         yield return option;
 
-        // A bare Enter toggles, which is how the status bar button and F8 behave.
-        editor.WriteMessage(option.Status == PromptStatus.None
+        // A bare Enter toggles, which is how the status bar button and F8 behave; Toggle
+        // spells the same thing out so a menu or script can ask for it in one line.
+        editor.WriteMessage(option.Status == PromptStatus.None || option.Is("TOGGLE")
             ? viewer.ToggleOrthoMode()
             : viewer.SetOrthoMode(option.Is("ON")));
     }

@@ -23,6 +23,7 @@ namespace CloudScope
         private readonly ISurfaceRenderer _surfaceRenderer;
         private SurfaceMesh? _surface;
         private bool _surfaceVisible = true;
+        private bool _residentVisible = true;
         private CancellationTokenSource? _reconstruction;
         private int _geometryVersion;
         private int _surfaceProgress = -1;
@@ -284,6 +285,7 @@ namespace CloudScope
 
         public void LoadPointCloud(PointCloudDataset dataset)
         {
+            _residentVisible = true;
             DiscardCrossSection();
             CloseLayers();
             _dataset = dataset;
@@ -524,6 +526,14 @@ namespace CloudScope
         public string SetLayerVisible(string name, bool visible)
         {
             PointTileLayer? layer = FindLayer(name);
+            if (layer is null && IsResidentCloud(name))
+            {
+                // The in-memory cloud is a layer too as far as the user is concerned: the
+                // explorer lists it beside the streamed ones and toggles it the same way.
+                _residentVisible = visible;
+                return $"Point cloud {_sourceName} {(visible ? "shown" : "hidden")}.";
+            }
+
             if (layer is null)
                 return $"No such layer: {name}";
 
@@ -562,6 +572,13 @@ namespace CloudScope
             }
 
             PointTileLayer? layer = FindLayer(name);
+            if (layer is null && IsResidentCloud(name))
+            {
+                string closedName = _sourceName;
+                Reset();
+                return $"Closed point cloud {closedName}.";
+            }
+
             if (layer is null)
                 return $"No such layer: {name}";
 
@@ -585,6 +602,14 @@ namespace CloudScope
             };
             return $"Closed layer {layer.Name}.";
         }
+
+        /// <summary>Whether <paramref name="name"/> names the resident (in-memory) cloud.</summary>
+        private bool IsResidentCloud(string name) =>
+            _dataset != null && _layers.Count == 0 && name.Length > 0 &&
+            string.Equals(name, _sourceName, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>Whether the resident cloud is drawn; LAYER ON/OFF on its name changes it.</summary>
+        public bool ResidentCloudVisible => _residentVisible;
 
         private PointTileLayer? FindLayer(string name) =>
             _layers.FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.OrdinalIgnoreCase));
@@ -673,6 +698,20 @@ namespace CloudScope
             CommandHistoryVisible = CommandHistoryVisible,
             CommandLineVisible = CommandLineVisible,
             CommandLineFloating = CommandLineFloating,
+            ExplorerVisible = ExplorerVisible,
+            PropertiesVisible = PropertiesVisible,
+            RibbonVisible = RibbonVisible,
+            PalettesOnRight = PalettesOnRight,
+            SourcePath = _sourcePath,
+            IsStreamed = _layers.Count > 0,
+            ResidentVisible = _residentVisible,
+            HasColor = _dataset?.HasColor ?? false,
+            KeepPercentage = _dataset?.KeepPercentage ?? 100,
+            OrthoMode = OrthoMode,
+            SurfaceVisible = _surfaceVisible,
+            PolylineCount = _polylines.Count + _planarPolylines.Count,
+            NamedViews = _namedViews.Keys.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToArray(),
+            LabelledPoints = _selection.Labels.Count,
             CloseRequested = CloseRequested,
             LoadProgress = LoadProgress
         };
@@ -699,6 +738,7 @@ namespace CloudScope
             _dataset = null;
             _sourceName = "";
             _sourcePath = "";
+            _residentVisible = true;
             _selection.Reset();
             foreach (ViewportState viewport in _viewports)
                 FitViewport(viewport);
@@ -773,6 +813,18 @@ namespace CloudScope
         /// <summary>Whether the command window floats free of the workspace.</summary>
         public bool CommandLineFloating { get; set; }
         public void ToggleLabelWindow() => LabelWindowVisible = !LabelWindowVisible;
+
+        /// <summary>Whether the explorer (the tree of open clouds and objects) is shown.</summary>
+        public bool ExplorerVisible { get; set; } = true;
+
+        /// <summary>Whether the properties palette of the explorer's selection is shown.</summary>
+        public bool PropertiesVisible { get; set; } = true;
+
+        /// <summary>Whether the ribbon's tool panels are shown (off leaves only its tabs).</summary>
+        public bool RibbonVisible { get; set; } = true;
+
+        /// <summary>Whether the explorer and properties palettes dock on the right, not the left.</summary>
+        public bool PalettesOnRight { get; set; }
 
         public string DefineLabel(string name, byte code, Vector3? color = null)
         {
@@ -1992,9 +2044,9 @@ namespace CloudScope
                     viewport.Bounds.Width, viewport.Bounds.Height,
                     viewport.Input.PointSize,
                     sectionClip);
-                int drawCount = _layers.Count == 0
-                    ? _pointRenderer.Render(frameData, in renderView)
-                    : _streamingRenderer.Render(frameData, in renderView);
+                int drawCount = _layers.Count > 0
+                    ? _streamingRenderer.Render(frameData, in renderView)
+                    : _residentVisible ? _pointRenderer.Render(frameData, in renderView) : 0;
                 totalDrawCount += drawCount;
                 if (_surfaceVisible) _surfaceRenderer.Render(frameData, ref view, ref proj);
 
