@@ -65,9 +65,10 @@
     <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
     <Setter Property="BorderThickness" Value="0" />
     <Setter Property="CornerRadius" Value="4,4,0,0" />
-    <Setter Property="Padding" Value="16,0" />
+    <Setter Property="Padding" Value="16,2,16,0" />
     <Setter Property="LetterSpacing" Value="0.2" />
-    <Setter Property="Height" Value="26" />
+    <Setter Property="Height" Value="28" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
     <Setter Property="VerticalAlignment" Value="Bottom" />
     <Setter Property="FontSize" Value="{DynamicResource CsFontSizeBody}" />
   </Style>
@@ -379,8 +380,10 @@
     <Setter Property="Foreground" Value="{DynamicResource CsTextFaint}" />
     <Setter Property="FontSize" Value="10" />
     <Setter Property="LetterSpacing" Value="0.8" />
-    <Setter Property="Padding" Value="8,1" />
+    <Setter Property="Padding" Value="8,0" />
     <Setter Property="Height" Value="20" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
     <Setter Property="MinWidth" Value="0" />
   </Style>
   <Style Selector="Button.statusToggle:pointerover /template/ ContentPresenter#PART_ContentPresenter">
