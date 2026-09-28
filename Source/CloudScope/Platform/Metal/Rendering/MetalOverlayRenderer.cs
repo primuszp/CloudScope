@@ -192,7 +192,7 @@ namespace CloudScope.Platform.Metal.Rendering
             Matrix4 mvp = view * proj;
             for (int i = 0; i < count; i++)
                 _renderer.Draw(_gripBuffer, GripOverlayGeometry.VerticesPerGrip, MTLPrimitiveType.Line,
-                    mvp, GripOverlayGeometry.Color(grips[i].Index, hovered, active), depthTest: false,
+                    mvp, GripOverlayGeometry.Color(grips[i], hovered, active), depthTest: false,
                     firstVertex: i * GripOverlayGeometry.VerticesPerGrip,
                     lineWidthPixels: 2f * _context.DisplayScale);
         }
