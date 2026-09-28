@@ -162,7 +162,7 @@ public sealed class PolylineGripTarget : ITransactionalGripTarget
         for (int i = 0; i < vertices.Length; i++)
         {
             _grips.Add(new GripDescriptor(i, GripKind.Endpoint, vertices[i], Vector3.Zero,
-                GripConstraint.ViewPlane, IsPrimary: true));
+                GripConstraint.ViewPlane));
             _snapPoints.Add(new ObjectSnapPoint(vertices[i], ObjectSnapKind.Endpoint, i));
         }
 

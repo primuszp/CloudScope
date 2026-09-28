@@ -307,7 +307,7 @@ void main()
             for (int i = 0; i < count; i++)
                 _wideLines.Draw(_gripVbo, i * GripOverlayGeometry.VerticesPerGrip,
                     GripOverlayGeometry.VerticesPerGrip, ref mvp,
-                    GripOverlayGeometry.Color(grips[i].Index, hovered, active), 2f);
+                    GripOverlayGeometry.Color(grips[i], hovered, active), 2f);
             GL.Enable(EnableCap.DepthTest);
         }
 

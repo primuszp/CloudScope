@@ -41,17 +41,8 @@ public static class GripOverlayGeometry
                         + right * MathF.Cos(a1) + up * MathF.Sin(a1);
                 }
             }
-            else if (grip.Kind == GripKind.Midpoint)
-            {
-                Vector3 top = grip.Position + up;
-                Vector3 lowerRight = grip.Position + right - up;
-                Vector3 lowerLeft = grip.Position - right - up;
-                WriteEdge(shape, 0, top, lowerRight);
-                WriteEdge(shape, 1, lowerRight, lowerLeft);
-                WriteEdge(shape, 2, lowerLeft, top);
-                FillDegenerate(shape, 6, grip.Position);
-            }
-            else if (grip.Kind is GripKind.WidthResize or GripKind.Direction or GripKind.Quadrant)
+            else if (grip.Kind is GripKind.Endpoint or GripKind.Midpoint or GripKind.CornerResize
+                or GripKind.WidthResize or GripKind.Direction or GripKind.Quadrant)
             {
                 Vector3 top = grip.Position + up;
                 Vector3 rightPoint = grip.Position + right;
@@ -65,6 +56,9 @@ public static class GripOverlayGeometry
             }
             else
             {
+                // Point grips use one common CAD square regardless of whether they mark a
+                // vertex, a segment midpoint, a polyline, or a selection-volume handle.
+                // Meaning comes from hover/snap feedback, not a competing marker shape.
                 Vector3 a = grip.Position - right + up;
                 Vector3 b = grip.Position + right + up;
                 Vector3 c = grip.Position + right - up;
@@ -100,11 +94,9 @@ public static class GripOverlayGeometry
     /// <summary>Roughly 6 degrees: below this the UCS plane is too edge-on to draw a marker in.</summary>
     private const float EdgeOnCosine = 0.1f;
 
-    public static Vector4 Color(int index, int hovered, int active) => index == active
-        ? new Vector4(1f, 0.56f, 0.08f, 1f)
-        : index == hovered
-            ? new Vector4(1f, 0.20f, 0.12f, 1f)
-            : new Vector4(0.10f, 0.72f, 1f, 1f);
+    /// <summary>Uses the same normal, hot and active colours as the Box gizmo's point grips.</summary>
+    public static Vector4 Color(GripDescriptor grip, int hovered, int active) =>
+        GripVisualStyleResolver.ResolvePointGrip(grip, grip.Index == hovered, grip.Index == active).Color;
 
     public static Vector4 SnapColor(ObjectSnapKind kind, float alpha = 1f) => kind switch
     {
