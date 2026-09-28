@@ -13,6 +13,7 @@ using CloudScope.Selection;
 using CloudScope.Drawing;
 using CloudScope.Rendering;
 using CloudScope.Forestry;
+using CloudScope.Loading;
 using OpenTK.Mathematics;
 
 int failures = 0;
@@ -22,7 +23,114 @@ void Check(string name, bool ok, string detail = "")
     if (!ok) failures++;
 }
 
+// ---------- PLY import: coordinates, attributes, format parity and truncation ----------
+{
+    string asciiPath = Path.Combine(Path.GetTempPath(), $"cloudscope-{Guid.NewGuid():N}.ply");
+    string binaryPath = Path.Combine(Path.GetTempPath(), $"cloudscope-{Guid.NewGuid():N}.ply");
+    const string header = "ply\nformat {0} 1.0\nelement vertex 2\nproperty double x\nproperty float y\nproperty float z\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nproperty uchar classification\nend_header\n";
+    try
+    {
+        File.WriteAllText(asciiPath, string.Format(header, "ascii") +
+            "1000 2 3 255 0 0 2\n1002 4 5 0 128 255 6\n");
+        using (var stream = File.Create(binaryPath))
+        using (var writer = new BinaryWriter(stream))
+        {
+            writer.Write(System.Text.Encoding.ASCII.GetBytes(string.Format(header, "binary_little_endian")));
+            writer.Write(1000d); writer.Write(2f); writer.Write(3f);
+            writer.Write((byte)255); writer.Write((byte)0); writer.Write((byte)0); writer.Write((byte)2);
+            writer.Write(1002d); writer.Write(4f); writer.Write(5f);
+            writer.Write((byte)0); writer.Write((byte)128); writer.Write((byte)255); writer.Write((byte)6);
+        }
+        foreach (string path in new[] { asciiPath, binaryPath })
+        {
+            LoadedPointCloud cloud = PlyPointCloudLoader.Load(path);
+            Check($"PLY {Path.GetFileName(path)} coordinates and attributes",
+                cloud.LoadedCount == 2 && cloud.HasColor &&
+                cloud.Points[0].X == -1f && cloud.Points[1].X == 1f &&
+                cloud.Points[0].R == 1f && cloud.Points[1].B == 1f &&
+                cloud.Attributes.Class.SequenceEqual(new byte[] { 2, 6 }));
+            Check($"PLY {Path.GetFileName(path)} point limit", PlyPointCloudLoader.Load(path, 1).LoadedCount == 1);
+        }
+    }
+    catch (Exception ex) { Check("PLY import", false, ex.ToString()); }
+    finally { File.Delete(asciiPath); File.Delete(binaryPath); }
+}
+
+// ---------- XYZ import: delimiters, optional attributes and strict malformed-row handling ----------
+{
+    string path = Path.Combine(Path.GetTempPath(), $"cloudscope-{Guid.NewGuid():N}.xyz");
+    try
+    {
+        File.WriteAllText(path, "# scan\nX,Y,Z,I,R,G,B\n1000,2,3,128,255,0,0\n1002,4,5,255,0,128,255\n");
+        LoadedPointCloud cloud = XyzPointCloudLoader.Load(path);
+        Check("XYZ coordinates, RGB and intensity",
+            cloud.LoadedCount == 2 && cloud.HasColor &&
+            cloud.Points[0].X == -1f && cloud.Points[1].X == 1f &&
+            cloud.Points[0].R == 1f && cloud.Points[1].B == 1f &&
+            cloud.Attributes.Intensity[0] == 32896 && cloud.Attributes.Intensity[1] == 65535);
+        Check("XYZ point limit", XyzPointCloudLoader.Load(path, 1).LoadedCount == 1);
+        File.WriteAllText(path, "0 0 0\n1 bad 1\n");
+        bool rejected = false;
+        try { XyzPointCloudLoader.Load(path); }
+        catch (InvalidDataException) { rejected = true; }
+        Check("XYZ rejects malformed numeric rows", rejected);
+    }
+    catch (Exception ex) { Check("XYZ import", false, ex.ToString()); }
+    finally { File.Delete(path); }
+}
+
+// ---------- PTS import: count header and signed scanner intensity ----------
+{
+    string path = Path.Combine(Path.GetTempPath(), $"cloudscope-{Guid.NewGuid():N}.pts");
+    try
+    {
+        File.WriteAllText(path, "2\n1000 2 3 -2048 255 0 0\n1002 4 5 2047 0 0 255\n");
+        LoadedPointCloud cloud = PtsPointCloudLoader.Load(path);
+        Check("PTS count, coordinates, RGB and signed intensity",
+            cloud.LoadedCount == 2 && cloud.HasColor && cloud.Points[0].X == -1 &&
+            cloud.Points[1].Z == 1 && cloud.Points[0].R == 1 && cloud.Points[1].B == 1 &&
+            cloud.Attributes.Intensity.SequenceEqual(new ushort[] { 0, 65535 }));
+        Check("PTS point limit", PtsPointCloudLoader.Load(path, 1).LoadedCount == 1);
+        File.WriteAllText(path, "0 0 0\n1 1 1\n");
+        Check("PTS without count or attributes", !PtsPointCloudLoader.Load(path).HasColor);
+        File.WriteAllText(path, "3\n0 0 0\n1 1 1\n");
+        bool rejected = false;
+        try { PtsPointCloudLoader.Load(path); }
+        catch (InvalidDataException) { rejected = true; }
+        Check("PTS rejects truncated declared point count", rejected);
+    }
+    catch (Exception ex) { Check("PTS import", false, ex.ToString()); }
+    finally { File.Delete(path); }
+}
+
+// ---------- Thinning preserves source identity and composes with attribute filters ----------
+{
+    var points = Enumerable.Range(0, 100).Select(i => new PointData { X = i, R = i / 100f }).ToArray();
+    var attributes = new PointCloudAttributes(
+        Enumerable.Range(0, 100).Select(i => (byte)(i % 2)).ToArray(),
+        new ushort[100], new byte[100], new double[100], 0, 0);
+    var dataset = new PointCloudDataset(points, 100, 50, true, 1, attributes);
+    dataset.SetThinning(25);
+    int[] sample = dataset.ViewToSource!.ToArray();
+    Check("THIN keeps exact sample count and source identity", sample.Length == 25 &&
+        sample.Distinct().Count() == 25 && dataset.SourcePoints.Length == 100 &&
+        dataset.ViewPoints.Select(p => (int)p.X).SequenceEqual(sample));
+    dataset.SetThinning(25);
+    Check("THIN is repeatable", dataset.ViewToSource!.SequenceEqual(sample));
+    dataset.ApplyFilter(new ClassFilter([1]));
+    Check("THIN composes with class filter", dataset.VisibleCount == 12 &&
+        dataset.ViewToSource!.All(i => attributes.Class[i] == 1));
+    int[] filteredSample = dataset.ViewToSource!.ToArray();
+    dataset.SetColorSource(ColorSource.Class);
+    Check("THIN color changes preserve point mapping", dataset.ViewToSource!.SequenceEqual(filteredSample));
+    dataset.SetThinning(100);
+    Check("THIN 100 restores filtered density", dataset.VisibleCount == 50);
+    dataset.ApplyFilter(null);
+    Check("THIN and FILTER clear restore full source", dataset.VisibleCount == 100 && dataset.ViewToSource == null);
+}
+
 // ---------- 1. Registration of the real command set ----------
+await ExchangeChecks.Run(Check);
 try
 {
     var runtime = new CommandRuntime(new object(), new ViewerCommands());

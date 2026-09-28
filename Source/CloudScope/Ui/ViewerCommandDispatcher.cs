@@ -18,6 +18,7 @@ public sealed class ViewerCommandDispatcher : ICommandExecutor, ICommandOutputSo
         Session = new CommandLineSession(this);
         BindUndoMarks(viewer);
         viewer.CommandPrompts = this;
+        viewer.ApiCommands = this;
 
         // A load finishing reports itself on the command line through the same channel a
         // viewport pick uses, so a shell needs one way in for output it did not ask for.
