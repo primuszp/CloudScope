@@ -437,29 +437,33 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private void BuildStatusToggles()
     {
-        AddStatusToggle("ORTHO", "Ortho — lock point input to axes  ·  ORTHO (F8)", "ORTHO Toggle", CommandMenu.CheckStates.Ortho);
-        AddStatusToggle("PERSP", "Perspective projection  ·  PROJECTION", "PROJECTION", CommandMenu.CheckStates.Perspective);
-        AddStatusToggle("LABEL", "Label mode  ·  LABELMODE / NAVIGATE", "", CommandMenu.CheckStates.ModeLabel);
+        AddStatusToggle("ORTHO", "Ortho — lock point input to axes  ·  ORTHO (F8)",
+            on => on ? "ORTHO OFF" : "ORTHO ON", CommandMenu.CheckStates.Ortho);
+        AddStatusToggle("PERSP", "Perspective / parallel projection  ·  PROJECTION",
+            on => on ? "PROJECTION PArallel" : "PROJECTION Perspective", CommandMenu.CheckStates.Perspective);
+        AddStatusToggle("LABEL", "Label mode  ·  LABELMODE / NAVIGATE",
+            on => on ? "NAVIGATE" : "LABELMODE", CommandMenu.CheckStates.ModeLabel);
         AddStatusSeparator();
-        AddStatusToggle("EXPL", "Explorer palette  ·  EXPLORER", "EXPLORER Toggle", CommandMenu.CheckStates.Explorer);
-        AddStatusToggle("PROPS", "Properties palette  ·  PROPERTIES", "PROPERTIES Toggle", CommandMenu.CheckStates.Properties);
-        AddStatusToggle("RIBBON", "Ribbon  ·  RIBBON", "RIBBON Toggle", CommandMenu.CheckStates.Ribbon);
-        AddStatusToggle("CMD", "Command line  ·  COMMANDLINE (Ctrl+9)", "COMMANDLINE Toggle", CommandMenu.CheckStates.CommandLine);
+        AddStatusToggle("EXPL", "Explorer palette  ·  EXPLORER",
+            on => on ? "EXPLORER Off" : "EXPLORER On", CommandMenu.CheckStates.Explorer);
+        AddStatusToggle("PROPS", "Properties palette  ·  PROPERTIES",
+            on => on ? "PROPERTIES Off" : "PROPERTIES On", CommandMenu.CheckStates.Properties);
+        AddStatusToggle("RIBBON", "Ribbon  ·  RIBBON",
+            on => on ? "RIBBON Off" : "RIBBON On", CommandMenu.CheckStates.Ribbon);
+        AddStatusToggle("CMD", "Command line  ·  COMMANDLINE (Ctrl+9)",
+            on => on ? "COMMANDLINE Off" : "COMMANDLINE On", CommandMenu.CheckStates.CommandLine);
     }
 
-    private void AddStatusToggle(string caption, string tip, string command, string checkState)
+    /// <summary>
+    /// A two-state toggle. The click issues the explicit command for the opposite of the
+    /// current state — never a bare command that would stop at a prompt — so what lands in
+    /// the history is a complete, repeatable command.
+    /// </summary>
+    private void AddStatusToggle(string caption, string tip, Func<bool, string> command, string checkState)
     {
         var button = new Button { Classes = { "statusToggle" }, Content = caption };
         ToolTip.SetTip(button, tip);
-        button.Click += (_, _) =>
-        {
-            // Label mode has two commands rather than a toggle; the button picks the one that
-            // flips the current state, so what lands in the history is still a plain command.
-            if (command.Length == 0)
-                Activate(CommandMenu.IsChecked(checkState, _hostController.Status) ? "NAVIGATE" : "LABELMODE");
-            else
-                Activate(command);
-        };
+        button.Click += (_, _) => Activate(command(CommandMenu.IsChecked(checkState, _hostController.Status)));
         _statusTogglePanel.Children.Add(button);
         _statusToggles.Add((button, checkState));
     }
