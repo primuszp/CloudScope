@@ -1,7 +1,7 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <!--
-    The CloudScope control theme: one neutral graphite-over-black surface set, hairline
+    The CloudScope control theme: one warm-graphite surface set, hairline
     borders and no accent hue, layered over Fluent. Every colour and metric is a
     DynamicResource fed from CloudScope.Core/Ui/UiPalette, so this file describes shape and
     state, never the palette itself. See Docs/DesignSystem.md.
@@ -56,8 +56,8 @@
        Tabs sit on the graphite band (the titlebar on macOS); the panels sit one tone down
        on the workspace surface, divided by hairlines, titles underneath like AutoCAD. -->
   <Style Selector="Border.ribbonTabRow">
-    <Setter Property="Background" Value="{DynamicResource CsGraphite}" />
-    <Setter Property="Height" Value="30" />
+    <Setter Property="Background" Value="{DynamicResource CsSurfaceDeep}" />
+    <Setter Property="Height" Value="32" />
     <Setter Property="Padding" Value="6,0" />
   </Style>
   <Style Selector="ToggleButton.ribbonTab">
@@ -65,7 +65,8 @@
     <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
     <Setter Property="BorderThickness" Value="0" />
     <Setter Property="CornerRadius" Value="4,4,0,0" />
-    <Setter Property="Padding" Value="14,0" />
+    <Setter Property="Padding" Value="16,0" />
+    <Setter Property="LetterSpacing" Value="0.2" />
     <Setter Property="Height" Value="26" />
     <Setter Property="VerticalAlignment" Value="Bottom" />
     <Setter Property="FontSize" Value="{DynamicResource CsFontSizeBody}" />
@@ -75,12 +76,12 @@
     <Setter Property="Foreground" Value="{DynamicResource CsText}" />
   </Style>
   <Style Selector="ToggleButton.ribbonTab:checked /template/ ContentPresenter#PART_ContentPresenter">
-    <Setter Property="Background" Value="{DynamicResource CsSurface}" />
+    <Setter Property="Background" Value="{DynamicResource CsGraphite}" />
     <Setter Property="Foreground" Value="{DynamicResource CsAccentBright}" />
-    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="FontWeight" Value="Medium" />
   </Style>
   <Style Selector="ToggleButton.ribbonTab:pressed /template/ ContentPresenter#PART_ContentPresenter">
-    <Setter Property="Background" Value="{DynamicResource CsSurface}" />
+    <Setter Property="Background" Value="{DynamicResource CsGraphite}" />
   </Style>
   <Style Selector="Button.ribbonCollapse">
     <Setter Property="Background" Value="Transparent" />
@@ -90,21 +91,23 @@
   </Style>
 
   <Style Selector="Border.ribbonBody">
-    <Setter Property="Background" Value="{DynamicResource CsSurface}" />
+    <Setter Property="Background" Value="{DynamicResource CsGraphite}" />
     <Setter Property="BorderBrush" Value="{DynamicResource CsBorder}" />
     <Setter Property="BorderThickness" Value="0,0,0,1" />
-    <Setter Property="Height" Value="100" />
+    <Setter Property="Height" Value="98" />
   </Style>
   <Style Selector="Border.ribbonPanel">
-    <Setter Property="Padding" Value="6,6,6,0" />
+    <Setter Property="Padding" Value="8,6,8,0" />
   </Style>
   <Style Selector="Border.ribbonPanelSeparator">
     <Setter Property="Width" Value="1" />
-    <Setter Property="Margin" Value="0,8" />
-    <Setter Property="Background" Value="{DynamicResource CsBorder}" />
+    <Setter Property="Margin" Value="0,10" />
+    <Setter Property="Background" Value="{DynamicResource CsBorderStrong}" />
+    <Setter Property="Opacity" Value="0.6" />
   </Style>
   <Style Selector="TextBlock.ribbonPanelTitle">
-    <Setter Property="Foreground" Value="{DynamicResource CsTextFaint}" />
+    <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
+    <Setter Property="LetterSpacing" Value="0.3" />
     <Setter Property="FontSize" Value="10" />
     <Setter Property="HorizontalAlignment" Value="Center" />
     <Setter Property="Margin" Value="0,2,0,4" />
@@ -117,9 +120,9 @@
     <Setter Property="Foreground" Value="{DynamicResource CsText}" />
   </Style>
   <Style Selector="Button.ribbonLarge">
-    <Setter Property="Padding" Value="6,6,6,4" />
-    <Setter Property="MinWidth" Value="54" />
-    <Setter Property="Height" Value="70" />
+    <Setter Property="Padding" Value="8,7,8,4" />
+    <Setter Property="MinWidth" Value="56" />
+    <Setter Property="Height" Value="68" />
     <Setter Property="VerticalAlignment" Value="Top" />
     <Setter Property="HorizontalContentAlignment" Value="Center" />
   </Style>
@@ -143,7 +146,7 @@
   </Style>
   <Style Selector="Button.ribbonLarge:pointerover /template/ ContentPresenter#PART_ContentPresenter,
                    Button.ribbonSmall:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-    <Setter Property="Background" Value="{DynamicResource CsSurfaceHover}" />
+    <Setter Property="Background" Value="{DynamicResource CsSelectionFill}" />
   </Style>
   <Style Selector="Button.ribbonLarge:pressed /template/ ContentPresenter#PART_ContentPresenter,
                    Button.ribbonSmall:pressed /template/ ContentPresenter#PART_ContentPresenter">
@@ -179,14 +182,14 @@
   </Style>
   <Style Selector="Border.paletteHeader">
     <Setter Property="Background" Value="{DynamicResource CsSurfaceAlt}" />
-    <Setter Property="Height" Value="28" />
+    <Setter Property="Height" Value="30" />
     <Setter Property="Padding" Value="12,0,4,0" />
   </Style>
   <Style Selector="TextBlock.paletteTitle">
     <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
     <Setter Property="FontSize" Value="10" />
-    <Setter Property="FontWeight" Value="SemiBold" />
-    <Setter Property="LetterSpacing" Value="0.8" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="LetterSpacing" Value="1.2" />
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
   <Style Selector="Button.paletteTool">
@@ -206,12 +209,12 @@
     <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
   </Style>
   <Style Selector="TreeView.explorerTree TreeViewItem">
-    <Setter Property="MinHeight" Value="24" />
+    <Setter Property="MinHeight" Value="26" />
     <Setter Property="Padding" Value="2,0,6,0" />
     <Setter Property="FontSize" Value="{DynamicResource CsFontSizeBody}" />
   </Style>
   <Style Selector="TreeView.explorerTree TreeViewItem /template/ Border#PART_LayoutRoot">
-    <Setter Property="MinHeight" Value="24" />
+    <Setter Property="MinHeight" Value="26" />
     <Setter Property="CornerRadius" Value="{DynamicResource CsCornerControl}" />
     <Setter Property="Margin" Value="4,0" />
   </Style>
@@ -229,11 +232,13 @@
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
   <Style Selector="TextBlock.explorerName.group">
-    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="FontSize" Value="{DynamicResource CsFontSizeSmall}" />
+    <Setter Property="LetterSpacing" Value="0.3" />
     <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
   </Style>
   <Style Selector="TextBlock.explorerName.active">
-    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="FontWeight" Value="Medium" />
     <Setter Property="Foreground" Value="{DynamicResource CsAccentBright}" />
   </Style>
   <Style Selector="TextBlock.explorerName.dim">
@@ -241,8 +246,7 @@
   </Style>
   <Style Selector="TextBlock.explorerDetail">
     <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
-    <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
-    <Setter Property="FontSize" Value="10" />
+    <Setter Property="FontSize" Value="10.5" />
     <Setter Property="VerticalAlignment" Value="Center" />
     <Setter Property="Margin" Value="8,0,2,0" />
     <Setter Property="MaxWidth" Value="120" />
@@ -269,29 +273,30 @@
 
   <!-- Properties palette -->
   <Style Selector="StackPanel.propertyList">
-    <Setter Property="Margin" Value="12,8,12,12" />
-    <Setter Property="Spacing" Value="4" />
+    <Setter Property="Margin" Value="14,10,14,14" />
+    <Setter Property="Spacing" Value="5" />
   </Style>
   <Style Selector="StackPanel.propertyHeader">
     <Setter Property="Margin" Value="0,0,0,4" />
   </Style>
   <Style Selector="TextBlock.propertyHeaderText">
     <Setter Property="Foreground" Value="{DynamicResource CsText}" />
-    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="FontWeight" Value="Medium" />
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
   <Style Selector="TextBlock.propertySection">
     <Setter Property="Foreground" Value="{DynamicResource CsTextFaint}" />
     <Setter Property="FontSize" Value="10" />
-    <Setter Property="FontWeight" Value="SemiBold" />
-    <Setter Property="LetterSpacing" Value="0.8" />
-    <Setter Property="Margin" Value="0,8,0,2" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="LetterSpacing" Value="1.2" />
+    <Setter Property="Margin" Value="0,10,0,2" />
   </Style>
   <Style Selector="Grid.propertyRow">
     <Setter Property="MinHeight" Value="24" />
   </Style>
   <Style Selector="Button.propertyChoice">
-    <Setter Property="Background" Value="{DynamicResource CsSurface}" />
+    <Setter Property="Background" Value="{DynamicResource CsSurfaceAlt}" />
     <Setter Property="BorderBrush" Value="{DynamicResource CsBorder}" />
     <Setter Property="Padding" Value="8,2,6,2" />
     <Setter Property="MinHeight" Value="22" />
@@ -323,7 +328,7 @@
 
   <!-- ── Viewport header ────────────────────────────────────────────────────── -->
   <Style Selector="Border.viewportHeader">
-    <Setter Property="Background" Value="{DynamicResource CsSurfaceDeep}" />
+    <Setter Property="Background" Value="{DynamicResource CsSurface}" />
     <Setter Property="Height" Value="30" />
     <Setter Property="Padding" Value="0,0,6,0" />
   </Style>
@@ -342,8 +347,7 @@
   </Style>
   <Style Selector="TextBlock.documentDetail">
     <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
-    <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
-    <Setter Property="FontSize" Value="10" />
+    <Setter Property="FontSize" Value="11" />
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
   <Style Selector="Button.viewportControl">
@@ -373,9 +377,9 @@
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="BorderThickness" Value="0" />
     <Setter Property="Foreground" Value="{DynamicResource CsTextFaint}" />
-    <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
     <Setter Property="FontSize" Value="10" />
-    <Setter Property="Padding" Value="7,1" />
+    <Setter Property="LetterSpacing" Value="0.8" />
+    <Setter Property="Padding" Value="8,1" />
     <Setter Property="Height" Value="20" />
     <Setter Property="MinWidth" Value="0" />
   </Style>
@@ -442,7 +446,7 @@
   </Style>
   <Style Selector="Button.keywordLink.defaultKeyword">
     <Setter Property="Foreground" Value="{DynamicResource CsAccent}" />
-    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="FontWeight" Value="Medium" />
   </Style>
 
   <!-- ── Text ────────────────────────────────────────────────────────────── -->
@@ -450,13 +454,13 @@
     <Setter Property="Foreground" Value="{DynamicResource CsAccent}" />
     <Setter Property="FontFamily" Value="{DynamicResource CsMonoFont}" />
     <Setter Property="FontSize" Value="{DynamicResource CsFontSizeBody}" />
-    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="FontWeight" Value="Medium" />
     <Setter Property="Margin" Value="0,0,8,0" />
   </Style>
   <Style Selector="TextBlock.sectionTitle">
     <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
     <Setter Property="FontSize" Value="{DynamicResource CsFontSizeSmall}" />
-    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="FontWeight" Value="Medium" />
   </Style>
   <Style Selector="TextBlock.propertyName">
     <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
@@ -493,7 +497,8 @@
 
   <!-- ── Menus ───────────────────────────────────────────────────────────── -->
   <Style Selector="Menu">
-    <Setter Property="Background" Value="{DynamicResource CsGraphite}" />
+    <Setter Property="Background" Value="{DynamicResource CsSurfaceDeep}" />
+    <Setter Property="Padding" Value="6,2" />
     <Setter Property="Foreground" Value="{DynamicResource CsText}" />
   </Style>
   <Style Selector="MenuItem">
@@ -530,7 +535,7 @@
     <Setter Property="Background" Value="Transparent" />
   </Style>
   <Style Selector="ScrollBar /template/ Thumb">
-    <Setter Property="Background" Value="{DynamicResource CsTextFaint}" />
+    <Setter Property="Background" Value="{DynamicResource CsBorderStrong}" />
     <Setter Property="CornerRadius" Value="2" />
   </Style>
 
