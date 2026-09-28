@@ -36,7 +36,7 @@ public static class Icons
     public static Control Create(string key, double size = 16)
     {
         var canvas = new Canvas { Width = 24, Height = 24 };
-        double stroke = 1.5 * 24 / size;
+        double stroke = 1.25 * 24 / size;
 
         if (!Paths.TryGetValue(key, out (string Data, uint? Tint)[]? parts))
             parts = Paths[RibbonIcons.Info];
