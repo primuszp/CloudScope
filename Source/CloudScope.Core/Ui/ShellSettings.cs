@@ -18,8 +18,19 @@ public sealed class ShellSettings
     /// <summary>Used to migrate command-window chrome changes without discarding later user resizing.</summary>
     public int CommandLineLayoutVersion { get; set; }
 
-    /// <summary>Width of the properties inspector, in logical pixels.</summary>
+    /// <summary>Width of the explorer/properties palette column, in logical pixels.</summary>
     public double InspectorWidth { get; set; } = 280;
+
+    /// <summary>Ribbon tab that was showing when the workspace was closed.</summary>
+    public string RibbonTab { get; set; } = "Home";
+
+    /// <summary>Share of the palette column the explorer takes above the properties palette.</summary>
+    public double ExplorerShare { get; set; } = 0.45;
+
+    public bool ExplorerVisible { get; set; } = true;
+    public bool PropertiesVisible { get; set; } = true;
+    public bool RibbonVisible { get; set; } = true;
+    public bool PalettesOnRight { get; set; }
 
     /// <summary>Whether the command window was left floating rather than docked.</summary>
     public bool CommandLineFloating { get; set; }

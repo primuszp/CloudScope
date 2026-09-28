@@ -20,8 +20,21 @@ dotnet run --project Source/CloudScope.Avalonia/CloudScope.Avalonia.csproj
 ```
 
 The app uses `Hosting/HostController.cs` to keep renderer lifecycle, point-cloud
-upload, and command handling outside the Avalonia window. Use `Host > Open LAS...`
-to load a `.las`/`.laz` file.
+upload, and command handling outside the Avalonia window. Use `File > Open LAS/LAZ...`,
+the ribbon's **Open** button, or type `OPEN` to load a `.las`/`.laz` file.
+
+Workspace layout (see `Docs/UiRedesign.md` §11):
+
+| Region | Control | Command |
+| --- | --- | --- |
+| Ribbon (Home, View, Display, Label, Analyze, Output) | `Controls/RibbonControl.cs` | `RIBBON [On/Off/Toggle]` |
+| Explorer — clouds, layers, label classes, scene objects, views | `Controls/ExplorerPanel.cs` | `EXPLORER [On/Off/Toggle/Left/Right]` |
+| Properties of the explorer selection | `Controls/PropertiesPanel.cs` | `PROPERTIES [On/Off/Toggle]` |
+| Command line and history | `Controls/CommandLineControl.cs`, `CommandHistoryWindow.cs` | `COMMANDLINE`, `HISTORY` (F2) |
+| Status bar toggles | `MainWindow.cs` | `ORTHO`, `PROJECTION`, `LABELMODE`/`NAVIGATE`, … |
+
+Every button, tree row, property editor and menu item submits a command string, so
+everything in the UI is also scriptable and appears in the command history.
 
 Embedded host layout:
 

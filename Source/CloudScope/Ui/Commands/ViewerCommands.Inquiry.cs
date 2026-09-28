@@ -112,6 +112,75 @@ public sealed partial class ViewerCommands
             : "Command line hidden. Press Ctrl+9 to show it.");
     }
 
+    private static readonly Keyword[] PaletteKeywords =
+    [
+        new("ON", "On"), new("OFF", "Off"), new("TOGGLE", "Toggle"),
+        new("LEFT", "Left"), new("RIGHT", "Right")
+    ];
+
+    [CommandMethod("EXPLORER", "EX", Flags = CommandFlags.NoUndoMarker | CommandFlags.NoHistory | CommandFlags.Transparent,
+        Group = CommandGroup.Inquiry, Scope = CommandScope.Viewer,
+        Summary = "Shows, hides or docks the explorer of open point clouds and scene objects.",
+        Syntax = "EXPLORER [On/Off/Toggle/Left/Right]")]
+    public IEnumerable<PromptStep> Explorer(CommandContext context)
+    {
+        var viewer = context.GetTarget<ViewerController>();
+        PromptStep state = context.Editor
+            .GetKeywords("Explorer [On/Off/Toggle/Left/Right] <Toggle>:", PaletteKeywords)
+            .WithDefaultKeyword("TOGGLE");
+        yield return state;
+        if (state.Status != PromptStatus.Keyword) yield break;
+
+        // Docking a side says where the palettes are, so it shows the explorer as well.
+        if (state.Is("LEFT") || state.Is("RIGHT"))
+        {
+            viewer.PalettesOnRight = state.Is("RIGHT");
+            viewer.ExplorerVisible = true;
+            context.Editor.WriteMessage($"Palettes docked {(viewer.PalettesOnRight ? "right" : "left")}.");
+            yield break;
+        }
+
+        viewer.ExplorerVisible = ResolveToggle(state, viewer.ExplorerVisible);
+        context.Editor.WriteMessage($"Explorer {(viewer.ExplorerVisible ? "shown" : "hidden")}.");
+    }
+
+    [CommandMethod("PROPERTIES", "PR", Flags = CommandFlags.NoUndoMarker | CommandFlags.NoHistory | CommandFlags.Transparent,
+        Group = CommandGroup.Inquiry, Scope = CommandScope.Viewer,
+        Summary = "Shows or hides the properties palette of the explorer selection.",
+        Syntax = "PROPERTIES [On/Off/Toggle]")]
+    public IEnumerable<PromptStep> Properties(CommandContext context)
+    {
+        var viewer = context.GetTarget<ViewerController>();
+        PromptStep state = context.Editor
+            .GetKeywords("Properties [On/Off/Toggle] <Toggle>:", PaletteKeywords[..3])
+            .WithDefaultKeyword("TOGGLE");
+        yield return state;
+        if (state.Status != PromptStatus.Keyword) yield break;
+
+        viewer.PropertiesVisible = ResolveToggle(state, viewer.PropertiesVisible);
+        context.Editor.WriteMessage($"Properties {(viewer.PropertiesVisible ? "shown" : "hidden")}.");
+    }
+
+    [CommandMethod("RIBBON", Flags = CommandFlags.NoUndoMarker | CommandFlags.NoHistory | CommandFlags.Transparent,
+        Group = CommandGroup.Inquiry, Scope = CommandScope.Viewer,
+        Summary = "Shows the ribbon's tool panels, or minimises it to its tabs.",
+        Syntax = "RIBBON [On/Off/Toggle]")]
+    public IEnumerable<PromptStep> Ribbon(CommandContext context)
+    {
+        var viewer = context.GetTarget<ViewerController>();
+        PromptStep state = context.Editor
+            .GetKeywords("Ribbon [On/Off/Toggle] <Toggle>:", PaletteKeywords[..3])
+            .WithDefaultKeyword("TOGGLE");
+        yield return state;
+        if (state.Status != PromptStatus.Keyword) yield break;
+
+        viewer.RibbonVisible = ResolveToggle(state, viewer.RibbonVisible);
+        context.Editor.WriteMessage($"Ribbon {(viewer.RibbonVisible ? "expanded" : "minimised")}.");
+    }
+
+    private static bool ResolveToggle(PromptStep state, bool current) =>
+        state.Is("TOGGLE") ? !current : state.Is("ON");
+
     [CommandMethod("UNDO", "U", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.Edit, Scope = CommandScope.Viewer,
         Summary = "Steps back through completed commands.",

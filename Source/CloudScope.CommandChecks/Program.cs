@@ -209,6 +209,42 @@ try
     }
     WalkMenu(CommandMenu.Build());
     Check($"menu commands resolve ({menuChecked} entries)", menuBad == 0);
+
+    // Ribbon coverage: every button is a command string the runtime knows.
+    var ribbonButtons = CommandRibbon.Build()
+        .SelectMany(tab => tab.Panels)
+        .SelectMany(panel => panel.Buttons)
+        .ToArray();
+    string[] badRibbon = ribbonButtons
+        .Where(button => !runtime.IsKnownCommand(CommandText.FirstWord(button.Command)))
+        .Select(button => $"{button.Caption} -> {button.Command}")
+        .ToArray();
+    Check($"ribbon commands resolve ({ribbonButtons.Length} buttons)", badRibbon.Length == 0,
+        string.Join(", ", badRibbon));
+    Check("ribbon buttons name an icon", ribbonButtons.All(button => button.Icon.Length > 0));
+
+    // Every command is reachable from the UI as well as the command line: the menu or the
+    // ribbon names it. A command only a typist can find is a finding, not a feature.
+    var uiCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    void CollectMenu(IReadOnlyList<CommandMenuEntry> items)
+    {
+        foreach (CommandMenuEntry entry in items)
+        {
+            if (entry.IsSubmenu) CollectMenu(entry.Items);
+            else if (entry.Command.Length > 0) uiCommands.Add(CommandText.FirstWord(entry.Command));
+        }
+    }
+    CollectMenu(CommandMenu.Build());
+    foreach (RibbonButton button in ribbonButtons)
+        uiCommands.Add(CommandText.FirstWord(button.Command));
+
+    string[] unreachable = commands
+        .Select(command => command.GlobalName)
+        .Where(name => !uiCommands.Contains(name))
+        .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+    Check($"every command is reachable from the menu or ribbon ({commands.Count} commands)",
+        unreachable.Length == 0, string.Join(", ", unreachable));
 }
 catch (Exception ex)
 {

@@ -302,3 +302,67 @@ described in [DesignSystem.md](DesignSystem.md).
   the overlay status bar is a graphite strip.
 * **macOS** stays approximated in Avalonia (system fonts, native menu, unified
   titlebar, system-accent repoint) with no AppKit interop; Windows shares the look.
+
+
+## 11. CAD workspace: ribbon, explorer and properties (2026-09-28)
+
+The Avalonia shell became a full point-cloud CAD workspace. Everything it offers is a
+command string, and everything a command does has a place in the UI.
+
+```
+┌ menu bar (system menu bar on macOS) ───────────────────────────────────────────┐
+│ Home  View  Display  Label  Analyze  Output                              [⌃]   │ ribbon tabs
+│ [Open][PLY/E57/Store] │ [Navigate][Label] │ Box Sphere Cyl … │ … panels …      │ ribbon panels
+├ EXPLORER ────────────┬ ☁ scan.laz  12.0 M pts ─────── [View▾][Proj▾][Vports▾][Color▾] ┤
+│ ▾ Point clouds    1  │                                                         │
+│    ☁ scan.laz  👁    │                    GPU viewport                          │
+│ ▾ Label classes   4  │              (native OpenGL / Metal child)               │
+│ ▾ Scene objects      │                                                         │
+│ ▾ Named views        │                                                         │
+├ PROPERTIES ──────────┤                                                         │
+│ Color by  [Class ▾]  │                                                         │
+│ Point size ──●── 2px │                                                         │
+├──────────────────────┴─────────────────────────────────────────────────────────┤
+│ command transcript … / Command: _                                              │ command line
+├────────────────────────────────────────────────────────────────────────────────┤
+│ 12,053,387 pts · Label · Box · Label: Tree (14) … ORTHO PERSP LABEL │ EXPL PROPS RIBBON CMD · 60 fps │
+└────────────────────────────────────────────────────────────────────────────────┘
+```
+
+* **Ribbon** (`CommandRibbon` in Core, `RibbonControl` in the shell). Six tabs of titled
+  panels, AutoCAD-style: large icon-over-caption buttons and three-high stacks of small
+  ones. The model is data only — caption, command, icon key, optional check state — so the
+  check marks come from the same `CommandMenu.IsChecked` as the menus, and buttons that need
+  a cloud grey out while none is loaded. `RIBBON` minimises it to its tabs; picking a tab
+  of a minimised ribbon opens it again.
+* **Explorer** (`ExplorerPanel`) — CloudCompare's DB tree for CloudScope: the resident
+  cloud or every tile-store layer (with an eye toggle), the label classes (colour swatch,
+  LAS code, active marker), the scene objects commands created (cross-section, surface
+  mesh, polylines) and the named views. Double-click runs the row's natural command
+  (zoom, set active label, restore view); every context-menu item is a command.
+* **Properties** (`PropertiesPanel`) — AutoCAD's palette for the explorer selection, or the
+  workspace (view, display, labeling) when nothing is selected. Drop-downs are command
+  lists, check boxes and the point-size slider issue `LAYER`, `SURFACE`, `ORTHO`,
+  `POINTSIZE` …, so the command line stays the audit trail.
+* **Viewport header** — a document tab plus AutoCAD's viewport controls (view, projection,
+  viewports, colour). They live in a strip above the viewport rather than on it because
+  the viewport is a native child window that would cover anything drawn over it.
+* **Status bar** — counts, mode and label on the left, a progress bar for loads and surface
+  reconstruction, and AutoCAD-style toggles (ORTHO, PERSP, LABEL, EXPL, PROPS, RIBBON, CMD),
+  each lit from the snapshot and each a command when clicked.
+* **Icons** are vector line drawings (`Controls/Icons.cs`), identical on Windows and macOS
+  whatever symbol fonts are installed.
+
+Core additions: the `EXPLORER [On/Off/Toggle/Left/Right]`, `PROPERTIES` and `RIBBON`
+commands and their viewer flags; `LAYER ON/OFf/Close <name>` now also addresses the
+resident (in-memory) cloud, so it can be hidden or closed from the explorer like a layer;
+`ORTHO Toggle`; and `ViewerStatusSnapshot` carries what the palettes display (source path,
+resident visibility, RGB availability, thinning, ortho, surface visibility, polyline count,
+named views, labelled points, palette flags). The menu tree was regrouped (File, Edit,
+Select, View, Cloud, Draw, Label, Inquire, Window, Help) and now names every command.
+
+`CloudScope.CommandChecks` enforces the promise: every ribbon button must resolve to a
+registered command, and **every registered command must be reachable from the menu or the
+ribbon**. The palette arrangement (explorer/properties visibility, dock side, ribbon state
+and tab, palette width and split) is persisted in `shell.json` and restored by issuing the
+same commands once the viewer exists.

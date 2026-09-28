@@ -119,7 +119,7 @@ public sealed partial class ViewerCommands
 
     [CommandMethod("LAYER", "LA", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.File, Scope = CommandScope.Viewer,
-        Summary = "Lists layers, or turns one on, off or closed.",
+        Summary = "Lists the open point clouds and layers, or turns one on, off or closed.",
         Syntax = "LAYER [List/ON/OFf/Close] <name>")]
     public IEnumerable<PromptStep> Layer(CommandContext context)
     {
@@ -152,7 +152,13 @@ public sealed partial class ViewerCommands
     private static string DescribeLayers(ViewerController viewer)
     {
         if (viewer.Layers.Count == 0)
-            return "No layers are open. OPENSTORE loads one, ADDSTORE adds another.";
+        {
+            // The in-memory cloud answers to LAYER by its file name, so it is listed like one.
+            ViewerStatusSnapshot status = viewer.Status;
+            return status.HasCloud
+                ? $"  {(viewer.ResidentCloudVisible ? "on " : "off")}  {status.SourceName}  {status.LoadedCount:N0} points (in memory)"
+                : "No point cloud or layer is open. OPEN loads a cloud, OPENSTORE a tile store.";
+        }
 
         return string.Join(
             Environment.NewLine,
