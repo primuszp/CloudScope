@@ -17,7 +17,7 @@ namespace CloudScope.Avalonia;
 
 public sealed partial class MainWindow : Window
 {
-    private readonly HostController _hostController = new();
+    private readonly HostController _hostController;
     private readonly bool _useNativeMenu = OperatingSystem.IsMacOS();
     private readonly CommandLineSession _commandSession;
     private readonly DispatcherTimer _statusTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
@@ -52,8 +52,11 @@ public sealed partial class MainWindow : Window
     private ProgressBar _statusProgress = null!;
     private StackPanel _statusTogglePanel = null!;
 
-    public MainWindow()
+    public MainWindow() : this(new HostController()) { }
+
+    internal MainWindow(HostController hostController, Control? viewportOverride = null)
     {
+        _hostController = hostController;
         _commandSession = new CommandLineSession(
             command => _hostController.ExecuteCommandResult(command, publishResult: false),
             () => _hostController.CommandPrompt,
@@ -74,7 +77,7 @@ public sealed partial class MainWindow : Window
         BuildCommandLine();
         _hostController.ViewerCommandOutput += OnViewerCommandOutput;
 
-        _viewportContainer.Content = new ViewportInputHost(_hostController);
+        _viewportContainer.Content = viewportOverride ?? new ViewportInputHost(_hostController);
 
         AddHandler(KeyDownEvent, OnWindowKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, OnWindowKeyUp, RoutingStrategies.Tunnel);
@@ -956,15 +959,14 @@ public sealed partial class MainWindow : Window
 
     private void OnWindowKeyUp(object? sender, KeyEventArgs e)
     {
-        if (e.Source is TextBox)
-            return;
-
+        // A key can be released after focus moved from the viewport to the command input.
+        // Release viewer state in both cases, while leaving TextBox editing unhandled.
         ViewerKey key = AvaloniaViewerKeyMapper.ToViewerKey(e.Key);
         if (key == ViewerKey.Unknown)
             return;
 
         _hostController.ForwardKeyUp(key);
-        e.Handled = true;
+        if (e.Source is not TextBox) e.Handled = true;
     }
 
     private void OnStatusChanged(string message)

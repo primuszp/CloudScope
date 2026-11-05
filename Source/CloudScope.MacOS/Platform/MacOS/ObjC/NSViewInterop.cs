@@ -36,7 +36,8 @@ public static class NSViewInterop
         view == IntPtr.Zero ? IntPtr.Zero : SendIntPtr(view, SelWindow);
 
     /// <summary>
-    /// The current cursor position in the view's coordinate space (AppKit's bottom-left
+    /// The dispatched mouse event's position, or the live cursor outside mouse handling,
+    /// in the view's coordinate space (AppKit's bottom-left
     /// origin), or <c>null</c> when the view is not on screen.
     /// </summary>
     public static NSPoint? GetMouseLocation(IntPtr view)
@@ -45,10 +46,32 @@ public static class NSViewInterop
         if (window == IntPtr.Zero)
             return null;
 
+        // Use the event being dispatched, rather than sampling a cursor that may
+        // already have moved (or differ from a posted/remote input event).
+        IntPtr app = SendIntPtr(NSApplicationClass, SelSharedApplication);
+        IntPtr currentEvent = SendIntPtr(app, SelCurrentEvent);
+        if (currentEvent != IntPtr.Zero && SendIntPtr(currentEvent, SelWindow) == window)
+        {
+            ulong type = SendUnsigned(currentEvent, SelEventType);
+            if (type is >= 1 and <= 7 or 22 or >= 25 and <= 27)
+            {
+                NSPoint eventPoint = SendPoint(currentEvent, SelLocationInWindow);
+                return SendPointFromView(view, SelConvertPointFromView, eventPoint, IntPtr.Zero);
+            }
+        }
+
         NSPoint screenPoint = SendPoint(NSEventClass, SelMouseLocation);
         NSPoint windowPoint = SendPointArg(window, SelConvertPointFromScreen, screenPoint);
         return SendPointFromView(view, SelConvertPointFromView, windowPoint, IntPtr.Zero);
     }
+
+    // AppKit mouse event types: left/right down/up, moved/dragged, scroll,
+    // and other-button down/up/dragged. Keyboard events use the live cursor.
+    private static readonly IntPtr NSApplicationClass = objc_getClass("NSApplication");
+    private static readonly IntPtr SelSharedApplication = sel_registerName("sharedApplication");
+    private static readonly IntPtr SelCurrentEvent = sel_registerName("currentEvent");
+    private static readonly IntPtr SelEventType = sel_registerName("type");
+    private static readonly IntPtr SelLocationInWindow = sel_registerName("locationInWindow");
 
     private static readonly IntPtr SelSetFrameSize = sel_registerName("setFrameSize:");
     private static readonly IntPtr SelSetBounds = sel_registerName("setBounds:");
@@ -76,6 +99,9 @@ public static class NSViewInterop
 
     [DllImport("libobjc.dylib", EntryPoint = "objc_msgSend")]
     private static extern IntPtr SendIntPtr(IntPtr receiver, IntPtr selector);
+
+    [DllImport("libobjc.dylib", EntryPoint = "objc_msgSend")]
+    private static extern ulong SendUnsigned(IntPtr receiver, IntPtr selector);
 
     [DllImport("libobjc.dylib", EntryPoint = "objc_msgSend")]
     private static extern NSPoint SendPoint(IntPtr receiver, IntPtr selector);

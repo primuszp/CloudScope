@@ -11,6 +11,8 @@ namespace CloudScope.Avalonia;
 
 public sealed class App : Application
 {
+    public App() => Name = "CloudScope";
+
     public override void Initialize()
     {
         Styles.Add(new FluentTheme());

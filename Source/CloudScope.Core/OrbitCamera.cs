@@ -79,6 +79,24 @@ namespace CloudScope
         /// <summary>Same as PivotIndicatorScale but for an arbitrary world position (e.g. display pivot).</summary>
         public float PivotIndicatorScaleAt(Vector3 worldPos) => Math.Max(EffectiveHalfViewSize(WorldToView(worldPos, _vtw).Z) * 0.3f, 0.001f);
 
+        /// <summary>Names the actual orientation independently of viewport layout/projection.</summary>
+        public string ViewName
+        {
+            get
+            {
+                static bool Near(float angle, float expected) =>
+                    MathF.Abs(MathF.IEEERemainder(angle - expected, 360f)) < 0.01f;
+                if (Near(_az, 0) && Near(_el, 0)) return "Top";
+                if (Near(_az, 0) && Near(_el, 180)) return "Bottom";
+                if (Near(_az, 0) && Near(_el, 90)) return "Front";
+                if (Near(_az, 180) && Near(_el, 90)) return "Back";
+                if (Near(_az, -90) && Near(_el, 90)) return "Left";
+                if (Near(_az, 90) && Near(_el, 90)) return "Right";
+                if (Near(_az, 45) && Near(_el, 35.264f)) return "Isometric";
+                return "Custom";
+            }
+        }
+
         public OrbitCamera() { RebuildRot(); CalcViewVolume(); }
 
         public void SetDepthPicker(IDepthPicker depthPicker) => _depthPicker = depthPicker;
@@ -477,6 +495,7 @@ namespace CloudScope
         /// </summary>
         public void OrbitBy(float azimuthDegrees, float elevationDegrees)
         {
+            CancelTransition();
             Vector3 pivotView = WorldToView(_orbitPivot, _vtw);
             _az += azimuthDegrees;
             _el += elevationDegrees;

@@ -103,12 +103,17 @@ namespace CloudScope.Platform.Metal
     }
 
     [SupportedOSPlatform("macos")]
-    internal static unsafe class MetalBufferWriter
+    internal static unsafe class MetalDrawUniforms
     {
-        public static void Write<T>(MTLBuffer buffer, T value) where T : unmanaged
+        // Metal copies these small values into encoder-owned storage. Each draw keeps
+        // its camera, tint and clipping state even across many views/layers in one frame.
+        public static void Vertex<T>(MTLRenderCommandEncoder encoder, T value) where T : unmanaged
+            => encoder.SetVertexBytes((IntPtr)(&value), (ulong)sizeof(T), 1);
+
+        public static void Color(MTLRenderCommandEncoder encoder, MetalColorUniforms value)
         {
-            *(T*)buffer.Contents.ToPointer() = value;
-            // StorageModeShared: no DidModifyRange needed
+            Vertex(encoder, value);
+            encoder.SetFragmentBytes((IntPtr)(&value), (ulong)sizeof(MetalColorUniforms), 1);
         }
     }
 

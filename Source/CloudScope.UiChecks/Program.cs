@@ -2,6 +2,12 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Threading;
+using Avalonia.Input;
+using Avalonia.VisualTree;
+using CloudScope;
+using CloudScope.Commands;
+using CloudScope.Labeling;
+using CloudScope.Avalonia.Hosting;
 using CloudScope.Avalonia;
 using CloudScope.Avalonia.Controls;
 using CloudScope.Ui;
@@ -20,9 +26,11 @@ void Check(string name, bool ok)
 
 // Real shell, theme, ribbon, palettes and console. Replace only the native GPU viewport
 // before attaching it; this deliberately checks UI layout without claiming GPU coverage.
-var window = new MainWindow();
-window.FindControl<ContentControl>("ViewportHost")!.Content = new Border
-{ Background = App.Brush("CsViewportBackdrop") };
+var host = new HostController();
+var fake = new KeyboardHost();
+host.SetEmbeddedHost(fake);
+var viewport = new Border { Focusable = true, Background = App.Brush("CsViewportBackdrop") };
+var window = new MainWindow(host, viewport);
 window.Show();
 foreach ((int width, int height) in new[] { (1480, 920), (1040, 680) })
 {
@@ -51,6 +59,17 @@ foreach (string tab in new[] { "Home", "View", "Display", "Label", "Analyze", "O
     Check($"Ribbon {tab} renders", frame != null && ribbon.SelectedTabTitle == tab);
     frame?.Save(Path.Combine(output, $"ribbon-{tab.ToLowerInvariant()}.png"));
 }
+viewport.Focus();
+window.KeyPress(Key.W, RawInputModifiers.None, PhysicalKey.W, "w");
+Check("Viewport key-down reaches the native keyboard", fake.Keyboard.IsKeyDown(ViewerKey.W));
+var commandInput = window.FindControl<ContentControl>("CommandLineHost")!.GetVisualDescendants().OfType<TextBox>().First();
+commandInput.Focus();
+window.KeyRelease(Key.W, RawInputModifiers.None, PhysicalKey.W, "w");
+Check("Releasing a key after focusing command input clears native key state", !fake.Keyboard.IsKeyDown(ViewerKey.W));
+Check("Native application has its own name", Application.Current?.Name == "CloudScope");
+Check("Known native timer failure is classified without hiding other startup failures",
+    NativeStartupDiagnostics.IsRenderTimerFailure(new InvalidOperationException("Avalonia.Native was not able to start the RenderTimer. Native error code is: -6661")) &&
+    !NativeStartupDiagnostics.IsRenderTimerFailure(new InvalidOperationException("Other failure")));
 Check("Secondary text has 4.5:1 contrast on ribbon and hover surfaces",
     Contrast(UiPalette.TextDim, UiPalette.Graphite) >= 4.5 && Contrast(UiPalette.TextDim, UiPalette.SurfaceHover) >= 4.5);
 Console.WriteLine($"UI captures: {output}");
@@ -67,4 +86,18 @@ static double Contrast(uint a, uint b)
     }
     double x = Luminance(a), y = Luminance(b);
     return (Math.Max(x, y) + .05) / (Math.Min(x, y) + .05);
+}
+
+internal sealed class KeyboardHost : IEmbeddedViewerHost
+{
+    public ViewerKeyboardState Keyboard { get; } = new();
+    public string RendererName => "Test";
+    public ViewerStatusSnapshot Status => ViewerStatusSnapshot.Empty;
+    public ICommandExecutor Commands { get; } = new CommandRuntime(new object());
+    public IReadOnlyCollection<LabelDefinition> LabelDefinitions => [];
+    public string ActiveLabel => "Ground";
+    public int? ActiveInstanceId => null;
+    public void ForwardKeyDown(ViewerKey key) => Keyboard.KeyDown(key);
+    public void ForwardKeyUp(ViewerKey key) => Keyboard.KeyUp(key);
+    public void FocusViewer() { }
 }

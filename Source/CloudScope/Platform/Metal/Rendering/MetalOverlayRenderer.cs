@@ -37,7 +37,6 @@ namespace CloudScope.Platform.Metal.Rendering
         private MTLRenderPipelineState _pivotPointPipeline;
         private MTLDepthStencilState _pivotPointDepthState;
         private MTLBuffer _pivotPointBuffer;
-        private MTLBuffer _pivotPointUniforms;
 
         /// <summary>Pixel width of the selection-mode indicator cross; matches the OpenGL overlay.</summary>
         private const float ModeIndicatorWidth = 2.5f;
@@ -69,8 +68,6 @@ namespace CloudScope.Platform.Metal.Rendering
                 device, MTLPixelFormat.BGRA8Unorm, MTLPixelFormat.Depth32Float, _context.SampleCount);
             _pivotPointDepthState = MetalShaderLibrary.CreateDepthState(device, depthWrite: false);
             _pivotPointBuffer = CreatePivotPointBuffer();
-            _pivotPointUniforms = device.NewBuffer(
-                (ulong)Unsafe.SizeOf<MetalPointUniforms>(), MTLResourceOptions.ResourceStorageModeShared);
         }
 
         public void RenderPivotIndicator(
@@ -263,7 +260,6 @@ namespace CloudScope.Platform.Metal.Rendering
             _pivotBuffers = Array.Empty<MTLBuffer>();
             _pivotBatches = Array.Empty<PivotLineBatch>();
             MetalResources.Release(ref _pivotPointBuffer);
-            MetalResources.Release(ref _pivotPointUniforms);
             MetalResources.Release(_pivotPointPipeline.NativePtr);
             MetalResources.Release(_pivotPointDepthState.NativePtr);
             _pivotPointPipeline = default;
@@ -310,11 +306,10 @@ namespace CloudScope.Platform.Metal.Rendering
                 return;
 
             Matrix4 pointView = Matrix4.CreateTranslation(pivot) * view;
-            MetalBufferWriter.Write(_pivotPointUniforms, new MetalPointUniforms(pointView, projection, pointSize, alpha));
+            MetalDrawUniforms.Vertex(encoder, new MetalPointUniforms(pointView, projection, pointSize, alpha));
             encoder.SetRenderPipelineState(_pivotPointPipeline);
             encoder.SetDepthStencilState(_pivotPointDepthState);
             encoder.SetVertexBuffer(_pivotPointBuffer, 0, 0);
-            encoder.SetVertexBuffer(_pivotPointUniforms, 0, 1);
             encoder.DrawPrimitives(MTLPrimitiveType.Point, 0, 1);
         }
     }

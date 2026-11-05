@@ -582,9 +582,7 @@ namespace CloudScope
             ViewportLayout = DescribeViewportLayout(_viewportLayout),
             ViewName = ActiveViewport.SectionMode == SectionDisplayMode.Profile && _crossSection is { } activeSection
                 ? $"Cross-section {activeSection.Name}"
-                : ActiveViewport.Camera.IsPerspective && _viewportLayout == ViewportLayoutKind.SinglePerspective
-                    ? "Perspective"
-                    : DescribeViewportView(_auxiliaryViewportView),
+                : ActiveViewport.Camera.ViewName,
             Fps = _smoothedFps,
             LabelWindowVisible = LabelWindowVisible,
             CommandHistoryVisible = CommandHistoryVisible,
@@ -647,8 +645,15 @@ namespace CloudScope
         /// the cells it asked for have arrived — otherwise a shell that renders on demand
         /// would leave the picture half loaded until the user happened to move.
         /// </remarks>
-        public bool NeedsContinuousFrames =>
-            _viewports.Any(v => v.Input.NeedsContinuousFrames) || _streamingRenderer.PendingCellCount > 0;
+        public bool NeedsContinuousFrames
+        {
+            get
+            {
+                foreach (ViewportState viewport in ActiveViewports())
+                    if (viewport.Input.NeedsContinuousFrames || viewport.Camera.IsTransitioning) return true;
+                return _streamingRenderer.PendingCellCount > 0;
+            }
+        }
 
         /// <summary>
         /// True when a background operation has completed and its graphics-thread work is
@@ -1688,7 +1693,8 @@ namespace CloudScope
                     _selection.Mode == InteractionMode.Label && _selection.ActiveTool.HasVolume,
                     viewport.Bounds.Width,
                     viewport.Bounds.Height,
-                    !_suppressEscapeClose);
+                    !_suppressEscapeClose,
+                    acceptsKeyboard: ReferenceEquals(viewport, ActiveViewport));
                 shouldClose |= viewportShouldClose;
             }
 
@@ -2180,13 +2186,10 @@ namespace CloudScope
             };
         }
 
-        private IEnumerable<ViewportState> ActiveViewports()
-        {
-            if (_viewportLayout == ViewportLayoutKind.SingleTop)
-                return [_viewports[1]];
-
-            return _viewports.Take(LayoutViewportCount(_viewportLayout));
-        }
+        private ReadOnlySpan<ViewportState> ActiveViewports() =>
+            _viewportLayout == ViewportLayoutKind.SingleTop
+                ? _viewports.AsSpan(1, 1)
+                : _viewports.AsSpan(0, LayoutViewportCount(_viewportLayout));
 
         private void UpdateViewportLayout()
         {

@@ -26,4 +26,8 @@
     <ProjectReference Include="..\CloudScope.MacOS\CloudScope.MacOS.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="CloudScope.UiChecks" />
+  </ItemGroup>
+
 </Project>

@@ -33,3 +33,6 @@ Thumbs.db
 # NuGet
 .nuget/
 packages/
+
+# Packaged applications
+artifacts/

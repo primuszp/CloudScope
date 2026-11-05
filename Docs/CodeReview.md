@@ -84,3 +84,51 @@ A regressziók determinisztikus szinkronizációval vizsgálják a futás közbe
 Az új összesített eredmény: **420 sikeres CommandChecks-ellenőrzés**, a korábbi 385 helyett; a **17 UI-ellenőrzés** megmaradt. A teljes Debug/Release megoldás és az ImGui/SharpMetal nélküli konfiguráció figyelmeztetések hibaként kezelésével is sikeresen lefordult: mindhárom esetben 0 figyelmeztetés és 0 hiba. A 420 ellenőrzés Debug és Release módban is átment.
 
 A natív Avalonia-indítást újrapróbáltuk, a `-6661` hiba változatlanul jelentkezett. Ugyanezt a hibát az [Avalonia #18895 hibajegye](https://github.com/AvaloniaUI/Avalonia/issues/18895) a macOS kijelző-/DisplayLink-állapotához kapcsolja; a kapcsolódó [#21453 javítási javaslat](https://github.com/AvaloniaUI/Avalonia/pull/21453) az ellenőrzéskor nyitott volt. Ez támogatja a környezeti ok lehetőségét, de önmagában nem bizonyítja a helyi okot. Egyedi időzítős kerülőmegoldás és ellenőrizetlen függőségfrissítés nem került a projektbe. A natív GPU-próba továbbra is nyitott.
+
+
+## Natív indítás és interaktív munkafolyamatok — 2026-11-05
+
+Ez a kör feloldott grafikus munkamenetben már ténylegesen ellenőrizte az Avalonia natív ablakát és a beágyazott Metal/OpenGL nézetet macOS 26.7.1-en, Apple Siliconon. A korábbi natív ellenőrzési akadályt az alábbi helyi mérés pontosítja:
+
+| Munkamenet | Fő kijelző | Aktív kijelzők | DisplayLink eredmény |
+| --- | --- | --- | --- |
+| Zárolt | 1 | 0 | -6661 |
+| Feloldott | 1 | 1 | 0 |
+
+Ugyanaz az alkalmazás feloldott munkamenetben elindult. A fő kijelző azonosítója önmagában nem bizonyítja a grafikus munkamenet használhatóságát. Az új `--diagnostics` a natív CoreGraphics/CoreVideo feltételeket méri; a konkrét Avalonia RenderTimer-hiba érthető hibaüzenettel és 2-es kilépési kóddal zárul. Egyéb indítási kivételeket nem nyel el. Nem került egyedi időzítő a keretrendszer helyére.
+
+A `scripts/package-macos.sh` az aktuális architektúrára készít helyben aláírt `.app` csomagot, külön végrehajtható és erőforráskönyvtárral. A meglévő generált csomagot egészében cseréli, így eltávolított függőség nem marad benne. A csomaghoz telepített .NET 10 szükséges; ez fejlesztői csomag, nem notarizált kiadás. Az alkalmazás natív neve CloudScope.
+
+### A kézi próbák során javított hibák
+
+- Az igény szerint rajzoló Metal host nem kért további képkockát a nézetátmenetekhez és a tartott navigációs billentyűkhöz. A látható nézetek kameraátmenetei és aktív bemenetei most fenntartják a rajzolást; a befejezett átmenet visszatér nyugalomba. Rejtett nézet nem tartja folyamatosan aktívan a rajzolót.
+- A státusz nézetneve az elrendezési beállítást tükrözte a valódi kamera helyett. Most a tényleges irányból származik. Több nézetben a billentyűs navigáció csak az aktív kamerát mozgatja. A hosszú üresjárat utáni első billentyű nem alkalmazza az egész eltelt időt egyetlen elmozdulásként; kézi orbitálás megszakítja a régebbi nézetátmenetet.
+- Ha a felhasználó a nézetben lenyomott billentyűt már a parancsmezőre váltva engedte fel, a kamera lenyomva tartottnak érzékelhette. A felengedés most fókusztól függetlenül eljut a nézethez.
+- A Metal pontfelhő három megosztott uniformpuffert forgatott rajzolásonként. Négy nézet vagy több réteg egyetlen parancspufferén belül a későbbi rajzolás felülírhatta a korábbi kamera-/színadatokat. A kiemelés és a pivot is megosztott adatot írt át, a primitívrajzoló pedig 512 rajzolás felett újrahasználta az utolsó helyet. Közös `MetalDrawUniforms` adja át a kis adatokat encoder által másolt értékként minden érintett rajzolónál. Ez megszünteti a nézetek/rétegek számától függő pufferfelülírást; a mechanizmus az [Apple kis dinamikus pufferekre ajánlott API-ja](https://developer.apple.com/library/archive/documentation/3DDrawing/Conceptual/MTLBestPracticesGuide/BufferBindings.html).
+- Az OpenGL beágyazás a globális kurzorpozíciót kérte le az esemény helye helyett. A natív próbában a jobb alsó mezőre adott görgetés a bal alsót nagyította. Az AppKit-híd most a megfelelő ablakhoz tartozó aktuális egéresemény helyét alakítja át, más bemenetnél a kurzorlekérdezés marad. A javítás után ugyanaz a görgetés a jobb alsó mezőt aktiválta és nagyította. Az eseménykoordináta értelmezése az [Apple locationInWindow dokumentációját](https://developer.apple.com/documentation/appkit/nsevent/locationinwindow) követi.
+- Az importok alapértelmezett 0 értéke minden pontot jelentett, de a kifejezetten beírt 0-t a parancs elutasította. A négy korlátozható resident importparancs közös pontszámkérdése most következetesen elfogadja a 0-t.
+
+### Ténylegesen végigpróbált natív műveletek
+
+A szintetikus XYZ 8529 pontból állt: 81×81 pontos ferde talajrács és két színezett hengeres torony. Az egérpróbák a tényleges natív nézetbe érkeztek.
+
+| Terület | Ellenőrzött eredmény |
+| --- | --- |
+| Metal indítás/import | A csomagból indult ablak, 8529 XYZ pont, RGB megjelenítés, pontméret, felülnézet és párhuzamos vetítés |
+| Több nézet | Négy nézet, egyik kamera orbitálása és egy másik nagyítása egymástól függetlenül; a javítás előtti felülírás megszűnt |
+| Kijelölés | Doboz, gömb és henger egérrel; térbeli fogópontok és előnézet; megszakítás Escape-pel |
+| Címkék | 23 pontos, 7-es példányú címke mentése/visszatöltése; undo/redo; gömbkijelölés megerősítése után 2952 címkézett pont |
+| Pontbevitel | PAN két natív kattintással, látható eltolás; két kattintással indított keresztszelvény, szélességmegadás, terv- és szelvénynézet |
+| Rajzolás/nézetek | Három csúcsból zárt PLINE, névvel mentett és visszaállított kamera |
+| Felület/export | RECONSTRUCT 8 0.8: 34 837 háromszög; tényleges Metal felületrajzolás; OBJ-fájlban 8529 csúcs és 34 837 lap; felület elrejtése |
+| OpenGL | Külön tesztcsomagban igazolt OpenGL host; ugyanazon XYZ importja és megjelenítése; négy nézet; orbitálás/nagyítás a megfelelő mezőben; dobozkijelölés és előnézet mind a négy nézetben |
+
+A JSON-fájlok forrásindexeit és az OBJ csúcs-/lapszámát külön fájlolvasással is ellenőriztük. A nagyobb gömbkijelölés a korábbi címke 15 pontját felülírta: 2944 Ground + 8 Native test = 2952 egyedi címkézett pont.
+
+### Automatizált regresszió és fennmaradó határok
+
+Az új kameratesztek minden standard nézet átmenetét, megállását és helyes nevét, az aktív kamera billentyűkezelését, az üresjárati elmozdulás korlátját és az orbitálással megszakított átmenetet vizsgálják. A tényleges Avalonia ablakon külön próba tartja lenyomva a W-t, majd a parancsmezőre fókuszálva engedi fel. Az explicit 0-s import a teljes pontfelhőt további kérdés nélkül tölti be.
+
+A natív próbák szintetikus resident felhőn történtek. Nem igazolnak nagy felméréseken mért teljesítményt, minden GPU/operációs rendszer támogatását vagy minden parancs minden interaktív ágát. A streaming több réteges rajzolási útja megkapta ugyanazt a uniformjavítást, de nagy streaming adatállománnyal külön natív terhelési próba még szükséges. A CSF/TREESEG algoritmusok automatizált próbái megmaradtak; valós erdészeti adatokkal végzett interaktív és pontossági ellenőrzés külön feladat.
+
+Végső összesítés ebben a körben: **442/442 CommandChecks** Debug és Release módban, **21/21 UiChecks**, teljes Debug/Release megoldás és elkülönített ImGui/SharpMetal nélküli build: **0 figyelmeztetés, 0 hiba**. A csomagolás és a kész `.app` aláírás-ellenőrzése sikeres; a csomag `--help` parancsa grafikus ablak nélkül működik. A feloldott natív diagnosztika egy aktív kijelzőt és sikeres DisplayLink-létrehozást mutatott.

@@ -20,12 +20,6 @@ namespace CloudScope.Platform.Metal.Rendering
         private const int PointsPerChunk = PointRenderUploadBuilder.DefaultPointsPerChunk;
         private static PointRenderLimits Limits => PointRenderLimits.For("METAL");
 
-        // Triple-buffered uniforms — CPU never blocks waiting for GPU to finish.
-        private const int UniformBufferCount = 3;
-        private readonly MTLBuffer[] _uniformBuffers = new MTLBuffer[UniformBufferCount];
-        private readonly MTLBuffer[] _attributeUniformBuffers = new MTLBuffer[UniformBufferCount];
-        private int _uniformBufferIndex;
-
         private MTLRenderPipelineState _pipeline;
         private MTLRenderPipelineState _attributePipeline;
         private MTLDepthStencilState _depthState;
@@ -57,14 +51,6 @@ namespace CloudScope.Platform.Metal.Rendering
             _attributePipeline = MetalShaderLibrary.CreateAttributePointPipeline(
                 device, MTLPixelFormat.BGRA8Unorm, MTLPixelFormat.Depth32Float, _context.SampleCount);
             _depthState = MetalShaderLibrary.CreateDepthState(device, depthWrite: true);
-
-            ulong uniformSize = (ulong)Unsafe.SizeOf<MetalPointUniforms>();
-            ulong attributeUniformSize = (ulong)Unsafe.SizeOf<MetalAttributePointUniforms>();
-            for (int i = 0; i < UniformBufferCount; i++)
-            {
-                _uniformBuffers[i] = device.NewBuffer(uniformSize, MTLResourceOptions.ResourceStorageModeShared);
-                _attributeUniformBuffers[i] = device.NewBuffer(attributeUniformSize, MTLResourceOptions.ResourceStorageModeShared);
-            }
 
             UploadClassPalette(device);
 
@@ -145,8 +131,6 @@ namespace CloudScope.Platform.Metal.Rendering
                 return 0;
 
             float pointSize = renderView.PointSize;
-            _uniformBufferIndex = (_uniformBufferIndex + 1) % UniformBufferCount;
-            var uniformBuffer = _uniformBuffers[_uniformBufferIndex];
 
             var encoder = frame.RenderCommandEncoder;
             if (encoder.NativePtr == IntPtr.Zero) return 0;
@@ -160,19 +144,15 @@ namespace CloudScope.Platform.Metal.Rendering
             encoder.SetDepthStencilState(_depthState);
             if (useAttributePipeline)
             {
-                var attributeUniformBuffer = _attributeUniformBuffers[_uniformBufferIndex];
-                MetalBufferWriter.Write(
-                    attributeUniformBuffer,
+                MetalDrawUniforms.Vertex(encoder,
                     new MetalAttributePointUniforms(view, projection, pointSize,
                         PointRenderAttributeBuilder.MapColorSource(_colorSource), section: renderView.Section));
-                encoder.SetVertexBuffer(attributeUniformBuffer, 0, 1);
                 encoder.SetVertexBuffer(_classPaletteBuffer, 0, 3);
             }
             else
             {
-                MetalBufferWriter.Write(uniformBuffer,
+                MetalDrawUniforms.Vertex(encoder,
                     new MetalPointUniforms(view, projection, pointSize, section: renderView.Section));
-                encoder.SetVertexBuffer(uniformBuffer, 0, 1);
             }
 
             // Ranges arrive nearest-first, so consecutive ones often land in the same buffer;
@@ -208,16 +188,6 @@ namespace CloudScope.Platform.Metal.Rendering
         {
             ReleasePointChunks();
             ReleaseAttributeChunks();
-            for (int i = 0; i < _uniformBuffers.Length; i++)
-            {
-                if (_uniformBuffers[i].NativePtr != IntPtr.Zero)
-                    MetalResources.Release(_uniformBuffers[i].NativePtr);
-                _uniformBuffers[i] = default;
-
-                if (_attributeUniformBuffers[i].NativePtr != IntPtr.Zero)
-                    MetalResources.Release(_attributeUniformBuffers[i].NativePtr);
-                _attributeUniformBuffers[i] = default;
-            }
             MetalResources.Release(_classPaletteBuffer.NativePtr);
             MetalResources.Release(_pipeline.NativePtr);
             MetalResources.Release(_attributePipeline.NativePtr);

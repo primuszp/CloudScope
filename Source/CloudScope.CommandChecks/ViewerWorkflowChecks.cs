@@ -21,7 +21,8 @@ internal static class ViewerWorkflowChecks
             check("OPENXYZ accepts quoted path and point limit in one command", result.Status == CommandStatus.Ended && result.Message.Contains("Reading"), result.Message);
             PumpUntil(() => viewer.LoadProgress < 0);
             check("Resident background import respects the requested limit", viewer.Status.LoadedCount == 7, viewer.Status.LoadedCount.ToString());
-            dispatcher.Execute($"OPENXYZ \"{path}\" 25");
+            result = dispatcher.Execute($"OPENXYZ \"{path}\" 0");
+            check("Explicit zero imports all points without another prompt", result.Status == CommandStatus.Ended, result.Message);
             PumpUntil(() => viewer.LoadProgress < 0);
             check("Resident background import publishes the full cloud", viewer.Status.LoadedCount == 25, "");
             string labels = Path.Combine(directory, "labels.json");

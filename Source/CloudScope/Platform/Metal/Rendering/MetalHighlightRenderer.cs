@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using System.Runtime.Versioning;
 using CloudScope.Labeling;
 using CloudScope.Rendering;
@@ -20,7 +19,6 @@ namespace CloudScope.Platform.Metal.Rendering
 
         private MTLRenderPipelineState _pipeline;
         private MTLDepthStencilState _depthState;
-        private MTLBuffer _uniformsBuffer;
         private MTLBuffer _highlightBuffer;
         private MTLBuffer _previewBuffer;
         private bool _dirty = true;
@@ -64,7 +62,6 @@ namespace CloudScope.Platform.Metal.Rendering
 
         public void Dispose()
         {
-            MetalResources.Release(ref _uniformsBuffer);
             MetalResources.Release(ref _highlightBuffer);
             MetalResources.Release(ref _previewBuffer);
             MetalResources.Release(_pipeline.NativePtr);
@@ -87,9 +84,6 @@ namespace CloudScope.Platform.Metal.Rendering
             var device = _context.Device;
             _pipeline    = MetalShaderLibrary.CreatePointPipeline(device, MTLPixelFormat.BGRA8Unorm, MTLPixelFormat.Depth32Float, _context.SampleCount);
             _depthState  = MetalShaderLibrary.CreateDepthState(device, depthWrite: false);
-            _uniformsBuffer = device.NewBuffer(
-                (ulong)Unsafe.SizeOf<MetalPointUniforms>(),
-                MTLResourceOptions.ResourceStorageModeShared);
         }
 
         private void RebuildHighlightBuffer(PointData[] points, LabelManager labels, Func<PointAnnotation, Vector3> annotationColor)
@@ -107,8 +101,6 @@ namespace CloudScope.Platform.Metal.Rendering
             if (count == 0 || buffer.NativePtr == IntPtr.Zero || _pipeline.NativePtr == IntPtr.Zero)
                 return;
 
-            MetalBufferWriter.Write(_uniformsBuffer,
-                new MetalPointUniforms(view, proj, pointSize, section: section));
 
             var encoder = frameData is MetalFrameState frame
                 ? frame.RenderCommandEncoder
@@ -118,7 +110,7 @@ namespace CloudScope.Platform.Metal.Rendering
             encoder.SetRenderPipelineState(_pipeline);
             encoder.SetDepthStencilState(_depthState);
             encoder.SetVertexBuffer(buffer, 0, 0);
-            encoder.SetVertexBuffer(_uniformsBuffer, 0, 1);
+            MetalDrawUniforms.Vertex(encoder, new MetalPointUniforms(view, proj, pointSize, section: section));
             encoder.DrawPrimitives(MTLPrimitiveType.Point, 0, (ulong)count);
         }
 

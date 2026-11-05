@@ -39,11 +39,7 @@ namespace CloudScope.Platform.Metal.Rendering
 
         private static PointRenderLimits Limits => PointRenderLimits.For("METAL");
 
-        private const int UniformBufferCount = 3;
-
         private readonly MetalRenderContext _context;
-        private readonly MTLBuffer[] _uniformBuffers = new MTLBuffer[UniformBufferCount];
-        private readonly MTLBuffer[] _attributeUniformBuffers = new MTLBuffer[UniformBufferCount];
         private readonly PointTileTraversalScratch _scratch = new();
 
         private MTLRenderPipelineState _pipeline;
@@ -52,7 +48,6 @@ namespace CloudScope.Platform.Metal.Rendering
         private MTLBuffer _classPaletteBuffer;
         private MTLBuffer[] _pointChunks = Array.Empty<MTLBuffer>();
         private MTLBuffer[] _attributeChunks = Array.Empty<MTLBuffer>();
-        private int _uniformBufferIndex;
 
         private IReadOnlyList<PointTileLayer> _layers = Array.Empty<PointTileLayer>();
         private PointTileResidency? _residency;
@@ -84,15 +79,6 @@ namespace CloudScope.Platform.Metal.Rendering
             _attributePipeline = MetalShaderLibrary.CreateAttributePointPipeline(
                 device, MTLPixelFormat.BGRA8Unorm, MTLPixelFormat.Depth32Float, _context.SampleCount);
             _depthState = MetalShaderLibrary.CreateDepthState(device, depthWrite: true);
-
-            ulong uniformSize = (ulong)Unsafe.SizeOf<MetalPointUniforms>();
-            ulong attributeUniformSize = (ulong)Unsafe.SizeOf<MetalAttributePointUniforms>();
-            for (int i = 0; i < UniformBufferCount; i++)
-            {
-                _uniformBuffers[i] = device.NewBuffer(uniformSize, MTLResourceOptions.ResourceStorageModeShared);
-                _attributeUniformBuffers[i] = device.NewBuffer(
-                    attributeUniformSize, MTLResourceOptions.ResourceStorageModeShared);
-            }
 
             UploadClassPalette(device);
 
@@ -246,27 +232,18 @@ namespace CloudScope.Platform.Metal.Rendering
                 PointTileLayerBatch layerBatch = _batches[batch];
                 Vector3 tint = _layers[layerBatch.LayerIndex].Tint;
 
-                // A layer's tint travels in its own uniform buffer, so the buffers a frame
-                // still has in flight are never rewritten underneath it.
-                _uniformBufferIndex = (_uniformBufferIndex + 1) % UniformBufferCount;
                 if (useAttributePipeline)
                 {
-                    MTLBuffer attributeUniformBuffer = _attributeUniformBuffers[_uniformBufferIndex];
-                    MetalBufferWriter.Write(
-                        attributeUniformBuffer,
+                    MetalDrawUniforms.Vertex(encoder,
                         new MetalAttributePointUniforms(
                             view, projection, renderView.PointSize,
                             PointRenderAttributeBuilder.MapColorSource(_colorSource), tint, renderView.Section));
-                    encoder.SetVertexBuffer(attributeUniformBuffer, 0, 1);
                     encoder.SetVertexBuffer(_classPaletteBuffer, 0, 3);
                 }
                 else
                 {
-                    MTLBuffer uniformBuffer = _uniformBuffers[_uniformBufferIndex];
-                    MetalBufferWriter.Write(
-                        uniformBuffer,
+                    MetalDrawUniforms.Vertex(encoder,
                         new MetalPointUniforms(view, projection, renderView.PointSize, 1f, tint, renderView.Section));
-                    encoder.SetVertexBuffer(uniformBuffer, 0, 1);
                 }
 
                 // A range never straddles two buffers, and the pages of one cell usually share
@@ -298,14 +275,6 @@ namespace CloudScope.Platform.Metal.Rendering
         public void Dispose()
         {
             Release();
-
-            for (int i = 0; i < UniformBufferCount; i++)
-            {
-                MetalResources.Release(_uniformBuffers[i].NativePtr);
-                _uniformBuffers[i] = default;
-                MetalResources.Release(_attributeUniformBuffers[i].NativePtr);
-                _attributeUniformBuffers[i] = default;
-            }
 
             MetalResources.Release(_classPaletteBuffer.NativePtr);
             MetalResources.Release(_pipeline.NativePtr);

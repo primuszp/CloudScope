@@ -1,5 +1,4 @@
 using System;
-using System.Runtime.CompilerServices;
 using System.Runtime.Versioning;
 using CloudScope.Platform.Metal.ObjC;
 using CloudScope.Rendering;
@@ -16,10 +15,7 @@ namespace CloudScope.Platform.Metal.Rendering
         private readonly MetalRenderContext _context;
 
         public MetalPrimitiveRenderer(MetalRenderContext context) => _context = context;
-        private const int UniformStride = 256;
         private const int VertexByteSize = 3 * sizeof(float);
-        private const int DrawsPerFrame = 512;
-        private const int BufferedFrameCount = 3;
         private MetalFrameState? _frame;
         private MTLRenderPipelineState _pipeline;
         private MTLRenderPipelineState _wideLinePipeline;
@@ -29,22 +25,9 @@ namespace CloudScope.Platform.Metal.Rendering
         private MTLDepthStencilState _depthWrite;
         private MTLDepthStencilState _depthBehind;
         private MTLDepthStencilState _depthOff;
-        private MTLBuffer _uniformsBuffer;
-        private int _uniformOffset;
-        private int _bufferedFrameIndex = -1;
-        private MetalFrameState? _uniformFrame;
         private bool _initialized;
 
-        public void SetFrame(MetalFrameState frame)
-        {
-            _frame = frame;
-            if (ReferenceEquals(_uniformFrame, frame))
-                return;
-
-            _uniformFrame = frame;
-            _bufferedFrameIndex = (_bufferedFrameIndex + 1) % BufferedFrameCount;
-            _uniformOffset = _bufferedFrameIndex * DrawsPerFrame;
-        }
+        public void SetFrame(MetalFrameState frame) => _frame = frame;
 
         public void EnsureResources()
         {
@@ -63,10 +46,6 @@ namespace CloudScope.Platform.Metal.Rendering
             _depthWrite = MetalShaderLibrary.CreateDepthState(device, depthWrite: true);
             _depthBehind = MetalShaderLibrary.CreateDepthState(device, depthWrite: false, MTLCompareFunction.Greater);
             _depthOff = CreateDepthAlwaysState(device);
-
-            _uniformsBuffer = device.NewBuffer(
-                UniformStride * DrawsPerFrame * BufferedFrameCount,
-                MTLResourceOptions.ResourceStorageModeShared);
 
             _initialized = true;
         }
@@ -122,37 +101,12 @@ namespace CloudScope.Platform.Metal.Rendering
             if (encoder.NativePtr == IntPtr.Zero)
                 return;
 
-            ulong stride = UniformStride;
-            ulong offset = (ulong)_uniformOffset * stride;
-            int frameRegionEnd = (_bufferedFrameIndex + 1) * DrawsPerFrame;
-            if (_uniformOffset >= frameRegionEnd || offset + stride > _uniformsBuffer.Length)
-            {
-                // A pathological gizmo frame exceeded its reserved region. Reuse the
-                // last slot deterministically instead of corrupting another in-flight frame.
-                _uniformOffset = frameRegionEnd - 1;
-                offset = (ulong)_uniformOffset * stride;
-            }
-
             bool expandLines = primitiveType == MTLPrimitiveType.Line
                 && LineWidth.NeedsExpansion(lineWidthPixels);
-            (int viewportWidth, int viewportHeight) = _context.ViewportSize;
-
-            unsafe
-            {
-                byte* ptr = (byte*)_uniformsBuffer.Contents.ToPointer();
-                var uniforms = new MetalColorUniforms(mvp, color,
-                    new Vector4(viewportWidth, viewportHeight, lineWidthPixels, 0f));
-                Buffer.MemoryCopy(&uniforms, ptr + offset, Unsafe.SizeOf<MetalColorUniforms>(), Unsafe.SizeOf<MetalColorUniforms>());
-            }
-            _uniformOffset++;
+            BindUniforms(encoder, mvp, color, lineWidthPixels);
 
             encoder.SetRenderPipelineState(expandLines ? _wideLinePipeline : _pipeline);
             encoder.SetDepthStencilState(depthTest ? (writeDepth ? _depthWrite : _depthOn) : _depthOff);
-            // ColorUniforms is consumed by both the vertex and the fragment function.
-            // Binding only the vertex stage leaves the fragment color undefined,
-            // making all primitive-based gizmos and line overlays disappear.
-            encoder.SetVertexBuffer(_uniformsBuffer, offset, 1);
-            encoder.SetFragmentBuffer(_uniformsBuffer, offset, 1);
 
             if (expandLines)
             {
@@ -186,7 +140,7 @@ namespace CloudScope.Platform.Metal.Rendering
             if (encoder.NativePtr == IntPtr.Zero)
                 return;
 
-            ulong offset = ReserveUniforms(mvp, color, lineWidthPixels, dashPixels);
+            BindUniforms(encoder, mvp, color, lineWidthPixels, dashPixels);
             encoder.SetDepthStencilState(occludedOnly ? _depthBehind : depthTest ? _depthOn : _depthOff);
             // A line drawn on the surface of a point cloud wins or loses the depth test per
             // frame as streaming swaps the level of detail underneath it, which reads as the
@@ -194,8 +148,6 @@ namespace CloudScope.Platform.Metal.Rendering
             // that genuinely runs behind the cloud.
             if (depthBias)
                 encoder.SetDepthBias(-2f, -2f, 0f);
-            encoder.SetVertexBuffer(_uniformsBuffer, offset, 1);
-            encoder.SetFragmentBuffer(_uniformsBuffer, offset, 1);
 
             encoder.SetRenderPipelineState(_joinedSegmentPipeline);
             encoder.SetVertexBuffer(segments, 0, 0);
@@ -214,33 +166,16 @@ namespace CloudScope.Platform.Metal.Rendering
                 encoder.SetDepthBias(0f, 0f, 0f);
         }
 
-        /// <summary>Writes one draw's uniforms into the ring buffer and returns its byte offset.</summary>
-        private unsafe ulong ReserveUniforms(Matrix4 mvp, Vector4 color, float lineWidthPixels,
-            float dashPixels = 0f)
+        private void BindUniforms(MTLRenderCommandEncoder encoder, Matrix4 mvp, Vector4 color,
+            float lineWidthPixels, float dashPixels = 0f)
         {
-            ulong offset = (ulong)_uniformOffset * UniformStride;
-            int frameRegionEnd = (_bufferedFrameIndex + 1) * DrawsPerFrame;
-            if (_uniformOffset >= frameRegionEnd || offset + UniformStride > _uniformsBuffer.Length)
-            {
-                // A pathological gizmo frame exceeded its reserved region. Reuse the
-                // last slot deterministically instead of corrupting another in-flight frame.
-                _uniformOffset = frameRegionEnd - 1;
-                offset = (ulong)_uniformOffset * UniformStride;
-            }
-
-            (int viewportWidth, int viewportHeight) = _context.ViewportSize;
-            byte* ptr = (byte*)_uniformsBuffer.Contents.ToPointer();
-            var uniforms = new MetalColorUniforms(mvp, color,
-                new Vector4(viewportWidth, viewportHeight, lineWidthPixels, dashPixels));
-            Buffer.MemoryCopy(&uniforms, ptr + offset,
-                Unsafe.SizeOf<MetalColorUniforms>(), Unsafe.SizeOf<MetalColorUniforms>());
-            _uniformOffset++;
-            return offset;
+            (int width, int height) = _context.ViewportSize;
+            MetalDrawUniforms.Color(encoder, new MetalColorUniforms(mvp, color,
+                new Vector4(width, height, lineWidthPixels, dashPixels)));
         }
 
         public void Dispose()
         {
-            MetalResources.Release(ref _uniformsBuffer);
             MetalResources.Release(_pipeline.NativePtr);
             MetalResources.Release(_wideLinePipeline.NativePtr);
             MetalResources.Release(_joinedSegmentPipeline.NativePtr);

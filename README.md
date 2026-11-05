@@ -9,6 +9,16 @@ dotnet build Source/CloudScope.slnx -warnaserror
 dotnet run --project Source/CloudScope.Avalonia
 ```
 
+On macOS, build a locally signed application bundle for the current architecture:
+
+```bash
+scripts/package-macos.sh
+open artifacts/macos/CloudScope.app
+artifacts/macos/CloudScope.app/Contents/MacOS/CloudScope.Avalonia --diagnostics
+```
+
+The bundle requires the installed .NET 10 runtime; it is a local development package, not a notarized distribution. `--diagnostics` runs without opening a window and reports active display/DisplayLink readiness (exit 0 when ready, 2 otherwise). If native startup reports RenderTimer error `-6661`, unlock/wake the graphical session and retry. A locked session can expose no active displays even when a main-display id exists.
+
 The Avalonia embedded viewport supports Windows and macOS. The standalone OpenTK viewer is also available:
 
 ```bash

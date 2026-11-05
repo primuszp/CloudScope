@@ -5,6 +5,10 @@ namespace CloudScope.Ui.Commands;
 
 public sealed partial class ViewerCommands
 {
+    private static PromptIntegerStep PointCountLimit(Editor editor) =>
+        editor.GetInteger("Enter maximum point count <all>:")
+            .WithRange(0, int.MaxValue).WithDefault(0);
+
     private static readonly Keyword[] IndexOptionKeywords =
     [
         new("SOURCE", "Source"),
@@ -26,10 +30,7 @@ public sealed partial class ViewerCommands
         yield return path;
         if (!path.IsOk) yield break;
 
-        PromptIntegerStep limit = ed
-            .GetInteger("Enter maximum point count <all>:")
-            .WithRange(1, int.MaxValue)
-            .WithDefault(0);
+        PromptIntegerStep limit = PointCountLimit(ed);
         yield return limit;
 
         long maxPoints = limit.IsOk ? limit.Value : 0;
@@ -47,8 +48,7 @@ public sealed partial class ViewerCommands
         yield return path;
         if (!path.IsOk) yield break;
 
-        PromptIntegerStep limit = ed.GetInteger("Enter maximum point count <all>:")
-            .WithRange(1, int.MaxValue).WithDefault(0);
+        PromptIntegerStep limit = PointCountLimit(ed);
         yield return limit;
         ed.WriteMessage(context.GetTarget<ViewerController>().OpenPlyPointCloud(path.Value, limit.IsOk ? limit.Value : 0));
     }
@@ -64,8 +64,7 @@ public sealed partial class ViewerCommands
         yield return path;
         if (!path.IsOk) yield break;
 
-        PromptIntegerStep limit = ed.GetInteger("Enter maximum point count <all>:")
-            .WithRange(1, int.MaxValue).WithDefault(0);
+        PromptIntegerStep limit = PointCountLimit(ed);
         yield return limit;
         ed.WriteMessage(context.GetTarget<ViewerController>().OpenXyzPointCloud(path.Value, limit.IsOk ? limit.Value : 0));
     }
@@ -80,8 +79,7 @@ public sealed partial class ViewerCommands
         PromptFileStep path = ed.GetFileNameForOpen("Enter PTS file path:").Filtering("pts").Requiring();
         yield return path;
         if (!path.IsOk) yield break;
-        PromptIntegerStep limit = ed.GetInteger("Enter maximum point count <all>:")
-            .WithRange(1, int.MaxValue).WithDefault(0);
+        PromptIntegerStep limit = PointCountLimit(ed);
         yield return limit;
         ed.WriteMessage(context.GetTarget<ViewerController>().OpenPtsPointCloud(path.Value, limit.IsOk ? limit.Value : 0));
     }

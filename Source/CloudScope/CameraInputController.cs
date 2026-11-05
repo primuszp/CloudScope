@@ -9,6 +9,7 @@ namespace CloudScope
         private bool _leftDown, _rightDown, _middleDown;
         private float _orbitVelX, _orbitVelY;
         private float _panVelX, _panVelY;
+        private bool _navigationHeld;
         private float _pointSize = 1.5f;
         private float _pivotFade;
         private float _pivotFlash;
@@ -19,7 +20,7 @@ namespace CloudScope
         public float PivotFlash => _pivotFlash;
         public Vector3 DisplayPivot => _displayPivot;
         public bool NeedsContinuousFrames =>
-            _leftDown || _rightDown || _middleDown ||
+            _navigationHeld || _leftDown || _rightDown || _middleDown ||
             _orbitVelX != 0f || _orbitVelY != 0f ||
             _panVelX != 0f || _panVelY != 0f ||
             _pivotFade > 0.01f || _pivotFlash > 0.01f;
@@ -32,10 +33,18 @@ namespace CloudScope
             bool selectionVolumeActive,
             int viewportWidth,
             int viewportHeight,
-            bool allowEscapeClose)
+            bool allowEscapeClose,
+            bool acceptsKeyboard = true)
         {
+            if (!acceptsKeyboard) keyboard = ReleasedKeyboard.Instance;
+            // On-demand hosts can be idle for minutes. The next key press must not apply
+            // that entire idle interval as one navigation/animation step.
+            dt = float.IsFinite(dt) ? Math.Clamp(dt, 0f, 0.1f) : 0f;
             bool shouldClose = allowEscapeClose && keyboard.IsKeyPressed(ViewerKey.Escape);
 
+            _navigationHeld = keyboard.IsKeyDown(ViewerKey.W) || keyboard.IsKeyDown(ViewerKey.S) ||
+                keyboard.IsKeyDown(ViewerKey.A) || keyboard.IsKeyDown(ViewerKey.D) ||
+                keyboard.IsKeyDown(ViewerKey.Q) || keyboard.IsKeyDown(ViewerKey.E);
             float moveSpeed = camera.NavigationScale * 2.0f * dt;
             if (keyboard.IsKeyDown(ViewerKey.LeftShift) || keyboard.IsKeyDown(ViewerKey.RightShift))
                 moveSpeed *= 5f;
@@ -58,6 +67,13 @@ namespace CloudScope
             UpdatePivotAnimation(dt, selectionVolumeActive);
             UpdateInertia(camera, viewportWidth, viewportHeight);
             return shouldClose;
+        }
+
+        private sealed class ReleasedKeyboard : IViewerKeyboard
+        {
+            public static readonly IViewerKeyboard Instance = new ReleasedKeyboard();
+            public bool IsKeyDown(ViewerKey key) => false;
+            public bool IsKeyPressed(ViewerKey key) => false;
         }
 
         public void SetPointSize(float size) => _pointSize = Math.Clamp(size, 0.5f, 20f);
