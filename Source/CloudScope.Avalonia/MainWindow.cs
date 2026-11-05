@@ -91,7 +91,16 @@ public sealed partial class MainWindow : Window
         _statusTimer.Start();
 
         Opened += (_, _) => _commandLine.FocusInput();
-        Closing += (_, _) => SaveShellSettings();
+        Closing += (_, e) =>
+        {
+            if (!_closing && _hostController.Status.HasUnsavedLabels)
+            {
+                e.Cancel = true;
+                RunCommandFromUi("QUIT");
+                return;
+            }
+            SaveShellSettings();
+        };
         Closed += (_, _) => _statusTimer.Stop();
     }
 

@@ -674,6 +674,8 @@ namespace CloudScope
             return true;
         }
 
+        public bool HasUnsavedLabels => _labelManager.HasUnsavedChanges;
+
         public bool SaveLabels(string? destinationPath = null)
         {
             if (_streamed is { } streamed && streamed.LabelDirectory.Length > 0)
@@ -682,6 +684,7 @@ namespace CloudScope
                 // they go beside the store rather than beside a LAS that may not be there.
                 PointTileLabelFile.Save(
                     streamed.LabelDirectory, streamed.LabelRefs, _labelManager.AllAnnotations);
+                _labelManager.MarkSaved();
                 return true;
             }
 
@@ -828,6 +831,7 @@ namespace CloudScope
         private bool SaveLabelsCore(string? destinationPath)
         {
             LabelFileIO.Save(_sourceFilePath, _labelManager, destinationPath);
+            _labelManager.MarkSaved();
             return true;
         }
 

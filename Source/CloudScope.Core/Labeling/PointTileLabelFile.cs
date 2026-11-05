@@ -46,7 +46,7 @@ public static class PointTileLabelFile
         }
 
         var document = new LabelDocument(FormatVersion, entries);
-        File.WriteAllText(
+        CloudScope.IO.AtomicFile.WriteText(
             Path.Combine(directory, FileName),
             JsonSerializer.Serialize(document, new JsonSerializerOptions { WriteIndented = true }));
     }

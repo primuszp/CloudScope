@@ -123,6 +123,16 @@ namespace CloudScope.Platform.OpenGL
                 Close();
         }
 
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        {
+            if (!_controller.CloseRequested && _controller.HasUnsavedLabels)
+            {
+                e.Cancel = true;
+                _commandDispatcher.Execute("QUIT");
+            }
+            base.OnClosing(e);
+        }
+
         protected override void OnMouseDown(MouseButtonEventArgs e)
         {
             base.OnMouseDown(e);

@@ -18,6 +18,9 @@ namespace CloudScope.Labeling
         private readonly List<LabelAction> _undoStack = new();
         private readonly List<LabelAction> _redoStack = new();
         private const int MaxUndoDepth = 200;
+        private long _revision, _savedRevision, _nextRevision;
+        public bool HasUnsavedChanges => _revision != _savedRevision;
+        public void MarkSaved() => _savedRevision = _revision;
 
         /// <summary>Raised after any mutation (apply / undo / clear / load).</summary>
         public event Action? LabelsChanged;
@@ -62,10 +65,12 @@ namespace CloudScope.Labeling
             var previous = new Dictionary<int, PointAnnotation?>(pointIndices.Count);
             foreach (int idx in pointIndices)
             {
-                previous[idx] = _annotations.TryGetValue(idx, out var old) ? old : null;
+                if (_annotations.TryGetValue(idx, out var old) && old == annotation) continue;
+                previous.TryAdd(idx, _annotations.TryGetValue(idx, out old) ? old : null);
                 _annotations[idx] = annotation;
             }
 
+            if (previous.Count == 0) return;
             PushUndo(new LabelAction(previous, annotation));
             LabelsChanged?.Invoke();
         }
@@ -78,10 +83,11 @@ namespace CloudScope.Labeling
             var previous = new Dictionary<int, PointAnnotation?>(pointIndices.Count);
             foreach (int idx in pointIndices)
             {
-                previous[idx] = _annotations.TryGetValue(idx, out var old) ? old : null;
-                _annotations.Remove(idx);
+                if (!_annotations.Remove(idx, out var old)) continue;
+                previous[idx] = old;
             }
 
+            if (previous.Count == 0) return;
             PushUndo(new LabelAction(previous, null));
             LabelsChanged?.Invoke();
         }
@@ -108,6 +114,7 @@ namespace CloudScope.Labeling
                     _annotations[idx] = previous.Value;
             }
 
+            _revision = action.BeforeRevision;
             _redoStack.Add(action with { PreviousAnnotations = current });
             LabelsChanged?.Invoke();
             return true;
@@ -134,6 +141,7 @@ namespace CloudScope.Labeling
                     _annotations[idx] = restored.Value;
             }
 
+            _revision = action.AfterRevision;
             _undoStack.Add(action with { PreviousAnnotations = current });
             LabelsChanged?.Invoke();
             return true;
@@ -149,6 +157,7 @@ namespace CloudScope.Labeling
                 previous[idx] = annotation;
 
             _annotations.Clear();
+            if (previous.Count == 0) return;
             PushUndo(new LabelAction(previous, null));
             LabelsChanged?.Invoke();
         }
@@ -165,6 +174,8 @@ namespace CloudScope.Labeling
 
             _undoStack.Clear();
             _redoStack.Clear();
+            _revision = ++_nextRevision;
+            MarkSaved();
             LabelsChanged?.Invoke();
         }
 
@@ -180,6 +191,8 @@ namespace CloudScope.Labeling
 
             _undoStack.Clear();
             _redoStack.Clear();
+            _revision = ++_nextRevision;
+            MarkSaved();
             LabelsChanged?.Invoke();
         }
 
@@ -189,6 +202,8 @@ namespace CloudScope.Labeling
             _annotations.Clear();
             _undoStack.Clear();
             _redoStack.Clear();
+            _revision = ++_nextRevision;
+            MarkSaved();
             LabelsChanged?.Invoke();
         }
 
@@ -200,15 +215,17 @@ namespace CloudScope.Labeling
                 previous[index] = _annotations.TryGetValue(index, out var value) ? value : null;
             _annotations.Clear();
             foreach (var (index, annotation) in annotations) _annotations[index] = annotation;
+            if (previous.Count == 0) return;
             PushUndo(new LabelAction(previous, null));
             LabelsChanged?.Invoke();
         }
 
-        private void Restore(IReadOnlyDictionary<int, PointAnnotation?> snapshot)
+        private void Restore(IReadOnlyDictionary<int, PointAnnotation?> snapshot, long revision)
         {
             foreach (var (index, annotation) in snapshot)
                 if (annotation is { } value) _annotations[index] = value;
                 else _annotations.Remove(index);
+            _revision = revision;
             LabelsChanged?.Invoke();
         }
 
@@ -216,6 +233,8 @@ namespace CloudScope.Labeling
 
         private void PushUndo(LabelAction action)
         {
+            action = action with { BeforeRevision = _revision, AfterRevision = ++_nextRevision };
+            _revision = action.AfterRevision;
             _undoStack.Add(action);
             _redoStack.Clear();
             while (_undoStack.Count > MaxUndoDepth)
@@ -225,12 +244,12 @@ namespace CloudScope.Labeling
             var before = action.PreviousAnnotations;
             var after = before.Keys.ToDictionary(index => index,
                 index => _annotations.TryGetValue(index, out var value) ? (PointAnnotation?)value : null);
-            ActionRecorded?.Invoke(new DelegateUndoAction("Label change", () => Restore(before), () => Restore(after)));
+            ActionRecorded?.Invoke(new DelegateUndoAction("Label change", () => Restore(before, action.BeforeRevision), () => Restore(after, action.AfterRevision)));
         }
 
         /// <summary>One undo frame: snapshot of previous annotations + the annotation that was applied.</summary>
         internal sealed record LabelAction(
             Dictionary<int, PointAnnotation?> PreviousAnnotations,
-            PointAnnotation? AppliedAnnotation);
+            PointAnnotation? AppliedAnnotation, long BeforeRevision = 0, long AfterRevision = 0);
     }
 }

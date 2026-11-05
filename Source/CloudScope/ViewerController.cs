@@ -602,6 +602,7 @@ namespace CloudScope
             PolylineCount = _polylines.Count + _planarPolylines.Count,
             NamedViews = _namedViews.Keys.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToArray(),
             LabelledPoints = _selection.Labels.Count,
+            HasUnsavedLabels = HasUnsavedLabels,
             CloseRequested = CloseRequested,
             LoadProgress = LoadProgress
         };
@@ -680,6 +681,7 @@ namespace CloudScope
         public LabelRegistry LabelRegistry => _selection.Registry;
         public string CurrentLabel => _selection.CurrentLabel;
         public int LabelledPointCount => _selection.Labels.Count;
+        public bool HasUnsavedLabels => _selection.HasUnsavedLabels;
         public int? CurrentInstanceId => _selection.CurrentInstanceId;
 
         public string SegmentTree(Vector3 seed, int? instanceId = null)

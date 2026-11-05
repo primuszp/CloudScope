@@ -25,7 +25,7 @@ public static class PlanarPolylineFile
     }
 
     public static void Save(string path, IEnumerable<PlanarPolyline> polylines) =>
-        File.WriteAllText(Path.GetFullPath(path), Serialize(polylines));
+        CloudScope.IO.AtomicFile.WriteText(Path.GetFullPath(path), Serialize(polylines));
 
     public static PlanarPolyline[] Load(string path) =>
         Deserialize(File.ReadAllText(Path.GetFullPath(path)));

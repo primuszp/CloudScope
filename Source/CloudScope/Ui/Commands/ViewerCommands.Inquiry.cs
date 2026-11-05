@@ -418,14 +418,21 @@ public sealed partial class ViewerCommands
             }
 
             if (save.Is("YES"))
-                ed.WriteMessage(viewer.SaveLabels() ? "Labels saved." : "Labels could not be saved.");
+            {
+                if (!viewer.SaveLabels())
+                {
+                    ed.WriteMessage("Labels could not be saved. CloudScope remains open.");
+                    yield break;
+                }
+                ed.WriteMessage("Labels saved.");
+            }
         }
 
         viewer.RequestClose();
         ed.WriteMessage("Closing CloudScope.");
     }
 
-    private static bool HasUnsavedLabels(ViewerController viewer) => viewer.LabelledPointCount > 0;
+    private static bool HasUnsavedLabels(ViewerController viewer) => viewer.HasUnsavedLabels;
 
     [CommandMethod("COVERAGE", Flags = CommandFlags.NoUndoMarker | CommandFlags.NoHistory | CommandFlags.Transparent,
         Group = CommandGroup.Utility, Scope = CommandScope.Application,

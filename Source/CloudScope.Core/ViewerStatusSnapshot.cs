@@ -112,6 +112,7 @@ public readonly record struct ViewerStatusSnapshot
     /// Whether the viewer has been asked to close (QUIT). A shell that owns its own window
     /// closes it when it sees this; the GameWindow shell ends its loop on the same flag.
     /// </summary>
+    public bool HasUnsavedLabels { get; init; }
     public bool CloseRequested { get; init; }
 
     /// <summary>Percentage of a load in progress, or -1 when nothing is loading.</summary>

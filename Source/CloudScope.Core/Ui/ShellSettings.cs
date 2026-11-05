@@ -75,7 +75,7 @@ public sealed class ShellSettings
             if (directory != null)
                 Directory.CreateDirectory(directory);
 
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(this, SerializerOptions));
+            CloudScope.IO.AtomicFile.WriteText(FilePath, JsonSerializer.Serialize(this, SerializerOptions));
         }
         catch (Exception)
         {

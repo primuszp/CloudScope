@@ -76,7 +76,7 @@ namespace CloudScope.Labeling
             string outPath = string.IsNullOrWhiteSpace(destinationPath)
                 ? Path.ChangeExtension(lasFilePath, ".labels.json")
                 : destinationPath;
-            File.WriteAllText(outPath, json);
+            CloudScope.IO.AtomicFile.WriteText(outPath, json);
             Console.WriteLine($"Labels saved: {outPath}  ({manager.Count} points)");
         }
 
