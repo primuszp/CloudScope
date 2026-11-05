@@ -868,7 +868,9 @@ public sealed partial class MainWindow : Window
             _statusText.Text = $"Loading {status.LoadProgress}%";
         else if (status.SurfaceProgress >= 0)
             _statusText.Text = $"Reconstructing surface {status.SurfaceProgress}%";
-        else if (_lastStatus is { } last && (last.IsLoading || last.SurfaceProgress >= 0))
+        else if (status.StreamingError is { } error)
+            _statusText.Text = $"Streaming error: {error}";
+        else if (_lastStatus is { } last && (last.IsLoading || last.SurfaceProgress >= 0 || last.StreamingError != null))
             _statusText.Text = "Ready";
 
         _lastStatus = status;

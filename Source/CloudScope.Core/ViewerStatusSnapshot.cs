@@ -116,6 +116,7 @@ public readonly record struct ViewerStatusSnapshot
     public bool CloseRequested { get; init; }
 
     /// <summary>Percentage of a load in progress, or -1 when nothing is loading.</summary>
+    public string? StreamingError { get; init; }
     public int LoadProgress { get; init; } = -1;
     public int SurfaceProgress { get; init; } = -1;
     public int SurfaceTriangles { get; init; }

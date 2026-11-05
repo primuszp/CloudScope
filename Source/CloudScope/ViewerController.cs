@@ -606,6 +606,7 @@ namespace CloudScope
             LabelledPoints = _selection.Labels.Count,
             HasUnsavedLabels = HasUnsavedLabels,
             CloseRequested = CloseRequested,
+            StreamingError = _streamingRenderer.LoadError,
             LoadProgress = LoadProgress
         };
 

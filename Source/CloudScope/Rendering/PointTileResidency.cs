@@ -77,7 +77,10 @@ internal sealed class PointTileResidency : IDisposable
     /// </remarks>
     private const int PageQuarantineFrames = 3;
 
-    private readonly IReadOnlyList<PointTileLayer> _layers;
+    private readonly IPointTileCellSource _source;
+    private readonly HashSet<PointTileCellKey> _failed = new();
+    private bool _disposed;
+    public string? LoadError { get; private set; }
     private readonly IPointTilePageBuffer _buffer;
     private readonly PointTilePageTable _pages;
 
@@ -92,10 +95,12 @@ internal sealed class PointTileResidency : IDisposable
 
     private int _frame;
 
-    public PointTileResidency(
-        IReadOnlyList<PointTileLayer> layers, IPointTilePageBuffer buffer, PointTilePageTable pages)
+    public PointTileResidency(IReadOnlyList<PointTileLayer> layers, IPointTilePageBuffer buffer, PointTilePageTable pages)
+        : this(new PointTileCellSource(layers), buffer, pages) { }
+
+    internal PointTileResidency(IPointTileCellSource source, IPointTilePageBuffer buffer, PointTilePageTable pages)
     {
-        _layers = layers;
+        _source = source;
         _buffer = buffer;
         _pages = pages;
         _loader = new Thread(LoadLoop) { IsBackground = true, Name = "PointTileLoader" };
@@ -133,9 +138,9 @@ internal sealed class PointTileResidency : IDisposable
 
         int rangeCount = 0;
         int batchCount = 0;
-        for (int layerIndex = 0; layerIndex < _layers.Count && batchCount < batches.Length; layerIndex++)
+        for (int layerIndex = 0; layerIndex < _source.LayerCount && batchCount < batches.Length; layerIndex++)
         {
-            if (!_layers[layerIndex].Visible)
+            if (!_source.IsVisible(layerIndex))
                 continue;
 
             int batchStart = rangeCount;
@@ -190,7 +195,7 @@ internal sealed class PointTileResidency : IDisposable
     /// <summary>Queues a cell for the loader; call order carries the nearest-first priority.</summary>
     private void Request(PointTileCellKey key)
     {
-        if (_inFlight.Count >= MaxPendingLoads || !_inFlight.Add(key))
+        if (_disposed || _failed.Contains(key) || _inFlight.Count >= MaxPendingLoads || !_inFlight.Add(key))
             return;
 
         // A full queue is not an error: the camera is moving faster than the disk, and the
@@ -206,39 +211,50 @@ internal sealed class PointTileResidency : IDisposable
         while (uploaded < MaxPageUploadsPerFrame && _completed.TryDequeue(out Loaded loaded))
         {
             _inFlight.Remove(loaded.Key);
-            try
+            using (loaded.Data)
             {
+                if (loaded.Error != null)
+                {
+                    _failed.Add(loaded.Key);
+                    LoadError = $"Cell {loaded.Key.LayerIndex}:{loaded.Key.NodeIndex}: {loaded.Error.Message}";
+                    continue;
+                }
+                PointTileCellData data = loaded.Data!;
                 if (_resident.ContainsKey(loaded.Key))
                     continue;
 
-                int pageCount = _pages.PagesFor(loaded.PointCount);
+                int pageCount = _pages.PagesFor(data.Count);
                 var pages = new int[pageCount];
                 if (!MakeRoom(pageCount) || !_pages.TryAllocate(pageCount, pages))
                     continue;
 
-                int remaining = loaded.PointCount;
-                for (int page = 0; page < pageCount; page++)
+                try
                 {
-                    int offset = page * _pages.PageSizeInPoints;
-                    int pointsOnPage = Math.Min(remaining, _pages.PageSizeInPoints);
-                    _buffer.WritePage(
-                        pages[page] * _pages.PageSizeInPoints,
-                        loaded.Points.AsSpan(offset, pointsOnPage),
-                        loaded.Attributes is null
-                            ? ReadOnlySpan<GpuPointAttribute>.Empty
-                            : loaded.Attributes.AsSpan(offset, pointsOnPage));
-                    remaining -= pointsOnPage;
+                    int remaining = data.Count;
+                    for (int page = 0; page < pageCount; page++)
+                    {
+                        int offset = page * _pages.PageSizeInPoints;
+                        int pointsOnPage = Math.Min(remaining, _pages.PageSizeInPoints);
+                        _buffer.WritePage(
+                            pages[page] * _pages.PageSizeInPoints,
+                            data.Points.AsSpan(offset, pointsOnPage),
+                            data.Attributes is null
+                                ? ReadOnlySpan<GpuPointAttribute>.Empty
+                                : data.Attributes.AsSpan(offset, pointsOnPage));
+                        remaining -= pointsOnPage;
+                    }
+    
+                    _resident[loaded.Key] = new Entry(pages, pageCount, data.Count, _frame);
+                    uploaded += pageCount;
                 }
+                catch (Exception error)
+                {
+                    _pages.Free(pages);
+                    _failed.Add(loaded.Key);
+                    LoadError = $"Cell upload {loaded.Key.LayerIndex}:{loaded.Key.NodeIndex}: {error.Message}";
+                }
+            }
 
-                _resident[loaded.Key] = new Entry(pages, pageCount, loaded.PointCount, _frame);
-                uploaded += pageCount;
-            }
-            finally
-            {
-                ArrayPool<GpuPointVertex>.Shared.Return(loaded.Points);
-                if (loaded.Attributes is not null)
-                    ArrayPool<GpuPointAttribute>.Shared.Return(loaded.Attributes);
-            }
         }
     }
 
@@ -316,28 +332,14 @@ internal sealed class PointTileResidency : IDisposable
         {
             foreach (PointTileCellKey key in _requests.GetConsumingEnumerable(_shutdown.Token))
             {
-                if ((uint)key.LayerIndex >= (uint)_layers.Count)
-                    continue;
-
-                PointTileStore store = _layers[key.LayerIndex].Store;
-                PointTileNode node = store.Nodes[key.NodeIndex];
-                if (node.PointCount <= 0)
-                    continue;
-
-                GpuPointVertex[] points = ArrayPool<GpuPointVertex>.Shared.Rent(node.PointCount);
-                GpuPointAttribute[]? attributes = null;
-                store.ReadPoints(node, points);
-                if (store.Header.HasAttributes)
+                try
                 {
-                    attributes = ArrayPool<GpuPointAttribute>.Shared.Rent(node.PointCount);
-                    if (!store.ReadAttributes(node, attributes))
-                    {
-                        ArrayPool<GpuPointAttribute>.Shared.Return(attributes);
-                        attributes = null;
-                    }
+                    PointTileCellData data = _source.Read(key, _shutdown.Token);
+                    if (_shutdown.IsCancellationRequested) data.Dispose();
+                    else _completed.Enqueue(new Loaded(key, data, null));
                 }
-
-                _completed.Enqueue(new Loaded(key, node.PointCount, points, attributes));
+                catch (OperationCanceledException) when (_shutdown.IsCancellationRequested) { break; }
+                catch (Exception error) { _completed.Enqueue(new Loaded(key, null, error)); }
             }
         }
         catch (OperationCanceledException)
@@ -348,16 +350,17 @@ internal sealed class PointTileResidency : IDisposable
 
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
         _shutdown.Cancel();
         _requests.CompleteAdding();
-        _loader.Join(TimeSpan.FromSeconds(1));
+        // Stores must remain mapped until the reader has exited. Local mapped reads
+        // are finite; cancellation is checked between read phases and cells.
+        _loader.Join();
 
-        while (_completed.TryDequeue(out Loaded loaded))
-        {
-            ArrayPool<GpuPointVertex>.Shared.Return(loaded.Points);
-            if (loaded.Attributes is not null)
-                ArrayPool<GpuPointAttribute>.Shared.Return(loaded.Attributes);
-        }
+        while (_completed.TryDequeue(out Loaded loaded)) loaded.Data?.Dispose();
+        _inFlight.Clear();
+        _failed.Clear();
 
         foreach (Entry entry in _resident.Values)
             _pages.Free(entry.Pages.AsSpan(0, entry.PageCount));
@@ -376,5 +379,5 @@ internal sealed class PointTileResidency : IDisposable
     private readonly record struct Entry(int[] Pages, int PageCount, int PointCount, int LastUsedFrame);
 
     private readonly record struct Loaded(
-        PointTileCellKey Key, int PointCount, GpuPointVertex[] Points, GpuPointAttribute[]? Attributes);
+        PointTileCellKey Key, PointTileCellData? Data, Exception? Error);
 }

@@ -54,6 +54,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
         public int ResidentCellCount => _residency?.ResidentCellCount ?? 0;
 
         public int PendingCellCount => _residency?.PendingCellCount ?? 0;
+        public string? LoadError => _residency?.LoadError;
 
         public void Initialize() => _program.Initialize();
 

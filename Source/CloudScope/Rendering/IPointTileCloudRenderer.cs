@@ -26,6 +26,7 @@ public interface IPointTileCloudRenderer : IDisposable
 
     /// <summary>Cells the last frame wanted but that have not been read off disk yet.</summary>
     int PendingCellCount { get; }
+    string? LoadError { get; }
 
     void Initialize();
 
