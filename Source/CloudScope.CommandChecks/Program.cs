@@ -150,7 +150,7 @@ void Check(string name, bool ok, string detail = "")
 
 // ---------- 1. Registration of the real command set ----------
 await ExchangeChecks.Run(Check);
-try { ProcessingChecks.Run(Check); FrameResourceChecks.Run(Check); StreamingChecks.Run(Check); PersistenceChecks.Run(Check); LasChecks.Run(Check); ImportCancellationChecks.Run(Check); ReviewChecks.Run(Check); NativeInteractionChecks.Run(Check); ViewerWorkflowChecks.Run(Check); await BackgroundOperationChecks.Run(Check); }
+try { OwnershipChecks.Run(Check); ProcessingChecks.Run(Check); FrameResourceChecks.Run(Check); StreamingChecks.Run(Check); PersistenceChecks.Run(Check); LasChecks.Run(Check); ImportCancellationChecks.Run(Check); ReviewChecks.Run(Check); NativeInteractionChecks.Run(Check); ViewerWorkflowChecks.Run(Check); await BackgroundOperationChecks.Run(Check); }
 catch (Exception ex) { Check("Review regression checks", false, ex.ToString()); }
 try
 {

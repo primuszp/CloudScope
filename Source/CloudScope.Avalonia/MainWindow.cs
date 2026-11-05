@@ -48,8 +48,7 @@ public sealed partial class MainWindow : Window
     private TextBlock _statusPoints = null!;
     private TextBlock _statusMode = null!;
     private TextBlock _statusLabel = null!;
-    private TextBlock _statusFps = null!;
-    private ProgressBar _statusProgress = null!;
+    private ViewerStatusPresenter _statusPresenter = null!;
     private StackPanel _statusTogglePanel = null!;
 
     public MainWindow() : this(new HostController()) { }
@@ -69,7 +68,7 @@ public sealed partial class MainWindow : Window
         _hostController.ViewerStateChanged += _ => Dispatcher.UIThread.Post(RefreshViewerState);
 
         ConfigureWindowChrome();
-        BuildMenu();
+        new WorkspaceMenu(this, _mainMenuControl, _useNativeMenu, Activate).Build();
         BuildRibbon();
         BuildPalettes();
         BuildViewportHeader();
@@ -126,8 +125,7 @@ public sealed partial class MainWindow : Window
         _statusPoints          = Find<TextBlock>("StatusPoints");
         _statusMode            = Find<TextBlock>("StatusMode");
         _statusLabel           = Find<TextBlock>("StatusLabel");
-        _statusFps             = Find<TextBlock>("StatusFps");
-        _statusProgress        = Find<ProgressBar>("StatusProgress");
+        _statusPresenter = new ViewerStatusPresenter(_statusText, Find<TextBlock>("StatusFps"), Find<ProgressBar>("StatusProgress"));
         _statusTogglePanel     = Find<StackPanel>("StatusToggles");
     }
 
@@ -151,110 +149,6 @@ public sealed partial class MainWindow : Window
     }
 
     // ── Menu ────────────────────────────────────────────────────────────────
-
-    private void BuildMenu()
-    {
-        IReadOnlyList<CommandMenuEntry> model = CommandMenu.Build();
-
-        if (_useNativeMenu)
-        {
-            NativeMenu.SetMenu(this, BuildNativeMenu(model));
-            return;
-        }
-
-        foreach (CommandMenuEntry group in model)
-            _mainMenuControl.Items.Add(BuildMenuItem(group));
-
-        // Off macOS the drawn accelerator is all a MenuItem gives us, so the same model is
-        // registered as key bindings — otherwise the menu would advertise shortcuts that do
-        // nothing whenever the menu itself is closed.
-        MenuGestures.Register(this, model, ParseGesture, Activate);
-    }
-
-    private MenuItem BuildMenuItem(CommandMenuEntry entry)
-    {
-        var item = new MenuItem { Header = entry.Header };
-
-        if (entry.IsSubmenu)
-        {
-            foreach (CommandMenuEntry child in entry.Items)
-            {
-                if (child.IsSeparator)
-                    item.Items.Add(new Separator());
-                else
-                    item.Items.Add(BuildMenuItem(child));
-            }
-
-            return item;
-        }
-
-        if (entry.Shortcut.Length > 0 && TryParseGesture(entry.Shortcut, out KeyGesture? gesture))
-            item.InputGesture = gesture;
-
-        item.Click += (_, _) => Activate(entry.Command);
-        return item;
-    }
-
-    private NativeMenu BuildNativeMenu(IReadOnlyList<CommandMenuEntry> model)
-    {
-        var menu = new NativeMenu();
-        foreach (CommandMenuEntry group in model)
-        {
-            var groupItem = new NativeMenuItem(group.Header) { Menu = new NativeMenu() };
-            foreach (CommandMenuEntry child in group.Items)
-                groupItem.Menu.Add(BuildNativeItem(child));
-            menu.Items.Add(groupItem);
-        }
-
-        return menu;
-    }
-
-    private NativeMenuItemBase BuildNativeItem(CommandMenuEntry entry)
-    {
-        if (entry.IsSeparator)
-            return new NativeMenuItemSeparator();
-
-        var item = new NativeMenuItem(entry.Header);
-        if (entry.IsSubmenu)
-        {
-            item.Menu = new NativeMenu();
-            foreach (CommandMenuEntry child in entry.Items)
-                item.Menu.Add(BuildNativeItem(child));
-            return item;
-        }
-
-        if (entry.Shortcut.Length > 0 && TryParseGesture(entry.Shortcut, out KeyGesture? gesture))
-            item.Gesture = gesture;
-
-        item.Click += (_, _) => Activate(entry.Command);
-        return item;
-    }
-
-    // "Mod" is Cmd on macOS and Ctrl elsewhere, so one menu model serves both platforms.
-    private KeyGesture? ParseGesture(string shortcut) =>
-        TryParseGesture(shortcut, out KeyGesture? gesture) ? gesture : null;
-
-    private bool TryParseGesture(string shortcut, out KeyGesture? gesture)
-    {
-        gesture = null;
-        string text = shortcut.Replace("Mod+", _useNativeMenu ? "Meta+" : "Ctrl+");
-
-        // Avalonia names the number-row keys D0..D9, so a shortcut written the way it is read
-        // out loud ("Mod+9") would otherwise fail to parse and silently lose its accelerator.
-        if (text.Length > 1 && text[^2] == '+' && char.IsAsciiDigit(text[^1]))
-            text = text[..^1] + "D" + text[^1];
-
-        try
-        {
-            gesture = KeyGesture.Parse(text);
-            return true;
-        }
-        catch (Exception)
-        {
-            // A shortcut this platform cannot express is not worth failing startup over.
-            return false;
-        }
-    }
 
     // ── Ribbon ──────────────────────────────────────────────────────────────
 
@@ -809,7 +703,6 @@ public sealed partial class MainWindow : Window
 
     // ── State refresh ───────────────────────────────────────────────────────
 
-    private ViewerStatusSnapshot? _lastStatus;
 
     private bool _workspaceRestored;
 
@@ -859,23 +752,7 @@ public sealed partial class MainWindow : Window
         _explorer.Refresh(status, _hostController.LabelDefinitions, _hostController.ActiveLabel);
         RefreshProperties(status);
 
-        // FPS moves every tick, so it is written on its own.
-        _statusFps.Text = status.Fps > 0f ? $"{status.Fps:0} fps" : "";
-
-        _statusProgress.IsVisible = status.IsLoading || status.SurfaceProgress >= 0 || status.ProcessingProgress >= 0;
-        _statusProgress.Value = status.IsLoading ? status.LoadProgress : Math.Max(0, Math.Max(status.SurfaceProgress, status.ProcessingProgress));
-        if (status.IsLoading)
-            _statusText.Text = $"Loading {status.LoadProgress}%";
-        else if (status.SurfaceProgress >= 0)
-            _statusText.Text = $"Reconstructing surface {status.SurfaceProgress}%";
-        else if (status.ProcessingProgress >= 0)
-            _statusText.Text = $"{status.ProcessingName} {status.ProcessingProgress}%";
-        else if (status.StreamingError is { } error)
-            _statusText.Text = $"Streaming error: {error}";
-        else if (_lastStatus is { } last && (last.IsLoading || last.SurfaceProgress >= 0 || last.ProcessingProgress >= 0 || last.StreamingError != null))
-            _statusText.Text = "Ready";
-
-        _lastStatus = status;
+        _statusPresenter.Update(status);
 
         _ribbon.UpdateState(status);
 

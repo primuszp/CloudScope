@@ -15,11 +15,11 @@ public sealed partial class ViewerController
     public string SegmentTree(Vector3 seed, int? instanceId = null)
     {
         if (_disposed) return "The viewer is closed.";
-        if (_dataset == null || _layers.Count > 0) return "Tree segmentation requires a resident point cloud.";
-        var points = new ArraySegment<PointData>(_dataset.SourcePoints, 0, _dataset.LoadedCount);
+        if (_document.Dataset == null || _document.Layers.Count > 0) return "Tree segmentation requires a resident point cloud.";
+        var points = new ArraySegment<PointData>(_document.Dataset.SourcePoints, 0, _document.Dataset.LoadedCount);
         int id = instanceId ?? NextTreeInstanceId();
         var labels = _selection.Labels.AllAnnotations.ToArray();
-        var classes = _dataset.Attributes.Class;
+        var classes = _document.Dataset.Attributes.Class;
         if (!_processing.Start("Tree segmentation", (cancellation, progress) =>
         {
             var ground = new HashSet<int>();
@@ -44,8 +44,8 @@ public sealed partial class ViewerController
     public string SegmentGround(GroundSegmentationOptions? options = null)
     {
         if (_disposed) return "The viewer is closed.";
-        if (_dataset == null || _layers.Count > 0) return "Ground segmentation requires a resident point cloud.";
-        var points = new ArraySegment<PointData>(_dataset.SourcePoints, 0, _dataset.LoadedCount);
+        if (_document.Dataset == null || _document.Layers.Count > 0) return "Ground segmentation requires a resident point cloud.";
+        var points = new ArraySegment<PointData>(_document.Dataset.SourcePoints, 0, _document.Dataset.LoadedCount);
         if (!_processing.Start("Ground segmentation", (cancellation, progress) => GroundSegmentation.Segment(points, options, cancellation, progress), result =>
         {
             if (result.Succeeded)

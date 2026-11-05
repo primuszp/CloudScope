@@ -21,7 +21,8 @@ namespace CloudScope
         private readonly IPointTileCloudRenderer _streamingRenderer;
         private readonly IOverlayRenderer _overlayRenderer;
         private readonly ISurfaceRenderer _surfaceRenderer;
-        private SurfaceMesh? _surface;
+        private readonly ViewerDocument _document = new();
+        private readonly ViewNavigation _navigation = new();
         private bool _surfaceVisible = true;
         private bool _residentVisible = true;
         private readonly BackgroundOperation<SurfaceMesh> _surfaceOperation;
@@ -40,7 +41,6 @@ namespace CloudScope
         private ViewportViewKind _auxiliaryViewportView = ViewportViewKind.Top;
         private bool _forceAuxiliaryViewRefresh;
         private float _cloudRadius = 50f;
-        private PointCloudDataset? _dataset;
         private SectionDefinition? _crossSection;
         private SectionDefinition? _crossSectionDraft;
         private CrossSectionGripTarget? _crossSectionGripTarget;
@@ -90,9 +90,6 @@ namespace CloudScope
         /// open at once, though — they share one page budget, so a second cloud does not halve
         /// the first one's detail, it competes for the same pages by how close it is.
         /// </remarks>
-        private readonly List<PointTileLayer> _layers = [];
-        private string _sourceName = "";
-        private string _sourcePath = "";
         private float _smoothedFps;
 
         private bool _suppressEscapeClose;
@@ -207,7 +204,7 @@ namespace CloudScope
 
             Variables.RegisterEnum("COLORSOURCE", "Attribute the cloud is coloured by.",
                 ["Rgb", "Height", "Class", "Intensity", "Return"],
-                () => (_dataset?.CurrentColorSource ?? ColorSource.Rgb).ToString(),
+                () => (_document.Dataset?.CurrentColorSource ?? ColorSource.Rgb).ToString(),
                 value => SetColorSource(Enum.Parse<ColorSource>(value, ignoreCase: true)));
 
             Variables.RegisterString("VPORTLAYOUT", "Current viewport layout.",
@@ -247,7 +244,7 @@ namespace CloudScope
             Variables.RegisterString("RENDERBACKEND", "Rendering backend in use (read-only for this session).",
                 () => _backendName);
 
-            Variables.RegisterString("SOURCENAME", "Name of the open cloud.", () => _sourceName);
+            Variables.RegisterString("SOURCENAME", "Name of the open cloud.", () => _document.SourceName);
             Variables.RegisterInt("LOADEDPOINTS", "Points in the open cloud.", () => Status.LoadedCount);
             Variables.RegisterInt("VISIBLEPOINTS", "Points passing the current filter.", () => Status.VisibleCount);
             Variables.RegisterReal("FPS", "Smoothed frame rate.", () => Status.Fps);
@@ -288,7 +285,7 @@ namespace CloudScope
             InvalidateSurface();
             DiscardCrossSection();
             CloseLayers();
-            _dataset = null;
+            _document.ReplaceResident(null);
             _cloudRadius = cloudRadius;
             _selection.LoadPointCloud(pts);
             _selection.SetSourceIdentity(LabelSourceIdentity.Create(pts, pts.Length));
@@ -306,7 +303,7 @@ namespace CloudScope
             _residentVisible = true;
             DiscardCrossSection();
             CloseLayers();
-            _dataset = dataset;
+            _document.ReplaceResident(dataset);
             _selection.SetSourceIdentity(dataset.SourceIdentity);
             _cloudRadius = dataset.Radius;
             LoadDatasetIntoSelection();
@@ -319,8 +316,8 @@ namespace CloudScope
         // visible→source index map so labels stay keyed by stable source indices.
         private void LoadDatasetIntoSelection()
         {
-            if (_dataset == null) return;
-            _selection.LoadPointCloud(_dataset.ViewPoints, _dataset.ViewToSource, _dataset.SourcePoints, _dataset.Attributes);
+            if (_document.Dataset == null) return;
+            _selection.LoadPointCloud(_document.Dataset.ViewPoints, _document.Dataset.ViewToSource, _document.Dataset.SourcePoints, _document.Dataset.Attributes);
         }
 
         /// <summary>
@@ -366,7 +363,7 @@ namespace CloudScope
                 // The resident path owns the frame while it holds points, so it is emptied.
                 CloseLayers();
                 _pointRenderer.Upload(PointCloudRenderData.Empty);
-                _dataset = null;
+                _document.ReplaceResident(null);
                 _selection.Reset();
                 UndoHistory.Clear();
             }
@@ -381,16 +378,16 @@ namespace CloudScope
             {
                 // Layers past the first are tinted apart by default, since two surveys of the
                 // same site are otherwise impossible to tell from each other.
-                Tint = _layers.Count == 0 ? Vector3.One : LayerTintPalette[_layers.Count % LayerTintPalette.Length]
+                Tint = _document.Layers.Count == 0 ? Vector3.One : LayerTintPalette[_document.Layers.Count % LayerTintPalette.Length]
             };
-            _layers.Add(layer);
+            _document.Layers.Add(layer);
 
-            _sourceName = _layers.Count == 1 ? name : $"{_layers.Count} layers";
+            _document.SetDisplayName(_document.Layers.Count == 1 ? name : $"{_document.Layers.Count} layers");
             _cloudRadius = LayerRadius();
-            _streamingRenderer.Open(_layers);
+            _streamingRenderer.Open(_document.Layers);
             // Selection resolves against the cell trees now, so labelling keeps working on a
             // cloud that never fits in memory.
-            _selection.SetStreamedSource(_layers);
+            _selection.SetStreamedSource(_document.Layers);
             if (replace)
             {
                 foreach (ViewportState viewport in _viewports)
@@ -416,7 +413,7 @@ namespace CloudScope
         ];
 
         /// <summary>Every open layer, in the order they were opened.</summary>
-        public IReadOnlyList<PointTileLayer> Layers => _layers;
+        public IReadOnlyList<PointTileLayer> Layers => _document.Layers;
 
         /// <summary>Shows or hides one layer by name, and reports what happened.</summary>
         public string SetLayerVisible(string name, bool visible)
@@ -427,7 +424,7 @@ namespace CloudScope
                 // The in-memory cloud is a layer too as far as the user is concerned: the
                 // explorer lists it beside the streamed ones and toggles it the same way.
                 _residentVisible = visible;
-                return $"Point cloud {_sourceName} {(visible ? "shown" : "hidden")}.";
+                return $"Point cloud {_document.SourceName} {(visible ? "shown" : "hidden")}.";
             }
 
             if (layer is null)
@@ -443,10 +440,10 @@ namespace CloudScope
         /// <summary>Structure of the open stores, for STOREINFO.</summary>
         public string DescribeStores()
         {
-            if (_layers.Count == 0)
+            if (_document.Layers.Count == 0)
                 return "No point tile store is open. OPENSTORE loads one.";
 
-            return string.Join(Environment.NewLine, _layers.Select(layer =>
+            return string.Join(Environment.NewLine, _document.Layers.Select(layer =>
             {
                 Store.PointTileStoreHeader header = layer.Store.Header;
                 return $"  {layer.Name}"
@@ -462,7 +459,7 @@ namespace CloudScope
         {
             if (name.Length == 0)
             {
-                int closed = _layers.Count;
+                int closed = _document.Layers.Count;
                 CloseLayers();
                 return closed == 0 ? "No layers are open." : $"Closed {closed} layer(s).";
             }
@@ -470,7 +467,7 @@ namespace CloudScope
             PointTileLayer? layer = FindLayer(name);
             if (layer is null && IsResidentCloud(name))
             {
-                string closedName = _sourceName;
+                string closedName = _document.SourceName;
                 Reset();
                 return $"Closed point cloud {closedName}.";
             }
@@ -479,46 +476,46 @@ namespace CloudScope
                 return $"No such layer: {name}";
 
             _streamingRenderer.Close();
-            _layers.Remove(layer);
+            _document.Layers.Remove(layer);
             layer.Store.Dispose();
 
-            if (_layers.Count > 0)
+            if (_document.Layers.Count > 0)
             {
                 _cloudRadius = LayerRadius();
-                _streamingRenderer.Open(_layers);
+                _streamingRenderer.Open(_document.Layers);
             }
 
-            _selection.SetStreamedSource(_layers);
+            _selection.SetStreamedSource(_document.Layers);
 
-            _sourceName = _layers.Count switch
+            _document.SetDisplayName(_document.Layers.Count switch
             {
                 0 => "",
-                1 => _layers[0].Name,
-                _ => $"{_layers.Count} layers"
-            };
+                1 => _document.Layers[0].Name,
+                _ => $"{_document.Layers.Count} layers"
+            });
             return $"Closed layer {layer.Name}.";
         }
 
         /// <summary>Whether <paramref name="name"/> names the resident (in-memory) cloud.</summary>
         private bool IsResidentCloud(string name) =>
-            _dataset != null && _layers.Count == 0 && name.Length > 0 &&
-            string.Equals(name, _sourceName, StringComparison.OrdinalIgnoreCase);
+            _document.Dataset != null && _document.Layers.Count == 0 && name.Length > 0 &&
+            string.Equals(name, _document.SourceName, StringComparison.OrdinalIgnoreCase);
 
         /// <summary>Whether the resident cloud is drawn; LAYER ON/OFF on its name changes it.</summary>
         public bool ResidentCloudVisible => _residentVisible;
 
         private PointTileLayer? FindLayer(string name) =>
-            _layers.FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.OrdinalIgnoreCase));
+            _document.Layers.FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.OrdinalIgnoreCase));
 
         /// <summary>The framing radius for every open layer taken together.</summary>
         private float LayerRadius()
         {
-            if (_layers.Count == 0)
+            if (_document.Layers.Count == 0)
                 return 50f;
 
             double minX = double.MaxValue, minY = double.MaxValue, minZ = double.MaxValue;
             double maxX = double.MinValue, maxY = double.MinValue, maxZ = double.MinValue;
-            foreach (PointTileLayer layer in _layers)
+            foreach (PointTileLayer layer in _document.Layers)
             {
                 PointTileStoreHeader header = layer.Store.Header;
                 // Bounds are absolute, but the points are stored relative to each store's own
@@ -540,21 +537,20 @@ namespace CloudScope
 
         private void CloseLayers()
         {
-            if (_layers.Count == 0)
+            if (_document.Layers.Count == 0)
                 return;
 
             // The renderer holds pages against the stores' mapped files, so it lets go first.
             _streamingRenderer.Close();
             _selection.SetStreamedSource(null);
-            foreach (PointTileLayer layer in _layers)
+            foreach (PointTileLayer layer in _document.Layers)
                 layer.Store.Dispose();
-            _layers.Clear();
+            _document.Layers.Clear();
         }
 
         public void SetLasFilePath(string path)
         {
-            _sourceName = Path.GetFileName(path);
-            _sourcePath = path.Length == 0 ? "" : Path.GetFullPath(path);
+            _document.SetSource(path);
             _selection.SetSourceFilePath(path, supportsLasExport: true);
         }
 
@@ -564,15 +560,15 @@ namespace CloudScope
         /// </summary>
         public ViewerStatusSnapshot Status => new()
         {
-            SourceName = _sourceName,
-            Layers = _layers.Select(layer => new CloudLayerSnapshot(layer.Name, layer.PointCount, layer.Visible)).ToArray(),
+            SourceName = _document.SourceName,
+            Layers = _document.Layers.Select(layer => new CloudLayerSnapshot(layer.Name, layer.PointCount, layer.Visible)).ToArray(),
             SurfaceProgress = _surfaceOperation.Progress,
             ProcessingProgress = _processing.Progress,
             ProcessingName = _processing.Name,
-            SurfaceTriangles = _surface?.Indices.Length / 3 ?? 0,
-            LoadedCount = StoredPointCount ?? _dataset?.LoadedCount ?? _pointRenderer.PointCount,
-            VisibleCount = StoredPointCount ?? _dataset?.VisibleCount ?? _pointRenderer.PointCount,
-            Filter = _dataset is { FilterDescription: not "None" } filtered ? filtered.FilterDescription : "",
+            SurfaceTriangles = _document.Surface?.Indices.Length / 3 ?? 0,
+            LoadedCount = StoredPointCount ?? _document.Dataset?.LoadedCount ?? _pointRenderer.PointCount,
+            VisibleCount = StoredPointCount ?? _document.Dataset?.VisibleCount ?? _pointRenderer.PointCount,
+            Filter = _document.Dataset is { FilterDescription: not "None" } filtered ? filtered.FilterDescription : "",
             CrossSection = _crossSection is { } section
                 ? $"{section.Name}, width {section.Width:0.###}"
                 : "",
@@ -582,7 +578,7 @@ namespace CloudScope
             HasActiveSelection = _selection.HasActiveSelection,
             CurrentLabel = _selection.CurrentLabel,
             CurrentInstanceId = _selection.CurrentInstanceId,
-            ColorSource = _dataset?.CurrentColorSource ?? ColorSource.Rgb,
+            ColorSource = _document.Dataset?.CurrentColorSource ?? ColorSource.Rgb,
             PointSize = ActiveViewport.Input.PointSize,
             IsPerspective = ActiveViewport.Camera.IsPerspective,
             ViewportLayout = DescribeViewportLayout(_viewportLayout),
@@ -598,15 +594,15 @@ namespace CloudScope
             PropertiesVisible = PropertiesVisible,
             RibbonVisible = RibbonVisible,
             PalettesOnRight = PalettesOnRight,
-            SourcePath = _sourcePath,
-            IsStreamed = _layers.Count > 0,
+            SourcePath = _document.SourcePath,
+            IsStreamed = _document.Layers.Count > 0,
             ResidentVisible = _residentVisible,
-            HasColor = _dataset?.HasColor ?? false,
-            KeepPercentage = _dataset?.KeepPercentage ?? 100,
+            HasColor = _document.Dataset?.HasColor ?? false,
+            KeepPercentage = _document.Dataset?.KeepPercentage ?? 100,
             OrthoMode = OrthoMode,
             SurfaceVisible = _surfaceVisible,
             PolylineCount = _polylines.Count + _planarPolylines.Count,
-            NamedViews = _namedViews.Keys.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToArray(),
+            NamedViews = _navigation.NamedViews,
             LabelledPoints = _selection.Labels.Count,
             HasUnsavedLabels = HasUnsavedLabels,
             CloseRequested = CloseRequested,
@@ -623,9 +619,9 @@ namespace CloudScope
         /// 64-bit point indices; until then the status bar saturates rather than wrapping to a
         /// negative number.
         /// </remarks>
-        private int? StoredPointCount => _layers.Count == 0
+        private int? StoredPointCount => _document.Layers.Count == 0
             ? null
-            : (int)Math.Min(_layers.Sum(layer => layer.Store.Header.PointCount), int.MaxValue);
+            : (int)Math.Min(_document.Layers.Sum(layer => layer.Store.Header.PointCount), int.MaxValue);
 
         public void Reset()
         {
@@ -634,9 +630,8 @@ namespace CloudScope
             DiscardCrossSection();
             CloseLayers();
             _cloudRadius = 50f;
-            _dataset = null;
-            _sourceName = "";
-            _sourcePath = "";
+            _document.ReplaceResident(null);
+
             _residentVisible = true;
             _selection.Reset();
             UndoHistory.Clear();
@@ -803,109 +798,20 @@ namespace CloudScope
         /// <summary>CloudScope has no separate drawing limits, so All is the 3D extents view.</summary>
         public void ZoomAll() => ZoomExtents();
 
-        public void ZoomByFactor(float factor)
-        {
-            ViewportState viewport = ActiveViewport;
-            RememberView(viewport);
-            int cx = viewport.Bounds.Width / 2;
-            int cy = viewport.Bounds.Height / 2;
-            viewport.Camera.PickDepthWindow(cx, cy, 11);
-            viewport.Camera.Zoom(cx, cy, factor);
-        }
-
-        public void ZoomWindow(int x0, int y0, int x1, int y1)
-        {
-            RememberView(ActiveViewport);
-            ActiveViewport.Camera.ZoomWindow(x0, y0, x1, y1);
-        }
-
-        public bool ZoomCenter(int x, int y, float height)
-        {
-            if (height <= 0f) return false;
-            RememberView(ActiveViewport);
-            return ActiveViewport.Camera.ZoomCenter(x, y, height);
-        }
-
-        public bool ZoomPrevious()
-        {
-            ViewportState viewport = ActiveViewport;
-            if (viewport.ViewHistory.Count == 0)
-                return false;
-            OrbitCamera.CameraState state = viewport.ViewHistory[^1];
-            viewport.ViewHistory.RemoveAt(viewport.ViewHistory.Count - 1);
-            viewport.Camera.RestoreState(state, animate: false);
-            return true;
-        }
-
-        public string PanByPixels(int dx, int dy)
-        {
-            RememberView(ActiveViewport);
-            ActiveViewport.Camera.PanPixels(dx, dy);
-            return $"Panned {dx},{dy} pixels.";
-        }
-
-        public string PanBetweenPoints(int fromX, int fromY, int toX, int toY)
-        {
-            RememberView(ActiveViewport);
-            ActiveViewport.Camera.PickDepthWindow(fromX, fromY, 11);
-            ActiveViewport.Camera.Pan(fromX, fromY, toX, toY);
-            return "Panned.";
-        }
-
-        public string OrbitBy(float azimuthDegrees, float elevationDegrees)
-        {
-            ActiveViewport.Camera.OrbitBy(azimuthDegrees, elevationDegrees);
-            return $"Orbited {azimuthDegrees:0.###}°, {elevationDegrees:0.###}°.";
-        }
-
-        public string SetOrbitPivot(Vector3 worldPoint)
-        {
-            ActiveViewport.Camera.SetOrbitPivot(worldPoint);
-            return $"Pivot: {worldPoint.X:0.###},{worldPoint.Y:0.###},{worldPoint.Z:0.###}";
-        }
-
-        public string SetOrbitPivotFromScreen(int x, int y)
-        {
-            OrbitCamera camera = ActiveViewport.Camera;
-            if (!camera.SetOrbitPivotFromScreen(x, y))
-                return "No point under that position.";
-
-            Vector3 pivot = camera.Pivot;
-            return $"Pivot: {pivot.X:0.###},{pivot.Y:0.###},{pivot.Z:0.###}";
-        }
-
-        public string ResetOrbitPivot()
-        {
-            ActiveViewport.Camera.SetOrbitPivot(Vector3.Zero);
-            return "Pivot reset to the cloud origin.";
-        }
-
-        // ----- Named views -----
-
-        private readonly Dictionary<string, OrbitCamera.CameraState> _namedViews = new(StringComparer.OrdinalIgnoreCase);
-
-        public string SaveNamedView(string name)
-        {
-            _namedViews[name] = ActiveViewport.Camera.SaveState();
-            return $"View '{name}' saved.";
-        }
-
-        public string RestoreNamedView(string name)
-        {
-            if (!_namedViews.TryGetValue(name, out OrbitCamera.CameraState state))
-                return $"No saved view named '{name}'.";
-
-            ActiveViewport.Camera.RestoreState(state);
-            return $"View '{name}' restored.";
-        }
-
-        public string DeleteNamedView(string name) =>
-            _namedViews.Remove(name) ? $"View '{name}' deleted." : $"No saved view named '{name}'.";
-
-        public string DescribeNamedViews() =>
-            _namedViews.Count == 0
-                ? "No saved views. Store one with VIEW Save."
-                : "Saved views: " + string.Join(", ", _namedViews.Keys.OrderBy(n => n, StringComparer.OrdinalIgnoreCase));
+        public void ZoomByFactor(float factor) => _navigation.ZoomByFactor(ActiveViewport.Camera, ActiveViewport.Bounds.Width, ActiveViewport.Bounds.Height, factor);
+        public void ZoomWindow(int x0, int y0, int x1, int y1) => _navigation.ZoomWindow(ActiveViewport.Camera, x0, y0, x1, y1);
+        public bool ZoomCenter(int x, int y, float height) => _navigation.ZoomCenter(ActiveViewport.Camera, x, y, height);
+        public bool ZoomPrevious() => _navigation.Previous(ActiveViewport.Camera);
+        public string PanByPixels(int dx, int dy) => _navigation.PanByPixels(ActiveViewport.Camera, dx, dy);
+        public string PanBetweenPoints(int fromX, int fromY, int toX, int toY) => _navigation.PanBetweenPoints(ActiveViewport.Camera, fromX, fromY, toX, toY);
+        public string OrbitBy(float azimuthDegrees, float elevationDegrees) => _navigation.OrbitBy(ActiveViewport.Camera, azimuthDegrees, elevationDegrees);
+        public string SetOrbitPivot(Vector3 worldPoint) => _navigation.SetPivot(ActiveViewport.Camera, worldPoint);
+        public string SetOrbitPivotFromScreen(int x, int y) => _navigation.SetPivotFromScreen(ActiveViewport.Camera, x, y);
+        public string ResetOrbitPivot() => _navigation.ResetPivot(ActiveViewport.Camera);
+        public string SaveNamedView(string name) => _navigation.Save(ActiveViewport.Camera, name);
+        public string RestoreNamedView(string name) => _navigation.Restore(ActiveViewport.Camera, name);
+        public string DeleteNamedView(string name) => _navigation.Delete(name);
+        public string DescribeNamedViews() => _navigation.Describe();
 
         public void ZoomObject()
         {
@@ -922,26 +828,26 @@ namespace CloudScope
 
         public string DescribeAttributes(string attribute)
         {
-            if (_dataset == null)
+            if (_document.Dataset == null)
                 return "No point cloud is loaded.";
 
             return NormalizeAttribute(attribute) switch
             {
-                "" or "A" or "ALL" => _dataset.Attributes.DescribeAll(),
-                "C" or "CLASS" => _dataset.Attributes.DescribeClass(),
-                "I" or "INTENSITY" => _dataset.Attributes.DescribeIntensity(),
-                "R" or "RETURN" => _dataset.Attributes.DescribeReturn(),
-                "Z" or "HEIGHT" => _dataset.Attributes.DescribeZ(),
+                "" or "A" or "ALL" => _document.Dataset.Attributes.DescribeAll(),
+                "C" or "CLASS" => _document.Dataset.Attributes.DescribeClass(),
+                "I" or "INTENSITY" => _document.Dataset.Attributes.DescribeIntensity(),
+                "R" or "RETURN" => _document.Dataset.Attributes.DescribeReturn(),
+                "Z" or "HEIGHT" => _document.Dataset.Attributes.DescribeZ(),
                 _ => $"Unknown attribute: {attribute}"
             };
         }
 
         public string ApplyPointFilter(PointFilter? filter)
         {
-            if (_dataset == null)
+            if (_document.Dataset == null)
                 return "No point cloud is loaded.";
 
-            string result = _dataset.ApplyFilter(filter, recolor: !_pointRenderer.SupportsAttributeColoring);
+            string result = _document.Dataset.ApplyFilter(filter, recolor: !_pointRenderer.SupportsAttributeColoring);
             LoadDatasetIntoSelection();
             UploadDatasetView();
             return result;
@@ -950,45 +856,30 @@ namespace CloudScope
         /// <summary>Samples the resident cloud while preserving source indices and annotations.</summary>
         public string ThinPointCloud(double keepPercentage)
         {
-            if (_dataset == null) return "THIN requires a resident point cloud.";
-            string result = _dataset.SetThinning(keepPercentage);
+            if (_document.Dataset == null) return "THIN requires a resident point cloud.";
+            string result = _document.Dataset.SetThinning(keepPercentage);
             LoadDatasetIntoSelection();
             UploadDatasetView();
             return result;
         }
 
-        public string ExportPointCloud(string path, PointCloudExportFormat format)
-        {
-            if (_dataset == null) return "Export requires a resident point cloud.";
-            if (FilePathIdentity.SamePath(path, _sourcePath)) return "Choose an export path different from the source file.";
-            string temporary = Path.GetFullPath(path) + "." + Guid.NewGuid().ToString("N") + ".tmp";
-            try
-            {
-                using (var stream = File.Create(temporary))
-                    PointCloudExporter.Write(stream, _dataset, format, index =>
-                        _selection.Labels.GetAnnotation(index) is { } annotation
-                            ? _selection.Registry.CodeFor(annotation.LabelName) ?? _dataset.Attributes.Class[index]
-                            : _dataset.Attributes.Class[index]);
-                File.Move(temporary, path, overwrite: true);
-                return $"Exported {_dataset.VisibleCount:N0} points to {path}.";
-            }
-            finally { if (File.Exists(temporary)) File.Delete(temporary); }
-        }
+        public string ExportPointCloud(string path, PointCloudExportFormat format) => _document.Export(path, format,
+            index => _selection.Labels.GetAnnotation(index) is { } annotation ? _selection.Registry.CodeFor(annotation.LabelName) : null);
 
         public string ReconstructSurface(int neighbors = 15, float maximumEdge = 0)
         {
             if (_disposed) return "The viewer is closed.";
-            if (_dataset == null) return "Reconstruction requires a resident point cloud.";
+            if (_document.Dataset == null) return "Reconstruction requires a resident point cloud.";
             if (_surfaceOperation.IsRunning) return "A reconstruction is already running.";
-            var points = _dataset.ViewPoints.Take(_dataset.VisibleCount).ToArray();
-            var snapshot = new PointCloudDataset(points, points.Length, _dataset.Radius, _dataset.HasColor, 1,
+            var points = _document.Dataset.ViewPoints.Take(_document.Dataset.VisibleCount).ToArray();
+            var snapshot = new PointCloudDataset(points, points.Length, _document.Dataset.Radius, _document.Dataset.HasColor, 1,
                 new PointCloudAttributes(new byte[points.Length], new ushort[points.Length], new byte[points.Length], new double[points.Length], 0, 0),
-                _dataset.OriginX, _dataset.OriginY, _dataset.OriginZ);
+                _document.Dataset.OriginX, _document.Dataset.OriginY, _document.Dataset.OriginZ);
             _surfaceOperation.TryStart((cancellation, progress) =>
                 SurfaceReconstruction.Build(snapshot, neighbors, maximumEdge, cancellation, progress), mesh =>
             {
                 _surfaceRenderer.Upload(mesh);
-                _surface = mesh;
+                _document.SetSurface(mesh);
                 _surfaceVisible = true;
                 BackgroundMessage?.Invoke($"Reconstructed {mesh.Indices.Length / 3:N0} triangles. EXPORTOBJ saves the mesh.");
             }, error => BackgroundMessage?.Invoke($"Reconstruction failed: {error.Message}"));
@@ -1018,40 +909,40 @@ namespace CloudScope
         private void InvalidateSurface()
         {
             _surfaceOperation.Cancel();
-            _surface = null;
+            _document.SetSurface(null);
             _surfaceRenderer.Upload(null);
         }
         public string ExportSurfaceObj(string path)
         {
-            if (_surface == null) return "Run RECONSTRUCT first.";
-            if (FilePathIdentity.SamePath(path, _sourcePath)) return "Choose a path different from the source file.";
+            if (_document.Surface == null) return "Run RECONSTRUCT first.";
+            if (FilePathIdentity.SamePath(path, _document.SourcePath)) return "Choose a path different from the source file.";
             string temporary = Path.GetFullPath(path) + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
-                using (var writer = new StreamWriter(temporary)) MeshExporter.WriteObj(writer, _surface);
+                using (var writer = new StreamWriter(temporary)) MeshExporter.WriteObj(writer, _document.Surface);
                 File.Move(temporary, path, overwrite: true);
-                return $"Exported {_surface.Indices.Length / 3:N0} triangles to {path}.";
+                return $"Exported {_document.Surface.Indices.Length / 3:N0} triangles to {path}.";
             }
             finally { if (File.Exists(temporary)) File.Delete(temporary); }
         }
 
         public string SetColorSource(ColorSource source)
         {
-            if (_dataset == null)
+            if (_document.Dataset == null)
                 return "No point cloud is loaded.";
 
-            ColorSource target = _dataset.NormalizeColorSource(source);
-            if (_dataset.CurrentColorSource == target)
+            ColorSource target = _document.Dataset.NormalizeColorSource(source);
+            if (_document.Dataset.CurrentColorSource == target)
                 return $"Color: {target.ToDisplayName()}.";
 
             if (_pointRenderer.CanUpdateColorSourceWithoutUpload)
             {
-                string shaderResult = _dataset.SetColorSource(source, recolor: false);
-                _pointRenderer.UpdateColorSource(_dataset.CurrentColorSource);
+                string shaderResult = _document.Dataset.SetColorSource(source, recolor: false);
+                _pointRenderer.UpdateColorSource(_document.Dataset.CurrentColorSource);
                 return shaderResult;
             }
 
-            string result = _dataset.SetColorSource(source);
+            string result = _document.Dataset.SetColorSource(source);
             LoadDatasetIntoSelection();
             UploadDatasetView();
             return result;
@@ -1059,20 +950,20 @@ namespace CloudScope
 
         public string ClearColorSource()
         {
-            if (_dataset == null)
+            if (_document.Dataset == null)
                 return "No point cloud is loaded.";
 
-            if (_dataset.CurrentColorSource == _dataset.DefaultColorSource)
-                return $"Color: {_dataset.DefaultColorSource.ToDisplayName()}.";
+            if (_document.Dataset.CurrentColorSource == _document.Dataset.DefaultColorSource)
+                return $"Color: {_document.Dataset.DefaultColorSource.ToDisplayName()}.";
 
             if (_pointRenderer.CanUpdateColorSourceWithoutUpload)
             {
-                string shaderResult = _dataset.ClearColorSource(recolor: false);
-                _pointRenderer.UpdateColorSource(_dataset.CurrentColorSource);
+                string shaderResult = _document.Dataset.ClearColorSource(recolor: false);
+                _pointRenderer.UpdateColorSource(_document.Dataset.CurrentColorSource);
                 return shaderResult;
             }
 
-            string result = _dataset.ClearColorSource();
+            string result = _document.Dataset.ClearColorSource();
             LoadDatasetIntoSelection();
             UploadDatasetView();
             return result;
@@ -1081,16 +972,16 @@ namespace CloudScope
         private void UploadDatasetView()
         {
             InvalidateSurface();
-            if (_dataset == null)
+            if (_document.Dataset == null)
                 return;
 
             _pointRenderer.Upload(new PointCloudRenderData(
-                _dataset.ViewPoints,
-                _dataset.RenderOrder,
-                _dataset.Attributes,
-                _dataset.ViewToSource,
-                _dataset.SourcePoints,
-                _dataset.CurrentColorSource));
+                _document.Dataset.ViewPoints,
+                _document.Dataset.RenderOrder,
+                _document.Dataset.Attributes,
+                _document.Dataset.ViewToSource,
+                _document.Dataset.SourcePoints,
+                _document.Dataset.CurrentColorSource));
         }
 
         private static string NormalizeAttribute(string attribute) => attribute.Trim().ToUpperInvariant();
@@ -1933,7 +1824,7 @@ namespace CloudScope
                     viewport.Bounds.Width, viewport.Bounds.Height,
                     viewport.Input.PointSize,
                     sectionClip);
-                int drawCount = _layers.Count > 0
+                int drawCount = _document.Layers.Count > 0
                     ? _streamingRenderer.Render(frameData, in renderView)
                     : _residentVisible ? _pointRenderer.Render(frameData, in renderView) : 0;
                 totalDrawCount += drawCount;
@@ -2100,8 +1991,8 @@ namespace CloudScope
                         ReferenceEquals(viewport, ActiveViewport));
             }
 
-            int loadedCount = StoredPointCount ?? _dataset?.LoadedCount ?? _pointRenderer.PointCount;
-            int visibleCount = StoredPointCount ?? _dataset?.VisibleCount ?? _pointRenderer.PointCount;
+            int loadedCount = StoredPointCount ?? _document.Dataset?.LoadedCount ?? _pointRenderer.PointCount;
+            int visibleCount = StoredPointCount ?? _document.Dataset?.VisibleCount ?? _pointRenderer.PointCount;
             _frameTiming.MarkMainDraw(
                 totalDrawCount, loadedCount, visibleCount, StoredPointCount ?? _pointRenderer.PointCount);
             _frameTiming.MarkHighlight();
@@ -2164,13 +2055,7 @@ namespace CloudScope
         private ViewportState ActiveViewport => _viewports[_activeViewportIndex];
 
         /// <summary>Stores a bounded, per-viewport view history for ZOOM Previous.</summary>
-        private static void RememberView(ViewportState viewport)
-        {
-            const int maximumHistory = 20;
-            if (viewport.ViewHistory.Count == maximumHistory)
-                viewport.ViewHistory.RemoveAt(0);
-            viewport.ViewHistory.Add(viewport.Camera.SaveState());
-        }
+        private void RememberView(ViewportState viewport) => _navigation.Remember(viewport.Camera);
 
         // Grip view constraint for a viewport: only the orthographic auxiliary viewport
         // looking along a world axis (Top/Bottom, Left/Right, Front/Back) constrains grips.
@@ -2709,7 +2594,6 @@ namespace CloudScope
             public ViewportBounds Bounds { get; set; } = new(0, 0, 1, 1);
             public bool IsInitialized { get; set; }
             public SectionDisplayMode SectionMode { get; set; }
-            public List<OrbitCamera.CameraState> ViewHistory { get; } = [];
         }
 
         private sealed class DraftSnapSource : IObjectSnapSource

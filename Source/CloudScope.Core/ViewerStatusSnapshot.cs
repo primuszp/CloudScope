@@ -123,6 +123,9 @@ public readonly record struct ViewerStatusSnapshot
     public int SurfaceProgress { get; init; } = -1;
     public int SurfaceTriangles { get; init; }
 
+    public int WorkProgress => IsLoading ? LoadProgress : SurfaceProgress >= 0 ? SurfaceProgress : ProcessingProgress;
+    public string WorkName => IsLoading ? "Loading" : SurfaceProgress >= 0 ? "Reconstructing surface" : ProcessingName;
+
     public bool IsLoading => LoadProgress >= 0;
 
     public bool HasCloud => LoadedCount > 0;

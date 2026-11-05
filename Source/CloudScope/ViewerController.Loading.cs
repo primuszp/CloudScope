@@ -78,8 +78,7 @@ public sealed partial class ViewerController
         {
             LoadPointCloud(cloud.ToDataset());
             _selection.SetSourceFilePath(path, supportsLasExport: format == "LAS");
-            _sourceName = name;
-            _sourcePath = Path.GetFullPath(path);
+            _document.SetSource(path);
             BackgroundMessage?.Invoke($"Loaded {cloud.LoadedCount:N0} {format} points from {name} ({timer.Elapsed.TotalSeconds:0.0}s).");
         }, error => BackgroundMessage?.Invoke($"{format} load failed: {error.Message}")))
             return "A point cloud is already loading.";

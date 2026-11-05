@@ -59,6 +59,13 @@ foreach (string tab in new[] { "Home", "View", "Display", "Label", "Analyze", "O
     Check($"Ribbon {tab} renders", frame != null && ribbon.SelectedTabTitle == tab);
     frame?.Save(Path.Combine(output, $"ribbon-{tab.ToLowerInvariant()}.png"));
 }
+var statusText = new TextBlock();
+var statusProgress = new ProgressBar();
+var statusPresenter = new ViewerStatusPresenter(statusText, new TextBlock(), statusProgress);
+statusPresenter.Update(new ViewerStatusSnapshot { SurfaceProgress = 20, ProcessingProgress = 80, ProcessingName = "Indexing" });
+Check("Progress text and bar describe the same active operation", statusProgress.Value == 20 && statusText.Text == "Reconstructing surface 20%");
+statusPresenter.Update(ViewerStatusSnapshot.Empty);
+Check("Completed background work returns the status to ready", !statusProgress.IsVisible && statusText.Text == "Ready");
 viewport.Focus();
 window.KeyPress(Key.W, RawInputModifiers.None, PhysicalKey.W, "w");
 Check("Viewport key-down reaches the native keyboard", fake.Keyboard.IsKeyDown(ViewerKey.W));
