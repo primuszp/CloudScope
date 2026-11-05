@@ -179,7 +179,7 @@ public sealed class PlanarPolylineGripTarget : ITransactionalGripTarget
         {
             Vector3 point = Polyline.ToWorld(Polyline.Vertices[i].Position);
             _grips.Add(new GripDescriptor(i, GripKind.Endpoint, point, Vector3.Zero,
-                GripConstraint.ViewPlane, IsPrimary: true));
+                GripConstraint.ViewPlane));
             _snapPoints.Add(new ObjectSnapPoint(point, ObjectSnapKind.Endpoint, i));
         }
         for (int segment = 0; segment < Polyline.SegmentCount; segment++)
