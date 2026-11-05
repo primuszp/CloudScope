@@ -27,7 +27,7 @@ internal static class ViewerWorkflowChecks
             check("Resident background import publishes the full cloud", viewer.Status.LoadedCount == 25, "");
             string labels = Path.Combine(directory, "labels.json");
             File.WriteAllText(labels, "{\"labels\":{\"Tree\":[0,1]}}");
-            dispatcher.Execute($"LOADLABELS \"{labels}\"");
+            dispatcher.Execute($"LOADLABELS Transfer \"{labels}\"");
             check("Text-cloud JSON label import applies source indices", viewer.LabelledPointCount == 2, "");
             string savedLabels = Path.Combine(directory, "saved labels.json");
             result = dispatcher.Execute($"SAVELABELS \"{savedLabels}\"");

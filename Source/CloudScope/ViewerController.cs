@@ -289,6 +289,7 @@ namespace CloudScope
             _dataset = null;
             _cloudRadius = cloudRadius;
             _selection.LoadPointCloud(pts);
+            _selection.SetSourceIdentity(LabelSourceIdentity.Create(pts, pts.Length));
             foreach (ViewportState viewport in _viewports)
                 FitViewport(viewport);
             _pointRenderer.Upload(new PointCloudRenderData(pts));
@@ -304,6 +305,7 @@ namespace CloudScope
             DiscardCrossSection();
             CloseLayers();
             _dataset = dataset;
+            _selection.SetSourceIdentity(dataset.SourceIdentity);
             _cloudRadius = dataset.Radius;
             LoadDatasetIntoSelection();
             foreach (ViewportState viewport in _viewports)
@@ -1666,7 +1668,7 @@ namespace CloudScope
 
         public string SaveLabelsToLas() => _selection.SaveLabelsToLas();
 
-        public bool LoadLabels(string? sourcePath = null) => _selection.LoadLabels(sourcePath);
+        public bool LoadLabels(string? sourcePath = null, bool allowSourceTransfer = false) => _selection.LoadLabels(sourcePath, allowSourceTransfer);
 
         public void ClearLabels() => _selection.ClearLabels();
         public string RemoveSelectionLabels() => _selection.RemoveActiveSelectionLabels();

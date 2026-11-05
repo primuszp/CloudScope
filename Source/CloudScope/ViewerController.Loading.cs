@@ -65,7 +65,12 @@ public sealed partial class ViewerController
         if (!File.Exists(path)) return $"File not found: {path}";
         string name = Path.GetFileName(path);
         var timer = Stopwatch.StartNew();
-        if (!_loadOperation.TryStart((cancellation, progress) => loader(path, maxPoints, progress, cancellation), cloud =>
+        if (!_loadOperation.TryStart((cancellation, progress) =>
+        {
+            LoadedPointCloud cloud = loader(path, maxPoints, progress, cancellation);
+            return cloud with { SourceIdentity = CloudScope.Labeling.LabelSourceIdentity.Create(cloud.Points,
+                checked((int)cloud.LoadedCount), cloud.CenterX, cloud.CenterY, cloud.CenterZ, cancellation) };
+        }, cloud =>
         {
             LoadPointCloud(cloud.ToDataset());
             _selection.SetSourceFilePath(path, supportsLasExport: format == "LAS");

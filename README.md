@@ -33,7 +33,7 @@ The optional point limit is zero for all points; resident clouds must fit memory
 - Import uncompressed LAS 1.0–1.4 (point formats 0–10), PLY, XYZ, PTS, PTX and supported E57 numeric scans. **Compressed LAZ is not decoded**; decompress it to LAS first.
 - Index LAS into streaming tile stores with `INDEX`, then use `OPENSTORE`, `ADDSTORE` and `LAYER` for large surveys.
 - Filter attributes, choose RGB/height/class/intensity/return colouring, and thin a repeatable sample with `THIN` while preserving source indices.
-- Create selection volumes, annotations and tree instances; run CSF ground filtering and seed-assisted terrestrial/SLAM tree segmentation. Save/load JSON labels for every resident import format; LAS classification export requires a LAS source.
+- Create selection volumes, annotations and tree instances; run CSF ground filtering and seed-assisted terrestrial/SLAM tree segmentation. Save/load JSON labels for every resident import format; LAS classification export requires a LAS source. New label files include an ordered-geometry checksum, point count and coordinate frame. Ordinary loading verifies that identity; use `LOADLABELS Transfer "old-labels.json"` only for an intentional index-based transfer or legacy migration.
 - Draw 3D and planar polylines, work with cross-sections and split viewports, reconstruct a visualization surface, and export points or OBJ meshes.
 - Drive the same operations through the command line, menus, ribbon, scripts and an optional authenticated local HTTP API.
 

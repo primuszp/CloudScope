@@ -11,13 +11,15 @@ namespace CloudScope.Loading
         double CenterZ,
         PointCloudAttributes Attributes)
     {
+        public CloudScope.Labeling.LabelSourceIdentity? SourceIdentity { get; init; }
+
         public PointCloudDataset ToDataset()
         {
             if (LoadedCount > int.MaxValue)
                 throw new InvalidOperationException($"Loaded point count {LoadedCount:N0} exceeds the in-memory viewer limit.");
 
             return new PointCloudDataset(Points, (int)LoadedCount, Radius, HasColor, ColorScale, Attributes,
-                CenterX, CenterY, CenterZ);
+                CenterX, CenterY, CenterZ, SourceIdentity);
         }
     }
 }

@@ -286,7 +286,7 @@ public sealed partial class ViewerCommands
 
         PromptFileStep path = ed.GetFileNameForSave("Enter label file path or [Default] <Default>:")
             .Filtering("json")
-            .WithKeywords(new Keyword("DEFAULT", "Default"))
+            .WithKeywords(new Keyword("DEFAULT", "Default"), new Keyword("TRANSFER", "Transfer"))
             .WithDefaultKeyword("DEFAULT");
         yield return path;
 
@@ -299,20 +299,27 @@ public sealed partial class ViewerCommands
     [CommandMethod("LOADLABELS",
         Group = CommandGroup.File, Scope = CommandScope.Document,
         Summary = "Loads labels from a JSON file.",
-        Syntax = "LOADLABELS [path]")]
+        Syntax = "LOADLABELS [Transfer] [path]")]
     public IEnumerable<PromptStep> LoadLabels(CommandContext context)
     {
         PromptFileStep path = context.Editor
             .GetFileNameForOpen("Enter label file path or [Default] <Default>:")
             .Filtering("json")
-            .WithKeywords(new Keyword("DEFAULT", "Default"))
+            .WithKeywords(new Keyword("DEFAULT", "Default"), new Keyword("TRANSFER", "Transfer"))
             .WithDefaultKeyword("DEFAULT");
         yield return path;
 
+        bool transfer = path.Is("TRANSFER");
+        if (transfer)
+        {
+            path = context.Editor.GetFileNameForOpen("Label file for intentional source-index transfer:").Filtering("json").Requiring();
+            yield return path;
+            if (!path.IsOk) yield break;
+        }
         string? source = path.IsOk ? path.Value : null;
-        context.Editor.WriteMessage(context.GetTarget<ViewerController>().LoadLabels(source)
+        context.Editor.WriteMessage(context.GetTarget<ViewerController>().LoadLabels(source, transfer)
             ? "Labels loaded."
-            : "Label file could not be loaded.");
+            : "Label file could not be loaded. Check source identity; legacy files require LOADLABELS Transfer <path>.");
     }
 
     [CommandMethod("CLEARLABELS",

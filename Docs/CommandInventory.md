@@ -22,7 +22,7 @@ A parancsok és a szkriptek közös futtatót használnak. A szkript üres sora 
 | `EXPORTOBJ` | – | Document | `EXPORTOBJ <path>` | Saves the reconstructed surface in the original coordinate frame. |
 | `INDEX` | – | Application | `INDEX <las> [directory] [Source] [CHunk n] [Grid n] [MinPoints n] [SCratch dir]` | Indexes a LAS file into a point tile store of any size. |
 | `LAYER` | LA | Viewer | `LAYER [List/ON/OFf/Close] <name>` | Lists the open point clouds and layers, or turns one on, off or closed. |
-| `LOADLABELS` | – | Document | `LOADLABELS [path]` | Loads labels from a JSON file. |
+| `LOADLABELS` | – | Document | `LOADLABELS [Transfer] [path]` | Loads labels from a JSON file. |
 | `LOADPOLYLINES` | – | Viewer | `LOADPOLYLINES <path>` | Loads planar polylines from a versioned JSON document. |
 | `OPEN` | – | Viewer | `OPEN <path> [max points]` | Loads a uncompressed LAS point cloud into memory. |
 | `OPENE57` | – | Viewer | `OPENE57 <path> [max points]` | Loads E57 numeric bitpack scans with pose transforms and checksum validation. |

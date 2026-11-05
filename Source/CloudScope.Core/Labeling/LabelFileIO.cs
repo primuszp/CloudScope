@@ -20,7 +20,7 @@ namespace CloudScope.Labeling
         /// Explicit output path, or null to write "&lt;source&gt;.labels.json" beside the LAS.
         /// SAVELABELS takes an optional path, and this is where it lands.
         /// </param>
-        public static void Save(string lasFilePath, LabelManager manager, string? destinationPath = null)
+        public static void Save(string lasFilePath, LabelManager manager, string? destinationPath = null, LabelSourceIdentity? identity = null)
         {
             // Invert: point→annotation  →  label→points[] and label→instance→points[].
             var grouped = new Dictionary<string, List<int>>();
@@ -63,7 +63,8 @@ namespace CloudScope.Labeling
             var doc = new Dictionary<string, object>
             {
                 ["sourceFile"] = Path.GetFileName(lasFilePath),
-                ["formatVersion"] = 2,
+                ["formatVersion"] = identity is null ? 2 : 3,
+                ["sourceIdentity"] = (object?)identity!,
                 ["labels"] = grouped,
                 ["instances"] = instances
             };
@@ -83,7 +84,7 @@ namespace CloudScope.Labeling
         /// <summary>
         /// Load labels from a JSON file and apply them to the manager.
         /// </summary>
-        public static bool Load(string lasFilePath, LabelManager manager, string? sourcePath = null, int pointCount = int.MaxValue)
+        public static bool Load(string lasFilePath, LabelManager manager, string? sourcePath = null, int pointCount = int.MaxValue, LabelSourceIdentity? expectedIdentity = null, bool allowSourceTransfer = false)
         {
             string inPath = string.IsNullOrWhiteSpace(sourcePath)
                 ? Path.ChangeExtension(lasFilePath, ".labels.json")
@@ -99,6 +100,16 @@ namespace CloudScope.Labeling
                 string json = File.ReadAllText(inPath);
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
+
+                int version = root.TryGetProperty("formatVersion", out var versionElement) ? versionElement.GetInt32() : 1;
+                if (version is < 1 or > 3) throw new InvalidDataException($"Unsupported label format version: {version}.");
+                LabelSourceIdentity? savedIdentity = root.TryGetProperty("sourceIdentity", out var identityElement)
+                    && identityElement.ValueKind == JsonValueKind.Object
+                        ? identityElement.Deserialize<LabelSourceIdentity>() : null;
+                bool supportedIdentity = savedIdentity != null && identityElement.TryGetProperty("Algorithm", out var algorithm)
+                    && algorithm.GetString() == savedIdentity.Algorithm;
+                if (!allowSourceTransfer && (!supportedIdentity || expectedIdentity is null || savedIdentity != expectedIdentity))
+                    throw new InvalidDataException("Label source identity is missing or differs from this point cloud. Use LOADLABELS Transfer only for an intentional index-based transfer.");
 
                 var annotations = new Dictionary<int, PointAnnotation>();
                 if (root.TryGetProperty("labels", out var labelsObj))

@@ -169,6 +169,9 @@ namespace CloudScope
             _attributes = attributes;
         }
 
+        private LabelSourceIdentity? _sourceIdentity;
+        public void SetSourceIdentity(LabelSourceIdentity identity) => _sourceIdentity = identity;
+
         public void SetSourceFilePath(string path, bool supportsLasExport)
         {
             _sourceFilePath = path;
@@ -187,6 +190,7 @@ namespace CloudScope
             _viewToSource = null;
             _attributes = null;
             _sourceFilePath = "";
+            _sourceIdentity = null;
             _currentInstanceId = null;
             _pendingAction = EditAction.None;
             Mode = InteractionMode.Navigate;
@@ -750,11 +754,11 @@ namespace CloudScope
             return "Wrote class codes for " + string.Join("; ", written) + ".";
         }
 
-        public bool LoadLabels(string? sourcePath = null)
+        public bool LoadLabels(string? sourcePath = null, bool allowSourceTransfer = false)
         {
             if (_streamed is not { } streamed || streamed.LabelDirectory.Length == 0)
                 return (!string.IsNullOrEmpty(_sourceFilePath) || !string.IsNullOrWhiteSpace(sourcePath)) &&
-                    LabelFileIO.Load(_sourceFilePath, _labelManager, sourcePath, _sourcePoints?.Length ?? 0);
+                    LabelFileIO.Load(_sourceFilePath, _labelManager, sourcePath, _sourcePoints?.Length ?? 0, _sourceIdentity, allowSourceTransfer);
 
             var saved = PointTileLabelFile.Load(streamed.LabelDirectory);
             if (saved.Count == 0)
@@ -830,7 +834,7 @@ namespace CloudScope
 
         private bool SaveLabelsCore(string? destinationPath)
         {
-            LabelFileIO.Save(_sourceFilePath, _labelManager, destinationPath);
+            LabelFileIO.Save(_sourceFilePath, _labelManager, destinationPath, _sourceIdentity);
             _labelManager.MarkSaved();
             return true;
         }

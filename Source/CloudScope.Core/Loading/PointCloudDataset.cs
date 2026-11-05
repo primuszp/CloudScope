@@ -8,6 +8,9 @@ namespace CloudScope.Loading
     public sealed class PointCloudDataset
     {
         private readonly PointData[] _sourcePoints;
+        private CloudScope.Labeling.LabelSourceIdentity? _sourceIdentity;
+        public CloudScope.Labeling.LabelSourceIdentity SourceIdentity => _sourceIdentity ??=
+            CloudScope.Labeling.LabelSourceIdentity.Create(_sourcePoints, LoadedCount, OriginX, OriginY, OriginZ);
         private readonly bool _hasColor;
         private readonly float _colorScale;
         private PointFilter? _filter;
@@ -23,7 +26,7 @@ namespace CloudScope.Loading
             bool hasColor,
             float colorScale,
             PointCloudAttributes attributes,
-            double originX = 0, double originY = 0, double originZ = 0)
+            double originX = 0, double originY = 0, double originZ = 0, CloudScope.Labeling.LabelSourceIdentity? sourceIdentity = null)
         {
             ArgumentNullException.ThrowIfNull(sourcePoints);
             ArgumentNullException.ThrowIfNull(attributes);
@@ -35,6 +38,7 @@ namespace CloudScope.Loading
             if (!double.IsFinite(originX) || !double.IsFinite(originY) || !double.IsFinite(originZ))
                 throw new ArgumentException("The world origin must be finite.");
             _sourcePoints = sourcePoints;
+            _sourceIdentity = sourceIdentity;
             LoadedCount = loadedCount;
             Radius = radius;
             _hasColor = hasColor;
