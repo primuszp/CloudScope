@@ -88,6 +88,7 @@ namespace CloudScope.Platform.OpenGL
         public void Reset() => _controller.Reset();
 
         public void SetLasFilePath(string path) => _controller.SetLasFilePath(path);
+        public string OpenPointCloud(string path, long maxPoints = 0) => _controller.OpenPointCloud(path, maxPoints);
 
         /// <summary>The viewer's command surface; shells drive it through this one member.</summary>
         public ICommandExecutor Commands => _commandDispatcher;

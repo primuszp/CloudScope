@@ -17,6 +17,21 @@ namespace CloudScope.Rendering
         public bool Enabled { get; } =
             Environment.GetEnvironmentVariable("CLOUDSCOPE_FRAME_LOG") == "1";
 
+        private readonly bool _crashLogEnabled = Environment.GetEnvironmentVariable("CLOUDSCOPE_CRASH_LOG") == "1";
+        private long _phaseSequence;
+
+        /// <summary>Synchronous crash breadcrumbs are opt-in; normal frames never write files.</summary>
+        public void TracePhase(string phase)
+        {
+            if (!_crashLogEnabled) return;
+            try
+            {
+                string path = Path.Combine(Path.GetTempPath(), $"cloudscope-phase-{Environment.ProcessId}.log");
+                File.WriteAllText(path, $"seq {++_phaseSequence} @ {DateTime.UtcNow:O}{Environment.NewLine}phase: {phase}{Environment.NewLine}");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
+
         public void BeginFrame()
         {
             if (Enabled)

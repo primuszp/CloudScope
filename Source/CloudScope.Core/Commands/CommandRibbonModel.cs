@@ -51,7 +51,7 @@ public static class CommandRibbon
         new RibbonTab("Home",
         [
             Panel("Cloud",
-                Large("Open", "OPEN", RibbonIcons.Open, tooltip: "Open a LAS/LAZ point cloud"),
+                Large("Open", "OPEN", RibbonIcons.Open, tooltip: "Open a LAS point cloud"),
                 Small("PLY", "OPENPLY", RibbonIcons.Import, tooltip: "Import PLY vertices"),
                 Small("E57", "OPENE57", RibbonIcons.Scanner, tooltip: "Import E57 scans"),
                 Small("Tile store", "ADDSTORE", RibbonIcons.Layers, tooltip: "Add a point tile store as a layer")),

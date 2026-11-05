@@ -168,21 +168,24 @@ public sealed partial class ViewerCommands
             return false;
         }
 
-        return float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out factor) && factor > 0f;
+        return float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out factor) && float.IsFinite(factor) && factor > 0f;
     }
 
     private static bool TryParseScreenPoint(string input, out int x, out int y)
     {
         x = 0;
         y = 0;
-        string[] parts = input.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        string[] parts = input.Split(',', StringSplitOptions.TrimEntries);
         if (parts.Length != 2 ||
-            !float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out float fx) ||
-            !float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float fy))
+            !double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double fx) ||
+            !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double fy) ||
+            !double.IsFinite(fx) || !double.IsFinite(fy) ||
+            Math.Round(fx) < int.MinValue || Math.Round(fx) > int.MaxValue ||
+            Math.Round(fy) < int.MinValue || Math.Round(fy) > int.MaxValue)
             return false;
 
-        x = (int)MathF.Round(fx);
-        y = (int)MathF.Round(fy);
+        x = (int)Math.Round(fx);
+        y = (int)Math.Round(fy);
         return true;
     }
 
@@ -214,7 +217,8 @@ public sealed partial class ViewerCommands
         string[] parts = text.Split([' ', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         return parts.Length == 2 &&
             double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out first) &&
-            double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out second);
+            double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out second) &&
+            double.IsFinite(first) && double.IsFinite(second);
     }
 
     /// <summary>Parses a pair as a range, ordering it low to high.</summary>

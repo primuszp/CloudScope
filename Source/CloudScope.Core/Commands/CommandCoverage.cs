@@ -57,6 +57,8 @@ public static class CommandCoverage
         "MouseDown", "MouseUp", "MouseMove", "MouseWheel", "KeyDown",
         "UpdateFrame", "RenderFrame", "Resize", "Load", "Dispose",
         "SetViewportInset", "SetMode", "SetTool", "SetLabel",
+        // The dispatcher refreshes prompt overlays after every typed or picked answer.
+        "RefreshCommandPromptPreview",
 
         // The shell loads a cloud on a background thread and hands the result over; OPEN is
         // the command, and this is the API it and the shell both end up in.

@@ -1,6 +1,6 @@
 # CloudScope Avalonia GPU Host
 
-This is a separate spike project for testing an Avalonia desktop shell with an
+This is the Avalonia desktop shell with an
 embedded OpenGL viewport on Windows and a selectable OpenGL/Metal viewport on macOS.
 
 On macOS, Metal is the default. Set `CLOUDSCOPE_RENDER_BACKEND=opengl` to use
@@ -20,8 +20,8 @@ dotnet run --project Source/CloudScope.Avalonia/CloudScope.Avalonia.csproj
 ```
 
 The app uses `Hosting/HostController.cs` to keep renderer lifecycle, point-cloud
-upload, and command handling outside the Avalonia window. Use `File > Open LAS/LAZ...`,
-the ribbon's **Open** button, or type `OPEN` to load a `.las`/`.laz` file.
+upload, and command handling outside the Avalonia window. Use `File > Open LAS...`,
+the ribbon's **Open** button, or type `OPEN` to load a `.las` file.
 
 Workspace layout (see `Docs/UiRedesign.md` §11):
 
@@ -40,13 +40,13 @@ Embedded host layout:
 
 | Platform | Host | Native handle |
 | --- | --- | --- |
-| Shared OpenGL | `Hosting/EmbeddedOpenTkNativeHostBase.cs` | OpenTK lifecycle, command forwarding, key forwarding, frame pump |
-| Windows | `Hosting/Platform/Windows/Win32EmbeddedOpenTkNativeHost.cs` | HWND child window |
-| macOS OpenGL | `Hosting/Platform/MacOS/MacOsEmbeddedOpenTkNativeHost.cs` | GLFW-backed NSView |
-| macOS Metal | `Hosting/Platform/MacOS/MacOsEmbeddedMetalNativeHost.cs` | MTKView-backed NSView |
+| Shared OpenGL | `Hosting/EmbeddedOpenGlNativeHostBase.cs` | OpenTK lifecycle, command forwarding, key forwarding, frame pump |
+| Windows | `Hosting/Platform/Windows/Win32EmbeddedOpenGlHost.cs` | HWND child window |
+| macOS OpenGL | `Hosting/Platform/MacOS/MacOsEmbeddedOpenGlHost.cs` | GLFW-backed NSView |
+| macOS Metal | `Hosting/Platform/MacOS/MacOsEmbeddedMetalHost.cs` | MTKView-backed NSView |
 | Other | `Hosting/AvaloniaOpenGlHostControl.cs` | Placeholder control |
 
-`Hosting/Platform/EmbeddedOpenTkNativeHostFactory.cs` is the only place that
+`Hosting/Platform/EmbeddedViewerHostFactory.cs` is the only place that
 selects the platform-specific embedded host and render backend.
 
 Host lifecycle:
@@ -59,3 +59,5 @@ Host lifecycle:
 | Resize | Host receives Avalonia arrange calls | Synchronizes native view and framebuffer size | Synchronizes NSView and drawable pixel size |
 | Input | Events are converted to shared viewer input | OpenTK/Avalonia forwarding | Native MTKView and Avalonia key forwarding |
 | Destroy | Host stops its timer and disposes the controller | Tears down GL before destroying GLFW | Releases the Metal controller and view delegate |
+
+Run `dotnet run --project Source/CloudScope.UiChecks` to render the actual shell and ribbon tabs without the native GPU viewport. This checks layout and text contrast; native viewport rendering and picking require a desktop session.

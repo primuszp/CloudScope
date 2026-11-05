@@ -223,8 +223,8 @@ public sealed partial class ViewerCommands
                         .WithDefault(start.Value);
                     yield return end;
                     if (!end.IsOk) yield break;
-                    startWidth = (float)start.Value * (half ? 2f : 1f);
-                    endWidth = (float)end.Value * (half ? 2f : 1f);
+                    startWidth = CommandNumber.ToSingle(start.Value * (half ? 2 : 1));
+                    endWidth = CommandNumber.ToSingle(end.Value * (half ? 2 : 1));
                     viewer.SetPlanarPolylineWidth(startWidth, endWidth);
                     continue;
                 }

@@ -41,7 +41,19 @@ public sealed class UndoManager
         _open ??= new Group(commandName);
     }
 
-    public void Record(IUndoableAction action) => _open?.Actions.Add(action);
+    public void Record(IUndoableAction action)
+    {
+        if (_open is { } group) group.Actions.Add(action);
+        else
+        {
+            // Pointer-driven edits can finish outside a modal command. They still use the
+            // same history, rather than a second label-only undo path.
+            var standalone = new Group(action.Description);
+            standalone.Actions.Add(action);
+            _undo.Add(standalone);
+            _redo.Clear();
+        }
+    }
 
     public void Commit()
     {

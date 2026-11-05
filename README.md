@@ -1,93 +1,60 @@
 # CloudScope
 
-A high-performance LAS (LiDAR) point cloud viewer built with C# and .NET 10.0.
+A .NET 10 point-cloud viewer with a shared command system, OpenGL and macOS Metal rendering, and an Avalonia desktop workspace.
 
-## Features
-
-- **Fast Point Cloud Rendering**: Efficiently visualizes millions of LAS points using OpenGL
-- **Color Support**: Automatically detects colored and non-colored point formats
-- **Smart Color Scaling**: Handles both 8-bit (0-255) and 16-bit (0-65535) color values
-- **Intuitive Camera Controls**:
-  - Left Mouse: Orbit
-  - Right Mouse: Pan
-  - Scroll Wheel: Zoom (depth-aware)
-  - Space: Toggle Perspective / Orthographic
-  - W/A/S/D/Q/E: FPS Navigation
-  - Num1/3/7/5: Standard views (Front/Right/Top/Isometric)
-- **Point Limit**: Load partial datasets for faster preview (default: 30M points)
-- **PLY Import**: Load ASCII or little-endian binary PLY vertices with optional RGB, intensity, and classification using `OPENPLY`
-- **XYZ Import**: Load XYZ text points with optional intensity and RGB columns using `OPENXYZ`
-- **PTS Import**: Load PTS text points with an optional count header, RGB and intensity using `OPENPTS`. Signed scanner intensity is normalized from -2048..2047 when negative values are present.
-- **Point thinning**: `THIN 25` shows a repeatable 25% sample of the filtered resident cloud. Source points and label indices are preserved; `THIN 100` restores full density.
-- **PTX / E57 import, exports, surfaces and local automation**: see [integrated exchange tools](docs/OpenPointcloudIntegration.md).
-- **Individual-tree segmentation**: Pick a trunk seed in a terrestrial/SLAM cloud; multi-source
-  3D graph growth separates the selected tree from automatically detected neighbouring trunks
-
-## Requirements
-
-- .NET 10.0 SDK
-- Windows, macOS, or Linux with OpenGL support
-
-## Build
+## Build and run
 
 ```bash
-cd Source
-dotnet build
+dotnet build Source/CloudScope.slnx -warnaserror
+dotnet run --project Source/CloudScope.Avalonia
 ```
 
-## Usage
+The Avalonia embedded viewport supports Windows and macOS. The standalone OpenTK viewer is also available:
 
 ```bash
-cd Source/CloudScope/bin/Debug/net10.0
-CloudScope.exe <path-to-file.las> [max-points]
+dotnet run --project Source/CloudScope -- --help
+dotnet run --project Source/CloudScope -- "/path/to/scan.las" 5000000
 ```
 
-**Examples:**
+The optional point limit is zero for all points; resident clouds must fit memory and the .NET array limit. Metal is the default on macOS. Set `CLOUDSCOPE_RENDER_BACKEND=opengl` to select OpenGL.
+
+## Workflows
+
+- Import uncompressed LAS 1.0–1.4 (point formats 0–10), PLY, XYZ, PTS, PTX and supported E57 numeric scans. **Compressed LAZ is not decoded**; decompress it to LAS first.
+- Index LAS into streaming tile stores with `INDEX`, then use `OPENSTORE`, `ADDSTORE` and `LAYER` for large surveys.
+- Filter attributes, choose RGB/height/class/intensity/return colouring, and thin a repeatable sample with `THIN` while preserving source indices.
+- Create selection volumes, annotations and tree instances; run CSF ground filtering and seed-assisted terrestrial/SLAM tree segmentation. Save/load JSON labels for every resident import format; LAS classification export requires a LAS source.
+- Draw 3D and planar polylines, work with cross-sections and split viewports, reconstruct a visualization surface, and export points or OBJ meshes.
+- Drive the same operations through the command line, menus, ribbon, scripts and an optional authenticated local HTTP API.
+
+For arguments containing spaces, use quotes: `OPENXYZ "scan one.xyz" 5000`, `LABEL "Tree 1" 7`. A command with missing arguments asks for them. File imports and reconstruction finish in the background; wait for their completion before running dependent operations.
+
+[Command inventory](Docs/CommandInventory.md) · [Command system](Docs/CommandSystem.md) · [Exchange formats and limitations](Docs/OpenPointcloudIntegration.md) · [Rendering backends](Docs/RenderingBackends.md) · [Design system](Docs/DesignSystem.md)
+
+## Controls
+
+Left drag orbits; right drag pans; the wheel zooms around the picked depth. W/A/S/D/Q/E moves the camera. Standard views, projection, point size and layout are available through commands and the ribbon. Escape cancels the active operation; `QUIT` closes the viewer.
+
+For individual-tree segmentation, load a resident cloud, run `GROUNDSEG`, then `TREESEG` and pick a trunk seed. Ground points are excluded from tree growth. The result is a `Tree` annotation with an instance id and participates in undo and label saving. Segmentation is a heuristic for terrestrial/SLAM scans, not a validated universal forestry classifier.
+
+## Verification
+
 ```bash
-CloudScope.exe data.las                    # Load entire file
-CloudScope.exe data.las 5000000           # Load up to 5M points
+dotnet run --project Source/CloudScope.CommandChecks
+dotnet run --project Source/CloudScope.UiChecks
 ```
 
-### Segmenting an individual tree
+CommandChecks covers registration, all command/alias startup paths on a headless viewer, command conversations, data exchange, source identity, undo, reconstruction and numerical edge cases. UiChecks renders the actual Avalonia shell and all ribbon tabs at two window sizes, saving PNGs in a temporary directory (or a directory supplied as its first argument). It replaces the native 3D viewport, so it does not validate GPU rendering or native picking.
 
-Load a resident LAS/LAZ cloud and run `GROUNDSEG` first to classify terrain points with the
-progressive multi-scale ground filter. Then enter `TREESEG` (aliases: `TREE`, `SEGMENTTREE`) and click a
-point on the target trunk. The result is highlighted as a `Tree` annotation with an automatically
-assigned instance id, so it participates in the existing undo and label-save workflow. The current
-implementation is tuned for terrestrial/SLAM scans; streamed point-tile stores must first be loaded
-as a resident cloud. Ground points receive the standard LAS class 2 when labels are exported, and
-are excluded from tree graph growth.
+See [the code review and verification record](Docs/CodeReview.md) for the scope and remaining native checks.
 
-## Project Structure
+## Project structure
 
-- **CloudScope**: Main viewer application with UI and rendering
-- **CloudScope.Library**: Core LAS file reading and data structures
-  - `LasReader`: LAS file parsing
-  - `LasHeader`: LAS header information
-  - `LasPoint`: Individual point data
-  - `HeaderBlock`: Structured header data
-  - `ClassificationType`: Point classification enums
-
-## LAS Support
-
-Supports LAS format versions 1.0-1.4 with point formats:
-- Format 0-3: Basic point formats
-- Format 5-10: Extended formats with return info
-
-Automatically handles:
-- Different point record lengths
-- 8-bit and 16-bit color spaces
-- Height-based coloring for non-colored point clouds
-
-## Dependencies
-
-- [OpenTK 4.9.4](https://opentk.net/): OpenGL bindings for C#
-- .NET Runtime with OpenGL support
-
-## License
+- `CloudScope.Core`: formats, point data, spatial and forestry algorithms, selection geometry, labels, drawing and the command runtime.
+- `CloudScope`: viewer/controller, command implementations, shared rendering preparation, OpenGL and Metal backends.
+- `CloudScope.MacOS`: AppKit/Metal interop.
+- `CloudScope.Avalonia`: desktop shell and native viewport adapters.
+- `CloudScope.CommandChecks`, `CloudScope.UiChecks`: reproducible checks.
+- `MetalTriangleTest`, `MetalNetTriangle`: standalone graphics experiments.
 
 Licensed under the MIT License.
-
-## Author
-
-Created as a personal project for LiDAR point cloud visualization.

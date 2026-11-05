@@ -24,14 +24,18 @@ namespace CloudScope.Library
 
         public IEnumerable<(VariableLengthRecordHeader header, byte[] data)> GetVariableLengthRecords()
         {
-            uint offset = _vlrStartOffset;
+            long offset = _vlrStartOffset;
 
-            for (int i = 0; i < _numberOfVLRs && offset < _pointDataOffset; i++)
+            for (uint i = 0; i < _numberOfVLRs; i++)
             {
+                if (offset > (long)_pointDataOffset - 54)
+                    throw new System.IO.InvalidDataException("Truncated LAS variable-length record header.");
                 var header = ReadStruct<VariableLengthRecordHeader>(offset);
                 uint headerSize = 54;
                 ushort dataSize = header.RecordLengthAfterHeader;
 
+                if (dataSize > (long)_pointDataOffset - offset - headerSize)
+                    throw new System.IO.InvalidDataException("LAS variable-length record overlaps point data.");
                 byte[] data = new byte[dataSize];
                 if (dataSize > 0)
                 {
@@ -49,15 +53,18 @@ namespace CloudScope.Library
         {
             ulong offset = evlrStartOffset;
 
-            for (int i = 0; i < numberOfEVLRs && offset < (ulong)fileSize; i++)
+            for (uint i = 0; i < numberOfEVLRs; i++)
             {
-                if (offset + 60 > (ulong)fileSize) break;
+                if (fileSize < 60 || offset > (ulong)fileSize - 60)
+                    throw new System.IO.InvalidDataException("Truncated LAS extended variable-length record header.");
 
                 var header = ReadStruct<ExtendedVariableLengthRecordHeader>((long)offset);
                 ulong headerSize = 60;
                 ulong dataSize = header.RecordLengthAfterHeader;
 
-                byte[] data = new byte[Math.Min(dataSize, (ulong)(fileSize - (long)offset - (long)headerSize))];
+                if (dataSize > (ulong)fileSize - offset - headerSize || dataSize > int.MaxValue)
+                    throw new System.IO.InvalidDataException("Invalid LAS extended variable-length record size.");
+                byte[] data = new byte[(int)dataSize];
                 if (dataSize > 0 && data.Length > 0)
                 {
                     _accessor.ReadArray((long)(offset + headerSize), data, 0, data.Length);

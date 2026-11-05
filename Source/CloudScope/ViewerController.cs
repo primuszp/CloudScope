@@ -14,7 +14,7 @@ using CloudScope.Forestry;
 
 namespace CloudScope
 {
-    public sealed class ViewerController : IDisposable
+    public sealed partial class ViewerController : IDisposable
     {
         private readonly IRenderFrameLifecycle _frameLifecycle;
         private readonly IPointCloudRenderer _pointRenderer;
@@ -133,10 +133,7 @@ namespace CloudScope
 
             // One undo step per labelling command: the label manager reports each reversible
             // change, and the runtime's command marks decide where the steps begin and end.
-            _selection.Labels.ActionRecorded += () => UndoHistory.Record(
-                new DelegateUndoAction("Label change",
-                    () => _selection.Labels.Undo(),
-                    () => _selection.Labels.Redo()));
+            _selection.Labels.ActionRecorded += UndoHistory.Record;
         }
 
         private readonly string _backendName;
@@ -222,9 +219,17 @@ namespace CloudScope
             Variables.RegisterString("CLABEL", "Label applied to new selections.",
                 () => _selection.CurrentLabel, value => SetActiveLabel(value));
 
-            Variables.RegisterString("CINSTANCE", "Instance id applied to new selections.",
-                () => Status.InstanceText,
-                value => SetActiveInstance(int.TryParse(value, out int id) ? id : null));
+            Variables.Register(new SystemVariable
+            {
+                Name = "CINSTANCE", Type = SystemVariableType.Int,
+                Description = "Instance id applied to new selections; NONE clears it.",
+                Getter = () => Status.InstanceText,
+                Setter = text => text.Equals("NONE", StringComparison.OrdinalIgnoreCase) || text.Equals("CLEAR", StringComparison.OrdinalIgnoreCase)
+                    ? SetActiveInstance(null)
+                    : int.TryParse(text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int id) && id >= 0
+                        ? SetActiveInstance(id)
+                        : "CINSTANCE takes a non-negative integer or NONE."
+            });
 
             Variables.RegisterInt("PTMAX", "Maximum points drawn per frame.",
                 () => PointRenderBudget.MaxDrawPointsPerFrame ?? PointRenderLimits.DefaultFrameBudget,
@@ -272,6 +277,9 @@ namespace CloudScope
 
         public void LoadPointCloud(PointData[] pts, float cloudRadius = 50f)
         {
+            InvalidatePendingLoad();
+            _selection.Reset();
+            UndoHistory.Clear();
             InvalidateSurface();
             DiscardCrossSection();
             CloseLayers();
@@ -285,6 +293,9 @@ namespace CloudScope
 
         public void LoadPointCloud(PointCloudDataset dataset)
         {
+            InvalidatePendingLoad();
+            _selection.Reset();
+            UndoHistory.Clear();
             _residentVisible = true;
             DiscardCrossSection();
             CloseLayers();
@@ -302,131 +313,6 @@ namespace CloudScope
         {
             if (_dataset == null) return;
             _selection.LoadPointCloud(_dataset.ViewPoints, _dataset.ViewToSource, _dataset.SourcePoints, _dataset.Attributes);
-        }
-
-        /// <summary>
-        /// Work handed back from a background thread, run on the next frame. A cloud is read
-        /// off the UI thread but uploaded on the one that owns the graphics context.
-        /// </summary>
-        private readonly System.Collections.Concurrent.ConcurrentQueue<Action> _pendingWork = new();
-
-        /// <summary>
-        /// Output produced without a command being submitted — a load finishing. Shells route
-        /// it to the command line, so a background result is reported where a typed one is.
-        /// </summary>
-        public event Action<string>? BackgroundMessage;
-
-        /// <summary>Percentage of a load in progress, or -1 when nothing is loading.</summary>
-        public int LoadProgress { get; private set; } = -1;
-
-        /// <summary>
-        /// Reads a LAS or LAZ file and shows it. The read happens on a background thread and
-        /// the upload on the next frame, so the command returns at once and no shell has to
-        /// own a loading path of its own to keep its window responsive.
-        /// </summary>
-        public string OpenPointCloud(string path, long maxPoints = 0)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-                return "OPEN requires a file path.";
-
-            if (!File.Exists(path))
-                return $"File not found: {path}";
-
-            if (LoadProgress >= 0)
-                return "A point cloud is already loading.";
-
-            LoadProgress = 0;
-            string name = Path.GetFileName(path);
-
-            _ = Task.Run(() =>
-            {
-                var sw = Stopwatch.StartNew();
-                try
-                {
-                    var progress = new InlineProgress<int>(percent => LoadProgress = percent);
-                    using var reader = new LasReader(path);
-                    LoadedPointCloud cloud = PointCloudLoader.Load(reader, maxPoints, progress: progress);
-                    PointCloudDataset dataset = cloud.ToDataset();
-                    sw.Stop();
-
-                    _pendingWork.Enqueue(() =>
-                    {
-                        LoadPointCloud(dataset);
-                        SetLasFilePath(path);
-                        LoadProgress = -1;
-                        BackgroundMessage?.Invoke(
-                            $"Loaded {cloud.LoadedCount:N0} points from {name} ({sw.Elapsed.TotalSeconds:0.0}s).");
-                    });
-                }
-                catch (Exception ex)
-                {
-                    _pendingWork.Enqueue(() =>
-                    {
-                        LoadProgress = -1;
-                        BackgroundMessage?.Invoke($"Load failed: {ex.Message}");
-                    });
-                }
-            });
-
-            return $"Reading {name}...";
-        }
-
-        /// <summary>Loads PLY vertices through the same resident-cloud rendering path as LAS.</summary>
-        public string OpenPlyPointCloud(string path, long maxPoints = 0)
-            => OpenTextOrPlyPointCloud(path, maxPoints, "OPENPLY", "PLY", PlyPointCloudLoader.Load);
-
-        /// <summary>Loads an XYZ text cloud through the resident-cloud rendering path.</summary>
-        public string OpenXyzPointCloud(string path, long maxPoints = 0)
-            => OpenTextOrPlyPointCloud(path, maxPoints, "OPENXYZ", "XYZ", XyzPointCloudLoader.Load);
-
-        /// <summary>Loads PTS text points with optional intensity and RGB.</summary>
-        public string OpenPtsPointCloud(string path, long maxPoints = 0)
-            => OpenTextOrPlyPointCloud(path, maxPoints, "OPENPTS", "PTS", PtsPointCloudLoader.Load);
-
-        public string OpenPtxPointCloud(string path, long maxPoints = 0)
-            => OpenTextOrPlyPointCloud(path, maxPoints, "OPENPTX", "PTX", PtxPointCloudLoader.Load);
-
-        public string OpenE57PointCloud(string path, long maxPoints = 0)
-            => OpenTextOrPlyPointCloud(path, maxPoints, "OPENE57", "E57", E57PointCloudLoader.Load);
-
-        private string OpenTextOrPlyPointCloud(string path, long maxPoints, string command,
-            string format, Func<string, long, IProgress<int>?, LoadedPointCloud> loader)
-        {
-            if (string.IsNullOrWhiteSpace(path)) return $"{command} requires a file path.";
-            if (!File.Exists(path)) return $"File not found: {path}";
-            if (LoadProgress >= 0) return "A point cloud is already loading.";
-
-            LoadProgress = 0;
-            string name = Path.GetFileName(path);
-            _ = Task.Run(() =>
-            {
-                var sw = Stopwatch.StartNew();
-                try
-                {
-                    var progress = new InlineProgress<int>(percent => LoadProgress = percent);
-                    LoadedPointCloud cloud = loader(path, maxPoints, progress);
-                    PointCloudDataset dataset = cloud.ToDataset();
-                    sw.Stop();
-                    _pendingWork.Enqueue(() =>
-                    {
-                        LoadPointCloud(dataset);
-                        SetLasFilePath(string.Empty);
-                        _sourceName = name;
-                        _sourcePath = Path.GetFullPath(path);
-                        LoadProgress = -1;
-                        BackgroundMessage?.Invoke($"Loaded {cloud.LoadedCount:N0} {format} points from {name} ({sw.Elapsed.TotalSeconds:0.0}s).");
-                    });
-                }
-                catch (Exception ex)
-                {
-                    _pendingWork.Enqueue(() =>
-                    {
-                        LoadProgress = -1;
-                        BackgroundMessage?.Invoke($"{format} load failed: {ex.Message}");
-                    });
-                }
-            });
-            return $"Reading {name}...";
         }
 
         /// <summary>
@@ -454,7 +340,6 @@ namespace CloudScope
         /// </remarks>
         public string OpenPointTileStore(string directory, bool replace)
         {
-            InvalidateSurface();
             if (string.IsNullOrWhiteSpace(directory))
                 return "OPENSTORE requires a store directory.";
 
@@ -463,6 +348,8 @@ namespace CloudScope
 
             var sw = Stopwatch.StartNew();
             PointTileStore store = PointTileStore.Open(directory);
+            InvalidatePendingLoad();
+            InvalidateSurface();
             string name = Path.GetFileName(Path.TrimEndingDirectorySeparator(directory));
 
             if (replace)
@@ -473,6 +360,7 @@ namespace CloudScope
                 _pointRenderer.Upload(PointCloudRenderData.Empty);
                 _dataset = null;
                 _selection.Reset();
+                UndoHistory.Clear();
             }
             else
             {
@@ -659,7 +547,7 @@ namespace CloudScope
         {
             _sourceName = Path.GetFileName(path);
             _sourcePath = path.Length == 0 ? "" : Path.GetFullPath(path);
-            _selection.SetLasFilePath(path);
+            _selection.SetSourceFilePath(path, supportsLasExport: true);
         }
 
         /// <summary>
@@ -731,6 +619,7 @@ namespace CloudScope
 
         public void Reset()
         {
+            InvalidatePendingLoad();
             InvalidateSurface();
             DiscardCrossSection();
             CloseLayers();
@@ -740,6 +629,7 @@ namespace CloudScope
             _sourcePath = "";
             _residentVisible = true;
             _selection.Reset();
+            UndoHistory.Clear();
             foreach (ViewportState viewport in _viewports)
                 FitViewport(viewport);
             _pointRenderer.Upload(PointCloudRenderData.Empty);
@@ -894,7 +784,9 @@ namespace CloudScope
 
         public void CancelOrExitLabelMode() => _selection.CancelOrExitLabelMode();
 
-        public bool UndoSelectionCommand() => _selection.UndoSelectionCommand();
+        public bool UndoSelectionCommand() => HasActiveSelection
+            ? _selection.UndoSelectionCommand()
+            : UndoHistory.Undo() > 0;
 
         public void ZoomExtents()
         {
@@ -1062,7 +954,7 @@ namespace CloudScope
         public string ExportPointCloud(string path, PointCloudExportFormat format)
         {
             if (_dataset == null) return "Export requires a resident point cloud.";
-            if (Path.GetFullPath(path) == _sourcePath) return "Choose an export path different from the source file.";
+            if (FilePathIdentity.SamePath(path, _sourcePath)) return "Choose an export path different from the source file.";
             string temporary = Path.GetFullPath(path) + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
@@ -1117,7 +1009,7 @@ namespace CloudScope
         public string SetSurfaceVisibility(bool visible) { _surfaceVisible = visible; return $"Surface {(visible ? "shown" : "hidden")}."; }
         public string ConfigureLocalApi(bool enabled, int port = 47830)
         {
-            if (!enabled) { _api?.Dispose(); _api = null; return "Local command API stopped."; }
+            if (!enabled) { _api?.StopAfterCurrentResponse(); _api = null; return "Local command API stopped."; }
             if (_api != null) return $"API already listening on 127.0.0.1:{_api.Port}.";
             _api = new LocalCommandServer(port, (command, token) =>
             {
@@ -1140,7 +1032,7 @@ namespace CloudScope
         public string ExportSurfaceObj(string path)
         {
             if (_surface == null) return "Run RECONSTRUCT first.";
-            if (Path.GetFullPath(path) == _sourcePath) return "Choose a path different from the source file.";
+            if (FilePathIdentity.SamePath(path, _sourcePath)) return "Choose a path different from the source file.";
             string temporary = Path.GetFullPath(path) + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
@@ -2038,7 +1930,7 @@ namespace CloudScope
                 var proj = viewport.Camera.GetProjectionMatrix();
                 SectionClip sectionClip = SectionClipFor(viewport);
 
-                Breadcrumb("point-render");
+                _frameTiming.TracePhase("point-render");
                 var renderView = new PointRenderView(
                     view, proj,
                     viewport.Bounds.Width, viewport.Bounds.Height,
@@ -2050,12 +1942,12 @@ namespace CloudScope
                 totalDrawCount += drawCount;
                 if (_surfaceVisible) _surfaceRenderer.Render(frameData, ref view, ref proj);
 
-                Breadcrumb("highlight");
+                _frameTiming.TracePhase("highlight");
                 if (_selection.SourcePoints != null && _selection.Labels.Count > 0)
                     _highlightRenderer.Render(frameData, _selection.SourcePoints, _selection.Labels,
                         _selection.ResolveAnnotationColor, ref view, ref proj, viewport.Input.PointSize, sectionClip);
 
-                Breadcrumb("preview");
+                _frameTiming.TracePhase("preview");
                 if (_selection.TryTakePreview(out var previewIndices))
                     _highlightRenderer.UpdatePreview(_selection.Points, previewIndices);
                 _highlightRenderer.RenderPreview(frameData, ref view, ref proj, viewport.Input.PointSize, sectionClip);
@@ -2064,7 +1956,7 @@ namespace CloudScope
                 {
                     var tool = _selection.ActiveTool;
                     tool.ViewConstraint = ConstraintFor(viewport);
-                    Breadcrumb($"gizmo {tool.ToolType} phase={tool.Phase} vol={tool.HasVolume}");
+                    _frameTiming.TracePhase($"gizmo {tool.ToolType} phase={tool.Phase} vol={tool.HasVolume}");
                     if (!_selectionGizmoRenderers.TryRenderPlacement(frameData, tool, viewport.Bounds.Width, viewport.Bounds.Height)
                         && (tool.HasVolume || tool.Phase == ToolPhase.Drawing))
                     {
@@ -2206,7 +2098,7 @@ namespace CloudScope
                 // The tile border exists to say which viewport is active, so it is only drawn
                 // when the drawing area is actually split. With a single viewport the shell's
                 // own frame is the edge, and a second line inside it just doubles the rule.
-                if (_viewports.Length > 1)
+                if (LayoutViewportCount(_viewportLayout) > 1)
                     _overlayRenderer.RenderViewportBorder(frameData, viewport.Bounds.Width, viewport.Bounds.Height,
                         ReferenceEquals(viewport, ActiveViewport));
             }
@@ -2219,27 +2111,8 @@ namespace CloudScope
             _frameTiming.MarkPreview();
             _frameTiming.MarkGizmo();
 
-            Breadcrumb("overlay-done");
+            _frameTiming.TracePhase("overlay-done");
             _frameTiming.MarkSwapAndLog(frameTime);
-        }
-
-        // ── Crash breadcrumb (temporary AV diagnostic) ────────────────────────
-        // Writes the current render phase to %TEMP%\cloudscope_phase.log with an
-        // immediate flush. Because an access violation faults synchronously on the
-        // offending GL call, the LAST line in this file names the phase that crashed.
-        private static readonly string BreadcrumbPath =
-            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "cloudscope_phase.log");
-        private static long _breadcrumbSeq;
-
-        private static void Breadcrumb(string phase)
-        {
-            try
-            {
-                // Overwrite so the file stays tiny; the last write = the phase that crashed.
-                System.IO.File.WriteAllText(BreadcrumbPath,
-                    $"seq {System.Threading.Interlocked.Increment(ref _breadcrumbSeq)} @ {DateTime.Now:HH:mm:ss.fff}{Environment.NewLine}phase: {phase}{Environment.NewLine}");
-            }
-            catch { /* diagnostics must never throw */ }
         }
 
         public void Resize(int width, int height)
@@ -2270,6 +2143,9 @@ namespace CloudScope
 
         public void Dispose()
         {
+            if (_disposed) return;
+            _disposed = true;
+            InvalidatePendingLoad();
             _api?.Dispose();
             _reconstruction?.Cancel();
             _surfaceRenderer.Dispose();

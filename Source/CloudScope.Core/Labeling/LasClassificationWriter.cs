@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using CloudScope.Library;
+using CloudScope.Loading;
 
 namespace CloudScope.Labeling
 {
@@ -36,39 +37,55 @@ namespace CloudScope.Labeling
                 pointCount = reader.PointCount;
             }
 
-            File.Copy(sourcePath, destinationPath, overwrite: true);
+            if (FilePathIdentity.SamePath(sourcePath, destinationPath))
+                throw new ArgumentException("Classification output must differ from the source file.", nameof(destinationPath));
+            if (formatId < 6 && sourceIndexToCode.Any(pair => pair.Key >= 0 && pair.Key < pointCount && pair.Value > 31))
+                throw new InvalidDataException("Legacy LAS formats 0-5 can store only classification codes 0-31.");
 
-            bool extended = formatId >= 6;
-            int classOffset = extended ? 16 : 15;
-
-            int written = 0;
-            using var fs = new FileStream(destinationPath, FileMode.Open, FileAccess.ReadWrite);
-            foreach (var (index, code) in sourceIndexToCode)
+            string temporary = Path.GetFullPath(destinationPath) + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
             {
-                if (index < 0 || index >= pointCount)
-                    continue;
-
-                long offset = pointDataOffset + (long)index * stride + classOffset;
-                fs.Seek(offset, SeekOrigin.Begin);
-
-                if (extended)
-                {
-                    fs.WriteByte(code);
-                }
-                else
-                {
-                    int old = fs.ReadByte();
-                    if (old < 0) continue;
-                    fs.Seek(offset, SeekOrigin.Begin);
-                    // Preserve synthetic/keypoint/withheld flags (top 3 bits); class is 5 bits (0-31).
-                    byte merged = (byte)((old & 0xE0) | (code & 0x1F));
-                    fs.WriteByte(merged);
-                }
-
-                written++;
+                File.Copy(sourcePath, temporary);
+                int written = WriteRecords(temporary);
+                File.Move(temporary, destinationPath, overwrite: true);
+                return written;
             }
+            finally { if (File.Exists(temporary)) File.Delete(temporary); }
 
-            return written;
+            int WriteRecords(string output)
+            {
+                bool extended = formatId >= 6;
+                int classOffset = extended ? 16 : 15;
+
+                int written = 0;
+                using var fs = new FileStream(output, FileMode.Open, FileAccess.ReadWrite);
+                foreach (var (index, code) in sourceIndexToCode)
+                {
+                    if (index < 0 || index >= pointCount)
+                        continue;
+
+                    long offset = pointDataOffset + (long)index * stride + classOffset;
+                    fs.Seek(offset, SeekOrigin.Begin);
+
+                    if (extended)
+                    {
+                        fs.WriteByte(code);
+                    }
+                    else
+                    {
+                        int old = fs.ReadByte();
+                        if (old < 0) continue;
+                        fs.Seek(offset, SeekOrigin.Begin);
+                        // Preserve synthetic/keypoint/withheld flags (top 3 bits); class is 5 bits (0-31).
+                        byte merged = (byte)((old & 0xE0) | (code & 0x1F));
+                        fs.WriteByte(merged);
+                    }
+
+                    written++;
+                }
+
+                return written;
+            }
         }
     }
 }

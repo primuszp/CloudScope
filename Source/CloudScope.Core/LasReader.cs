@@ -68,37 +68,75 @@ namespace CloudScope.Library
             var fileInfo = new FileInfo(path);
             _fileSize = fileInfo.Length;
 
+            if (_fileSize < 227)
+                throw new InvalidDataException("Truncated LAS public header (at least 227 bytes required).");
+
             _mmf = MemoryMappedFile.CreateFromFile(path, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-            _accessor = _mmf.CreateViewAccessor(0, _fileSize, MemoryMappedFileAccess.Read);
-
-            _header = new LasHeader(ReadStruct<HeaderBlock>(0));
-
-            // Legacy 32-bit point count
-            _pointCount = _header.NumberOfPointRecords;
-
-            // LAS 1.4: Use 64-bit point count from offset 247 if available
-            if (_header.VersionMajor == 1 && _header.VersionMinor >= 4)
+            MemoryMappedViewAccessor? accessor = null;
+            try
             {
-                if (_fileSize >= 247 + 8)
-                {
-                    ulong actualCount = _accessor.ReadUInt64(247);
-                    if (actualCount > 0)
-                        _pointCount = (long)actualCount;
-                }
-            }
+                _accessor = accessor = _mmf.CreateViewAccessor(0, _fileSize, MemoryMappedFileAccess.Read);
+                // Older headers are shorter than HeaderBlock. Never read point bytes as
+                // LAS 1.4 extensions, or read beyond a small, valid legacy file.
+                var bytes = new byte[Marshal.SizeOf<HeaderBlock>()];
+                _accessor.ReadArray(0, bytes, 0, 227);
+                int headerSize = BitConverter.ToUInt16(bytes, 94);
+                if (headerSize < 227 || headerSize > _fileSize)
+                    throw new InvalidDataException("Invalid LAS header size.");
+                if (headerSize > 227)
+                    _accessor.ReadArray(227, bytes, 227, Math.Min(headerSize, bytes.Length) - 227);
+                _header = new LasHeader(MemoryMarshal.Read<HeaderBlock>(bytes));
+                ValidateHeader();
 
-            _vlrManager = new VariableLengthRecordManager(
-                _accessor,
-                _header.NumberOfVariableLengthRecords,
-                (uint)(_header.HeaderSize),
-                _header.OffsetToPointData
-            );
+                _pointCount = _header.NumberOfPointRecords;
+                if (_header.VersionMinor >= 4)
+                {
+                    ulong extendedCount = _accessor.ReadUInt64(247);
+                    if (extendedCount > long.MaxValue)
+                        throw new InvalidDataException("LAS point count exceeds the supported address range.");
+                    // In 1.4 the extended count is authoritative, including an empty cloud.
+                    _pointCount = (long)extendedCount;
+                }
+                if (_pointCount > (_fileSize - _header.OffsetToPointData) / _header.PointDataRecordLength)
+                    throw new InvalidDataException("LAS point records are truncated or the declared count is invalid.");
+
+                _vlrManager = new VariableLengthRecordManager(_accessor,
+                    _header.NumberOfVariableLengthRecords, _header.HeaderSize, _header.OffsetToPointData);
+            }
+            catch
+            {
+                accessor?.Dispose();
+                _mmf.Dispose();
+                throw;
+            }
         }
 
-        private T ReadStruct<T>(long offset) where T : struct
+        private void ValidateHeader()
         {
-            _accessor.Read(offset, out T result);
-            return result;
+            if (_header.FileSignature != "LASF")
+                throw new InvalidDataException("Invalid LAS file signature.");
+            if (_header.VersionMajor != 1 || _header.VersionMinor > 4)
+                throw new InvalidDataException("Supported LAS versions are 1.0 through 1.4.");
+            int minimumHeader = _header.VersionMinor >= 4 ? 375 : _header.VersionMinor == 3 ? 235 : 227;
+            if (_header.HeaderSize < minimumHeader || _header.OffsetToPointData < _header.HeaderSize || _header.OffsetToPointData > _fileSize)
+                throw new InvalidDataException("Invalid LAS header size or point data offset.");
+            byte format = _header.PointDataFormatId;
+            if ((format & 0xC0) != 0)
+                throw new InvalidDataException("Compressed LAZ is not supported. Decompress the file to LAS before opening it.");
+            int[] lengths = [20, 28, 26, 34, 57, 63, 30, 36, 38, 59, 67];
+            if (format >= lengths.Length || _header.PointDataRecordLength < lengths[format])
+                throw new InvalidDataException("Invalid LAS point format or record length.");
+            if ((format >= 6 && _header.VersionMinor < 4) || (format >= 4 && _header.VersionMinor < 3))
+                throw new InvalidDataException("The point format is incompatible with the LAS version.");
+            if (!double.IsFinite(_header.XScaleFactor) || _header.XScaleFactor <= 0 ||
+                !double.IsFinite(_header.YScaleFactor) || _header.YScaleFactor <= 0 ||
+                !double.IsFinite(_header.ZScaleFactor) || _header.ZScaleFactor <= 0 ||
+                !double.IsFinite(_header.XOffset) || !double.IsFinite(_header.YOffset) || !double.IsFinite(_header.ZOffset))
+                throw new InvalidDataException("LAS coordinate scales and offsets must be finite, with positive scales.");
+            if (!double.IsFinite(_header.MinX) || !double.IsFinite(_header.MaxX) || _header.MinX > _header.MaxX ||
+                !double.IsFinite(_header.MinY) || !double.IsFinite(_header.MaxY) || _header.MinY > _header.MaxY ||
+                !double.IsFinite(_header.MinZ) || !double.IsFinite(_header.MaxZ) || _header.MinZ > _header.MaxZ)
+                throw new InvalidDataException("Invalid LAS coordinate bounds.");
         }
 
         /// <summary>

@@ -1,4 +1,5 @@
 using OpenTK.Mathematics;
+using CloudScope.Spatial;
 
 namespace CloudScope.Loading;
 
@@ -9,7 +10,7 @@ public sealed record SurfaceMesh(Vector3[] Vertices, int[] Indices, double Origi
 }
 
 /// <summary>
-/// Uniform-grid neighbourhoods, analytic PCA and angular fan reconstruction, matching
+/// Exact nearest-neighbour queries, analytic PCA and angular fan reconstruction, based on
 /// Open Pointcloud Studio's algorithm. Independently expressed in C# with cancellation
 /// throughout; coordinates retain CloudScope's Z-up frame.
 /// </summary>
@@ -37,7 +38,14 @@ public static class SurfaceReconstruction
         if (cellSize == 0) cellSize = 1;
         double edge = maximumEdge == 0 ? 2 * cellSize : maximumEdge;
         progress?.Report(10);
-        var grid = new SpatialGrid(vertices, cellSize, cancellation);
+        // Preserve the established cell-order tie break while making the search exact.
+        var cells = vertices.Select(p => (X: Math.Floor(p.X / cellSize),
+            Y: Math.Floor(p.Y / cellSize), Z: Math.Floor(p.Z / cellSize))).ToArray();
+        var grid = new PointSpatialIndex(vertices, (a, b) =>
+        {
+            int order = cells[a].CompareTo(cells[b]);
+            return order != 0 ? order : a.CompareTo(b);
+        }, cancellation);
         var normals = new Vector3[vertices.Length];
         for (int i = 0; i < vertices.Length; i++)
         {
@@ -115,7 +123,11 @@ public static class SurfaceReconstruction
 
     private static Vector3d SmallestEigenvector(double xx, double xy, double xz, double yy, double yz, double zz)
     {
-        // Analytic eigenvalues of a real symmetric 3x3 covariance matrix.
+        // Normalize before the eigensolve: the normal must be independent of units.
+        double magnitude = new[] { Math.Abs(xx), Math.Abs(xy), Math.Abs(xz), Math.Abs(yy), Math.Abs(yz), Math.Abs(zz) }.Max();
+        if (magnitude == 0) return Vector3d.UnitZ;
+        xx /= magnitude; xy /= magnitude; xz /= magnitude;
+        yy /= magnitude; yz /= magnitude; zz /= magnitude;
         double center = (xx + yy + zz) / 3;
         double sx = xx - center, sy = yy - center, sz = zz - center;
         double scale = Math.Sqrt((sx * sx + sy * sy + sz * sz + 2 * (xy * xy + xz * xz + yz * yz)) / 6);
@@ -126,53 +138,11 @@ public static class SurfaceReconstruction
         double eigenvalue = center + 2 * scale * Math.Cos(angle + 2 * Math.PI / 3);
         Vector3d r0 = new(xx - eigenvalue, xy, xz), r1 = new(xy, yy - eigenvalue, yz), r2 = new(xz, yz, zz - eigenvalue);
         Vector3d vector = Vector3d.Cross(r0, r1);
-        if (vector.Length < 1e-12) vector = Vector3d.Cross(r1, r2);
-        if (vector.Length < 1e-12) vector = Vector3d.Cross(r0, r2);
+        Vector3d alternative = Vector3d.Cross(r1, r2);
+        if (alternative.LengthSquared > vector.LengthSquared) vector = alternative;
+        alternative = Vector3d.Cross(r0, r2);
+        if (alternative.LengthSquared > vector.LengthSquared) vector = alternative;
         return vector.Length < 1e-12 ? Vector3d.UnitZ : vector.Normalized();
     }
 
-    private sealed class SpatialGrid
-    {
-        private readonly Vector3[] _points;
-        private readonly double _size;
-        private readonly Dictionary<(long, long, long), List<int>> _cells = [];
-        public SpatialGrid(Vector3[] points, double size, CancellationToken cancellation)
-        {
-            _points = points; _size = size;
-            for (int i = 0; i < points.Length; i++)
-            {
-                cancellation.ThrowIfCancellationRequested();
-                var key = Cell(points[i]);
-                if (!_cells.TryGetValue(key, out var list)) _cells[key] = list = [];
-                list.Add(i);
-            }
-        }
-        private (long X, long Y, long Z) Cell(Vector3 p) =>
-            (checked((long)Math.Floor(p.X / _size)), checked((long)Math.Floor(p.Y / _size)), checked((long)Math.Floor(p.Z / _size)));
-        public int[] Nearest(int index, int k, CancellationToken cancellation)
-        {
-            var center = Cell(_points[index]);
-            var candidates = new List<(int Index, double Distance, int Order)>();
-            for (int radius = 1; radius <= 5; radius++)
-            {
-                candidates.Clear();
-                for (int x = -radius; x <= radius; x++)
-                for (int y = -radius; y <= radius; y++)
-                for (int z = -radius; z <= radius; z++)
-                {
-                    cancellation.ThrowIfCancellationRequested();
-                    if (!_cells.TryGetValue((center.X + x, center.Y + y, center.Z + z), out var cell)) continue;
-                    foreach (int other in cell)
-                    {
-                        if (other == index) continue;
-                        candidates.Add((other, Difference(_points[other], _points[index]).LengthSquared, candidates.Count));
-                    }
-                }
-                if (candidates.Count >= k) break;
-            }
-            // Tie order follows cell traversal and insertion, matching JS's stable sort.
-            candidates.Sort((a, b) => { int comparison = a.Distance.CompareTo(b.Distance); return comparison != 0 ? comparison : a.Order.CompareTo(b.Order); });
-            return candidates.Take(k).Select(p => p.Index).ToArray();
-        }
-    }
 }

@@ -49,7 +49,7 @@ public static class UiPalette
     public const uint Text = 0xE6E1D9;
 
     /// <summary>Secondary text: labels, captions, section headers.</summary>
-    public const uint TextDim = 0xA9A197;
+    public const uint TextDim = 0xBDB4A9;
 
     /// <summary>Disabled text and faint separators.</summary>
     public const uint TextFaint = 0x7A736A;

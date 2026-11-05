@@ -187,7 +187,7 @@ public sealed partial class ViewerCommands
             yield break;
         }
 
-        ed.WriteMessage(viewer.OrbitBy((float)azimuth, (float)elevation));
+        ed.WriteMessage(viewer.OrbitBy(CommandNumber.ToSingle(azimuth), CommandNumber.ToSingle(elevation)));
     }
 
     [CommandMethod("PIVOT", Flags = CommandFlags.NoUndoMarker,

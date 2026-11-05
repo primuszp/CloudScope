@@ -383,7 +383,7 @@ public sealed partial class ViewerCommands
         {
             // ";" starts a comment, as it does in an AutoCAD script.
             string line = raw.Trim();
-            if (line.Length == 0 || line.StartsWith(';'))
+            if (line.StartsWith(';'))
                 continue;
 
             ed.RunAfter(line);

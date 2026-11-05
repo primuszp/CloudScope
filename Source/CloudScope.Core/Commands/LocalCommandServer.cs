@@ -10,6 +10,10 @@ public sealed class LocalCommandServer : IDisposable
     private readonly HttpListener _listener = new();
     private readonly CancellationTokenSource _stop = new();
     private readonly Func<string?, CancellationToken, Task<object>> _dispatch;
+    private readonly object _lifecycle = new();
+    private bool _handling;
+    private bool _stopAfterResponse;
+    private bool _disposed;
     public string Token { get; } = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
     public int Port { get; }
     public string DiscoveryFile { get; }
@@ -46,7 +50,16 @@ public sealed class LocalCommandServer : IDisposable
             {
                 HttpListenerContext context = await _listener.GetContextAsync();
                 // Serial requests also serialize interactive prompt/answer conversations.
-                await Handle(context);
+                lock (_lifecycle) _handling = true;
+                try { await Handle(context); }
+                finally
+                {
+                    lock (_lifecycle)
+                    {
+                        _handling = false;
+                        if (_stopAfterResponse) Dispose();
+                    }
+                }
             }
             catch (Exception ex) when (ex is HttpListenerException or ObjectDisposedException && _stop.IsCancellationRequested) { break; }
         }
@@ -92,9 +105,35 @@ public sealed class LocalCommandServer : IDisposable
             await JsonSerializer.SerializeAsync(context.Response.OutputStream, value);
         }
     }
+    /// <summary>Lets an API OFF request receive its result before closing the listener.</summary>
+    public void StopAfterCurrentResponse()
+    {
+        lock (_lifecycle)
+        {
+            if (_handling) _stopAfterResponse = true;
+            else Dispose();
+        }
+    }
+
     public void Dispose()
     {
-        _stop.Cancel(); _listener.Close();
-        if (File.Exists(DiscoveryFile)) File.Delete(DiscoveryFile);
+        lock (_lifecycle)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _stop.Cancel(); _listener.Close();
+            // Another listener may already have replaced this process's discovery entry.
+            // Remove only the entry owned by this server.
+            try
+            {
+                if (File.Exists(DiscoveryFile))
+                {
+                    using var document = JsonDocument.Parse(File.ReadAllText(DiscoveryFile));
+                    if (document.RootElement.TryGetProperty("token", out var token) && token.GetString() == Token)
+                        File.Delete(DiscoveryFile);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
+        }
     }
 }

@@ -25,6 +25,15 @@ namespace CloudScope.Loading
             PointCloudAttributes attributes,
             double originX = 0, double originY = 0, double originZ = 0)
         {
+            ArgumentNullException.ThrowIfNull(sourcePoints);
+            ArgumentNullException.ThrowIfNull(attributes);
+            if (loadedCount < 0 || loadedCount > sourcePoints.Length ||
+                attributes.Class.Length < loadedCount || attributes.Intensity.Length < loadedCount ||
+                attributes.ReturnNumber.Length < loadedCount || attributes.Z.Length < loadedCount)
+                throw new ArgumentOutOfRangeException(nameof(loadedCount), "Point and attribute arrays must cover the loaded point count.");
+            if (!float.IsFinite(radius) || radius < 0) throw new ArgumentOutOfRangeException(nameof(radius));
+            if (!double.IsFinite(originX) || !double.IsFinite(originY) || !double.IsFinite(originZ))
+                throw new ArgumentException("The world origin must be finite.");
             _sourcePoints = sourcePoints;
             LoadedCount = loadedCount;
             Radius = radius;
@@ -111,13 +120,13 @@ namespace CloudScope.Loading
                 {
                     ViewPoints = new PointData[LoadedCount];
                     Array.Copy(_sourcePoints, ViewPoints, LoadedCount);
-                    ApplyColors(ViewPoints, null);
+                    ApplyColors(ViewPoints);
                 }
                 else
                 {
                     ViewPoints = _sourcePoints;
                 }
-                VisibleCount = ViewPoints.Length;
+                VisibleCount = LoadedCount;
                 ViewToSource = null;
                 RenderOrder = BuildProgressiveRenderOrder(VisibleCount, RenderOrderSeed);
                 return;
@@ -203,7 +212,7 @@ namespace CloudScope.Loading
             return left;
         }
 
-        private void ApplyColors(PointData[] points, PointFilter? filter)
+        private void ApplyColors(PointData[] points)
         {
             for (int sourceIndex = 0, viewIndex = 0; sourceIndex < LoadedCount && viewIndex < points.Length; sourceIndex++)
             {
@@ -248,7 +257,7 @@ namespace CloudScope.Loading
                 Array.Copy(_sourcePoints, ViewPoints, LoadedCount);
             }
 
-            ApplyColors(ViewPoints, _filter);
+            ApplyColors(ViewPoints);
         }
 
         private static void CopyRgb(ref PointData point, PointData source)

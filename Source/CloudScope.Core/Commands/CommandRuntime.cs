@@ -176,7 +176,7 @@ public sealed class CommandRuntime : ICommandExecutor
 
         string name = line.Dequeue();
         if (!_commands.TryGetValue(name, out Descriptor? descriptor))
-            return CommandResult.End($"Unknown command \"{name}\". Press F1 or type HELP.");
+            return new(CommandStatus.Failed, $"Unknown command \"{name}\". Press F1 or type HELP.");
 
         return Start(descriptor, line);
     }
@@ -187,6 +187,9 @@ public sealed class CommandRuntime : ICommandExecutor
     /// </summary>
     public CommandResult SupplyPoint(Vector3 world, int screenX, int screenY)
     {
+        if (AwaitsPoint && !PromptPointStep.IsFinite(world))
+            return Prompt("The picked point must have finite coordinates.");
+
         switch (_step)
         {
             case PromptPointStep point:
@@ -227,7 +230,7 @@ public sealed class CommandRuntime : ICommandExecutor
     private CommandResult Start(Descriptor descriptor, Queue<string> arguments)
     {
         if (_availability?.Invoke(descriptor.Info) is { Length: > 0 } unavailable)
-            return CommandResult.End(unavailable);
+            return new(CommandStatus.Failed, unavailable);
 
         _active = descriptor;
         _step = null;
@@ -252,7 +255,10 @@ public sealed class CommandRuntime : ICommandExecutor
     private CommandResult Deliver(string input)
     {
         if (!Satisfy(_step!, input))
+        {
+            if (_draining) return Fail(_active!, new InvalidDataException(_step!.Error));
             return Prompt();
+        }
 
         return Advance();
     }
@@ -302,6 +308,8 @@ public sealed class CommandRuntime : ICommandExecutor
         if (Satisfy(step, text))
             return true;
 
+        if (_draining) throw new InvalidDataException(step.Error);
+
         // The typed line was wrong from here on; drop the rest rather than feeding it to
         // prompts it was never meant for.
         _pending.Clear();
@@ -340,8 +348,9 @@ public sealed class CommandRuntime : ICommandExecutor
         return CommandResult.Continue(_step.Options, message);
     }
 
-    private readonly Queue<string> _drainQueue = new();
+    private readonly LinkedList<string> _drainQueue = new();
     private bool _draining;
+    private const int MaximumDeferredLines = 100_000;
 
     private CommandResult Complete(Descriptor descriptor)
     {
@@ -363,11 +372,10 @@ public sealed class CommandRuntime : ICommandExecutor
             return CommandResult.Cancel(message.Length > 0 ? message : "*Cancel*");
         }
 
-        // Append to the shared drain queue rather than a local one: a SCRIPT run from inside
-        // another SCRIPT enqueues its lines here too, and the single drain loop below keeps
-        // going until the queue is empty instead of dropping the nested file.
-        foreach (string line in queued)
-            _drainQueue.Enqueue(line);
+        // A nested script finishes before its caller continues. Prepend in reverse order
+        // so both the nested file and the remaining caller retain their original order.
+        for (int i = queued.Count - 1; i >= 0; i--)
+            _drainQueue.AddFirst(queued[i]);
 
         if (!descriptor.Flags.HasFlag(CommandFlags.NoHistory))
             LastCompletedCommand = descriptor.Name;
@@ -384,11 +392,29 @@ public sealed class CommandRuntime : ICommandExecutor
         _draining = true;
         try
         {
-            CommandResult last = CommandResult.End(message);
+            var output = new System.Text.StringBuilder(message);
+            CommandResult last = CommandResult.End();
+            int processed = 0;
             while (_drainQueue.Count > 0)
             {
-                CommandResult result = Execute(_drainQueue.Dequeue());
-                message = Join(message, result.Message);
+                if (++processed > MaximumDeferredLines)
+                {
+                    _drainQueue.Clear();
+                    CancelActive();
+                    return new(CommandStatus.Failed, Join(output.ToString(),
+                        $"Script exceeded {MaximumDeferredLines:N0} lines; check for recursive SCRIPT calls."));
+                }
+                string line = _drainQueue.First!.Value;
+                _drainQueue.RemoveFirst();
+                // Blank script lines accept a pending default, but never repeat a completed
+                // command merely because a file has a trailing empty line.
+                if (string.IsNullOrWhiteSpace(line) && !HasActiveCommand) continue;
+                CommandResult result = Execute(line);
+                if (result.Message.Length > 0)
+                {
+                    if (output.Length > 0) output.AppendLine();
+                    output.Append(result.Message);
+                }
                 last = result;
 
                 // A line that failed or cancelled stops the rest, the way a script stops on
@@ -397,11 +423,11 @@ public sealed class CommandRuntime : ICommandExecutor
                 if (result.Status is CommandStatus.Failed or CommandStatus.Cancelled)
                 {
                     _drainQueue.Clear();
-                    return result with { Message = message };
+                    return result with { Message = output.ToString() };
                 }
             }
 
-            return last with { Message = message };
+            return last with { Message = output.ToString() };
         }
         finally
         {
@@ -422,7 +448,9 @@ public sealed class CommandRuntime : ICommandExecutor
     /// </summary>
     private CommandResult RunTransparent(Descriptor descriptor, Queue<string> arguments)
     {
-        var editor = new Editor();
+        if (_availability?.Invoke(descriptor.Info) is { Length: > 0 } unavailable)
+            return new(CommandStatus.Failed, unavailable);
+        var editor = new Editor { HasArguments = arguments.Count > 0 };
         var context = new CommandContext(_target, editor);
         CommandStarted?.Invoke(this, new CommandEventArgs(descriptor.Name));
 
@@ -434,8 +462,7 @@ public sealed class CommandRuntime : ICommandExecutor
                 PromptStep step = steps.Current;
                 step.Reset();
                 if (arguments.Count == 0)
-                    return new CommandResult(CommandStatus.Failed,
-                        $"{descriptor.Name} cannot ask questions while another command is active.");
+                    return TransparentFailure($"{descriptor.Name} cannot ask questions while another command is active.");
 
                 string text;
                 if (step.ConsumesRest)
@@ -449,7 +476,7 @@ public sealed class CommandRuntime : ICommandExecutor
                 }
 
                 if (!Satisfy(step, text))
-                    return new CommandResult(CommandStatus.Failed, step.Error);
+                    return TransparentFailure(step.Error);
             }
         }
         catch (Exception ex)
@@ -461,8 +488,19 @@ public sealed class CommandRuntime : ICommandExecutor
         if (!descriptor.Flags.HasFlag(CommandFlags.NoHistory))
             LastCompletedCommand = descriptor.Name;
 
+        if (editor.CancelRequested)
+        {
+            CommandCancelled?.Invoke(this, new CommandEventArgs(descriptor.Name));
+            return Prompt(editor.DrainMessages());
+        }
         CommandEnded?.Invoke(this, new CommandEventArgs(descriptor.Name));
-        return CommandResult.End(editor.DrainMessages());
+        return Prompt(editor.DrainMessages());
+
+        CommandResult TransparentFailure(string error)
+        {
+            CommandFailed?.Invoke(this, new CommandEventArgs(descriptor.Name));
+            return new(CommandStatus.Failed, error, CurrentPrompt) { Options = ActiveOptions };
+        }
     }
 
     private static IEnumerator<PromptStep> InvokeBody(Descriptor descriptor, CommandContext context)
@@ -550,7 +588,7 @@ public sealed class CommandRuntime : ICommandExecutor
 
     // ----- Text -----
 
-    /// <summary>Splits a command line into tokens, keeping quoted paths in one piece.</summary>
+    /// <summary>Splits a command line, retaining quotes so whole-line prompts preserve names.</summary>
     internal static Queue<string> Tokenize(string line)
     {
         var tokens = new Queue<string>();
@@ -565,11 +603,11 @@ public sealed class CommandRuntime : ICommandExecutor
                 int end = line.IndexOf('"', i + 1);
                 if (end < 0)
                 {
-                    tokens.Enqueue(line[(i + 1)..]);
+                    tokens.Enqueue(line[i..]);
                     break;
                 }
 
-                tokens.Enqueue(line[(i + 1)..end]);
+                tokens.Enqueue(line[i..(end + 1)]);
                 i = end + 1;
                 continue;
             }

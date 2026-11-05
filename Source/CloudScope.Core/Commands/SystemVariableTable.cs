@@ -107,7 +107,7 @@ public sealed class SystemVariableTable
                 ? null
                 : text =>
                 {
-                    if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
+                    if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value) || !double.IsFinite(value))
                         return $"{name} takes a number.";
                     if (value < min || value > max)
                         return $"{name} must be between {min.ToString("0.###", CultureInfo.InvariantCulture)} "

@@ -52,7 +52,7 @@ versions of the same product.
 | `Border` | `4A453F` | hairline dividers and outlines |
 | `BorderStrong` | `645D55` | focused / raised edges, scrollbar thumb |
 | `Text` | `E6E1D9` | primary text — warm off-white |
-| `TextDim` | `A9A197` | labels, captions, section headers |
+| `TextDim` | `BDB4A9` | labels, captions, section headers |
 | `TextFaint` | `7A736A` | disabled text, faint separators |
 | `Accent` | `D6CEC2` | emphasis, not a hue: prompt, icons, focus outline |
 | `AccentBright` | `F3EEE7` | emphasis under the pointer; active icons; prompt lines |
@@ -110,3 +110,12 @@ Pull the colour from an `ImGuiTheme` field (add one, sourced from a `UiPalette`
 token, if it is missing). Push it with `ImGui.PushStyleColor` and pop it in the
 same scope. Panels that own a band of chrome (`title`, `menu`, tool strip, status
 bar) use `ImGuiTheme.Graphite`; sunken content uses `SurfaceDeep`.
+
+## Readability checks
+
+Secondary text uses `BDB4A9`, providing at least 4.5:1 contrast against both the
+ribbon graphite and hover surfaces. Disabled text retains its quieter token.
+Enabled status toggles and property section labels use secondary text at 11px;
+the command input's focused border uses the neutral accent. The shared palette
+also updates ImGui. Run `CloudScope.UiChecks` for actual shell/ribbon captures at
+1480×920 and 1040×680; these captures omit the native GPU viewport.

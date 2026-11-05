@@ -34,7 +34,8 @@ namespace CloudScope
         private PointData[]? _sourcePoints;      // full source-order array — highlight + fitting
         private int[]? _viewToSource;            // visible index → source index
         private PointCloudAttributes? _attributes;
-        private string _lasFilePath    = "";
+        private string _sourceFilePath    = "";
+        private bool _supportsLasExport;
         private SectionClip _sectionClip;
 
         /// <summary>
@@ -75,7 +76,7 @@ namespace CloudScope
         public TreeSegmentationResult SegmentTree(Vector3 seed, int instanceId, TreeSegmentationOptions? options = null)
         {
             if (_streamed != null)
-                return new([], seed, 0, "Tree segmentation currently requires a resident LAS/LAZ cloud, not a streamed store.");
+                return new([], seed, 0, "Tree segmentation currently requires a resident LAS cloud, not a streamed store.");
             if (_sourcePoints == null)
                 return new([], seed, 0, "No point cloud is loaded.");
 
@@ -95,7 +96,7 @@ namespace CloudScope
         public GroundSegmentationResult SegmentGround(GroundSegmentationOptions? options = null)
         {
             if (_streamed != null)
-                return new([], 0, 0, 0, "Ground segmentation currently requires a resident LAS/LAZ cloud, not a streamed store.");
+                return new([], 0, 0, 0, "Ground segmentation currently requires a resident LAS cloud, not a streamed store.");
             if (_sourcePoints == null)
                 return new([], 0, 0, 0, "No point cloud is loaded.");
 
@@ -168,20 +169,24 @@ namespace CloudScope
             _attributes = attributes;
         }
 
-        public void SetLasFilePath(string path) => _lasFilePath = path;
+        public void SetSourceFilePath(string path, bool supportsLasExport)
+        {
+            _sourceFilePath = path;
+            _supportsLasExport = supportsLasExport;
+        }
 
         public void Reset()
         {
             foreach (ISelectionTool tool in _tools.Values)
                 tool.Cancel();
-            _labelManager.ClearAll();
+            _labelManager.Reset();
             _streamed?.Clear();
             _previewPoints = null;
             _points = null;
             _sourcePoints = null;
             _viewToSource = null;
             _attributes = null;
-            _lasFilePath = "";
+            _sourceFilePath = "";
             _currentInstanceId = null;
             _pendingAction = EditAction.None;
             Mode = InteractionMode.Navigate;
@@ -614,12 +619,6 @@ namespace CloudScope
                 return true;
             }
 
-            if (_labelManager.Undo())
-            {
-                _log($"Undo — labels: {_labelManager.Count}");
-                return true;
-            }
-
             _log("Nothing to undo");
             return false;
         }
@@ -686,7 +685,7 @@ namespace CloudScope
                 return true;
             }
 
-            return !string.IsNullOrEmpty(_lasFilePath) && SaveLabelsCore(destinationPath);
+            return (!string.IsNullOrEmpty(_sourceFilePath) || !string.IsNullOrWhiteSpace(destinationPath)) && SaveLabelsCore(destinationPath);
         }
 
         public string SaveLabelsToLas()
@@ -694,8 +693,10 @@ namespace CloudScope
             if (_streamed is { } streamed)
                 return SaveStreamedLabelsToLas(streamed);
 
-            if (string.IsNullOrEmpty(_lasFilePath))
+            if (string.IsNullOrEmpty(_sourceFilePath))
                 return "No source file is associated with the viewer.";
+
+            if (!_supportsLasExport) return "LAS classification export requires an uncompressed LAS source.";
 
             var map = new Dictionary<int, byte>();
             foreach (var (idx, annotation) in _labelManager.AllAnnotations)
@@ -705,8 +706,8 @@ namespace CloudScope
             if (map.Count == 0)
                 return "No labeled points have a class code. Define labels with LABELDEF or the registry window.";
 
-            string dest = LasClassificationWriter.DefaultDestinationPath(_lasFilePath);
-            int written = LasClassificationWriter.Write(_lasFilePath, dest, map);
+            string dest = LasClassificationWriter.DefaultDestinationPath(_sourceFilePath);
+            int written = LasClassificationWriter.Write(_sourceFilePath, dest, map);
             return $"Wrote class codes for {written:N0} points to {System.IO.Path.GetFileName(dest)}.";
         }
 
@@ -749,7 +750,8 @@ namespace CloudScope
         public bool LoadLabels(string? sourcePath = null)
         {
             if (_streamed is not { } streamed || streamed.LabelDirectory.Length == 0)
-                return !string.IsNullOrEmpty(_lasFilePath) && LabelFileIO.Load(_lasFilePath, _labelManager, sourcePath);
+                return (!string.IsNullOrEmpty(_sourceFilePath) || !string.IsNullOrWhiteSpace(sourcePath)) &&
+                    LabelFileIO.Load(_sourceFilePath, _labelManager, sourcePath, _sourcePoints?.Length ?? 0);
 
             var saved = PointTileLabelFile.Load(streamed.LabelDirectory);
             if (saved.Count == 0)
@@ -825,7 +827,7 @@ namespace CloudScope
 
         private bool SaveLabelsCore(string? destinationPath)
         {
-            LabelFileIO.Save(_lasFilePath, _labelManager, destinationPath);
+            LabelFileIO.Save(_sourceFilePath, _labelManager, destinationPath);
             return true;
         }
 

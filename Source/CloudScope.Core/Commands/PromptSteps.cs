@@ -125,7 +125,7 @@ public sealed class PromptDoubleStep(string message) : PromptStep(message, allow
         return this;
     }
 
-    public float Single => (float)Value;
+    public float Single => CommandNumber.ToSingle(Value);
 
     internal override bool ApplyDefaultValue()
     {
@@ -146,7 +146,7 @@ public sealed class PromptDoubleStep(string message) : PromptStep(message, allow
             return false;
         }
 
-        if (parsed < _min || parsed > _max)
+        if (!double.IsFinite(parsed) || parsed < _min || parsed > _max)
         {
             Error = $"Value must be between {_min.ToString("0.###", CultureInfo.InvariantCulture)} and "
                   + $"{_max.ToString("0.###", CultureInfo.InvariantCulture)}.";
@@ -173,7 +173,7 @@ public sealed class PromptDistanceOrPointStep(
     private double _max = double.MaxValue;
 
     public double Value { get; private set; }
-    public float Single => (float)Value;
+    public float Single => CommandNumber.ToSingle(Value);
 
     public PromptDistanceOrPointStep WithDefault(double value)
     {
@@ -276,9 +276,13 @@ public sealed class PromptPointStep(string message) : PromptStep(message, allowA
             && double.TryParse(input, NumberStyles.Float, CultureInfo.InvariantCulture, out double distance)
             && double.IsFinite(distance))
         {
-            Value = _directionalDistanceResolver(distance);
-            Status = PromptStatus.OK;
-            return true;
+            Vector3 resolved = _directionalDistanceResolver(distance);
+            if (IsFinite(resolved))
+            {
+                Value = resolved;
+                Status = PromptStatus.OK;
+                return true;
+            }
         }
 
         if (!TryParsePoint(input, BasePoint, PlaneZ, out Vector3 point))
@@ -331,17 +335,17 @@ public sealed class PromptPointStep(string message) : PromptStep(message, allowA
                 (float)(distance * Math.Cos(angle)),
                 (float)(distance * Math.Sin(angle)),
                 0f);
-            return true;
+            return IsFinite(point);
         }
 
-        string[] parts = text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        string[] parts = text.Split(',', StringSplitOptions.TrimEntries);
         if (parts.Length is not (2 or 3))
             return false;
 
         var values = new float[3];
         for (int i = 0; i < parts.Length; i++)
         {
-            if (!float.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out values[i]))
+            if (!float.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out values[i]) || !float.IsFinite(values[i]))
                 return false;
         }
 
@@ -354,8 +358,11 @@ public sealed class PromptPointStep(string message) : PromptStep(message, allowA
         {
             point = new Vector3(values[0], values[1], parts.Length == 3 ? values[2] : (float)planeZ);
         }
-        return true;
+        return IsFinite(point);
     }
+
+    internal static bool IsFinite(Vector3 point) =>
+        float.IsFinite(point.X) && float.IsFinite(point.Y) && float.IsFinite(point.Z);
 }
 
 /// <summary>A prompt for a viewport pixel position, typed as "x,y" or clicked.</summary>
@@ -366,7 +373,7 @@ public sealed class PromptScreenPointStep(string message) : PromptStep(message, 
 
     internal override bool Accept(string input)
     {
-        string[] parts = input.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        string[] parts = input.Split(',', StringSplitOptions.TrimEntries);
         if (parts.Length != 2 ||
             !int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out int x) ||
             !int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int y))

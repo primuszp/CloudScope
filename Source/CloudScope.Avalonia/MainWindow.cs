@@ -89,6 +89,7 @@ public sealed partial class MainWindow : Window
 
         Opened += (_, _) => _commandLine.FocusInput();
         Closing += (_, _) => SaveShellSettings();
+        Closed += (_, _) => _statusTimer.Stop();
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);

@@ -38,7 +38,15 @@ public static class TreeSegmentation
         if (points.Count == 0)
             return new([], requestedSeed, 0, "No resident point cloud is loaded.");
 
-        int seedIndex = Nearest(points, requestedSeed, options.MaximumSeedDistance);
+        if (!float.IsFinite(requestedSeed.X) || !float.IsFinite(requestedSeed.Y) || !float.IsFinite(requestedSeed.Z) ||
+            !Positive(options.VoxelSize) || !Positive(options.ConnectionRadius) || !Positive(options.MaximumCrownRadius) ||
+            !Positive(options.MaximumSeedDistance) || !Positive(options.CompetitorCellSize) ||
+            !Positive(options.MinimumTrunkSpan) || options.MinimumTrunkPoints < 1)
+            return new([], requestedSeed, 0, "Tree segmentation requires finite coordinates and positive parameters.");
+        if (points.Any(p => !float.IsFinite(p.X) || !float.IsFinite(p.Y) || !float.IsFinite(p.Z)))
+            return new([], requestedSeed, 0, "Tree segmentation requires finite point coordinates.");
+
+        int seedIndex = Nearest(points, requestedSeed, options.MaximumSeedDistance, excludedPointIndices);
         if (seedIndex < 0)
             return new([], requestedSeed, 0, $"No point lies within {options.MaximumSeedDistance:0.##} m of the seed.");
 
@@ -47,7 +55,7 @@ public static class TreeSegmentation
         var candidates = new List<int>();
         for (int i = 0; i < points.Count; i++)
         {
-            if (excludedPointIndices?.Contains(i) == true && i != seedIndex) continue;
+            if (excludedPointIndices?.Contains(i) == true) continue;
             float dx = points[i].X - seed.X;
             float dy = points[i].Y - seed.Y;
             if (dx * dx + dy * dy <= maxR2) candidates.Add(i);
@@ -130,11 +138,14 @@ public static class TreeSegmentation
         }
     }
 
-    private static int Nearest(IReadOnlyList<PointData> points, Vector3 target, float maximum)
+    private static bool Positive(float value) => float.IsFinite(value) && value > 0;
+
+    private static int Nearest(IReadOnlyList<PointData> points, Vector3 target, float maximum, IReadOnlySet<int>? excluded)
     {
         float best = maximum * maximum; int found = -1;
         for (int i = 0; i < points.Count; i++)
         {
+            if (excluded?.Contains(i) == true) continue;
             Vector3 d = Position(points[i]) - target; float d2 = d.LengthSquared;
             if (d2 <= best) { best = d2; found = i; }
         }

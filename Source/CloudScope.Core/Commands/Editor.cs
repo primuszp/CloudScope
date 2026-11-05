@@ -49,8 +49,7 @@ public sealed class Editor
     /// </summary>
     public void RunAfter(string commandText)
     {
-        if (!string.IsNullOrWhiteSpace(commandText))
-            _deferred.Enqueue(commandText);
+        _deferred.Enqueue(commandText);
     }
 
     internal bool HasDeferred => _deferred.Count > 0;
@@ -102,11 +101,11 @@ public sealed class Editor
     public PromptScreenPointStep GetScreenPoint(string message) => new(message);
 
     public PromptFileStep GetFileNameForOpen(string message) =>
-        new PromptFileStep(message, PromptFileMode.OpenFile).TakingRest();
+        new(message, PromptFileMode.OpenFile);
 
     public PromptFileStep GetFileNameForSave(string message) =>
-        new PromptFileStep(message, PromptFileMode.SaveFile).TakingRest();
+        new(message, PromptFileMode.SaveFile);
 
     public PromptFileStep GetDirectory(string message) =>
-        new PromptFileStep(message, PromptFileMode.Directory).TakingRest();
+        new(message, PromptFileMode.Directory);
 }

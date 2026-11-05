@@ -162,6 +162,7 @@ namespace CloudScope.Platform.Metal
             RequestRedraw();
         }
         public void SetLasFilePath(string path) => _controller.SetLasFilePath(path);
+        public string OpenPointCloud(string path, long maxPoints = 0) => _controller.OpenPointCloud(path, maxPoints);
         public void Dispose() => _controller.Dispose();
 
         private void SyncDrawableSizeFromRenderPass(MTLRenderPassDescriptor desc)

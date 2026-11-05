@@ -27,7 +27,7 @@ CPU-side render data preparation is shared in `CloudScope.Rendering`. Backend im
 
 ## Point limits
 
-Resident and per-frame draw counts are unlimited by default; the zoom-dependent draw budget still reduces overview density. Optional common limits apply to both backends:
+The default frame ceiling is 6,000,000 points; zoom-dependent LOD can reduce it further. The resident count has no fixed default ceiling, while Metal can derive a limit from half the recommended GPU working set. Optional common limits apply to both backends:
 
 - `CLOUDSCOPE_MAX_RESIDENT_POINTS`
 - `CLOUDSCOPE_MAX_DRAW_POINTS`
@@ -39,7 +39,7 @@ Backend-specific variables override the common value when present:
 - `CLOUDSCOPE_METAL_MAX_RESIDENT_POINTS`
 - `CLOUDSCOPE_METAL_MAX_DRAW_POINTS`
 
-Set `CLOUDSCOPE_FRAME_LOG=1` to print periodic frame-stage timing diagnostics.
+Set `CLOUDSCOPE_FRAME_LOG=1` to print periodic frame-stage timing diagnostics. Crash breadcrumbs are separately opt-in with `CLOUDSCOPE_CRASH_LOG=1`, writing `cloudscope-phase-<pid>.log` in the temporary directory. Normal frames perform no breadcrumb file writes.
 
 ## Remaining work
 

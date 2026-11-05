@@ -5,24 +5,18 @@ public static class CommandText
     public static string FirstWord(string commandText)
     {
         string trimmed = commandText.Trim();
-        return trimmed.Length == 0
-            ? ""
-            : trimmed.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)[0];
+        int end = 0;
+        while (end < trimmed.Length && !char.IsWhiteSpace(trimmed[end])) end++;
+        return trimmed[..end];
     }
 
     public static bool TryMatch(string commandText, string commandName, out string argument)
     {
         argument = "";
         string trimmed = commandText.Trim();
-        if (trimmed.Length == 0)
-            return false;
-
-        string[] parts = trimmed.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (!parts[0].Equals(commandName, StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        if (parts.Length == 2)
-            argument = Unquote(parts[1]);
+        string first = FirstWord(trimmed);
+        if (!first.Equals(commandName, StringComparison.OrdinalIgnoreCase)) return false;
+        argument = Unquote(trimmed[first.Length..]);
         return true;
     }
 

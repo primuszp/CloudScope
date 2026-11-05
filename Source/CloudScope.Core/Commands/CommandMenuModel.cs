@@ -54,7 +54,7 @@ public static class CommandMenu
     public static IReadOnlyList<CommandMenuEntry> Build() =>
     [
         CommandMenuEntry.Submenu("File",
-            CommandMenuEntry.Action("Open LAS/LAZ...", "OPEN", "Mod+O"),
+            CommandMenuEntry.Action("Open LAS...", "OPEN", "Mod+O"),
             CommandMenuEntry.Submenu("Import",
                 CommandMenuEntry.Action("PLY point cloud...", "OPENPLY"),
                 CommandMenuEntry.Action("XYZ point cloud...", "OPENXYZ"),

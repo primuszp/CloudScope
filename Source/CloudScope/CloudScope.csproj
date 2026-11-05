@@ -39,6 +39,7 @@
   <ItemGroup Condition="'$(EnableImGui)' != 'true'">
     <Compile Remove="Platform\OpenGL\ImGuiController.cs" />
     <Compile Remove="Ui\CommandLineOverlay.cs" />
+    <Compile Remove="Ui\ImGuiTheme.cs" />
   </ItemGroup>
 
 </Project>

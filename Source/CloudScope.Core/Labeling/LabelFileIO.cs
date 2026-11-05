@@ -83,7 +83,7 @@ namespace CloudScope.Labeling
         /// <summary>
         /// Load labels from a JSON file and apply them to the manager.
         /// </summary>
-        public static bool Load(string lasFilePath, LabelManager manager, string? sourcePath = null)
+        public static bool Load(string lasFilePath, LabelManager manager, string? sourcePath = null, int pointCount = int.MaxValue)
         {
             string inPath = string.IsNullOrWhiteSpace(sourcePath)
                 ? Path.ChangeExtension(lasFilePath, ".labels.json")
@@ -129,7 +129,10 @@ namespace CloudScope.Labeling
                     }
                 }
 
-                manager.LoadFromAnnotations(annotations);
+                if (annotations.Any(pair => pair.Key < 0 || pair.Key >= pointCount ||
+                    string.IsNullOrWhiteSpace(pair.Value.LabelName) || pair.Value.InstanceId < 0))
+                    throw new InvalidDataException("Label indices, names or instance ids are invalid for this point cloud.");
+                manager.ReplaceAnnotations(annotations);
                 Console.WriteLine($"Labels loaded: {inPath}  ({annotations.Count} points)");
                 return true;
             }

@@ -288,7 +288,7 @@ public sealed partial class ViewerCommands
             yield return target;
             if (!target.IsOk) yield break;
 
-            ed.WriteMessage(viewer.ScaleActiveSelection((float)(target.Value / current.Value)));
+            ed.WriteMessage(viewer.ScaleActiveSelection(CommandNumber.ToSingle(target.Value / current.Value)));
             yield break;
         }
 

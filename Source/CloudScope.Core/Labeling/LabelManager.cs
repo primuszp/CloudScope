@@ -1,4 +1,5 @@
 using System;
+using CloudScope.Commands;
 using System.Collections.Generic;
 
 namespace CloudScope.Labeling
@@ -25,7 +26,7 @@ namespace CloudScope.Labeling
         /// Raised when a new reversible label change is made. The viewer records one undo
         /// action per raise, which is how a labelling command becomes a single undo step.
         /// </summary>
-        public event Action? ActionRecorded;
+        public event Action<IUndoableAction>? ActionRecorded;
 
         // ── Public API ───────────────────────────────────────────────────────
 
@@ -163,6 +164,7 @@ namespace CloudScope.Labeling
                 _annotations[idx] = new PointAnnotation(lbl, null);
 
             _undoStack.Clear();
+            _redoStack.Clear();
             LabelsChanged?.Invoke();
         }
 
@@ -177,6 +179,36 @@ namespace CloudScope.Labeling
                 _annotations[idx] = annotation;
 
             _undoStack.Clear();
+            _redoStack.Clear();
+            LabelsChanged?.Invoke();
+        }
+
+        /// <summary>Clears document state without creating an undo operation.</summary>
+        public void Reset()
+        {
+            _annotations.Clear();
+            _undoStack.Clear();
+            _redoStack.Clear();
+            LabelsChanged?.Invoke();
+        }
+
+        /// <summary>Imports a complete annotation set as one reversible operation.</summary>
+        public void ReplaceAnnotations(IReadOnlyDictionary<int, PointAnnotation> annotations)
+        {
+            var previous = new Dictionary<int, PointAnnotation?>();
+            foreach (int index in _annotations.Keys.Concat(annotations.Keys).Distinct())
+                previous[index] = _annotations.TryGetValue(index, out var value) ? value : null;
+            _annotations.Clear();
+            foreach (var (index, annotation) in annotations) _annotations[index] = annotation;
+            PushUndo(new LabelAction(previous, null));
+            LabelsChanged?.Invoke();
+        }
+
+        private void Restore(IReadOnlyDictionary<int, PointAnnotation?> snapshot)
+        {
+            foreach (var (index, annotation) in snapshot)
+                if (annotation is { } value) _annotations[index] = value;
+                else _annotations.Remove(index);
             LabelsChanged?.Invoke();
         }
 
@@ -188,7 +220,12 @@ namespace CloudScope.Labeling
             _redoStack.Clear();
             while (_undoStack.Count > MaxUndoDepth)
                 _undoStack.RemoveAt(0);
-            ActionRecorded?.Invoke();
+            // Command history owns immutable changes, not calls into this manager's bounded
+            // standalone history. Its undo depth can therefore exceed MaxUndoDepth safely.
+            var before = action.PreviousAnnotations;
+            var after = before.Keys.ToDictionary(index => index,
+                index => _annotations.TryGetValue(index, out var value) ? (PointAnnotation?)value : null);
+            ActionRecorded?.Invoke(new DelegateUndoAction("Label change", () => Restore(before), () => Restore(after)));
         }
 
         /// <summary>One undo frame: snapshot of previous annotations + the annotation that was applied.</summary>

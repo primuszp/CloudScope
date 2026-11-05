@@ -59,7 +59,7 @@ table and a hand-written command list is the thing that rots.
 | `GetInteger`, `GetDouble`, `GetDistance` | a number, optionally ranged (`GetDistance` is non-negative) |
 | `GetPoint`, `GetCorner` | a world point, typed as `x,y,z` **or picked in the viewport** |
 | `GetScreenPoint` | a viewport pixel position, typed as `x,y` or clicked |
-| `GetFileNameForOpen`, `GetFileNameForSave`, `GetDirectory` | a path, typed or chosen in the shell's file dialog |
+| `GetFileNameForOpen`, `GetFileNameForSave`, `GetDirectory` | one path argument (quote spaces in a complete command), or the whole typed/dialog response at a file prompt |
 
 Every step reports a `PromptStatus`: `OK`, `Keyword`, `Cancel` or `None` (Enter with no
 default). Steps are configured fluently — `.WithDefault(…)`, `.WithRange(…)`,
@@ -84,6 +84,7 @@ implementation.
   issue commands mid-conversation.
 - An apostrophe runs a transparent command from inside another one (`'STATUS`), the only
   unambiguous way in at a prompt that accepts arbitrary text.
+- Nested scripts run before their caller continues; blank lines accept pending defaults. Unknown commands and invalid numeric answers stop a script. A run is bounded to 100,000 deferred lines.
 - Commands publish `CommandStarted`, `CommandEnded`, `CommandCancelled` and `CommandFailed`.
 - Only one modal command is active at a time.
 

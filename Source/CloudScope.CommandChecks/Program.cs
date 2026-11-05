@@ -16,6 +16,14 @@ using CloudScope.Forestry;
 using CloudScope.Loading;
 using OpenTK.Mathematics;
 
+if (args.Length == 2 && args[0] == "--write-inventory")
+{
+    var inventoryRuntime = new CommandRuntime(new object(), new ViewerCommands());
+    File.WriteAllText(args[1], CommandInventory.Markdown(inventoryRuntime.Commands));
+    Console.WriteLine($"Wrote {inventoryRuntime.Commands.Count} commands to {args[1]}.");
+    return 0;
+}
+
 int failures = 0;
 void Check(string name, bool ok, string detail = "")
 {
@@ -131,6 +139,8 @@ void Check(string name, bool ok, string detail = "")
 
 // ---------- 1. Registration of the real command set ----------
 await ExchangeChecks.Run(Check);
+try { LasChecks.Run(Check); ReviewChecks.Run(Check); ViewerWorkflowChecks.Run(Check); }
+catch (Exception ex) { Check("Review regression checks", false, ex.ToString()); }
 try
 {
     var runtime = new CommandRuntime(new object(), new ViewerCommands());
@@ -257,6 +267,7 @@ catch (Exception ex)
     var report = CommandCoverage.Analyse(runtime.Commands, typeof(CloudScope.ViewerController));
     Console.WriteLine();
     Console.WriteLine(report.Describe());
+    Check("every viewer capability has a command", report.Unreached.Count == 0, string.Join(", ", report.Unreached));
     Console.WriteLine();
 }
 
@@ -396,7 +407,7 @@ var documentClosed = new CommandRuntime(
     command => CommandScopePolicy.ExplainUnavailable(command, viewerAvailable: true, documentAvailable: false));
 r = documentClosed.Execute("DOCONLY");
 Check("document scope blocks commands without a cloud",
-    r.Status == CommandStatus.Ended && r.Message.Contains("requires an open point cloud"), r.Message);
+    r.Status == CommandStatus.Failed && r.Message.Contains("requires an open point cloud"), r.Message);
 var documentOpen = new CommandRuntime(
     log,
     [new ProbeCommands()],

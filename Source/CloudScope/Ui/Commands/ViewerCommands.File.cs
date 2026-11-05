@@ -17,7 +17,7 @@ public sealed partial class ViewerCommands
 
     [CommandMethod("OPEN", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.File, Scope = CommandScope.Viewer,
-        Summary = "Loads a LAS or LAZ point cloud into memory.",
+        Summary = "Loads a uncompressed LAS point cloud into memory.",
         Syntax = "OPEN <path> [max points]")]
     public IEnumerable<PromptStep> Open(CommandContext context)
     {

@@ -18,14 +18,15 @@ internal sealed class PointCloudBuilder
         double minX = _points.Min(p => p.X), maxX = _points.Max(p => p.X);
         double minY = _points.Min(p => p.Y), maxY = _points.Max(p => p.Y);
         double minZ = _points.Min(p => p.Z), maxZ = _points.Max(p => p.Z);
-        double cx = minX + (maxX - minX) / 2, cy = minY + (maxY - minY) / 2, cz = minZ + (maxZ - minZ) / 2;
+        var frame = PointCloudFrame.FromBounds(minX, minY, minZ, maxX, maxY, maxZ);
+        double cx = frame.X, cy = frame.Y, cz = frame.Z;
         var points = new PointData[Count];
         var intensity = new ushort[Count];
         var z = new double[Count];
         for (int i = 0; i < Count; i++)
         {
             var p = _points[i];
-            points[i] = new PointData { X = (float)(p.X - cx), Y = (float)(p.Y - cy), Z = (float)(p.Z - cz), R = p.R, G = p.G, B = p.B };
+            points[i] = new PointData { X = PointCloudFrame.Local(p.X, cx), Y = PointCloudFrame.Local(p.Y, cy), Z = PointCloudFrame.Local(p.Z, cz), R = p.R, G = p.G, B = p.B };
             intensity[i] = p.I; z[i] = p.Z;
             if (!HasColor)
             {
@@ -33,8 +34,7 @@ internal sealed class PointCloudBuilder
                 points[i].R = t; points[i].G = 1 - MathF.Abs(2 * t - 1); points[i].B = 1 - t;
             }
         }
-        double dx = (maxX - minX) / 2, dy = (maxY - minY) / 2, dz = (maxZ - minZ) / 2;
-        return new LoadedPointCloud(points, Count, (float)Math.Sqrt(dx * dx + dy * dy + dz * dz), HasColor, 1, cx, cy, cz,
+        return new LoadedPointCloud(points, Count, frame.Radius, HasColor, 1, cx, cy, cz,
             new PointCloudAttributes(new byte[Count], intensity, new byte[Count], z, minZ, maxZ));
     }
 }

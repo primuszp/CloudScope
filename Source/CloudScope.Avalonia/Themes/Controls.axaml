@@ -287,8 +287,8 @@
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
   <Style Selector="TextBlock.propertySection">
-    <Setter Property="Foreground" Value="{DynamicResource CsTextFaint}" />
-    <Setter Property="FontSize" Value="10" />
+    <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
+    <Setter Property="FontSize" Value="11" />
     <Setter Property="FontWeight" Value="Medium" />
     <Setter Property="LetterSpacing" Value="1.2" />
     <Setter Property="Margin" Value="0,10,0,2" />
@@ -377,8 +377,8 @@
   <Style Selector="Button.statusToggle">
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="BorderThickness" Value="0" />
-    <Setter Property="Foreground" Value="{DynamicResource CsTextFaint}" />
-    <Setter Property="FontSize" Value="10" />
+    <Setter Property="Foreground" Value="{DynamicResource CsTextDim}" />
+    <Setter Property="FontSize" Value="11" />
     <Setter Property="LetterSpacing" Value="0.8" />
     <Setter Property="Padding" Value="8,0" />
     <Setter Property="Height" Value="20" />
@@ -620,7 +620,7 @@
     </Setter>
   </Style>
   <Style Selector="Border.commandInputRow.focused">
-    <Setter Property="BorderBrush" Value="{DynamicResource CsBorderStrong}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource CsAccent}" />
   </Style>
 
   <!-- The chevron that marks where typing goes, quiet until the row has focus. -->

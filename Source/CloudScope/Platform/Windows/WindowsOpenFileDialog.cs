@@ -12,7 +12,7 @@ internal static class WindowsOpenFileDialog
             return null;
 
         IntPtr fileBuffer = Marshal.AllocHGlobal(4096 * sizeof(char));
-        IntPtr filter = Marshal.StringToHGlobalUni("LAS/LAZ point clouds\0*.las;*.laz\0All files\0*.*\0\0");
+        IntPtr filter = Marshal.StringToHGlobalUni("LAS point clouds\0*.las\0All files\0*.*\0\0");
         IntPtr title = Marshal.StringToHGlobalUni("Open LAS point cloud");
         IntPtr defExt = Marshal.StringToHGlobalUni("las");
 

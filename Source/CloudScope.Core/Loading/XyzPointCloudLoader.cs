@@ -93,7 +93,8 @@ public static class XyzPointCloudLoader
         bool hasColor = columns >= 6;
         float colorScale = maxColor <= 1 ? 1f : maxColor <= 255 ? 1f / 255 : 1f / 65535;
         double intensityScale = maxIntensity <= 1 ? 65535 : maxIntensity <= 255 ? 257 : 1;
-        double cx = minX + (maxX - minX) / 2, cy = minY + (maxY - minY) / 2, cz = minZ + (maxZ - minZ) / 2;
+        var frame = PointCloudFrame.FromBounds(minX, minY, minZ, maxX, maxY, maxZ);
+        double cx = frame.X, cy = frame.Y, cz = frame.Z;
         var points = new PointData[rows.Count];
         var classes = new byte[rows.Count];
         var intensities = new ushort[rows.Count];
@@ -102,9 +103,9 @@ public static class XyzPointCloudLoader
         for (int i = 0; i < rows.Count; i++)
         {
             Row row = rows[i];
-            points[i].X = (float)(row.X - cx);
-            points[i].Y = (float)(row.Y - cy);
-            points[i].Z = (float)(row.Z - cz);
+            points[i].X = PointCloudFrame.Local(row.X, cx);
+            points[i].Y = PointCloudFrame.Local(row.Y, cy);
+            points[i].Z = PointCloudFrame.Local(row.Z, cz);
             heights[i] = row.Z;
             intensities[i] = (ushort)Math.Clamp(Math.Round(signedIntensity ? (row.Intensity + 2048) * 65535 / 4095 : row.Intensity * intensityScale), 0, ushort.MaxValue);
             if (hasColor)
@@ -121,9 +122,7 @@ public static class XyzPointCloudLoader
                 points[i].B = 1f - t;
             }
         }
-        float dx = (float)((maxX - minX) / 2), dy = (float)((maxY - minY) / 2), dz = (float)((maxZ - minZ) / 2);
-        float radius = MathF.Sqrt(dx * dx + dy * dy + dz * dz);
-        return new LoadedPointCloud(points, rows.Count, radius, hasColor, colorScale, cx, cy, cz,
+        return new LoadedPointCloud(points, rows.Count, frame.Radius, hasColor, colorScale, cx, cy, cz,
             new PointCloudAttributes(classes, intensities, returns, heights, minZ, maxZ));
     }
 }

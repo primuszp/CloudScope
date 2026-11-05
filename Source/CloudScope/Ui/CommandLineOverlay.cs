@@ -194,7 +194,7 @@ namespace CloudScope.Ui
 
             if (ImGui.Begin("##CloudScopeToolStrip", FixedPanelFlags))
             {
-                ToolButton("Open", "OPEN", false, "Open a LAS/LAZ point cloud");
+                ToolButton("Open", "OPEN", false, "Open a LAS point cloud");
                 ToolSeparator();
                 ToolButton("Navigate", "NAVIGATE", status.Mode == InteractionMode.Navigate, "Orbit / pan / zoom");
                 ToolButton("Label", "LABELMODE", status.Mode == InteractionMode.Label, "Place and edit selections");

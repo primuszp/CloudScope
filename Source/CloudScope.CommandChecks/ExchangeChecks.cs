@@ -109,7 +109,12 @@ internal static class ExchangeChecks
             int port;
             var socket = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0); socket.Start();
             port = ((IPEndPoint)socket.LocalEndpoint).Port; socket.Stop();
-            using var api = new LocalCommandServer(port, (command, token) => Task.FromResult<object>(new { command, ready = true }));
+            LocalCommandServer? server = null;
+            using var api = server = new LocalCommandServer(port, (command, token) =>
+            {
+                if (command == "STOP") server!.StopAfterCurrentResponse();
+                return Task.FromResult<object>(new { command, ready = true });
+            });
             using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}"), Timeout = TimeSpan.FromSeconds(5) };
             var unauthorized = await client.GetAsync("/health");
             check("Local API rejects missing token", unauthorized.StatusCode == HttpStatusCode.Unauthorized, "");
@@ -117,6 +122,14 @@ internal static class ExchangeChecks
             check("Local API authenticated health", (await client.GetAsync("/health")).IsSuccessStatusCode, "");
             var reply = await client.PostAsync("/exec", new StringContent("{\"command\":\"THIN 25\"}", Encoding.UTF8, "application/json"));
             check("Local API forwards commands without separate handlers", reply.IsSuccessStatusCode && (await reply.Content.ReadAsStringAsync()).Contains("THIN 25"), "");
+            foreach (string malformed in new[] { "{}", "{\"command\":123}", "{\"command\":null}", "[1]", "broken" })
+            {
+                using var invalid = await client.PostAsync("/exec", new StringContent(malformed, Encoding.UTF8, "application/json"));
+                check($"Local API rejects malformed command payload {malformed}", invalid.StatusCode == HttpStatusCode.BadRequest, "");
+            }
+            check("Local API remains healthy after malformed requests", (await client.GetAsync("/health")).IsSuccessStatusCode, "");
+            using var stopped = await client.PostAsync("/exec", new StringContent("{\"command\":\"STOP\"}", Encoding.UTF8, "application/json"));
+            check("Local API stop command receives a complete response", stopped.IsSuccessStatusCode && (await stopped.Content.ReadAsStringAsync()).Contains("STOP"), "");
         }
         catch (Exception ex) { check("Exchange integration checks", false, ex.ToString()); }
         finally { Directory.Delete(dir, true); }

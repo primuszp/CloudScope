@@ -6,6 +6,7 @@ namespace CloudScope
     {
         void LoadPointCloud(PointData[] points, float cloudRadius = 50f);
         void SetLasFilePath(string path);
+        string OpenPointCloud(string path, long maxPoints = 0);
         void Run();
     }
 }

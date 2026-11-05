@@ -23,9 +23,8 @@ namespace CloudScope.Loading
             var returnNumber = new byte[total];
             var z = new double[total];
 
-            double cx = (hdr.MinX + hdr.MaxX) * 0.5;
-            double cy = (hdr.MinY + hdr.MaxY) * 0.5;
-            double cz = (hdr.MinZ + hdr.MaxZ) * 0.5;
+            var frame = PointCloudFrame.FromBounds(hdr.MinX, hdr.MinY, hdr.MinZ, hdr.MaxX, hdr.MaxY, hdr.MaxZ);
+            double cx = frame.X, cy = frame.Y, cz = frame.Z;
             double spanZ = hdr.MaxZ - hdr.MinZ;
 
             float colorScale = 1.0f / 65535.0f;
@@ -58,13 +57,8 @@ namespace CloudScope.Loading
                 ReportProgress(loaded, total, progress, ref lastPct);
             }
 
-            float rangeX = (float)(hdr.MaxX - hdr.MinX) * 0.5f;
-            float rangeY = (float)(hdr.MaxY - hdr.MinY) * 0.5f;
-            float rangeZ = (float)(hdr.MaxZ - hdr.MinZ) * 0.5f;
-            float radius = MathF.Sqrt(rangeX * rangeX + rangeY * rangeY + rangeZ * rangeZ);
-
             var attributes = new PointCloudAttributes(classes, intensity, returnNumber, z, hdr.MinZ, hdr.MaxZ);
-            return new LoadedPointCloud(points, loaded, radius, hasColor, colorScale, cx, cy, cz, attributes);
+            return new LoadedPointCloud(points, loaded, frame.Radius, hasColor, colorScale, cx, cy, cz, attributes);
         }
 
         private static float DetectColorScale(LasPoint[] sample, int count)
@@ -94,9 +88,9 @@ namespace CloudScope.Loading
             float colorScale,
             double minZ)
         {
-            point.X = (float)(source.X - centerX);
-            point.Y = (float)(source.Y - centerY);
-            point.Z = (float)(source.Z - centerZ);
+            point.X = PointCloudFrame.Local(source.X, centerX);
+            point.Y = PointCloudFrame.Local(source.Y, centerY);
+            point.Z = PointCloudFrame.Local(source.Z, centerZ);
 
             if (hasColor)
             {

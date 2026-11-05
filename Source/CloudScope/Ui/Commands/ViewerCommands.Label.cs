@@ -265,14 +265,22 @@ public sealed partial class ViewerCommands
         var viewer = context.GetTarget<ViewerController>();
         Editor ed = context.Editor;
 
-        PromptStep target = ed
-            .GetKeywords("Save labels as [Json/Las] <Json>:", new Keyword("JSON", "Json"), LasKeyword)
+        PromptFileStep target = ed
+            .GetFileNameForSave("Save labels as [Json/Las] or enter JSON path <Json>:")
+            .Filtering("json")
+            .WithKeywords(new Keyword("JSON", "Json"), LasKeyword)
             .WithDefaultKeyword("JSON");
         yield return target;
 
         if (target.Is("LAS"))
         {
             ed.WriteMessage(viewer.SaveLabelsToLas());
+            yield break;
+        }
+
+        if (target.IsOk)
+        {
+            ed.WriteMessage(viewer.SaveLabels(target.Value) ? "Labels saved." : "No source file is associated with the viewer.");
             yield break;
         }
 

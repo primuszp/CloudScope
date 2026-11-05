@@ -107,7 +107,8 @@ public static class PlyPointCloudLoader
         }
 
         if (count == 0) throw new InvalidDataException("PLY contains no vertices.");
-        double cx = minX + (maxX - minX) / 2, cy = minY + (maxY - minY) / 2, cz = minZ + (maxZ - minZ) / 2;
+        var frame = PointCloudFrame.FromBounds(minX, minY, minZ, maxX, maxY, maxZ);
+        double cx = frame.X, cy = frame.Y, cz = frame.Z;
         double colorMax = 0;
         if (hasColor)
             foreach (var c in colors) colorMax = Math.Max(colorMax, Math.Max(c.R, Math.Max(c.G, c.B)));
@@ -116,9 +117,9 @@ public static class PlyPointCloudLoader
         for (int i = 0; i < count; i++)
         {
             var xyz = coordinates[i];
-            points[i].X = (float)(xyz.X - cx);
-            points[i].Y = (float)(xyz.Y - cy);
-            points[i].Z = (float)(xyz.Z - cz);
+            points[i].X = PointCloudFrame.Local(xyz.X, cx);
+            points[i].Y = PointCloudFrame.Local(xyz.Y, cy);
+            points[i].Z = PointCloudFrame.Local(xyz.Z, cz);
             if (hasColor)
             {
                 var rgb = colors[i];
@@ -134,9 +135,7 @@ public static class PlyPointCloudLoader
                 points[i].B = 1f - t;
             }
         }
-        float dx = (float)((maxX - minX) / 2), dy = (float)((maxY - minY) / 2), dz = (float)((maxZ - minZ) / 2);
-        float radius = MathF.Sqrt(dx * dx + dy * dy + dz * dz);
-        return new LoadedPointCloud(points, count, radius, hasColor, colorScale, cx, cy, cz,
+        return new LoadedPointCloud(points, count, frame.Radius, hasColor, colorScale, cx, cy, cz,
             new PointCloudAttributes(classes, intensities, returns, heights, minZ, maxZ));
 
         bool Has(string name) => properties.Any(p => p.Name == name);

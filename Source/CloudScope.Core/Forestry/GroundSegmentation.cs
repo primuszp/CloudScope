@@ -52,16 +52,24 @@ public static class GroundSegmentation
             return Failed(error);
 
         float resolution = options.ClothResolution;
-        float minX = points.Min(point => point.X);
-        float maxX = points.Max(point => point.X);
-        float minY = points.Min(point => point.Y);
-        float maxY = points.Max(point => point.Y);
-        float minZ = points.Min(point => point.Z);
+        float minX = float.PositiveInfinity, minY = float.PositiveInfinity, minZ = float.PositiveInfinity;
+        float maxX = float.NegativeInfinity, maxY = float.NegativeInfinity;
+        foreach (PointData point in points)
+        {
+            if (!float.IsFinite(point.X) || !float.IsFinite(point.Y) || !float.IsFinite(point.Z))
+                return Failed("CSF requires finite point coordinates.");
+            minX = MathF.Min(minX, point.X); maxX = MathF.Max(maxX, point.X);
+            minY = MathF.Min(minY, point.Y); maxY = MathF.Max(maxY, point.Y);
+            minZ = MathF.Min(minZ, point.Z);
+        }
 
-        int width = (int)MathF.Floor((maxX - minX) / resolution) + 2 * ClothBuffer;
-        int height = (int)MathF.Floor((maxY - minY) / resolution) + 2 * ClothBuffer;
-        if (width < 2 || height < 2 || (long)width * height > MaximumClothNodes)
-            return Failed($"The CSF cloth would have {width:N0} × {height:N0} nodes. Increase ClothResolution to keep it below {MaximumClothNodes:N0} nodes.");
+        // Validate in double before converting: overflowing an integer grid dimension can
+        // otherwise wrap back into a small, apparently valid allocation.
+        double columns = Math.Floor(((double)maxX - minX) / resolution) + 2 * ClothBuffer;
+        double rows = Math.Floor(((double)maxY - minY) / resolution) + 2 * ClothBuffer;
+        if (columns < 2 || rows < 2 || columns * rows > MaximumClothNodes)
+            return Failed($"The CSF cloth would have {columns:N0} × {rows:N0} nodes. Increase ClothResolution to keep it below {MaximumClothNodes:N0} nodes.");
+        int width = (int)columns, height = (int)rows;
 
         int nodeCount = checked(width * height);
         float originX = minX - ClothBuffer * resolution;
@@ -130,13 +138,13 @@ public static class GroundSegmentation
 
     private static bool TryValidate(GroundSegmentationOptions options, out string error)
     {
-        if (options.ClothResolution is < 0.05f or > 1000f)
+        if (!float.IsFinite(options.ClothResolution) || options.ClothResolution is < 0.05f or > 1000f)
             error = "ClothResolution must be between 0.05 and 1000.";
         else if (options.Rigidness is < 1 or > 15)
             error = "Rigidness must be between 1 and 15.";
-        else if (options.TimeStep is < 0.05 or > 2)
+        else if (!double.IsFinite(options.TimeStep) || options.TimeStep is < 0.05 or > 2)
             error = "TimeStep must be between 0.05 and 2.";
-        else if (options.ClassThreshold is < 0.01f or > 100f)
+        else if (!float.IsFinite(options.ClassThreshold) || options.ClassThreshold is < 0.01f or > 100f)
             error = "ClassThreshold must be between 0.01 and 100.";
         else if (options.Iterations is < 1 or > 5000)
             error = "Iterations must be between 1 and 5000.";
