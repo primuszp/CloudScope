@@ -36,7 +36,7 @@ internal static class ReviewChecks
         runtime.CancelActive();
         Verify("Quoted file argument keeps following limit", runtime.Execute("FILE \"a b.xyz\" 7").Message == "a b.xyz:7");
         Verify("Quoted line argument preserves name and instance", runtime.Execute("LINE \"Tree 1\" 5").Message == "\"Tree 1\" 5");
-        Verify("Nested deferred commands run before caller continues", runtime.Execute("OUTER").Message == "inner\nouter");
+        Verify("Nested deferred commands run before caller continues", runtime.Execute("OUTER").Message == string.Join(Environment.NewLine, "inner", "outer"));
         Verify("Blank script answer takes a default", runtime.Execute("DEFAULTBATCH").Message == "9");
         var failed = runtime.Execute("BADBATCH");
         Verify("Unknown script command stops following mutations", failed.Status == CommandStatus.Failed && !failed.Message.Contains("outer"));

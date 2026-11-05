@@ -756,13 +756,13 @@ float[] retinaGrip = new float[GripOverlayGeometry.FloatsPerGrip];
 GripOverlayGeometry.Fill(endpointMarker, gripCamera, normalGrip, displayScale: 1f);
 GripOverlayGeometry.Fill(endpointMarker, gripCamera, retinaGrip, displayScale: 2f);
 Check("Retina CAD grip keeps its logical size",
-    MathF.Abs(retinaGrip[0]) > MathF.Abs(normalGrip[0]) * 1.99f);
+    retinaGrip.Max(value => MathF.Abs(value)) > normalGrip.Max(value => MathF.Abs(value)) * 1.99f);
 float[] midpointMarker = new float[GripOverlayGeometry.FloatsPerGrip];
 GripOverlayGeometry.Fill(
     [new GripDescriptor(0, GripKind.Midpoint, Vector3.Zero, Vector3.Zero, GripConstraint.ViewPlane)],
     gripCamera, midpointMarker);
-Check("endpoint and midpoint use distinct CAD marker shapes",
-    !normalGrip.AsSpan().SequenceEqual(midpointMarker));
+Check("endpoint and midpoint use the shared CAD point grip style",
+    normalGrip.AsSpan().SequenceEqual(midpointMarker));
 string planarJson = PlanarPolylineFile.Serialize([tapered]);
 PlanarPolyline planarRoundTrip = PlanarPolylineFile.Deserialize(planarJson).Single();
 Check("planar polyline JSON preserves plane, arc and tapered widths",

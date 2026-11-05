@@ -56,9 +56,8 @@ public static class GripOverlayGeometry
             }
             else
             {
-                // Point grips use one common CAD square regardless of whether they mark a
-                // vertex, a segment midpoint, a polyline, or a selection-volume handle.
-                // Meaning comes from hover/snap feedback, not a competing marker shape.
+                // Fallback handles retain a square marker; point and resize grips above
+                // share the same diamond geometry across polylines and selection tools.
                 Vector3 a = grip.Position - right + up;
                 Vector3 b = grip.Position + right + up;
                 Vector3 c = grip.Position + right - up;

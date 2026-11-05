@@ -159,3 +159,12 @@ Helyi összesítés: **499 sikeres CommandChecks**, **23 sikeres UiChecks**, **2
 A CI-fájlok helyben elkészültek és a YAML-szintaxisuk ellenőrzött. Távoli GitHub-futtatás és Windows/Linux végrehajtás ebben a munkamenetben nem történt. A Metal-workflow-hoz a cloudscope-gpu címkével regisztrált, valódi Apple Silicon runner szükséges. A commitok helyiek; push nem történt.
 
 További termék-/terhelési munka marad a teljes projektmentés (3D rajzok, szelvények és nézetek közös dokumentuma), a nagy valódi streaming felmérések, a terepi CSF/TREESEG pontosság és a többplatformos natív egérpróba. Ezekre a mostani célzott tesztek nem adnak általános igazolást. Kényszerített folyamatleállítás után az indexelő előkészítési könyvtára megmaradhat; félkész store a célhelyen ekkor sem publikálódik.
+
+
+## Main integráció — 2026-11-05
+
+A két korábbi fejlesztési ág teljes commitelőzménye egy közös main ágba került. A különálló fogópont-stílusjavítás mindkét renderelőben megmaradt: a végpont és felezőpont közös geometriai jelet és közös hover/aktív színkezelést kap, miközben a snap-funkciójuk különbözik. A Retina-próba a teljes jel kiterjedését méri, ezért négyzet és rombusz esetén is ugyanazt a kétszeres fizikai méretet ellenőrzi.
+
+A távoli első CI-kör Linuxon és macOS-en sikeres volt, Windowson a beágyazott parancsok sorrendjét vizsgáló teszt LF-et várt a natív CRLF helyett. Az elvárt üzenet most a platform sortörésével készül; a parancsfuttató sorrendjén nem kellett változtatni. A main új ellenőrzése már ezt a javítást tartalmazza.
+
+A commitmetaadatokból az AI-szerzői/társszerzői és munkamenet-bejegyzések kikerültek, a két gépi szerzői rekord a repository tulajdonosának konfigurált Git-azonosítójára került. A többi szerzői adat megmaradt. Az asszisztenshez kötött helyi engedélyfájl nem része az alkalmazásnak, ezért az előzményekből is eltávolítottuk. Emiatt a korábbi commitazonosítók megváltoztak; a korábbi szakaszokban szereplő azonosítók az átírás előtti állapotot jelölik. A teljes eredeti történetről helyi biztonsági mentés készült.
