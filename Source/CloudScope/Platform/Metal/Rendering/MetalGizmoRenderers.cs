@@ -10,20 +10,14 @@ namespace CloudScope.Platform.Metal.Rendering
     [SupportedOSPlatform("macos")]
     internal abstract class MetalGizmoRendererBase : ISelectionGizmoRenderer
     {
-        private const int BufferedFrameCount = 3;
         protected const int SmoothRingSegments = 128;
 
         /// <summary>Widths mirror the OpenGL gizmo renderers so both backends look alike.</summary>
         private const float AxisLineWidth = 1.5f;
-        private const int DynamicBuffersPerFrame = 64;
         protected readonly MetalPrimitiveRenderer Renderer;
 
         protected MetalGizmoRendererBase(MetalRenderContext context) => Renderer = new MetalPrimitiveRenderer(context);
         private MTLBuffer _axisBuffer;
-        private readonly MTLBuffer[] _dynamicBuffers = new MTLBuffer[BufferedFrameCount * DynamicBuffersPerFrame];
-        private MetalFrameState? _dynamicFrame;
-        private int _dynamicFrameIndex = -1;
-        private int _dynamicDrawIndex;
 
         protected static readonly Vector4[] AxisColor =
         {
@@ -40,12 +34,6 @@ namespace CloudScope.Platform.Metal.Rendering
                 return false;
 
             Renderer.SetFrame(frame);
-            if (!ReferenceEquals(_dynamicFrame, frame))
-            {
-                _dynamicFrame = frame;
-                _dynamicFrameIndex = (_dynamicFrameIndex + 1) % BufferedFrameCount;
-                _dynamicDrawIndex = 0;
-            }
             return true;
         }
 
@@ -146,20 +134,11 @@ namespace CloudScope.Platform.Metal.Rendering
                 mvp, color, depthTest, lineWidthPixels, occludedOnly);
         }
 
-        private MTLBuffer UploadDynamic(float[] vertices)
-        {
-            int drawInFrame = Math.Min(_dynamicDrawIndex++, DynamicBuffersPerFrame - 1);
-            int bufferIndex = _dynamicFrameIndex * DynamicBuffersPerFrame + drawInFrame;
-            ref MTLBuffer dynamicBuffer = ref _dynamicBuffers[bufferIndex];
-            Renderer.UpdateBuffer(ref dynamicBuffer, vertices);
-            return dynamicBuffer;
-        }
+        private MTLBuffer UploadDynamic(float[] vertices) => Renderer.CreateFrameBuffer(vertices);
 
         public virtual void Dispose()
         {
             MetalResources.Release(ref _axisBuffer);
-            for (int i = 0; i < _dynamicBuffers.Length; i++)
-                MetalResources.Release(ref _dynamicBuffers[i]);
             Renderer.Dispose();
         }
     }

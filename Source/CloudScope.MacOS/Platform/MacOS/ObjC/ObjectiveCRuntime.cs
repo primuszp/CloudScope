@@ -11,6 +11,11 @@ namespace CloudScope.Platform.MacOS.ObjC;
 [SupportedOSPlatform("macos")]
 public static class ObjectiveCRuntime
 {
+    public static void Retain(IntPtr handle) { if (handle != IntPtr.Zero) objc_retain(handle); }
+
+    [DllImport("libobjc.dylib", EntryPoint = "objc_retain")]
+    private static extern IntPtr objc_retain(IntPtr handle);
+
     /// <summary>Releases the object, ignoring null handles.</summary>
     public static void Release(IntPtr handle)
     {

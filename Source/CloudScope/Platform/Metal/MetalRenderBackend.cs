@@ -104,6 +104,8 @@ namespace CloudScope.Platform.Metal
             return new MetalFrameSession(_context, frame);
         }
 
+        public void WaitForIdle() => _context.WaitForIdle();
+        public void DisposeFrameResources() => _context.Dispose();
         public void Resize(int width, int height) { }
 
         private static int ChooseSampleCount(MTLDevice device)
@@ -183,7 +185,7 @@ namespace CloudScope.Platform.Metal
                     cmdBuffer.Commit();
                 }
 
-                _context.EndFrame();
+                _context.EndFrame(_frame != null && cmdBuffer.NativePtr != IntPtr.Zero);
             }
         }
     }

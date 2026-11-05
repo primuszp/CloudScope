@@ -1924,6 +1924,7 @@ namespace CloudScope
             _frameTiming.BeginFrame();
             using var frame = _frameLifecycle.BeginFrame();
             var frameData = frame.FrameData;
+            _streamingRenderer.BeginFrame(frameData);
 
             int totalDrawCount = 0;
             foreach (ViewportState viewport in ActiveViewports())
@@ -2152,6 +2153,7 @@ namespace CloudScope
             _loadOperation.Dispose();
             _surfaceOperation.Dispose();
             _api?.Dispose();
+            _frameLifecycle.WaitForIdle();
             _surfaceRenderer.Dispose();
             CloseLayers();
             _streamingRenderer.Dispose();
@@ -2162,6 +2164,7 @@ namespace CloudScope
             _selectionGizmoRenderers.Cylinder.Dispose();
             _highlightRenderer.Dispose();
             _selection.Dispose();
+            _frameLifecycle.DisposeFrameResources();
         }
 
         private ViewportState ActiveViewport => _viewports[_activeViewportIndex];

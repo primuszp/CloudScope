@@ -16,6 +16,17 @@ using CloudScope.Forestry;
 using CloudScope.Loading;
 using OpenTK.Mathematics;
 
+if (args is ["--metal-gpu"])
+{
+#if ENABLE_SHARPMETAL
+    if (!OperatingSystem.IsMacOS()) { Console.Error.WriteLine("Metal GPU checks require macOS."); return 2; }
+    try { MetalGpuChecks.Run(); return 0; }
+    catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+#else
+    Console.Error.WriteLine("This build has no Metal backend."); return 2;
+#endif
+}
+
 if (args.Length == 2 && args[0] == "--write-inventory")
 {
     var inventoryRuntime = new CommandRuntime(new object(), new ViewerCommands());
@@ -139,7 +150,7 @@ void Check(string name, bool ok, string detail = "")
 
 // ---------- 1. Registration of the real command set ----------
 await ExchangeChecks.Run(Check);
-try { StreamingChecks.Run(Check); PersistenceChecks.Run(Check); LasChecks.Run(Check); ImportCancellationChecks.Run(Check); ReviewChecks.Run(Check); NativeInteractionChecks.Run(Check); ViewerWorkflowChecks.Run(Check); await BackgroundOperationChecks.Run(Check); }
+try { FrameResourceChecks.Run(Check); StreamingChecks.Run(Check); PersistenceChecks.Run(Check); LasChecks.Run(Check); ImportCancellationChecks.Run(Check); ReviewChecks.Run(Check); NativeInteractionChecks.Run(Check); ViewerWorkflowChecks.Run(Check); await BackgroundOperationChecks.Run(Check); }
 catch (Exception ex) { Check("Review regression checks", false, ex.ToString()); }
 try
 {

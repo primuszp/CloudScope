@@ -65,18 +65,6 @@ internal sealed class PointTileResidency : IDisposable
     /// </summary>
     private const int MaxPageUploadsPerFrame = 64;
 
-    /// <summary>
-    /// Frames a freed page waits before it may be handed out again.
-    /// </summary>
-    /// <remarks>
-    /// An evicted cell can still be read by a command buffer the GPU has not finished, and
-    /// writing its pages straight away would tear that frame. OpenGL's driver would rename the
-    /// buffer behind the write to avoid it; a Metal shared buffer has no such protection, so
-    /// the wait is done here and both backends get the same guarantee. Three frames is the
-    /// depth both backends pipeline to.
-    /// </remarks>
-    private const int PageQuarantineFrames = 3;
-
     private readonly IPointTileCellSource _source;
     private readonly HashSet<PointTileCellKey> _failed = new();
     private bool _disposed;
@@ -93,7 +81,7 @@ internal sealed class PointTileResidency : IDisposable
     private readonly Thread _loader;
     private readonly CancellationTokenSource _shutdown = new();
 
-    private int _frame;
+    private long _frame, _completedFrame;
 
     public PointTileResidency(IReadOnlyList<PointTileLayer> layers, IPointTilePageBuffer buffer, PointTilePageTable pages)
         : this(new PointTileCellSource(layers), buffer, pages) { }
@@ -124,17 +112,21 @@ internal sealed class PointTileResidency : IDisposable
     /// pages go to the GPU in a single call instead of one per run of neighbouring cells.
     /// </param>
     /// <returns>How many batches were filled.</returns>
+    public void PrepareFrame(long sequence, long completedSequence)
+    {
+        _frame = sequence;
+        _completedFrame = completedSequence;
+        ReleaseQuarantinedPages();
+        PumpCompletedLoads();
+    }
+
     public int BeginFrame(
         ReadOnlySpan<PointTileVisit> visible,
         Span<PointDrawRange> destination,
         Span<PointTileLayerBatch> batches,
         out long pointsDrawn)
     {
-        _frame++;
         pointsDrawn = 0;
-
-        ReleaseQuarantinedPages();
-        PumpCompletedLoads();
 
         int rangeCount = 0;
         int batchCount = 0;
@@ -186,7 +178,7 @@ internal sealed class PointTileResidency : IDisposable
     /// <summary>Returns pages the GPU can no longer be reading to the free list.</summary>
     private void ReleaseQuarantinedPages()
     {
-        while (_quarantine.TryPeek(out Quarantined oldest) && _frame - oldest.FreedFrame >= PageQuarantineFrames)
+        while (_quarantine.TryPeek(out Quarantined oldest) && oldest.FreedFrame <= _completedFrame)
         {
             _pages.Free(_quarantine.Dequeue().Pages);
         }
@@ -243,7 +235,7 @@ internal sealed class PointTileResidency : IDisposable
                                 : data.Attributes.AsSpan(offset, pointsOnPage));
                         remaining -= pointsOnPage;
                     }
-    
+
                     _resident[loaded.Key] = new Entry(pages, pageCount, data.Count, _frame);
                     uploaded += pageCount;
                 }
@@ -281,7 +273,7 @@ internal sealed class PointTileResidency : IDisposable
 
             PointTileCellKey oldest = default;
             bool found = false;
-            int oldestFrame = int.MaxValue;
+            long oldestFrame = long.MaxValue;
             foreach ((PointTileCellKey key, Entry entry) in _resident)
             {
                 if (entry.LastUsedFrame < oldestFrame && entry.LastUsedFrame != _frame)
@@ -304,7 +296,7 @@ internal sealed class PointTileResidency : IDisposable
     private void Evict(PointTileCellKey key)
     {
         if (_resident.Remove(key, out Entry entry))
-            _quarantine.Enqueue(new Quarantined(entry.Pages.AsSpan(0, entry.PageCount).ToArray(), _frame));
+            _quarantine.Enqueue(new Quarantined(entry.Pages.AsSpan(0, entry.PageCount).ToArray(), entry.LastUsedFrame));
     }
 
     private int QuarantinedPageCount
@@ -374,9 +366,9 @@ internal sealed class PointTileResidency : IDisposable
     }
 
     /// <summary>Pages freed at <paramref name="FreedFrame"/>, not yet safe to reuse.</summary>
-    private readonly record struct Quarantined(int[] Pages, int FreedFrame);
+    private readonly record struct Quarantined(int[] Pages, long FreedFrame);
 
-    private readonly record struct Entry(int[] Pages, int PageCount, int PointCount, int LastUsedFrame);
+    private readonly record struct Entry(int[] Pages, int PageCount, int PointCount, long LastUsedFrame);
 
     private readonly record struct Loaded(
         PointTileCellKey Key, PointTileCellData? Data, Exception? Error);

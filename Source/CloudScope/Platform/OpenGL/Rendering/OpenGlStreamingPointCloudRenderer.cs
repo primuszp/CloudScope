@@ -56,6 +56,12 @@ namespace CloudScope.Platform.OpenGL.Rendering
         public int PendingCellCount => _residency?.PendingCellCount ?? 0;
         public string? LoadError => _residency?.LoadError;
 
+        private long _sequence;
+        public void BeginFrame(IRenderFrameData frameData)
+        {
+            _residency?.PrepareFrame(++_sequence, _sequence - 1);
+        }
+
         public void Initialize() => _program.Initialize();
 
         public void Open(IReadOnlyList<PointTileLayer> layers)

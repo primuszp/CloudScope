@@ -64,22 +64,15 @@ namespace CloudScope.Platform.Metal.Rendering
             return buf;
         }
 
-        public unsafe void UpdateBuffer(ref MTLBuffer buffer, float[] vertices)
+        public MTLBuffer CreateFrameBuffer(float[] vertices) => _context.UploadFrameBuffer(vertices);
+
+        public void UpdateBuffer(ref MTLBuffer buffer, float[] vertices)
         {
-            EnsureResources();
             if (vertices.Length == 0) return;
-
-            ulong byteSize = (ulong)(vertices.Length * sizeof(float));
-            if (buffer.NativePtr == IntPtr.Zero || buffer.Length < byteSize)
-            {
-                if (buffer.NativePtr != IntPtr.Zero)
-                    MetalResources.Release(buffer.NativePtr);
-                buffer = _context.Device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
-            }
-
-            fixed (float* src = vertices)
-                Buffer.MemoryCopy(src, buffer.Contents.ToPointer(), byteSize, byteSize);
-            buffer.DidModifyRange(new NSRange { location = 0, length = byteSize });
+            MTLBuffer next = CreateFrameBuffer(vertices);
+            CloudScope.Platform.MacOS.ObjC.ObjectiveCRuntime.Retain(next.NativePtr);
+            MetalResources.Release(ref buffer);
+            buffer = next;
         }
 
         /// <param name="lineWidthPixels">

@@ -18,6 +18,8 @@ namespace CloudScope.Platform.Metal
             CommandBuffer = commandBuffer;
         }
 
+        public long Sequence { get; init; }
+        public long CompletedSequence { get; init; }
         public MTLRenderPassDescriptor RenderPassDescriptor { get; }
         public CAMetalDrawable Drawable { get; }
         public MTLCommandBuffer CommandBuffer { get; }

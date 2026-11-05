@@ -29,6 +29,7 @@ public interface IPointTileCloudRenderer : IDisposable
     string? LoadError { get; }
 
     void Initialize();
+    void BeginFrame(IRenderFrameData frameData);
 
     /// <summary>
     /// Attaches the layers to draw. The renderer does not take ownership of their stores.

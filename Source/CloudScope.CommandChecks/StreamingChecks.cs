@@ -24,6 +24,32 @@ internal static class StreamingChecks
             Pump(resident, [new(0, 1, 0)], () => resident.LoadError != null);
             check("Failed uploads release their page allocation", pages.FreePageCount == 4 && resident.ResidentCellCount == 0, "");
         }
+        var scarce = new PointTilePageTable(1, 1);
+        using (var resident = new PointTileResidency(new Source { FailReads = false }, buffer, scarce))
+        {
+            var timeout = System.Diagnostics.Stopwatch.StartNew();
+            while (resident.ResidentCellCount == 0)
+            {
+                resident.PrepareFrame(100, 0);
+                resident.BeginFrame([new(0, 1, 0)], new PointDrawRange[8], new PointTileLayerBatch[1], out _);
+                if (timeout.Elapsed.TotalSeconds > 5) throw new TimeoutException();
+                Thread.Yield();
+            }
+            resident.BeginFrame([new(0, 2, 0)], new PointDrawRange[8], new PointTileLayerBatch[1], out _);
+            timeout.Restart();
+            while (resident.ResidentCellCount > 0)
+            {
+                resident.PrepareFrame(101, 0);
+                resident.BeginFrame([new(0, 2, 0)], new PointDrawRange[8], new PointTileLayerBatch[1], out _);
+                if (timeout.Elapsed.TotalSeconds > 5) throw new TimeoutException();
+                Thread.Yield();
+            }
+            for (int view = 0; view < 9; view++)
+                resident.BeginFrame([new(0, 2, 0)], new PointDrawRange[8], new PointTileLayerBatch[1], out _);
+            check("Nine viewport draws cannot retire pages still owned by the GPU", scarce.FreePageCount == 0, "");
+            resident.PrepareFrame(102, 100);
+            check("GPU completion makes quarantined pages reusable", scarce.FreePageCount == 1 || resident.ResidentCellCount == 1, "");
+        }
         var blocked = new Source { FailReads = false, Block = true };
         var pending = new PointTileResidency(blocked, buffer, pages);
         try
@@ -37,8 +63,12 @@ internal static class StreamingChecks
         finally { pending.Dispose(); }
     }
 
+    private static long _sequence;
     private static void Draw(PointTileResidency r, PointTileVisit[] visits)
-        => r.BeginFrame(visits, new PointDrawRange[8], new PointTileLayerBatch[1], out _);
+    {
+        r.PrepareFrame(++_sequence, _sequence - 1);
+        r.BeginFrame(visits, new PointDrawRange[8], new PointTileLayerBatch[1], out _);
+    }
 
     private static void Pump(PointTileResidency r, PointTileVisit[] visits, Func<bool> done)
     {

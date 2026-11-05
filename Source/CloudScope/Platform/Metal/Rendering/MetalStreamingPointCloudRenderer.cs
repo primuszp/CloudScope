@@ -71,6 +71,11 @@ namespace CloudScope.Platform.Metal.Rendering
         public int PendingCellCount => _residency?.PendingCellCount ?? 0;
         public string? LoadError => _residency?.LoadError;
 
+        public void BeginFrame(IRenderFrameData frameData)
+        {
+            if (frameData is MetalFrameState frame) _residency?.PrepareFrame(frame.Sequence, frame.CompletedSequence);
+        }
+
         public void Initialize()
         {
             MTLDevice device = _context.Device;

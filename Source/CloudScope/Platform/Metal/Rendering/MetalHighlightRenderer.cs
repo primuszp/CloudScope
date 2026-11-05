@@ -120,12 +120,9 @@ namespace CloudScope.Platform.Metal.Rendering
             ulong byteSize = (ulong)(count * 24);
             var device = _context.Device;
 
-            if (existingBuffer.NativePtr == IntPtr.Zero || existingBuffer.Length < byteSize)
-            {
-                if (existingBuffer.NativePtr != IntPtr.Zero)
-                    MetalResources.Release(existingBuffer.NativePtr);
-                existingBuffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
-            }
+            // Published point data is immutable while any prior GPU frame can read it.
+            MetalResources.Release(ref existingBuffer);
+            existingBuffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
 
             fixed (PointData* src = data)
                 Buffer.MemoryCopy(src, existingBuffer.Contents.ToPointer(), byteSize, byteSize);

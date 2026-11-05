@@ -23,8 +23,12 @@ namespace CloudScope.Platform.Metal
             Device = device;
             CommandQueue = commandQueue;
             SampleCount = Math.Max(sampleCount, 1);
+            _buffers = new(size => Device.NewBuffer((ulong)size, MTLResourceOptions.ResourceStorageModeShared),
+                buffer => checked((int)buffer.Length), buffer => MetalResources.Release(buffer.NativePtr));
         }
 
+        private readonly CloudScope.Rendering.FrameResourcePool<MTLBuffer> _buffers;
+        private long _sequence;
         public MTLDevice Device { get; }
 
         public MTLCommandQueue CommandQueue { get; }
@@ -54,7 +58,9 @@ namespace CloudScope.Platform.Metal
             CAMetalDrawable drawable,
             MTLCommandBuffer commandBuffer)
         {
-            CurrentFrame = new MetalFrameState(renderPassDescriptor, drawable, commandBuffer);
+            _buffers.BeginFrame();
+            CurrentFrame = new MetalFrameState(renderPassDescriptor, drawable, commandBuffer)
+            { Sequence = ++_sequence, CompletedSequence = _buffers.CompletedSequence };
         }
 
         public void SetDepthTexture(MTLTexture texture) => DepthTexture = texture;
@@ -99,6 +105,35 @@ namespace CloudScope.Platform.Metal
                 CurrentFrame.RenderCommandEncoder = encoder;
         }
 
-        public void EndFrame() => CurrentFrame = null;
+        public unsafe MTLBuffer UploadFrameBuffer(float[] vertices)
+        {
+            int bytes = checked(vertices.Length * sizeof(float));
+            MTLBuffer buffer = _buffers.Rent(bytes);
+            fixed (float* source = vertices) Buffer.MemoryCopy(source, buffer.Contents.ToPointer(), (long)buffer.Length, bytes);
+            return buffer;
+        }
+
+        public void EndFrame(bool submitted)
+        {
+            if (submitted && CurrentFrame is { } frame)
+            {
+                var command = frame.CommandBuffer;
+                CloudScope.Platform.MacOS.ObjC.ObjectiveCRuntime.Retain(command.NativePtr);
+                _buffers.Submit(frame.Sequence,
+                    () => command.Status is MTLCommandBufferStatus.Completed or MTLCommandBufferStatus.Error,
+                    command.WaitUntilCompleted,
+                    () => MetalResources.Release(command.NativePtr));
+            }
+            else _buffers.CancelFrame();
+            CurrentFrame = null;
+        }
+
+        public void WaitForIdle() => _buffers.WaitForIdle();
+        public void Dispose()
+        {
+            _buffers.Dispose();
+            MetalResources.Release(_resolvedDepthTexture.NativePtr);
+            _resolvedDepthTexture = default;
+        }
     }
 }
