@@ -92,7 +92,7 @@ public sealed partial class MainWindow : Window
         Opened += (_, _) => _commandLine.FocusInput();
         Closing += (_, e) =>
         {
-            if (!_closing && _hostController.Status.HasUnsavedLabels)
+            if (!_closing)
             {
                 e.Cancel = true;
                 RunCommandFromUi("QUIT");
@@ -762,7 +762,9 @@ public sealed partial class MainWindow : Window
         _documentDetail.Text = status.HasCloud
             ? $"{status.PointCountText} pts{(status.Filter.Length > 0 ? "  ·  filtered" : "")}"
             : "";
-        Title = status.HasCloud ? $"{status.SourceName} — CloudScope" : "CloudScope";
+        string projectTitle = status.ProjectPath.Length > 0 ? Path.GetFileNameWithoutExtension(status.ProjectPath)
+            : status.HasCloud ? status.SourceName : status.HasUnsavedProject ? "Untitled project" : "";
+        Title = projectTitle.Length == 0 ? "CloudScope" : $"{projectTitle}{(status.HasUnsavedProject ? " *" : "")} — CloudScope";
 
         SetViewportControlText(_viewControl, status.ViewName);
         SetViewportControlText(_projectionControl, status.ProjectionText);

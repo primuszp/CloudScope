@@ -54,6 +54,11 @@ public static class CommandMenu
     public static IReadOnlyList<CommandMenuEntry> Build() =>
     [
         CommandMenuEntry.Submenu("File",
+            CommandMenuEntry.Action("Open project...", "OPENPROJECT", "Mod+Shift+O"),
+            CommandMenuEntry.Action("Save project", "SAVEPROJECT", "Mod+S"),
+            CommandMenuEntry.Action("Save project as...", "SAVEAS", "Mod+Shift+S"),
+            CommandMenuEntry.Action("Recover project", "RECOVER"),
+            CommandMenuEntry.Separator,
             CommandMenuEntry.Action("Open LAS...", "OPEN", "Mod+O"),
             CommandMenuEntry.Submenu("Import",
                 CommandMenuEntry.Action("PLY point cloud...", "OPENPLY"),
@@ -74,7 +79,7 @@ public static class CommandMenu
                 CommandMenuEntry.Action("CSV...", "EXPORT Csv", requiresCloud: true)),
             CommandMenuEntry.Action("Export surface OBJ...", "EXPORTOBJ", requiresCloud: true),
             CommandMenuEntry.Separator,
-            CommandMenuEntry.Action("Save labels (JSON)", "SAVELABELS Json Default", "Mod+S", requiresCloud: true),
+            CommandMenuEntry.Action("Save labels (JSON)", "SAVELABELS Json Default", requiresCloud: true),
             CommandMenuEntry.Action("Save labels to LAS", "SAVELABELS Las", requiresCloud: true),
             CommandMenuEntry.Action("Load labels", "LOADLABELS Default", requiresCloud: true),
             CommandMenuEntry.Separator,

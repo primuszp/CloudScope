@@ -402,37 +402,13 @@ public sealed partial class ViewerCommands
         var viewer = context.GetTarget<ViewerController>();
         Editor ed = context.Editor;
 
-        // Only ask when there is something to lose.
-        if (HasUnsavedLabels(viewer))
-        {
-            PromptStep save = ed
-                .GetKeywords("Save labels before quitting? [Yes/No/Cancel] <Yes>:",
-                    new Keyword("YES", "Yes"), new Keyword("NO", "No"), new Keyword("CANCEL", "Cancel"))
-                .WithDefaultKeyword("YES");
-            yield return save;
-
-            if (save.Is("CANCEL") || save.Status != PromptStatus.Keyword)
-            {
-                ed.Cancel();
-                yield break;
-            }
-
-            if (save.Is("YES"))
-            {
-                if (!viewer.SaveLabels())
-                {
-                    ed.WriteMessage("Labels could not be saved. CloudScope remains open.");
-                    yield break;
-                }
-                ed.WriteMessage("Labels saved.");
-            }
-        }
+        var approval = new ProjectChangeApproval();
+        foreach (var step in ProtectProject(context, approval)) yield return step;
+        if (!approval.Approved) yield break;
 
         viewer.RequestClose();
         ed.WriteMessage("Closing CloudScope.");
     }
-
-    private static bool HasUnsavedLabels(ViewerController viewer) => viewer.HasUnsavedLabels;
 
     [CommandMethod("COVERAGE", Flags = CommandFlags.NoUndoMarker | CommandFlags.NoHistory | CommandFlags.Transparent,
         Group = CommandGroup.Utility, Scope = CommandScope.Application,

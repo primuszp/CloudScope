@@ -19,6 +19,7 @@ namespace CloudScope.Labeling
         private readonly List<LabelAction> _redoStack = new();
         private const int MaxUndoDepth = 200;
         private long _revision, _savedRevision, _nextRevision;
+        public long Revision => _revision;
         public bool HasUnsavedChanges => _revision != _savedRevision;
         public void MarkSaved() => _savedRevision = _revision;
 

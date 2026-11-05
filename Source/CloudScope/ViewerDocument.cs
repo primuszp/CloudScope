@@ -13,15 +13,18 @@ internal sealed class ViewerDocument
     public List<PointTileLayer> Layers { get; } = [];
     public string SourceName { get; private set; } = "";
     public string SourcePath { get; private set; } = "";
+    public string SourceFormat { get; private set; } = "Embedded";
 
     public void ReplaceResident(PointCloudDataset? dataset)
     {
         Dataset = dataset;
         Surface = null;
         SourceName = SourcePath = "";
+        SourceFormat = "Embedded";
     }
-    public void SetSource(string path)
+    public void SetSource(string path, string format = "LAS")
     {
+        SourceFormat = format;
         SourceName = Path.GetFileName(path);
         SourcePath = path.Length == 0 ? "" : Path.GetFullPath(path);
     }

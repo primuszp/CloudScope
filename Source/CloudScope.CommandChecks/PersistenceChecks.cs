@@ -63,12 +63,14 @@ internal static class PersistenceChecks
             var commands = new ViewerCommandDispatcher(viewer);
             commands.Execute($"LOADLABELS Transfer \"{path}\"");
             commands.Execute("QUIT Yes");
-            check("Quit remains open when no save destination exists", !viewer.CloseRequested && viewer.HasUnsavedLabels, "");
+            check("Quit asks for a project destination before discarding work", !viewer.CloseRequested && viewer.HasUnsavedLabels && commands.HasActiveCommand, "");
+            commands.CancelActive();
             commands.Execute($"SAVELABELS \"{Path.Combine(directory, "missing", "labels.json")}\"");
             check("An IO error cannot mark labels saved", viewer.HasUnsavedLabels && !viewer.CloseRequested, "");
             commands.Execute($"SAVELABELS \"{Path.Combine(directory, "saved.json")}\"");
             check("Successful save establishes the viewer checkpoint", !viewer.HasUnsavedLabels, "");
-            check("Saved viewer closes without another save prompt", commands.Execute("QUIT").Status == CommandStatus.Ended && viewer.CloseRequested, "");
+            commands.Execute($"SAVEPROJECT \"{Path.Combine(directory, "saved.cloudscope")}\"");
+            check("Saved project closes without another save prompt", commands.Execute("QUIT").Status == CommandStatus.Ended && viewer.CloseRequested, "");
         }
         finally { Directory.Delete(directory, recursive: true); }
     }

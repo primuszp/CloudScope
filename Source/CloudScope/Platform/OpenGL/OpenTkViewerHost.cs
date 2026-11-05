@@ -125,7 +125,7 @@ namespace CloudScope.Platform.OpenGL
 
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
-            if (!_controller.CloseRequested && _controller.HasUnsavedLabels)
+            if (!_controller.CloseRequested)
             {
                 e.Cancel = true;
                 _commandDispatcher.Execute("QUIT");

@@ -68,7 +68,8 @@ public sealed partial class ViewerController
 
     internal bool CancelBackgroundOperations()
     {
-        bool running = _processing.IsRunning || _loadOperation.IsRunning || _surfaceOperation.IsRunning;
+        bool running = _projectOperation.IsRunning || _processing.IsRunning || _loadOperation.IsRunning || _surfaceOperation.IsRunning;
+        _projectOperation.Cancel();
         _processing.Cancel();
         _loadOperation.Cancel();
         _surfaceOperation.Cancel();

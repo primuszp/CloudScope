@@ -5,7 +5,7 @@ namespace CloudScope;
 /// run; cancellation makes a run obsolete immediately, even if its worker is still exiting.
 /// Graphics resources are touched only by a completion posted to the viewer thread.
 /// </summary>
-internal sealed class BackgroundOperation<T>(Action<Action> post) : IDisposable
+internal sealed class BackgroundOperation<T>(Action<Action> post, Action<T>? discard = null) : IDisposable
 {
     private readonly object _gate = new();
     private Run? _active;
@@ -55,12 +55,12 @@ internal sealed class BackgroundOperation<T>(Action<Action> post) : IDisposable
         }
 
         lock (_gate)
-            if (!ReferenceEquals(_active, run)) return;
+            if (!ReferenceEquals(_active, run)) { if (error == null) discard?.Invoke(result); return; }
         post(() =>
         {
             lock (_gate)
             {
-                if (!ReferenceEquals(_active, run)) return;
+                if (!ReferenceEquals(_active, run)) { if (error == null) discard?.Invoke(result); return; }
                 _active = null;
             }
             if (error != null) failed(error);

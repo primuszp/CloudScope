@@ -8,6 +8,10 @@ internal sealed class ViewNavigation
 {
     private readonly ConditionalWeakTable<OrbitCamera, List<OrbitCamera.CameraState>> _history = new();
     private readonly Dictionary<string, OrbitCamera.CameraState> _named = new(StringComparer.OrdinalIgnoreCase);
+    internal Dictionary<string, OrbitCamera.CameraState> Capture() => _named.OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase)
+        .ToDictionary(p => p.Key, p => p.Value, StringComparer.OrdinalIgnoreCase);
+    internal void Replace(IReadOnlyDictionary<string, OrbitCamera.CameraState> views)
+    { _named.Clear(); foreach (var pair in views) _named.Add(pair.Key, pair.Value); _history.Clear(); }
     public string[] NamedViews => _named.Keys.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToArray();
     public void Remember(OrbitCamera camera)
     {

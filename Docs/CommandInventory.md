@@ -6,14 +6,14 @@ Ez a fájl a futásidejű parancstáblából készül. Újragenerálás a repó 
 dotnet run --project Source/CloudScope.CommandChecks -- --write-inventory Docs/CommandInventory.md
 ```
 
-Összesen **74 parancs**, aliasokkal együtt **93 név**.
+Összesen **78 parancs**, aliasokkal együtt **98 név**.
 A `COMMANDS` és a `HELP` ugyanebből a regisztrációból dolgozik. A `COVERAGE` a viewer API statikus elérhetőségét méri; a működés ellenőrzését a CommandChecks végzi.
 
 Az argumentumokat szóköz választja el. A szóközt tartalmazó útvonalat vagy egy argumentumként kezelt nevet idézőjelbe kell tenni, például `OPENXYZ "scan one.xyz" 5000` vagy `LABEL "Tree 1" 7`. Külön útvonalbekéréskor a teljes begépelt válasz az útvonal.
 
 A parancsok és a szkriptek közös futtatót használnak. A szkript üres sora az aktív bekérés alapértékét fogadja el; nyugalmi állapotban nem ismétel parancsot. A beágyazott szkript a hívó folytatása előtt fut le. Ismeretlen parancs vagy érvénytelen numerikus válasz megszakítja a szkriptet. Egy futtatás legfeljebb 100 000 sort dolgoz fel.
 
-## File (16)
+## File (20)
 
 | Parancs | Alias | Hatókör | Szintaxis | Művelet |
 | --- | --- | --- | --- | --- |
@@ -27,12 +27,16 @@ A parancsok és a szkriptek közös futtatót használnak. A szkript üres sora 
 | `OPEN` | – | Viewer | `OPEN <path> [max points]` | Loads a uncompressed LAS point cloud into memory. |
 | `OPENE57` | – | Viewer | `OPENE57 <path> [max points]` | Loads E57 numeric bitpack scans with pose transforms and checksum validation. |
 | `OPENPLY` | – | Viewer | `OPENPLY <path> [max points]` | Loads ASCII or little-endian binary PLY vertices into memory. |
+| `OPENPROJECT` | – | Viewer | `OPENPROJECT <path>` | Restores a complete project after validating its sources. |
 | `OPENPTS` | – | Viewer | `OPENPTS <path> [max points]` | Loads PTS text points with optional intensity and RGB. |
 | `OPENPTX` | – | Viewer | `OPENPTX <path> [max points]` | Loads PTX scans using their scanner transforms. |
 | `OPENSTORE` | – | Viewer | `OPENSTORE <store directory>` | Streams an indexed point tile store straight off disk. |
 | `OPENXYZ` | – | Viewer | `OPENXYZ <path> [max points]` | Loads an XYZ text point cloud into memory. |
+| `RECOVER` | – | Viewer | `RECOVER [path]` | Restores the newest abandoned automatic recovery snapshot, or a supplied snapshot. |
+| `SAVEAS` | – | Viewer | `SAVEAS <path>` | Saves the complete project under a new name. |
 | `SAVELABELS` | – | Document | `SAVELABELS [Las] [path]` | Writes labels to JSON, or class codes into a copy of the LAS. |
 | `SAVEPOLYLINES` | – | Viewer | `SAVEPOLYLINES <path>` | Saves every planar polyline to a versioned JSON document. |
+| `SAVEPROJECT` | SAVE | Viewer | `SAVEPROJECT [path]` | Saves the complete project, including drawings, labels and views. |
 
 ## Edit (13)
 

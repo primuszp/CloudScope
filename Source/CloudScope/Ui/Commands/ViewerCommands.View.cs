@@ -294,9 +294,11 @@ public sealed partial class ViewerCommands
         Syntax = "RESET")]
     public IEnumerable<PromptStep> Reset(CommandContext context)
     {
+        var approval = new ProjectChangeApproval();
+        foreach (var step in ProtectProject(context, approval)) yield return step;
+        if (!approval.Approved) yield break;
         context.GetTarget<ViewerController>().Reset();
         context.Editor.WriteMessage("Viewer reset.");
-        yield break;
     }
 
     [CommandMethod("POINTSIZE", Flags = CommandFlags.NoUndoMarker,

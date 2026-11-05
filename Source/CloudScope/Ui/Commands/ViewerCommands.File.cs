@@ -33,6 +33,9 @@ public sealed partial class ViewerCommands
         PromptIntegerStep limit = PointCountLimit(ed);
         yield return limit;
 
+        var approval = new ProjectChangeApproval();
+        foreach (var step in ProtectProject(context, approval)) yield return step;
+        if (!approval.Approved) yield break;
         long maxPoints = limit.IsOk ? limit.Value : 0;
         ed.WriteMessage(context.GetTarget<ViewerController>().OpenPointCloud(path.Value, maxPoints));
     }
@@ -50,6 +53,9 @@ public sealed partial class ViewerCommands
 
         PromptIntegerStep limit = PointCountLimit(ed);
         yield return limit;
+        var approval = new ProjectChangeApproval();
+        foreach (var step in ProtectProject(context, approval)) yield return step;
+        if (!approval.Approved) yield break;
         ed.WriteMessage(context.GetTarget<ViewerController>().OpenPlyPointCloud(path.Value, limit.IsOk ? limit.Value : 0));
     }
 
@@ -66,6 +72,9 @@ public sealed partial class ViewerCommands
 
         PromptIntegerStep limit = PointCountLimit(ed);
         yield return limit;
+        var approval = new ProjectChangeApproval();
+        foreach (var step in ProtectProject(context, approval)) yield return step;
+        if (!approval.Approved) yield break;
         ed.WriteMessage(context.GetTarget<ViewerController>().OpenXyzPointCloud(path.Value, limit.IsOk ? limit.Value : 0));
     }
 
@@ -81,6 +90,9 @@ public sealed partial class ViewerCommands
         if (!path.IsOk) yield break;
         PromptIntegerStep limit = PointCountLimit(ed);
         yield return limit;
+        var approval = new ProjectChangeApproval();
+        foreach (var step in ProtectProject(context, approval)) yield return step;
+        if (!approval.Approved) yield break;
         ed.WriteMessage(context.GetTarget<ViewerController>().OpenPtsPointCloud(path.Value, limit.IsOk ? limit.Value : 0));
     }
 
@@ -96,6 +108,9 @@ public sealed partial class ViewerCommands
         yield return directory;
         if (!directory.IsOk) yield break;
 
+        var approval = new ProjectChangeApproval();
+        foreach (var step in ProtectProject(context, approval)) yield return step;
+        if (!approval.Approved) yield break;
         context.Editor.WriteMessage(context.GetTarget<ViewerController>().OpenPointTileStore(directory.Value));
     }
 
@@ -139,6 +154,12 @@ public sealed partial class ViewerCommands
         yield return name;
         if (!name.IsOk) yield break;
 
+        if (option.Is("CLOSE"))
+        {
+            var approval = new ProjectChangeApproval();
+            foreach (var step in ProtectProject(context, approval)) yield return step;
+            if (!approval.Approved) yield break;
+        }
         ed.WriteMessage(option.Keyword switch
         {
             "ON" => viewer.SetLayerVisible(name.Value, visible: true),

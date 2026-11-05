@@ -105,6 +105,7 @@ namespace CloudScope
         public ViewerController(int width, int height, IRenderBackend renderBackend)
         {
             _loadOperation = new BackgroundOperation<LoadedPointCloud>(_pendingWork.Enqueue);
+            _projectOperation = new BackgroundOperation<PreparedProject>(_pendingWork.Enqueue, project => project.Dispose());
             _surfaceOperation = new BackgroundOperation<SurfaceMesh>(_pendingWork.Enqueue);
             _width = width;
             _height = height;
@@ -135,6 +136,7 @@ namespace CloudScope
             // change, and the runtime's command marks decide where the steps begin and end.
             _selection.Labels.ActionRecorded += UndoHistory.Record;
             UndoHistory.HistoryTrimmed += () => BackgroundMessage?.Invoke("Old undo history was released to stay within its memory/command limit.");
+            _projectCheckpoint = ProjectSignature();
         }
 
         private readonly string _backendName;
@@ -264,6 +266,7 @@ namespace CloudScope
             _streamingRenderer.Initialize();
             _overlayRenderer.Initialize();
             UpdateViewportLayout();
+            StartNewProject();
 
             // Opening stores from the environment, the same way the render limits and the
             // backend choice are set. It is how a large cloud is put on screen without typing
@@ -283,20 +286,10 @@ namespace CloudScope
 
         public void LoadPointCloud(PointData[] pts, float cloudRadius = 50f)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            InvalidatePendingLoad();
-            _selection.Reset();
-            UndoHistory.Clear();
-            InvalidateSurface();
-            DiscardCrossSection();
-            CloseLayers();
-            _document.ReplaceResident(null);
-            _cloudRadius = cloudRadius;
-            _selection.LoadPointCloud(pts);
-            _selection.SetSourceIdentity(LabelSourceIdentity.Create(pts, pts.Length));
-            foreach (ViewportState viewport in _viewports)
-                FitViewport(viewport);
-            _pointRenderer.Upload(new PointCloudRenderData(pts));
+            double[] z = pts.Select(p => (double)p.Z).ToArray();
+            LoadPointCloud(new PointCloudDataset(pts, pts.Length, cloudRadius, true, 1,
+                new PointCloudAttributes(new byte[pts.Length], new ushort[pts.Length], new byte[pts.Length], z,
+                    z.Length == 0 ? 0 : z.Min(), z.Length == 0 ? 0 : z.Max())));
         }
 
         public void LoadPointCloud(PointCloudDataset dataset)
@@ -315,6 +308,7 @@ namespace CloudScope
             foreach (ViewportState viewport in _viewports)
                 FitViewport(viewport);
             UploadDatasetView();
+            StartNewProject();
         }
 
         // Feed the current dataset view into the selection controller, preserving the
@@ -352,6 +346,8 @@ namespace CloudScope
         {
             if (string.IsNullOrWhiteSpace(directory))
                 return "OPENSTORE requires a store directory.";
+            if (!replace && _document.Dataset != null)
+                return "Save the resident project, then use OPENSTORE before adding further store layers.";
 
             if (!File.Exists(Path.Combine(directory, PointTileStore.IndexFileName)))
                 return $"Not a point tile store: {directory}";
@@ -399,6 +395,7 @@ namespace CloudScope
                     FitViewport(viewport);
             }
 
+            if (replace) StartNewProject();
             sw.Stop();
             return $"Streaming {store.Header.PointCount:N0} points from {name} "
                 + $"({store.Header.NodeCount:N0} cells, {sw.Elapsed.TotalSeconds:0.0}s).";
@@ -491,6 +488,7 @@ namespace CloudScope
             }
 
             _selection.SetStreamedSource(_document.Layers);
+            UndoHistory.Clear(); // removed-layer point references cannot participate in future undo
 
             _document.SetDisplayName(_document.Layers.Count switch
             {
@@ -551,6 +549,7 @@ namespace CloudScope
             foreach (PointTileLayer layer in _document.Layers)
                 layer.Store.Dispose();
             _document.Layers.Clear();
+            UndoHistory.Clear();
         }
 
         public void SetLasFilePath(string path)
@@ -610,6 +609,8 @@ namespace CloudScope
             NamedViews = _navigation.NamedViews,
             LabelledPoints = _selection.Labels.Count,
             HasUnsavedLabels = HasUnsavedLabels,
+            HasUnsavedProject = ProjectStatusIsDirty,
+            ProjectPath = ProjectPath,
             CloseRequested = CloseRequested,
             StreamingError = _streamingRenderer.LoadError,
             LoadProgress = LoadProgress
@@ -643,6 +644,7 @@ namespace CloudScope
             foreach (ViewportState viewport in _viewports)
                 FitViewport(viewport);
             _pointRenderer.Upload(PointCloudRenderData.Empty);
+            StartNewProject();
         }
 
         /// <summary>
@@ -1568,6 +1570,7 @@ namespace CloudScope
             if (_disposed) return true;
             while (_pendingWork.TryDequeue(out Action? work))
                 work();
+            UpdateProjectRecovery();
 
             if (dt > 0f)
                 _smoothedFps = _smoothedFps <= 0f ? 1f / dt : _smoothedFps * 0.9f + 0.1f / dt;
@@ -2039,6 +2042,8 @@ namespace CloudScope
         {
             if (_disposed) return;
             _disposed = true;
+            _projectOperation.Dispose();
+            _projectRecovery.Dispose();
             _loadOperation.Dispose();
             _surfaceOperation.Dispose();
             _processing.Dispose();

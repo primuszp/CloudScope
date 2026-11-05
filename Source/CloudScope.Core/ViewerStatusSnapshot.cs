@@ -113,6 +113,8 @@ public readonly record struct ViewerStatusSnapshot
     /// closes it when it sees this; the GameWindow shell ends its loop on the same flag.
     /// </summary>
     public bool HasUnsavedLabels { get; init; }
+    public bool HasUnsavedProject { get; init; }
+    public string ProjectPath { get; init; } = "";
     public bool CloseRequested { get; init; }
 
     /// <summary>Percentage of a load in progress, or -1 when nothing is loading.</summary>

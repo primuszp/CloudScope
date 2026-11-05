@@ -22,7 +22,7 @@ namespace CloudScope
     /// </remarks>
     internal sealed class StreamedSelectionSource
     {
-        private readonly IReadOnlyList<PointTileLayer> _layers;
+        private IReadOnlyList<PointTileLayer> _layers;
 
         /// <summary>Points that have been caught by a selection, in the order they were first seen.</summary>
         private readonly List<PointData> _points = [];
@@ -33,7 +33,24 @@ namespace CloudScope
         /// <summary>Where a point already known sits in <see cref="_points"/>.</summary>
         private readonly Dictionary<PointRef, int> _known = [];
 
-        public StreamedSelectionSource(IReadOnlyList<PointTileLayer> layers) => _layers = layers;
+        public StreamedSelectionSource(IReadOnlyList<PointTileLayer> layers) => _layers = layers.ToArray();
+
+        /// <summary>Keeps sparse array indices stable while layer indices change. Removed layers can no longer be annotated.</summary>
+        public int[] Rebind(IReadOnlyList<PointTileLayer> layers)
+        {
+            var removed = new List<int>();
+            var indices = layers.Select((layer, i) => (layer.ProjectId, i)).ToDictionary(p => p.ProjectId, p => p.i);
+            _known.Clear();
+            for (int i = 0; i < _refs.Count; i++)
+            {
+                var old = _refs[i];
+                if (old.LayerIndex < 0 || !indices.TryGetValue(_layers[old.LayerIndex].ProjectId, out int index))
+                { removed.Add(i); _refs[i] = new PointRef(-1, 0); }
+                else { _refs[i] = new PointRef(index, old.PointIndex); _known[_refs[i]] = i; }
+            }
+            _layers = layers.ToArray();
+            return removed.ToArray();
+        }
 
         /// <summary>Every point any selection has touched, for the highlight renderer.</summary>
         public PointData[] LabelPoints => _points.ToArray();

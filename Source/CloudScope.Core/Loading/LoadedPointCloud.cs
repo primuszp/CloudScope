@@ -12,6 +12,7 @@ namespace CloudScope.Loading
         PointCloudAttributes Attributes)
     {
         public CloudScope.Labeling.LabelSourceIdentity? SourceIdentity { get; init; }
+        public string? SourcePayloadSha256 { get; init; }
 
         public PointCloudDataset ToDataset()
         {
@@ -19,7 +20,7 @@ namespace CloudScope.Loading
                 throw new InvalidOperationException($"Loaded point count {LoadedCount:N0} exceeds the in-memory viewer limit.");
 
             return new PointCloudDataset(Points, (int)LoadedCount, Radius, HasColor, ColorScale, Attributes,
-                CenterX, CenterY, CenterZ, SourceIdentity);
+                CenterX, CenterY, CenterZ, SourceIdentity, SourcePayloadSha256);
         }
     }
 }

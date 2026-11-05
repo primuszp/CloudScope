@@ -50,6 +50,10 @@ public static class CommandRibbon
     [
         new RibbonTab("Home",
         [
+            Panel("Project",
+                Small("Open", "OPENPROJECT", RibbonIcons.Open),
+                Small("Save", "SAVEPROJECT", RibbonIcons.Save),
+                Small("Save as", "SAVEAS", RibbonIcons.Save)),
             Panel("Cloud",
                 Large("Open", "OPEN", RibbonIcons.Open, tooltip: "Open a LAS point cloud"),
                 Small("PLY", "OPENPLY", RibbonIcons.Import, tooltip: "Import PLY vertices"),

@@ -36,7 +36,7 @@ internal static class ViewerWorkflowChecks
             check("LOADLABELS is one reversible command", viewer.LabelledPointCount == 0, "");
             dispatcher.Execute("REDO 1");
             check("LOADLABELS can be redone", viewer.LabelledPointCount == 2, "");
-            dispatcher.Execute($"OPENXYZ \"{path}\" 25");
+            dispatcher.Execute($"OPENXYZ \"{path}\" 25 No");
             PumpUntil(() => viewer.LoadProgress < 0);
             check("New resident cloud clears prior source labels and command history", viewer.LabelledPointCount == 0 && !viewer.UndoHistory.CanUndo, "");
             dispatcher.Execute("RECONSTRUCT 8 1.5");
@@ -50,7 +50,7 @@ internal static class ViewerWorkflowChecks
             check("THIN and EXPORT preserve the source identity and exact sample count", result.Status == CommandStatus.Ended && PlyPointCloudLoader.Load(ply).LoadedCount == 10, result.Message);
             check("Changing geometry invalidates the previous surface", viewer.Status.SurfaceTriangles == 0, "");
             // Hold the completed upload in the frame queue, then reset before it is applied.
-            dispatcher.Execute($"OPENXYZ \"{path}\" 25");
+            dispatcher.Execute($"OPENXYZ \"{path}\" 25 No");
             WaitUntil(() => viewer.HasPendingFrameWork);
             viewer.Reset();
             viewer.UpdateFrame(1f / 60, keyboard);

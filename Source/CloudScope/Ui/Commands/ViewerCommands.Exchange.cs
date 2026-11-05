@@ -15,6 +15,9 @@ public sealed partial class ViewerCommands
         var limit = context.Editor.GetInteger("Maximum point count <all>:").WithRange(1, int.MaxValue).WithDefault(0);
         yield return limit;
         if (!limit.IsOk) yield break;
+        var approval = new ProjectChangeApproval();
+        foreach (var step in ProtectProject(context, approval)) yield return step;
+        if (!approval.Approved) yield break;
         context.Editor.WriteMessage(context.GetTarget<ViewerController>().OpenE57PointCloud(path.Value, limit.Value));
     }
 
@@ -28,6 +31,9 @@ public sealed partial class ViewerCommands
         var limit = context.Editor.GetInteger("Maximum point count <all>:").WithRange(1, int.MaxValue).WithDefault(0);
         yield return limit;
         if (!limit.IsOk) yield break;
+        var approval = new ProjectChangeApproval();
+        foreach (var step in ProtectProject(context, approval)) yield return step;
+        if (!approval.Approved) yield break;
         context.Editor.WriteMessage(context.GetTarget<ViewerController>().OpenPtxPointCloud(path.Value, limit.Value));
     }
 

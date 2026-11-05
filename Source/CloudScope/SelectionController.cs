@@ -5,6 +5,7 @@ using CloudScope.Rendering;
 using CloudScope.Selection;
 using CloudScope.Store;
 using CloudScope.Sections;
+using CloudScope.Projects;
 using OpenTK.Mathematics;
 using System.Linq;
 using System.Threading;
@@ -114,7 +115,13 @@ namespace CloudScope
         /// <summary>Switches selection over to the streamed clouds, or back off them.</summary>
         public void SetStreamedSource(IReadOnlyList<PointTileLayer>? layers)
         {
-            _streamed = layers is { Count: > 0 } ? new StreamedSelectionSource(layers) : null;
+            if (layers is not { Count: > 0 })
+            {
+                if (_streamed != null) _labelManager.ClearAll();
+                _streamed = null;
+            }
+            else if (_streamed == null) _streamed = new StreamedSelectionSource(layers);
+            else _labelManager.RemoveLabels(_streamed.Rebind(layers));
             _previewPoints = null;
         }
         public PointCloudAttributes? Attributes => _attributes;
@@ -643,6 +650,18 @@ namespace CloudScope
             SetInteractionState(SelectionInteractionState.KeyboardEdit);
             return true;
         }
+
+        internal ProjectAnnotation[] CaptureProjectAnnotations()
+        {
+            var refs = _streamed?.LabelRefs;
+            var positions = _streamed?.LabelPoints;
+            return _labelManager.AllAnnotations.OrderBy(p => p.Key).Select(p => refs == null
+                ? new ProjectAnnotation(-1, p.Key, p.Value.LabelName, p.Value.InstanceId)
+                : new ProjectAnnotation(refs[p.Key].LayerIndex, refs[p.Key].PointIndex, p.Value.LabelName, p.Value.InstanceId,
+                    new Vector3(positions![p.Key].X, positions[p.Key].Y, positions[p.Key].Z))).ToArray();
+        }
+        internal void RestoreProject(StreamedSelectionSource? streamed, Dictionary<int, PointAnnotation> annotations)
+        { _streamed = streamed; _labelManager.LoadFromAnnotations(annotations); }
 
         public bool HasUnsavedLabels => _labelManager.HasUnsavedChanges;
 

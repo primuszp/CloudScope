@@ -32,6 +32,7 @@ The optional point limit is zero for all points; resident clouds must fit memory
 
 ## Workflows
 
+- Save and reopen the complete workspace with `SAVEPROJECT` (`SAVE`), `SAVEAS` and `OPENPROJECT`. Projects retain labels, drawings, cross-sections, cameras, layers, display settings and reconstructed surfaces; source surveys remain relative external references. `RECOVER` restores an abandoned automatic recovery snapshot. Cmd/Ctrl+S saves the project. See [project persistence](Docs/Projects.md).
 - Import uncompressed LAS 1.0–1.4 (point formats 0–10), PLY, XYZ, PTS, PTX and supported E57 numeric scans. **Compressed LAZ is not decoded**; decompress it to LAS first.
 - Index LAS into streaming tile stores with `INDEX`, then use `OPENSTORE`, `ADDSTORE` and `LAYER` for large surveys.
 - Filter attributes, choose RGB/height/class/intensity/return colouring, and thin a repeatable sample with `THIN` while preserving source indices.

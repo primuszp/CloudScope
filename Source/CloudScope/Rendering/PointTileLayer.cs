@@ -23,6 +23,9 @@ public sealed class PointTileLayer
     }
 
     public string Name { get; }
+    internal Guid ProjectId { get; set; } = Guid.NewGuid();
+    private string? _projectIdentity;
+    internal string ProjectIdentity => _projectIdentity ??= CloudScope.Projects.ProjectStoreIdentity.Create(Store);
 
     public PointTileStore Store { get; }
 
