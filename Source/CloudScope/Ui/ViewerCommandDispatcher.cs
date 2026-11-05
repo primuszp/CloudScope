@@ -92,7 +92,11 @@ public sealed class ViewerCommandDispatcher : ICommandExecutor, ICommandOutputSo
         _viewer.RefreshCommandPromptPreview();
         return result;
     }
-    public CommandResult CancelActive() => _runtime.CancelActive();
+    public CommandResult CancelActive()
+    {
+        _viewer.CancelBackgroundOperations();
+        return _runtime.CancelActive();
+    }
     public PromptStep? ActiveStep => _runtime.ActiveStep;
     public bool AwaitsPoint => _runtime.AwaitsPoint;
     public PromptStep? PointPrompt => _runtime.PointPrompt;

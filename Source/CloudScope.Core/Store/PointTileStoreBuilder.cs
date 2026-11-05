@@ -82,17 +82,43 @@ public static class PointTileStoreBuilder
     private const int SurveyCellCount = SurveyResolution * SurveyResolution * SurveyResolution;
     private const int ReadBatchPoints = 1 << 18;
 
-    public static PointTileBuildReport Build(
+    public static PointTileBuildReport Build(string lasPath, string outputDirectory,
+        PointTileBuildOptions options = default, IProgress<PointTileBuildProgress>? progress = null,
+        CancellationToken cancellation = default)
+    {
+        cancellation.ThrowIfCancellationRequested();
+        string destination = Path.GetFullPath(outputDirectory);
+        if (Directory.Exists(destination) && Directory.EnumerateFileSystemEntries(destination).Any())
+            throw new IOException("The index destination must be empty. Existing stores are never overwritten.");
+        string parent = Path.GetDirectoryName(destination)!;
+        Directory.CreateDirectory(parent);
+        string staging = Path.Combine(parent, ".cloudscope-index-" + Guid.NewGuid().ToString("N"));
+        string scratch = Path.Combine(options.ScratchDirectory ?? staging, "chunks-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            PointTileBuildReport report = BuildCore(lasPath, staging, options, scratch, progress, cancellation);
+            cancellation.ThrowIfCancellationRequested();
+            if (Directory.Exists(destination)) Directory.Delete(destination);
+            Directory.Move(staging, destination);
+            return report;
+        }
+        finally
+        {
+            if (Directory.Exists(scratch)) Directory.Delete(scratch, recursive: true);
+            if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+        }
+    }
+
+    private static PointTileBuildReport BuildCore(
         string lasPath,
         string outputDirectory,
-        PointTileBuildOptions options = default,
-        IProgress<PointTileBuildProgress>? progress = null)
+        PointTileBuildOptions options, string scratch,
+        IProgress<PointTileBuildProgress>? progress, CancellationToken cancellation)
     {
         if (options.ChunkTargetPoints <= 0)
             options = PointTileBuildOptions.Default;
 
         Directory.CreateDirectory(outputDirectory);
-        string scratch = options.ScratchDirectory ?? Path.Combine(outputDirectory, "chunks");
         Directory.CreateDirectory(scratch);
 
         var total = Stopwatch.StartNew();
@@ -104,13 +130,13 @@ public static class PointTileStoreBuilder
         var sourceReader = new LasPointStream(reader, bounds);
 
         var stage = Stopwatch.StartNew();
-        long[] surveyCounts = Survey(sourceReader, pointCount, progress);
+        long[] surveyCounts = Survey(sourceReader, pointCount, progress, cancellation);
         TimeSpan surveyTime = stage.Elapsed;
 
         stage.Restart();
         ChunkPlan plan = ChunkPlan.FromSurvey(surveyCounts, options.ChunkTargetPoints);
         long[] chunkCounts = Distribute(
-            sourceReader, pointCount, plan, scratch, options.WriteSourceIndices, progress);
+            sourceReader, pointCount, plan, scratch, options.WriteSourceIndices, progress, cancellation);
         TimeSpan distributeTime = stage.Elapsed;
 
         stage.Restart();
@@ -122,11 +148,12 @@ public static class PointTileStoreBuilder
         using (var writer = new PointTileStoreWriter(
             outputDirectory, sourceReader.HasAttributes, options.WriteSourceIndices))
         {
-            written = BuildCells(plan, chunkCounts, scratch, bounds, options, writer, progress);
+            written = BuildCells(plan, chunkCounts, scratch, bounds, options, writer, progress, cancellation);
             cellTime = stage.Elapsed;
 
             stage.Restart();
             progress?.Report(new PointTileBuildProgress(PointTileBuildStage.Writing, 0, writer.NodeCount));
+            cancellation.ThrowIfCancellationRequested();
             writer.Complete(bounds, pointCount);
             writeTime = stage.Elapsed;
             nodeCount = writer.NodeCount;
@@ -149,13 +176,14 @@ public static class PointTileStoreBuilder
             surveyTime, distributeTime, cellTime, writeTime, total.Elapsed);
     }
 
-    private static long[] Survey(LasPointStream source, long pointCount, IProgress<PointTileBuildProgress>? progress)
+    private static long[] Survey(LasPointStream source, long pointCount, IProgress<PointTileBuildProgress>? progress, CancellationToken cancellation)
     {
         var counts = new long[SurveyCellCount];
         var batch = new StorePoint[ReadBatchPoints];
         long done = 0;
         while (done < pointCount)
         {
+            cancellation.ThrowIfCancellationRequested();
             int read = source.Read(done, batch);
             if (read == 0)
                 break;
@@ -176,7 +204,7 @@ public static class PointTileStoreBuilder
         ChunkPlan plan,
         string scratchDirectory,
         bool withSourceIndices,
-        IProgress<PointTileBuildProgress>? progress)
+        IProgress<PointTileBuildProgress>? progress, CancellationToken cancellation)
     {
         var writers = new ChunkWriter[plan.ChunkCount];
         for (int i = 0; i < writers.Length; i++)
@@ -188,6 +216,7 @@ public static class PointTileStoreBuilder
             long done = 0;
             while (done < pointCount)
             {
+                cancellation.ThrowIfCancellationRequested();
                 int read = source.Read(done, batch);
                 if (read == 0)
                     break;
@@ -218,7 +247,7 @@ public static class PointTileStoreBuilder
         CloudBounds bounds,
         PointTileBuildOptions options,
         PointTileStoreWriter writer,
-        IProgress<PointTileBuildProgress>? progress)
+        IProgress<PointTileBuildProgress>? progress, CancellationToken cancellation)
     {
         long done = 0;
         long total = 0;
@@ -227,7 +256,7 @@ public static class PointTileStoreBuilder
 
         // One chunk per core at a time: each build holds its chunk in memory, so the peak is
         // the chunk size times the degree of parallelism, not the size of the cloud.
-        var options2 = new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount };
+        var options2 = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount / 2), CancellationToken = cancellation };
         Parallel.For(0, plan.ChunkCount, options2, chunkIndex =>
         {
             if (chunkCounts[chunkIndex] == 0)
@@ -235,12 +264,13 @@ public static class PointTileStoreBuilder
 
             string path = Path.Combine(scratchDirectory, $"chunk{chunkIndex:D5}.bin");
             StorePoint[] points = ChunkWriter.ReadAll(
-                path, (int)chunkCounts[chunkIndex], options.WriteSourceIndices);
+                path, (int)chunkCounts[chunkIndex], options.WriteSourceIndices, cancellation);
             (float min, float max)[] cube = plan.ChunkCube(chunkIndex, bounds);
 
             var cells = new List<PointTileCell>();
-            PointTileCellBuilder.Build(points, points.Length, cube, plan.ChunkLevel, options, cells);
-            writer.Append(cells);
+            PointTileCellBuilder.Build(points, points.Length, cube, plan.ChunkLevel, options, cells, cancellation);
+            cancellation.ThrowIfCancellationRequested();
+            writer.Append(cells, cancellation);
 
             long finished = Interlocked.Add(ref done, chunkCounts[chunkIndex]);
             progress?.Report(new PointTileBuildProgress(PointTileBuildStage.BuildingCells, finished, total));

@@ -34,6 +34,16 @@ public sealed class UndoManager
     /// <summary>Name of the command that would be undone next, or "".</summary>
     public string NextUndoName => _undo.Count > 0 ? _undo[^1].Name : "";
 
+    public void RunSeparate(string name, Action change)
+    {
+        Group? suspended = _open;
+        _open = null;
+        BeginMark(name);
+        try { change(); Commit(); }
+        catch { Rollback(); throw; }
+        finally { _open = suspended; }
+    }
+
     public void BeginMark(string commandName)
     {
         // A command that starts while another mark is open (a transparent command) joins it

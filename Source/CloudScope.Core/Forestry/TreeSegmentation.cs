@@ -32,8 +32,10 @@ public static class TreeSegmentation
 {
     public static TreeSegmentationResult Segment(
         IReadOnlyList<PointData> points, Vector3 requestedSeed, TreeSegmentationOptions? options = null,
-        IReadOnlySet<int>? excludedPointIndices = null)
+        IReadOnlySet<int>? excludedPointIndices = null, CancellationToken cancellation = default, IProgress<int>? progress = null)
     {
+        cancellation.ThrowIfCancellationRequested();
+        progress?.Report(0);
         options ??= new TreeSegmentationOptions();
         if (points.Count == 0)
             return new([], requestedSeed, 0, "No resident point cloud is loaded.");
@@ -43,18 +45,20 @@ public static class TreeSegmentation
             !Positive(options.MaximumSeedDistance) || !Positive(options.CompetitorCellSize) ||
             !Positive(options.MinimumTrunkSpan) || options.MinimumTrunkPoints < 1)
             return new([], requestedSeed, 0, "Tree segmentation requires finite coordinates and positive parameters.");
-        if (points.Any(p => !float.IsFinite(p.X) || !float.IsFinite(p.Y) || !float.IsFinite(p.Z)))
+        if (points.Any(p => { cancellation.ThrowIfCancellationRequested(); return !float.IsFinite(p.X) || !float.IsFinite(p.Y) || !float.IsFinite(p.Z); }))
             return new([], requestedSeed, 0, "Tree segmentation requires finite point coordinates.");
 
-        int seedIndex = Nearest(points, requestedSeed, options.MaximumSeedDistance, excludedPointIndices);
+        int seedIndex = Nearest(points, requestedSeed, options.MaximumSeedDistance, excludedPointIndices, cancellation);
         if (seedIndex < 0)
             return new([], requestedSeed, 0, $"No point lies within {options.MaximumSeedDistance:0.##} m of the seed.");
 
+        progress?.Report(20);
         Vector3 seed = Position(points[seedIndex]);
         float maxR2 = options.MaximumCrownRadius * options.MaximumCrownRadius;
         var candidates = new List<int>();
         for (int i = 0; i < points.Count; i++)
         {
+            if ((i & 1023) == 0) cancellation.ThrowIfCancellationRequested();
             if (excludedPointIndices?.Contains(i) == true) continue;
             float dx = points[i].X - seed.X;
             float dy = points[i].Y - seed.Y;
@@ -65,6 +69,7 @@ public static class TreeSegmentation
         var cells = new Dictionary<Cell, List<int>>();
         foreach (int index in candidates)
         {
+            cancellation.ThrowIfCancellationRequested();
             Cell cell = Cell.Of(points[index], voxel);
             if (!cells.TryGetValue(cell, out List<int>? members)) cells[cell] = members = [];
             members.Add(index);
@@ -73,9 +78,10 @@ public static class TreeSegmentation
         Cell ownCell = Cell.Of(points[seedIndex], voxel);
         if (!cells.ContainsKey(ownCell)) return new([], seed, 0, "The seed voxel is empty.");
 
-        List<Cell> competitors = FindCompetingTrunks(points, candidates, seed, options)
+        List<Cell> competitors = FindCompetingTrunks(points, candidates, seed, options, cancellation)
             .Select(p => Cell.Of(p, voxel)).Where(c => c != ownCell && cells.ContainsKey(c)).Distinct().ToList();
 
+        progress?.Report(50);
         var owner = new Dictionary<Cell, int>();
         var distance = new Dictionary<Cell, float>();
         var queue = new PriorityQueue<(Cell cell, int owner), float>();
@@ -85,9 +91,11 @@ public static class TreeSegmentation
         int reach = Math.Max(1, (int)MathF.Ceiling(options.ConnectionRadius / voxel));
         while (queue.TryDequeue(out var item, out float cost))
         {
+            cancellation.ThrowIfCancellationRequested();
             if (!distance.TryGetValue(item.cell, out float best) || cost > best + 1e-5f || owner[item.cell] != item.owner) continue;
             for (int x = -reach; x <= reach; x++) for (int y = -reach; y <= reach; y++) for (int z = -reach; z <= reach; z++)
             {
+                cancellation.ThrowIfCancellationRequested();
                 if (x == 0 && y == 0 && z == 0) continue;
                 float step = voxel * MathF.Sqrt(x * x + y * y + z * z);
                 if (step > options.ConnectionRadius) continue;
@@ -102,7 +110,9 @@ public static class TreeSegmentation
         var result = new List<int>();
         foreach ((Cell cell, List<int> members) in cells)
             if (owner.TryGetValue(cell, out int marker) && marker == 0) result.AddRange(members);
+        cancellation.ThrowIfCancellationRequested();
         result.Sort();
+        progress?.Report(100);
         return result.Count == 0
             ? new([], seed, competitors.Count, "The seed is not connected to a tree-sized point cluster.")
             : new(result, seed, competitors.Count);
@@ -114,12 +124,13 @@ public static class TreeSegmentation
     }
 
     private static IEnumerable<Vector3> FindCompetingTrunks(IReadOnlyList<PointData> points,
-        IReadOnlyList<int> candidates, Vector3 seed, TreeSegmentationOptions o)
+        IReadOnlyList<int> candidates, Vector3 seed, TreeSegmentationOptions o, CancellationToken cancellation)
     {
         float size = MathF.Max(o.CompetitorCellSize, 0.1f);
         var columns = new Dictionary<(int x, int y), (float min, float max, int count, double sx, double sy, int nearest)>();
         foreach (int index in candidates)
         {
+            cancellation.ThrowIfCancellationRequested();
             PointData p = points[index];
             var key = ((int)MathF.Floor(p.X / size), (int)MathF.Floor(p.Y / size));
             if (!columns.TryGetValue(key, out var c)) c = (p.Z, p.Z, 0, 0, 0, index);
@@ -131,6 +142,7 @@ public static class TreeSegmentation
 
         foreach (var c in columns.Values)
         {
+            cancellation.ThrowIfCancellationRequested();
             if (c.count < o.MinimumTrunkPoints || c.max - c.min < o.MinimumTrunkSpan) continue;
             var center = new Vector3((float)(c.sx / c.count), (float)(c.sy / c.count), points[c.nearest].Z);
             if (DistanceSquaredXY(center, seed) < size * size * 2.25f) continue;
@@ -140,11 +152,12 @@ public static class TreeSegmentation
 
     private static bool Positive(float value) => float.IsFinite(value) && value > 0;
 
-    private static int Nearest(IReadOnlyList<PointData> points, Vector3 target, float maximum, IReadOnlySet<int>? excluded)
+    private static int Nearest(IReadOnlyList<PointData> points, Vector3 target, float maximum, IReadOnlySet<int>? excluded, CancellationToken cancellation)
     {
         float best = maximum * maximum; int found = -1;
         for (int i = 0; i < points.Count; i++)
         {
+            if ((i & 1023) == 0) cancellation.ThrowIfCancellationRequested();
             if (excluded?.Contains(i) == true) continue;
             Vector3 d = Position(points[i]) - target; float d2 = d.LengthSquared;
             if (d2 <= best) { best = d2; found = i; }

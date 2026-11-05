@@ -230,17 +230,8 @@ public sealed partial class ViewerCommands
             };
         }
 
-        // The build streams the file three times and never holds more than one chunk, so its
-        // cost is the disk's, not the machine's memory.
-        PointTileBuildReport report = PointTileStoreBuilder.Build(
-            source.Value, directory, options with { WriteSourceIndices = withSource });
-
-        string note = withSource
-            ? " It records where each point came from, so labels can be written back to the LAS."
-            : " Add the Source option if labels will be written back to the LAS.";
-        ed.WriteMessage(
-            $"Indexed {report.SourcePoints:N0} points into {report.NodeCount:N0} cells "
-            + $"({report.Total.TotalSeconds:0.0}s). Open it with OPENSTORE.{note}");
+        ed.WriteMessage(context.GetTarget<ViewerController>().IndexPointCloud(
+            source.Value, directory, options with { WriteSourceIndices = withSource }));
     }
 
     [CommandMethod("STOREINFO", Flags = CommandFlags.NoUndoMarker | CommandFlags.NoHistory,

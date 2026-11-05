@@ -43,8 +43,11 @@ public static class GroundSegmentation
     private static readonly double[] DoubleMove = [0, .3, .42, .468, .4872, .4949, .498, .4992, .4997, .4999, .4999, .5, .5, .5, .5];
 
     public static GroundSegmentationResult Segment(
-        IReadOnlyList<PointData> points, GroundSegmentationOptions? options = null)
+        IReadOnlyList<PointData> points, GroundSegmentationOptions? options = null,
+        CancellationToken cancellation = default, IProgress<int>? progress = null)
     {
+        cancellation.ThrowIfCancellationRequested();
+        progress?.Report(0);
         options ??= new GroundSegmentationOptions();
         if (points.Count == 0)
             return Failed("No resident point cloud is loaded.");
@@ -56,6 +59,7 @@ public static class GroundSegmentation
         float maxX = float.NegativeInfinity, maxY = float.NegativeInfinity;
         foreach (PointData point in points)
         {
+            cancellation.ThrowIfCancellationRequested();
             if (!float.IsFinite(point.X) || !float.IsFinite(point.Y) || !float.IsFinite(point.Z))
                 return Failed("CSF requires finite point coordinates.");
             minX = MathF.Min(minX, point.X); maxX = MathF.Max(maxX, point.X);
@@ -84,6 +88,7 @@ public static class GroundSegmentation
         // store -Z as the collision height; this is equivalent to CSF::setPointCloud.
         for (int pointIndex = 0; pointIndex < points.Count; pointIndex++)
         {
+            if ((pointIndex & 1023) == 0) cancellation.ThrowIfCancellationRequested();
             PointData point = points[pointIndex];
             int x = Math.Clamp((int)(((point.X - originX) / resolution) + 0.5f), 0, width - 1);
             int y = Math.Clamp((int)(((point.Y - originY) / resolution) + 0.5f), 0, height - 1);
@@ -98,7 +103,7 @@ public static class GroundSegmentation
             terrain[node] = -point.Z;
         }
 
-        if (!FillEmptyTerrainNodes(terrain, width, height))
+        if (!FillEmptyTerrainNodes(terrain, width, height, cancellation))
             return Failed("CSF could not rasterize the point cloud.");
 
         var position = new double[nodeCount];
@@ -111,26 +116,32 @@ public static class GroundSegmentation
         double acceleration = -Gravity * options.TimeStep * options.TimeStep;
         for (int iteration = 0; iteration < options.Iterations; iteration++)
         {
-            double maxDifference = Advance(position, previous, movable, acceleration, options.TimeStep);
-            RelaxConstraints(position, movable, width, height, options.Rigidness);
-            CollideWithTerrain(position, movable, terrain);
+            cancellation.ThrowIfCancellationRequested();
+            progress?.Report(10 + 75 * iteration / options.Iterations);
+            double maxDifference = Advance(position, previous, movable, acceleration, options.TimeStep, cancellation);
+            RelaxConstraints(position, movable, width, height, options.Rigidness, cancellation);
+            CollideWithTerrain(position, movable, terrain, cancellation);
             if (maxDifference > 0 && maxDifference < Convergence)
                 break;
         }
 
         if (options.SlopeSmoothing)
-            SmoothSlopes(position, movable, terrain, width, height);
+            SmoothSlopes(position, movable, terrain, width, height, cancellation);
 
+        progress?.Report(90);
         int contacts = movable.Count(node => !node);
         var ground = new List<int>();
         for (int pointIndex = 0; pointIndex < points.Count; pointIndex++)
         {
+            if ((pointIndex & 1023) == 0) cancellation.ThrowIfCancellationRequested();
             PointData point = points[pointIndex];
             double cloth = Interpolate(position, point.X, point.Y, originX, originY, resolution, width, height);
             if (Math.Abs(cloth + point.Z) < options.ClassThreshold)
                 ground.Add(pointIndex);
         }
 
+        cancellation.ThrowIfCancellationRequested();
+        progress?.Report(100);
         return ground.Count == 0
             ? new([], nodeCount, contacts, points.Count, "No points are within the CSF classification threshold of the cloth.")
             : new(ground, nodeCount, contacts, points.Count - ground.Count);
@@ -159,12 +170,13 @@ public static class GroundSegmentation
 
     private static GroundSegmentationResult Failed(string reason) => new([], 0, 0, 0, reason);
 
-    private static double Advance(double[] position, double[] previous, bool[] movable, double acceleration, double timeStep)
+    private static double Advance(double[] position, double[] previous, bool[] movable, double acceleration, double timeStep, CancellationToken cancellation)
     {
         double timeStepSquared = timeStep * timeStep;
         double maximum = 0;
         for (int index = 0; index < position.Length; index++)
         {
+            if ((index & 1023) == 0) cancellation.ThrowIfCancellationRequested();
             if (!movable[index])
                 continue;
 
@@ -177,13 +189,14 @@ public static class GroundSegmentation
         return maximum;
     }
 
-    private static void RelaxConstraints(double[] position, bool[] movable, int width, int height, int rigidness)
+    private static void RelaxConstraints(double[] position, bool[] movable, int width, int height, int rigidness, CancellationToken cancellation)
     {
         double single = rigidness > 14 ? 1 : SingleMove[rigidness];
         double paired = rigidness > 14 ? .5 : DoubleMove[rigidness];
         for (int y = 0; y < height; y++)
         for (int x = 0; x < width; x++)
         {
+            if ((x & 255) == 0) cancellation.ThrowIfCancellationRequested();
             int node = Index(x, y, width);
             Relax(node, x + 1, y, width, height, position, movable, single, paired);
             Relax(node, x, y + 1, width, height, position, movable, single, paired);
@@ -219,10 +232,11 @@ public static class GroundSegmentation
         }
     }
 
-    private static void CollideWithTerrain(double[] position, bool[] movable, double[] terrain)
+    private static void CollideWithTerrain(double[] position, bool[] movable, double[] terrain, CancellationToken cancellation)
     {
         for (int index = 0; index < position.Length; index++)
         {
+            if ((index & 1023) == 0) cancellation.ThrowIfCancellationRequested();
             if (movable[index] && position[index] < terrain[index])
             {
                 position[index] = terrain[index];
@@ -231,21 +245,23 @@ public static class GroundSegmentation
         }
     }
 
-    private static void SmoothSlopes(double[] position, bool[] movable, double[] terrain, int width, int height)
+    private static void SmoothSlopes(double[] position, bool[] movable, double[] terrain, int width, int height, CancellationToken cancellation)
     {
         var visited = new bool[position.Length];
         for (int start = 0; start < position.Length; start++)
         {
+            if ((start & 1023) == 0) cancellation.ThrowIfCancellationRequested();
             if (!movable[start] || visited[start])
                 continue;
 
-            List<int> component = ConnectedMovableNodes(start, movable, visited, width, height);
+            List<int> component = ConnectedMovableNodes(start, movable, visited, width, height, cancellation);
             if (component.Count <= 50)
                 continue;
 
             var queue = new Queue<int>();
             foreach (int node in component)
             {
+                cancellation.ThrowIfCancellationRequested();
                 if (!TouchesCompatibleContact(node, movable, terrain, width, height))
                     continue;
 
@@ -256,6 +272,7 @@ public static class GroundSegmentation
 
             while (queue.TryDequeue(out int node))
             {
+                cancellation.ThrowIfCancellationRequested();
                 foreach (int neighbour in Neighbours4(node, width, height))
                 {
                     if (!movable[neighbour] || Math.Abs(terrain[node] - terrain[neighbour]) >= SlopeSmoothThreshold)
@@ -269,7 +286,7 @@ public static class GroundSegmentation
         }
     }
 
-    private static List<int> ConnectedMovableNodes(int start, bool[] movable, bool[] visited, int width, int height)
+    private static List<int> ConnectedMovableNodes(int start, bool[] movable, bool[] visited, int width, int height, CancellationToken cancellation)
     {
         var component = new List<int>();
         var queue = new Queue<int>();
@@ -277,6 +294,7 @@ public static class GroundSegmentation
         visited[start] = true;
         while (queue.TryDequeue(out int node))
         {
+            cancellation.ThrowIfCancellationRequested();
             component.Add(node);
             foreach (int neighbour in Neighbours4(node, width, height))
             {
@@ -305,7 +323,7 @@ public static class GroundSegmentation
         if (y + 1 < height) yield return node + width;
     }
 
-    private static bool FillEmptyTerrainNodes(double[] terrain, int width, int height)
+    private static bool FillEmptyTerrainNodes(double[] terrain, int width, int height, CancellationToken cancellation)
     {
         var queue = new Queue<int>();
         for (int index = 0; index < terrain.Length; index++)
@@ -315,6 +333,7 @@ public static class GroundSegmentation
 
         while (queue.TryDequeue(out int node))
         {
+            cancellation.ThrowIfCancellationRequested();
             foreach (int neighbour in Neighbours4(node, width, height))
             {
                 if (!double.IsNaN(terrain[neighbour]))

@@ -371,14 +371,25 @@ internal sealed class ChunkWriter : IDisposable
         _pending = 0;
     }
 
-    public static StorePoint[] ReadAll(string path, int count, bool withSourceIndices)
+    private static void ReadCancellable(Stream stream, Span<byte> bytes, CancellationToken cancellation)
+    {
+        while (!bytes.IsEmpty)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            int length = Math.Min(bytes.Length, 1 << 20);
+            stream.ReadExactly(bytes[..length]);
+            bytes = bytes[length..];
+        }
+    }
+
+    public static StorePoint[] ReadAll(string path, int count, bool withSourceIndices, CancellationToken cancellation = default)
     {
         var points = new StorePoint[count];
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16);
         Span<byte> destination = MemoryMarshal.AsBytes(points.AsSpan());
         if (withSourceIndices)
         {
-            stream.ReadExactly(destination);
+            ReadCancellable(stream, destination, cancellation);
             return points;
         }
 
@@ -388,9 +399,10 @@ internal sealed class ChunkWriter : IDisposable
         try
         {
             Span<byte> source = compact.AsSpan(0, count * StorePoint.CompactStride);
-            stream.ReadExactly(source);
+            ReadCancellable(stream, source, cancellation);
             for (int i = 0; i < count; i++)
             {
+                if ((i & 1023) == 0) cancellation.ThrowIfCancellationRequested();
                 source.Slice(i * StorePoint.CompactStride, StorePoint.CompactStride)
                     .CopyTo(destination[(i * StorePoint.Stride)..]);
             }

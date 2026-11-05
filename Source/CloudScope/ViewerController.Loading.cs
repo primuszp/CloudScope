@@ -24,7 +24,11 @@ public sealed partial class ViewerController
     /// <summary>Progress of the current load, or -1 after cancellation/publication.</summary>
     public int LoadProgress => _loadOperation.Progress;
 
-    private void InvalidatePendingLoad() => _loadOperation.Cancel();
+    private void InvalidatePendingLoad()
+    {
+        _loadOperation.Cancel();
+        _processing.Cancel();
+    }
 
     /// <summary>
     /// Reads an uncompressed LAS file and shows it. The read happens on a background thread and

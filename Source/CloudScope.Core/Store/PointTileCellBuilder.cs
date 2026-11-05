@@ -35,12 +35,13 @@ internal static class PointTileCellBuilder
         (float Min, float Max)[] cube,
         int level,
         PointTileBuildOptions options,
-        List<PointTileCell> cells)
+        List<PointTileCell> cells, CancellationToken cancellation = default)
     {
+        cancellation.ThrowIfCancellationRequested();
         if (count <= 0)
             return;
 
-        BuildCell(points.AsSpan(0, count).ToArray(), cube, (byte)level, options, cells);
+        BuildCell(points.AsSpan(0, count).ToArray(), cube, (byte)level, options, cells, cancellation);
     }
 
     private static int BuildCell(
@@ -48,8 +49,9 @@ internal static class PointTileCellBuilder
         (float Min, float Max)[] cube,
         byte level,
         PointTileBuildOptions options,
-        List<PointTileCell> cells)
+        List<PointTileCell> cells, CancellationToken cancellation = default)
     {
+        cancellation.ThrowIfCancellationRequested();
         // Small enough to draw in one go: keep everything and stop splitting.
         if (points.Length <= options.MinimumCellPoints || level >= byte.MaxValue - 1)
         {
@@ -77,6 +79,7 @@ internal static class PointTileCellBuilder
 
         foreach (StorePoint point in points)
         {
+            cancellation.ThrowIfCancellationRequested();
             int gx = Axis(point.Vertex.X, cube[0].Min, sizeX, resolution);
             int gy = Axis(point.Vertex.Y, cube[1].Min, sizeY, resolution);
             int gz = Axis(point.Vertex.Z, cube[2].Min, sizeZ, resolution);

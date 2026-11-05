@@ -862,15 +862,17 @@ public sealed partial class MainWindow : Window
         // FPS moves every tick, so it is written on its own.
         _statusFps.Text = status.Fps > 0f ? $"{status.Fps:0} fps" : "";
 
-        _statusProgress.IsVisible = status.IsLoading || status.SurfaceProgress >= 0;
-        _statusProgress.Value = status.IsLoading ? status.LoadProgress : Math.Max(0, status.SurfaceProgress);
+        _statusProgress.IsVisible = status.IsLoading || status.SurfaceProgress >= 0 || status.ProcessingProgress >= 0;
+        _statusProgress.Value = status.IsLoading ? status.LoadProgress : Math.Max(0, Math.Max(status.SurfaceProgress, status.ProcessingProgress));
         if (status.IsLoading)
             _statusText.Text = $"Loading {status.LoadProgress}%";
         else if (status.SurfaceProgress >= 0)
             _statusText.Text = $"Reconstructing surface {status.SurfaceProgress}%";
+        else if (status.ProcessingProgress >= 0)
+            _statusText.Text = $"{status.ProcessingName} {status.ProcessingProgress}%";
         else if (status.StreamingError is { } error)
             _statusText.Text = $"Streaming error: {error}";
-        else if (_lastStatus is { } last && (last.IsLoading || last.SurfaceProgress >= 0 || last.StreamingError != null))
+        else if (_lastStatus is { } last && (last.IsLoading || last.SurfaceProgress >= 0 || last.ProcessingProgress >= 0 || last.StreamingError != null))
             _statusText.Text = "Ready";
 
         _lastStatus = status;

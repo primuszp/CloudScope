@@ -49,7 +49,7 @@ internal sealed class PointTileStoreWriter : IDisposable
     /// children contiguous in the table, so a node needs only a first index and a count, and
     /// it puts the coarse levels first in the point file - the order a traversal reads them.
     /// </remarks>
-    public void Append(List<PointTileCell> cells)
+    public void Append(List<PointTileCell> cells, CancellationToken cancellation = default)
     {
         if (cells.Count == 0)
             return;
@@ -59,6 +59,7 @@ internal sealed class PointTileStoreWriter : IDisposable
         var childCount = new int[cells.Count];
         for (int i = 0; i < breadthFirst.Count; i++)
         {
+            cancellation.ThrowIfCancellationRequested();
             List<int> children = cells[breadthFirst[i]].Children;
             firstChild[i] = children.Count > 0 ? breadthFirst.Count : -1;
             childCount[i] = children.Count;
@@ -70,6 +71,7 @@ internal sealed class PointTileStoreWriter : IDisposable
             int baseIndex = _nodes.Count;
             for (int i = 0; i < breadthFirst.Count; i++)
             {
+                cancellation.ThrowIfCancellationRequested();
                 PointTileCell cell = cells[breadthFirst[i]];
                 long offset = AppendPoints(cell);
                 MaxLevel = Math.Max(MaxLevel, cell.Level);

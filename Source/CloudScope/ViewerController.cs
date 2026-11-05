@@ -118,6 +118,8 @@ namespace CloudScope
             _highlightRenderer = renderBackend.CreateHighlightRenderer();
             _selectionGizmoRenderers = renderBackend.CreateSelectionGizmoRenderers();
             _selection = new SelectionController(_highlightRenderer.MarkDirty);
+            _processing = new ViewerProcessingService(_pendingWork.Enqueue, message => BackgroundMessage?.Invoke(message));
+            _selection.Labels.LabelsChanged += _processing.CancelDocumentWork;
             _viewports = Enumerable.Range(0, 9)
                 .Select(index => new ViewportState(
                     index == 0 ? ViewportKind.Perspective3D : ViewportKind.Top2D,
@@ -565,6 +567,8 @@ namespace CloudScope
             SourceName = _sourceName,
             Layers = _layers.Select(layer => new CloudLayerSnapshot(layer.Name, layer.PointCount, layer.Visible)).ToArray(),
             SurfaceProgress = _surfaceOperation.Progress,
+            ProcessingProgress = _processing.Progress,
+            ProcessingName = _processing.Name,
             SurfaceTriangles = _surface?.Indices.Length / 3 ?? 0,
             LoadedCount = StoredPointCount ?? _dataset?.LoadedCount ?? _pointRenderer.PointCount,
             VisibleCount = StoredPointCount ?? _dataset?.VisibleCount ?? _pointRenderer.PointCount,
@@ -687,22 +691,6 @@ namespace CloudScope
         public bool HasUnsavedLabels => _selection.HasUnsavedLabels;
         public int? CurrentInstanceId => _selection.CurrentInstanceId;
 
-        public string SegmentTree(Vector3 seed, int? instanceId = null)
-        {
-            int id = instanceId ?? NextTreeInstanceId();
-            TreeSegmentationResult result = _selection.SegmentTree(seed, id);
-            if (!result.Succeeded) return $"Tree segmentation failed: {result.FailureReason}";
-            return $"Tree {id}: {result.PointIndices.Count:N0} points segmented; {result.CompetitorCount} competing trunk marker(s).";
-        }
-
-        public string SegmentGround(GroundSegmentationOptions? options = null)
-        {
-            GroundSegmentationResult result = _selection.SegmentGround(options);
-            if (!result.Succeeded) return $"Ground segmentation failed: {result.FailureReason}";
-            return $"CSF ground: {result.PointIndices.Count:N0} ground and {result.NonGroundPointCount:N0} non-ground points; " +
-                   $"{result.ContactNodeCount:N0} / {result.ClothNodeCount:N0} cloth nodes contacted terrain.";
-        }
-
         private int NextTreeInstanceId() => _selection.Labels.AllAnnotations.Values
             .Where(a => string.Equals(a.LabelName, "Tree", StringComparison.OrdinalIgnoreCase) && a.InstanceId.HasValue)
             .Select(a => a.InstanceId!.Value).DefaultIfEmpty(0).Max() + 1;
@@ -796,7 +784,11 @@ namespace CloudScope
         public string RotateActiveSelection(float degrees, int axis) => _selection.RotateActiveSelection(degrees, axis);
         public string ScaleActiveSelection(float factor) => _selection.ScaleActiveSelection(factor);
 
-        public void CancelOrExitLabelMode() => _selection.CancelOrExitLabelMode();
+        public void CancelOrExitLabelMode()
+        {
+            CancelBackgroundOperations();
+            _selection.CancelOrExitLabelMode();
+        }
 
         public bool UndoSelectionCommand() => HasActiveSelection
             ? _selection.UndoSelectionCommand()
@@ -1902,6 +1894,7 @@ namespace CloudScope
 
         public void KeyDown(ViewerKey key, bool ctrl, int mouseX, int mouseY)
         {
+            if (key == ViewerKey.Escape && CancelBackgroundOperations()) _suppressEscapeClose = true;
             if (key == ViewerKey.Escape && _objectGripSession.Cancel())
             {
                 if (_gripEditBefore != null && _gripEditKey != null)
@@ -2152,6 +2145,7 @@ namespace CloudScope
             _disposed = true;
             _loadOperation.Dispose();
             _surfaceOperation.Dispose();
+            _processing.Dispose();
             _api?.Dispose();
             _frameLifecycle.WaitForIdle();
             _surfaceRenderer.Dispose();

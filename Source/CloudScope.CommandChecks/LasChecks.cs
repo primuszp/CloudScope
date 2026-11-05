@@ -87,7 +87,7 @@ internal static class LasChecks
         }
         finally { Directory.Delete(directory, true); }
     }
-    private static byte[] Fixture(byte format, byte minor, int stride)
+    internal static byte[] Fixture(byte format, byte minor, int stride)
     {
         int header = minor >= 4 ? 375 : minor == 3 ? 235 : 227;
         var bytes = new byte[header + stride];
