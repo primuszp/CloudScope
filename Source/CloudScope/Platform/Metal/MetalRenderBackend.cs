@@ -11,11 +11,16 @@ namespace CloudScope.Platform.Metal
     public sealed class MetalRenderBackend : IRenderBackend
     {
         private readonly MetalRenderContext _context;
+        private bool _ownsQueue;
 
         /// <summary>Creates a backend that renders with the given device and queue.</summary>
         public MetalRenderBackend(MTLDevice device, MTLCommandQueue commandQueue)
+            : this(device, commandQueue, ownsQueue: false) { }
+
+        private MetalRenderBackend(MTLDevice device, MTLCommandQueue commandQueue, bool ownsQueue)
         {
             _context = new MetalRenderContext(device, commandQueue, ChooseSampleCount(device));
+            _ownsQueue = ownsQueue;
         }
 
         /// <summary>Creates a backend on the system default device, with a queue of its own.</summary>
@@ -25,13 +30,14 @@ namespace CloudScope.Platform.Metal
             if (device.NativePtr == IntPtr.Zero)
                 throw new InvalidOperationException("No Metal device is available.");
 
-            return new MetalRenderBackend(device, device.NewCommandQueue());
+            return new MetalRenderBackend(device, device.NewCommandQueue(), ownsQueue: true);
         }
 
         public RenderBackendKind Kind => RenderBackendKind.Metal;
 
         /// <summary>The device this backend renders with; hosts create their view against it.</summary>
         public MTLDevice Device => _context.Device;
+        public MTLCommandQueue CommandQueue => _context.CommandQueue;
         public int SampleCount => _context.SampleCount;
 
         /// <summary>Sets physical pixels per logical UI pixel for Retina-sized overlays.</summary>
@@ -104,8 +110,13 @@ namespace CloudScope.Platform.Metal
             return new MetalFrameSession(_context, frame);
         }
 
+        public string ResourceDiagnostics => _context.ResourceDiagnostics;
         public void WaitForIdle() => _context.WaitForIdle();
-        public void DisposeFrameResources() => _context.Dispose();
+        public void DisposeFrameResources()
+        {
+            _context.Dispose();
+            if (_ownsQueue) { MetalResources.Release(_context.CommandQueue.NativePtr); _ownsQueue = false; }
+        }
         public void Resize(int width, int height) { }
 
         private static int ChooseSampleCount(MTLDevice device)

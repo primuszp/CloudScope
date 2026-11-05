@@ -37,7 +37,7 @@ public static class CommandInventory
             text.AppendLine();
         }
         text.AppendLine("A folyamatos egér- és billentyűgesztusok bemeneti események; a megfelelő műveletek parancsból is elérhetők. A rendszer részletei: [CommandSystem.md](CommandSystem.md).");
-        return text.ToString();
+        return text.ToString().ReplaceLineEndings("\n");
 
         static string Escape(string value) => value.Replace("|", "\\|").Replace("\r", "").Replace("\n", " ");
     }

@@ -16,6 +16,8 @@ using CloudScope.Forestry;
 using CloudScope.Loading;
 using OpenTK.Mathematics;
 
+if (args is ["--benchmark"]) { PerformanceChecks.Benchmark(); return 0; }
+
 if (args is ["--metal-gpu"])
 {
 #if ENABLE_SHARPMETAL
@@ -150,7 +152,7 @@ void Check(string name, bool ok, string detail = "")
 
 // ---------- 1. Registration of the real command set ----------
 await ExchangeChecks.Run(Check);
-try { OwnershipChecks.Run(Check); ProcessingChecks.Run(Check); FrameResourceChecks.Run(Check); StreamingChecks.Run(Check); PersistenceChecks.Run(Check); LasChecks.Run(Check); ImportCancellationChecks.Run(Check); ReviewChecks.Run(Check); NativeInteractionChecks.Run(Check); ViewerWorkflowChecks.Run(Check); await BackgroundOperationChecks.Run(Check); }
+try { PerformanceChecks.Run(Check); OwnershipChecks.Run(Check); ProcessingChecks.Run(Check); FrameResourceChecks.Run(Check); StreamingChecks.Run(Check); PersistenceChecks.Run(Check); LasChecks.Run(Check); ImportCancellationChecks.Run(Check); ReviewChecks.Run(Check); NativeInteractionChecks.Run(Check); ViewerWorkflowChecks.Run(Check); await BackgroundOperationChecks.Run(Check); }
 catch (Exception ex) { Check("Review regression checks", false, ex.ToString()); }
 try
 {

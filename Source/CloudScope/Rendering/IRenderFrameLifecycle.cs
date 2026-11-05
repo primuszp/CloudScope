@@ -2,6 +2,7 @@ namespace CloudScope.Rendering
 {
     public interface IRenderFrameLifecycle
     {
+        string ResourceDiagnostics => "";
         void Initialize();
         void WaitForIdle() { }
         void DisposeFrameResources() { }

@@ -156,7 +156,7 @@ public sealed partial class ViewerCommands
 
     [CommandMethod("CANCEL", "ESC", Flags = CommandFlags.NoHistory | CommandFlags.NoUndoMarker,
         Group = CommandGroup.Edit, Scope = CommandScope.Viewer,
-        Summary = "Cancels the active command or selection.",
+        Summary = "Cancels the active command, selection or background processing.",
         Syntax = "CANCEL")]
     public IEnumerable<PromptStep> Cancel(CommandContext context)
     {

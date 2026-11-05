@@ -54,7 +54,7 @@ namespace CloudScope.Platform.Metal
             {
                 MTLDevice device = _renderBackend.Device;
                 _device = device;
-                _commandQueue = device.NewCommandQueue();
+                _commandQueue = _renderBackend.CommandQueue;
 
                 var rect = new NSRect(100, 100, width, height);
                 _mtkView = new MTKEventView(rect, device)

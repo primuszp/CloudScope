@@ -39,7 +39,7 @@ A parancsok és a szkriptek közös futtatót használnak. A szkript üres sora 
 | Parancs | Alias | Hatókör | Szintaxis | Művelet |
 | --- | --- | --- | --- | --- |
 | `3DPOLY` | – | Viewer | `3DPOLY <first point> <next point>... [Close/Undo]` | Draws a straight-segment 3D polyline with object and axis snapping. |
-| `CANCEL` | ESC | Viewer | `CANCEL` | Cancels the active command or selection. |
+| `CANCEL` | ESC | Viewer | `CANCEL` | Cancels the active command, selection or background processing. |
 | `CONFIRM` | – | Document | `CONFIRM` | Applies the active selection to the current label. |
 | `FIT` | – | Document | `FIT [Ground]` | Shrinks the selection volume onto the points inside it. |
 | `MOVE` | M | Document | `MOVE [X/Y/Z] <dx,dy,dz> \| <base point> <second point>` | Moves the selection volume by a displacement or between two points. |

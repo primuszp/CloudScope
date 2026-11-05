@@ -1,7 +1,7 @@
 namespace CloudScope.Rendering;
 
 /// <summary>Reuses draw resources only after the owning GPU submission completes.</summary>
-internal sealed class FrameResourcePool<T>(Func<int, T> create, Func<T, int> capacity, Action<T> release) : IDisposable
+internal sealed class FrameResourcePool<T>(Func<int, T> create, Func<T, int> capacity, Action<T> release, long maximumCachedBytes = 64L * 1024 * 1024) : IDisposable
 {
     private readonly List<T> _free = [];
     private List<T> _current = [];
@@ -9,6 +9,8 @@ internal sealed class FrameResourcePool<T>(Func<int, T> create, Func<T, int> cap
     private bool _active;
     public long CompletedSequence { get; private set; }
     public int InFlightCount => _submitted.Count;
+    public long CachedBytes { get; private set; }
+    public int CreatedResources { get; private set; }
 
     public void BeginFrame()
     {
@@ -24,8 +26,8 @@ internal sealed class FrameResourcePool<T>(Func<int, T> create, Func<T, int> cap
         for (int i = 0; i < _free.Count; i++)
             if (capacity(_free[i]) >= bytes && (best < 0 || capacity(_free[i]) < capacity(_free[best]))) best = i;
         T resource;
-        if (best < 0) resource = create(bytes);
-        else { resource = _free[best]; _free.RemoveAt(best); }
+        if (best < 0) { resource = create(bytes); CreatedResources++; }
+        else { resource = _free[best]; _free.RemoveAt(best); CachedBytes -= capacity(resource); }
         _current.Add(resource);
         return resource;
     }
@@ -40,7 +42,7 @@ internal sealed class FrameResourcePool<T>(Func<int, T> create, Func<T, int> cap
 
     public void CancelFrame()
     {
-        _free.AddRange(_current);
+        foreach (T resource in _current) Cache(resource);
         _current.Clear();
         _active = false;
     }
@@ -49,9 +51,16 @@ internal sealed class FrameResourcePool<T>(Func<int, T> create, Func<T, int> cap
     {
         var frame = _submitted.Dequeue();
         frame.Wait();
-        _free.AddRange(frame.Resources);
+        foreach (T resource in frame.Resources) Cache(resource);
         CompletedSequence = frame.Sequence;
         frame.ReleaseCompletion();
+    }
+
+    private void Cache(T resource)
+    {
+        int bytes = capacity(resource);
+        if (CachedBytes + bytes > maximumCachedBytes) release(resource);
+        else { _free.Add(resource); CachedBytes += bytes; }
     }
 
     public void WaitForIdle() { while (_submitted.Count > 0) RetireFirst(); }
@@ -61,6 +70,7 @@ internal sealed class FrameResourcePool<T>(Func<int, T> create, Func<T, int> cap
         CancelFrame();
         foreach (T resource in _free) release(resource);
         _free.Clear();
+        CachedBytes = 0;
     }
 
     private sealed record Submission(long Sequence, List<T> Resources, Func<bool> IsComplete, Action Wait, Action ReleaseCompletion);

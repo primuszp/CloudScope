@@ -17,7 +17,7 @@ namespace CloudScope
 
         private readonly IReadOnlyDictionary<SelectionToolType, ISelectionTool> _tools;
         private readonly SelectionPreviewWorker _previewWorker = new();
-        private readonly LabelManager          _labelManager  = new();
+        private readonly LabelManager          _labelManager  = new(trackLocalHistory: false);
         private readonly LabelRegistry         _registry      = new();
         private readonly Action<string>        _log;
         private readonly GripInteractionSession _gripSession = new();

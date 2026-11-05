@@ -4,6 +4,7 @@ namespace CloudScope.Commands;
 public interface IUndoableAction
 {
     string Description { get; }
+    long EstimatedBytes => 256;
     void Undo();
     void Redo();
 }
@@ -18,8 +19,12 @@ public interface IUndoableAction
 /// happened to perform. A command declaring <see cref="CommandFlags.NoUndoMarker"/> opens no
 /// mark: inquiry and view commands should not consume an undo step.
 /// </remarks>
-public sealed class UndoManager
+public sealed class UndoManager(long memoryBudgetBytes = 128L * 1024 * 1024, int maximumCommands = 1000)
 {
+    public event Action? HistoryTrimmed;
+    public long EstimatedRetainedBytes => _undo.Concat(_redo).Sum(group => group.EstimatedBytes);
+    public long MemoryBudgetBytes { get; } = Math.Max(0, memoryBudgetBytes);
+    private readonly int _maximumCommands = Math.Max(0, maximumCommands);
     private readonly List<Group> _undo = [];
     private readonly List<Group> _redo = [];
     private Group? _open;
@@ -62,6 +67,7 @@ public sealed class UndoManager
             standalone.Actions.Add(action);
             _undo.Add(standalone);
             _redo.Clear();
+            TrimToBudget();
         }
     }
 
@@ -75,6 +81,7 @@ public sealed class UndoManager
 
         _undo.Add(group);
         _redo.Clear();
+        TrimToBudget();
     }
 
     /// <summary>Reverses everything the open command did, for a cancelled or failed command.</summary>
@@ -146,19 +153,38 @@ public sealed class UndoManager
         _open = null;
     }
 
+    private void TrimToBudget()
+    {
+        bool trimmed = false;
+        while (_undo.Count + _redo.Count > _maximumCommands || EstimatedRetainedBytes > MemoryBudgetBytes)
+        {
+            if (_undo.Count > 0)
+            {
+                _undo.RemoveAt(0);
+                for (int i = 0; i < _marks.Count; i++) _marks[i] = Math.Max(0, _marks[i] - 1);
+            }
+            else if (_redo.Count > 0) _redo.RemoveAt(0);
+            else break;
+            trimmed = true;
+        }
+        if (trimmed) HistoryTrimmed?.Invoke();
+    }
+
     private void TrimMarks() => _marks.RemoveAll(mark => mark > _undo.Count);
 
     private sealed class Group(string name)
     {
+        public long EstimatedBytes => Actions.Sum(action => Math.Max(0, action.EstimatedBytes));
         public string Name { get; } = name;
         public List<IUndoableAction> Actions { get; } = [];
     }
 }
 
 /// <summary>An action defined by two delegates, for callers that already have both directions.</summary>
-public sealed class DelegateUndoAction(string description, Action undo, Action redo) : IUndoableAction
+public sealed class DelegateUndoAction(string description, Action undo, Action redo, long estimatedBytes = 256) : IUndoableAction
 {
     public string Description { get; } = description;
+    public long EstimatedBytes { get; } = Math.Max(0, estimatedBytes);
     public void Undo() => undo();
     public void Redo() => redo();
 }

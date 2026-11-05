@@ -41,7 +41,9 @@ internal static class MetalGpuChecks
                 var depthAttachment = descriptor.DepthAttachment;
                 depthAttachment.Texture = depth;
                 depthAttachment.LoadAction = MTLLoadAction.Clear;
-                depthAttachment.StoreAction = MTLStoreAction.DontCare;
+                depthAttachment.StoreAction = MTLStoreAction.Store;
+                depthAttachment.ClearDepth = 1;
+                context.SetDepthTexture(depth);
                 var command = queue.CommandBuffer();
                 context.BeginFrame(descriptor, default, command);
                 var encoder = command.RenderCommandEncoder(descriptor);
@@ -52,9 +54,9 @@ internal static class MetalGpuChecks
                 {
                     float x0 = -1f + 2f * (i % columns) / columns, x1 = x0 + 2f / columns;
                     float y1 = 1f - 2f * (i / columns) / rows, y0 = y1 - 2f / rows;
-                    var buffer = renderer.CreateFrameBuffer([x0,y0,0, x1,y0,0, x1,y1,0, x0,y0,0, x1,y1,0, x0,y1,0]);
+                    var buffer = renderer.CreateFrameBuffer([x0,y0,0.5f, x1,y0,0.5f, x1,y1,0.5f, x0,y0,0.5f, x1,y1,0.5f, x0,y1,0.5f]);
                     Vector4 tint = ((i + pass) % 3) switch { 0 => new(1,0,0,1), 1 => new(0,1,0,1), _ => new(0,0,1,1) };
-                    renderer.Draw(buffer, 6, MTLPrimitiveType.Triangle, Matrix4.Identity, tint, false);
+                    renderer.Draw(buffer, 6, MTLPrimitiveType.Triangle, Matrix4.Identity, tint, depthTest: true, writeDepth: true);
                 }
                 encoder.EndEncoding();
                 command.Commit();
@@ -71,7 +73,11 @@ internal static class MetalGpuChecks
                     if (bytes[offset + channel] < 250 || bytes[offset + (channel + 1) % 3] > 5 || bytes[offset + (channel + 2) % 3] > 5)
                         throw new InvalidOperationException($"Draw {i} in frame {pass} lost its geometry or uniforms.");
                 }
-                Console.WriteLine($"  ok  Metal frame {pass + 1}: all 600 independent draws verified by pixel readback");
+                float picked = new MetalDepthPicker(context).ReadDepth(width / 2, height / 2);
+                // IDepthPicker returns OpenGL window depth: (NDC z + 1) / 2.
+                const float expectedWindowDepth = (0.5f + 1f) / 2f;
+                if (Math.Abs(picked - expectedWindowDepth) > 1e-5f) throw new InvalidOperationException($"Depth readback differs: {picked}.");
+                Console.WriteLine($"  ok  Metal frame {pass + 1}: all 600 independent draws verified by color and depth readback");
                 MetalResources.Release(descriptor.NativePtr);
             }
         }

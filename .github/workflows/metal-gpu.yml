@@ -1,0 +1,18 @@
+name: Native Metal GPU checks
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gpu:
+    # Register an actual Mac with these runner labels; hosted VMs need not expose Metal.
+    runs-on: [self-hosted, macOS, ARM64, cloudscope-gpu]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6
+        with:
+          global-json-file: global.json
+      - run: dotnet run --project Source/CloudScope.CommandChecks -c Release -- --metal-gpu

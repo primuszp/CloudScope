@@ -23,8 +23,16 @@ namespace CloudScope.Platform.Metal
             Device = device;
             CommandQueue = commandQueue;
             SampleCount = Math.Max(sampleCount, 1);
-            _buffers = new(size => Device.NewBuffer((ulong)size, MTLResourceOptions.ResourceStorageModeShared),
+            _buffers = new(CreateDrawBuffer,
                 buffer => checked((int)buffer.Length), buffer => MetalResources.Release(buffer.NativePtr));
+        }
+
+        private MTLBuffer CreateDrawBuffer(int size)
+        {
+            if (size <= 0) throw new ArgumentOutOfRangeException(nameof(size));
+            MTLBuffer buffer = Device.NewBuffer((ulong)size, MTLResourceOptions.ResourceStorageModeShared);
+            if (buffer.NativePtr == IntPtr.Zero) throw new OutOfMemoryException($"Metal could not allocate {size:N0} draw bytes.");
+            return buffer;
         }
 
         private readonly CloudScope.Rendering.FrameResourcePool<MTLBuffer> _buffers;
@@ -128,6 +136,7 @@ namespace CloudScope.Platform.Metal
             CurrentFrame = null;
         }
 
+        public string ResourceDiagnostics => $"GPU buffers   {_buffers.CreatedResources:N0} created; {_buffers.CachedBytes:N0} cached bytes; {_buffers.InFlightCount} in flight";
         public void WaitForIdle() => _buffers.WaitForIdle();
         public void Dispose()
         {

@@ -37,6 +37,11 @@ internal static class PersistenceChecks
             var identity = LabelSourceIdentity.Create(points, points.Length, 500, 600, 700);
             labels.ApplyLabel([0], "Tree");
             LabelFileIO.Save("original.xyz", labels, path, identity);
+            bool sourceProtected = false;
+            string sourceCloud = Path.Combine(directory, "cloud.xyz");
+            File.WriteAllText(sourceCloud, "1 2 3");
+            try { LabelFileIO.Save(sourceCloud, labels, sourceCloud, identity); } catch (ArgumentException) { sourceProtected = true; }
+            check("Label output cannot replace the source survey", sourceProtected && File.ReadAllText(sourceCloud) == "1 2 3", "");
             var imported = new LabelManager();
             check("Renaming a source preserves its geometry identity", LabelFileIO.Load("renamed.xyz", imported, path, 2, identity), "");
             var reversed = LabelSourceIdentity.Create(points.Reverse().ToArray(), 2, 500, 600, 700);

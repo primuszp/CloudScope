@@ -77,6 +77,8 @@ namespace CloudScope.Labeling
             string outPath = string.IsNullOrWhiteSpace(destinationPath)
                 ? Path.ChangeExtension(lasFilePath, ".labels.json")
                 : destinationPath;
+            if (CloudScope.Loading.FilePathIdentity.SamePath(lasFilePath, outPath))
+                throw new ArgumentException("Choose a label destination different from the source point cloud.", nameof(destinationPath));
             CloudScope.IO.AtomicFile.WriteText(outPath, json);
             Console.WriteLine($"Labels saved: {outPath}  ({manager.Count} points)");
         }

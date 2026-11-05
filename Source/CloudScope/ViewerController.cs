@@ -23,6 +23,7 @@ namespace CloudScope
         private readonly ISurfaceRenderer _surfaceRenderer;
         private readonly ViewerDocument _document = new();
         private readonly ViewNavigation _navigation = new();
+        private readonly PolylineGeometryCache _polylineGeometry = new();
         private bool _surfaceVisible = true;
         private bool _residentVisible = true;
         private readonly BackgroundOperation<SurfaceMesh> _surfaceOperation;
@@ -133,6 +134,7 @@ namespace CloudScope
             // One undo step per labelling command: the label manager reports each reversible
             // change, and the runtime's command marks decide where the steps begin and end.
             _selection.Labels.ActionRecorded += UndoHistory.Record;
+            UndoHistory.HistoryTrimmed += () => BackgroundMessage?.Invoke("Old undo history was released to stay within its memory/command limit.");
         }
 
         private readonly string _backendName;
@@ -191,6 +193,9 @@ namespace CloudScope
                  + Environment.NewLine + $"Points loaded {status.LoadedCount:N0}"
                  + Environment.NewLine + $"Points drawn  {status.VisibleCount:N0}"
                  + Environment.NewLine + $"Frame budget  {(PointRenderBudget.MaxDrawPointsPerFrame?.ToString("N0") ?? PointRenderLimits.DefaultFrameBudget.ToString("N0"))} points"
+                 + Environment.NewLine + $"Undo memory   {UndoHistory.EstimatedRetainedBytes:N0} / {UndoHistory.MemoryBudgetBytes:N0} estimated bytes"
+                 + Environment.NewLine + $"Line cache    {_polylineGeometry.CachedBytes:N0} bytes"
+                 + Environment.NewLine + _frameLifecycle.ResourceDiagnostics
                  + Environment.NewLine + $"Verbose log   {(_frameTiming.Enabled ? "on (CLOUDSCOPE_FRAME_LOG)" : "off")}";
         }
 
@@ -1113,7 +1118,7 @@ namespace CloudScope
             UndoHistory.Record(new DelegateUndoAction(
                 "3D polyline",
                 () => RemovePolyline(polyline.Id),
-                () => AddPolyline(polyline, select: false)));
+                () => AddPolyline(polyline, select: false), 256 + polyline.Vertices.LongLength * 12));
             ClearPolylineDraft();
             return $"3D polyline {polyline.Name} created with {polyline.Vertices.Length} vertices"
                 + (closed ? ", closed." : ".");
@@ -1227,7 +1232,7 @@ namespace CloudScope
             UndoHistory.Record(new DelegateUndoAction(
                 "Polyline",
                 () => RemovePlanarPolyline(polyline.Id),
-                () => AddPlanarPolyline(polyline, select: false)));
+                () => AddPlanarPolyline(polyline, select: false), 256 + polyline.Vertices.LongLength * 20));
             ClearPlanarPolylineDraft();
             return $"Polyline {polyline.Name} created with {polyline.Vertices.Length} vertices"
                 + (closed ? ", closed." : ".");
@@ -1297,7 +1302,7 @@ namespace CloudScope
                 {
                     selected.RestoreState(joined);
                     RemovePlanarPolyline(removed.Id);
-                }));
+                }, 768 + (beforeSelected.Vertices.LongLength + removed.Vertices.LongLength + joined.Vertices.LongLength) * 20));
             return $"Polyline {removed.Name} joined to {selected.Polyline.Name}.";
         }
 
@@ -1328,7 +1333,7 @@ namespace CloudScope
                 {
                     foreach (PlanarPolyline polyline in loaded)
                         AddPlanarPolyline(polyline, select: false);
-                }));
+                }, 256 + loaded.Sum(line => line.Vertices.LongLength * 20)));
             return $"Loaded {loaded.Length} planar polylines from {Path.GetFullPath(path)}.";
         }
 
@@ -1403,7 +1408,7 @@ namespace CloudScope
             UndoHistory.Record(new DelegateUndoAction(
                 undoDescription,
                 () => target.RestoreState(before),
-                () => target.RestoreState(after)));
+                () => target.RestoreState(after), 512 + (before.Vertices.LongLength + after.Vertices.LongLength) * 20));
             return message;
         }
 
@@ -1680,7 +1685,7 @@ namespace CloudScope
                         UndoHistory.Record(new DelegateUndoAction(
                             edited.EditDescription,
                             () => RestoreGripTargetState(key, before),
-                            () => RestoreGripTargetState(key, after)));
+                            () => RestoreGripTargetState(key, after), EstimateEditState(before) + EstimateEditState(after)));
                 }
                 UndoHistory.Commit();
                 _gripEditBefore = null;
@@ -1806,6 +1811,7 @@ namespace CloudScope
         {
             if (_disposed) return;
             _frameTiming.BeginFrame();
+            _polylineGeometry.BeginFrame();
             using var frame = _frameLifecycle.BeginFrame();
             var frameData = frame.FrameData;
             _streamingRenderer.BeginFrame(frameData);
@@ -1880,14 +1886,13 @@ namespace CloudScope
                 foreach (PlanarPolylineGripTarget polylineTarget in _planarPolylines)
                 {
                     bool selected = ReferenceEquals(_selectedGripTarget, polylineTarget);
-                    Vector3[] points = PlanarPolylineGeometry.Tessellate(polylineTarget.Polyline);
+                    var geometry = _polylineGeometry.Get(polylineTarget.Polyline);
                     Vector4 polylineColor = selected
                         ? new Vector4(0.18f, 0.78f, 1f, 1f)
                         : new Vector4(0.98f, 0.86f, 0.22f, 1f);
-                    if (PlanarPolylineGeometry.HasWidth(polylineTarget.Polyline))
+                    if (geometry.HasWidth)
                     {
-                        (Vector3[] left, Vector3[] right) =
-                            PlanarPolylineGeometry.TessellateWidthEdges(polylineTarget.Polyline);
+                        Vector3[] left = geometry.Left, right = geometry.Right;
                         _overlayRenderer.RenderPolyline(frameData, ref view, ref proj,
                             left, false, polylineColor, selected ? 2.5f : 2f);
                         _overlayRenderer.RenderPolyline(frameData, ref view, ref proj,
@@ -1896,7 +1901,7 @@ namespace CloudScope
                     else
                     {
                         _overlayRenderer.RenderPolyline(frameData, ref view, ref proj,
-                            points, false, polylineColor, selected ? 2.5f : 2f);
+                            geometry.Center, false, polylineColor, selected ? 2.5f : 2f);
                     }
                     if (selected)
                         _overlayRenderer.RenderGrips(frameData, ref view, ref proj, viewport.Camera,
@@ -2049,6 +2054,7 @@ namespace CloudScope
             _selectionGizmoRenderers.Cylinder.Dispose();
             _highlightRenderer.Dispose();
             _selection.Dispose();
+            _polylineGeometry.Clear();
             _frameLifecycle.DisposeFrameResources();
         }
 
@@ -2497,6 +2503,13 @@ namespace CloudScope
         private bool IsTargetVisible(ITransactionalGripTarget target, ViewportState viewport) =>
             target is not CrossSectionGripTarget
             || viewport.SectionMode == SectionDisplayMode.PlanGuide;
+
+        private static long EstimateEditState(object state) => state switch
+        {
+            PlanarPolyline line => 256 + line.Vertices.LongLength * 20,
+            Polyline3D line => 256 + line.Vertices.LongLength * 12,
+            _ => 256
+        };
 
         private void RestoreGripTargetState(string editKey, object state)
         {

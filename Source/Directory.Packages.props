@@ -1,0 +1,18 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include="Avalonia" Version="12.0.3" />
+    <PackageVersion Include="Avalonia.Desktop" Version="12.0.3" />
+    <PackageVersion Include="Avalonia.Headless" Version="12.0.3" />
+    <PackageVersion Include="Avalonia.Themes.Fluent" Version="12.0.3" />
+    <PackageVersion Include="ImGui.NET" Version="1.91.6.1" />
+    <PackageVersion Include="Metal.NET" Version="2.3.0" />
+    <PackageVersion Include="OpenTK" Version="4.9.4" />
+    <PackageVersion Include="OpenTK.Core" Version="4.9.4" />
+    <PackageVersion Include="OpenTK.Mathematics" Version="4.9.4" />
+    <PackageVersion Include="OpenTK.Windowing.Common" Version="4.9.4" />
+    <PackageVersion Include="SharpMetal" Version="1.1.0" />
+  </ItemGroup>
+</Project>

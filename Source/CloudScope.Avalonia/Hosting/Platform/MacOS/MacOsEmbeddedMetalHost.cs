@@ -68,7 +68,7 @@ public sealed class MacOsEmbeddedMetalHost : NativeControlHost, IEmbeddedViewerH
 
         _renderBackend = MetalRenderBackend.CreateWithSystemDefaultDevice();
         MTLDevice device = _renderBackend.Device;
-        _commandQueue = device.NewCommandQueue();
+        _commandQueue = _renderBackend.CommandQueue;
         _controller = new ViewerController(1280, 800, _renderBackend);
         _commands = new ViewerCommandDispatcher(_controller);
         _commands.OutputProduced += result => OutputProduced?.Invoke(result);
