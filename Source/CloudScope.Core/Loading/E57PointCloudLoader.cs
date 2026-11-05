@@ -10,8 +10,9 @@ namespace CloudScope.Loading;
 /// <summary>Managed E57 reader for standard numeric bitpack streams, poses and spherical scans.</summary>
 public static class E57PointCloudLoader
 {
-    public static LoadedPointCloud Load(string path, long maxPoints = 0, IProgress<int>? progress = null)
+    public static LoadedPointCloud Load(string path, long maxPoints = 0, IProgress<int>? progress = null, CancellationToken cancellation = default)
     {
+        cancellation.ThrowIfCancellationRequested();
         using var file = File.OpenRead(path);
         byte[] header = new byte[48]; file.ReadExactly(header);
         if (Encoding.ASCII.GetString(header, 0, 8) != "ASTM-E57" || U32(header, 8) != 1)
@@ -19,7 +20,7 @@ public static class E57PointCloudLoader
         if (U64(header, 16) != (ulong)file.Length) throw new InvalidDataException("E57 physical length mismatch.");
         int pageSize = checked((int)U64(header, 40));
         if (pageSize != 1024) throw new NotSupportedException("E57 page size must be 1024 bytes.");
-        var paged = new Pages(file, pageSize);
+        var paged = new Pages(file, pageSize, cancellation);
         byte[] xml = paged.ReadPhysical(checked((long)U64(header, 24)), checked((int)U64(header, 32)));
         using var xmlReader = XmlReader.Create(new MemoryStream(xml), new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit });
         var doc = XDocument.Load(xmlReader);
@@ -30,6 +31,7 @@ public static class E57PointCloudLoader
         int scanNumber = 0;
         foreach (var scan in data.Elements())
         {
+            cancellation.ThrowIfCancellationRequested();
             if (builder.Count >= limit) break;
             XElement? points = Child(scan, "points");
             if (points == null) continue;
@@ -72,7 +74,7 @@ public static class E57PointCloudLoader
                 int decodeCount = (int)Math.Min(count, limit - builder.Count);
                 var values = new Dictionary<string, double[]>();
                 for (int f = 0; f < fields.Length; f++)
-                    values.Add(fields[f].Name.LocalName, Decode(fields[f], streams[f].ToArray(), decodeCount));
+                    values.Add(fields[f].Name.LocalName, Decode(fields[f], streams[f].ToArray(), decodeCount, cancellation));
                 bool cartesian = values.ContainsKey("cartesianX") && values.ContainsKey("cartesianY") && values.ContainsKey("cartesianZ");
                 bool spherical = values.ContainsKey("sphericalRange") && values.ContainsKey("sphericalAzimuth") && values.ContainsKey("sphericalElevation");
                 if (!cartesian && !spherical) throw new InvalidDataException("E57 scan has no supported coordinates.");
@@ -90,6 +92,7 @@ public static class E57PointCloudLoader
                 double intensityMin = Value(Child(scan, "intensityLimits"), "intensityMinimum", 0);
                 for (int i = 0; i < decodeCount; i++)
                 {
+                    if ((i & 4095) == 0) cancellation.ThrowIfCancellationRequested();
                     if (Get(cartesian ? "cartesianInvalidState" : "sphericalInvalidState", i) != 0) continue;
                     double x, y, z;
                     if (cartesian) { x = Get("cartesianX", i); y = Get("cartesianY", i); z = Get("cartesianZ", i); }
@@ -111,10 +114,10 @@ public static class E57PointCloudLoader
             finally { foreach (var stream in streams) stream.Dispose(); }
             progress?.Report(++scanNumber * 100 / Math.Max(data.Elements().Count(), 1));
         }
-        return builder.Build();
+        return builder.Build(cancellation);
     }
 
-    private static double[] Decode(XElement field, byte[] data, int count)
+    private static double[] Decode(XElement field, byte[] data, int count, CancellationToken cancellation)
     {
         string type = (string?)field.Attribute("type") ?? "";
         bool floating = type == "Float";
@@ -130,6 +133,7 @@ public static class E57PointCloudLoader
         long position = 0;
         for (int i = 0; i < count; i++)
         {
+            if ((i & 4095) == 0) cancellation.ThrowIfCancellationRequested();
             if (floating)
                 values[i] = bits == 32 ? BitConverter.Int32BitsToSingle((int)U32(data, i * 4)) : BitConverter.Int64BitsToDouble((long)U64(data, i * 8));
             else
@@ -151,7 +155,7 @@ public static class E57PointCloudLoader
     private static uint U32(byte[] b, int offset) => BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(offset));
     private static ulong U64(byte[] b, int offset) => BinaryPrimitives.ReadUInt64LittleEndian(b.AsSpan(offset));
 
-    private sealed class Pages(FileStream file, int size)
+    private sealed class Pages(FileStream file, int size, CancellationToken cancellation)
     {
         private long _page = -1;
         private readonly byte[] _buffer = new byte[size];
@@ -163,6 +167,7 @@ public static class E57PointCloudLoader
             int written = 0;
             while (written < count)
             {
+                cancellation.ThrowIfCancellationRequested();
                 long page = logical / (size - 4);
                 int offset = (int)(logical % (size - 4));
                 if (page != _page)

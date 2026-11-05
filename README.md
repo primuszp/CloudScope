@@ -27,7 +27,7 @@ The optional point limit is zero for all points; resident clouds must fit memory
 - Draw 3D and planar polylines, work with cross-sections and split viewports, reconstruct a visualization surface, and export points or OBJ meshes.
 - Drive the same operations through the command line, menus, ribbon, scripts and an optional authenticated local HTTP API.
 
-For arguments containing spaces, use quotes: `OPENXYZ "scan one.xyz" 5000`, `LABEL "Tree 1" 7`. A command with missing arguments asks for them. File imports and reconstruction finish in the background; wait for their completion before running dependent operations.
+For arguments containing spaces, use quotes: `OPENXYZ "scan one.xyz" 5000`, `LABEL "Tree 1" 7`. A command with missing arguments asks for them. File imports and reconstruction finish in the background; wait for their completion before running dependent operations. Reset, source replacement, surface clearing and closing cancel the corresponding background work and discard obsolete results.
 
 [Command inventory](Docs/CommandInventory.md) · [Command system](Docs/CommandSystem.md) · [Exchange formats and limitations](Docs/OpenPointcloudIntegration.md) · [Rendering backends](Docs/RenderingBackends.md) · [Design system](Docs/DesignSystem.md)
 

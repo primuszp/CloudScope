@@ -5,8 +5,9 @@ namespace CloudScope.Loading;
 /// <summary>Reads structured PTX scans. The file's matrix uses row-vector convention.</summary>
 public static class PtxPointCloudLoader
 {
-    public static LoadedPointCloud Load(string path, long maxPoints = 0, IProgress<int>? progress = null)
+    public static LoadedPointCloud Load(string path, long maxPoints = 0, IProgress<int>? progress = null, CancellationToken cancellation = default)
     {
+        cancellation.ThrowIfCancellationRequested();
         using var reader = new StreamReader(path);
         var cloud = new PointCloudBuilder();
         long limit = maxPoints > 0 ? maxPoints : int.MaxValue;
@@ -38,12 +39,17 @@ public static class PtxPointCloudLoader
             }
             progress?.Report(50);
         }
-        return cloud.Build();
+        return cloud.Build(cancellation);
 
         string? Next()
         {
+            cancellation.ThrowIfCancellationRequested();
             string? line;
-            while ((line = reader.ReadLine()) != null) if (!string.IsNullOrWhiteSpace(line)) return line.Trim();
+            while ((line = reader.ReadLine()) != null)
+            {
+                cancellation.ThrowIfCancellationRequested();
+                if (!string.IsNullOrWhiteSpace(line)) return line.Trim();
+            }
             return null;
         }
         double[] ReadValues(int expected = 0)

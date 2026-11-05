@@ -52,6 +52,16 @@ internal static class LasChecks
                 check($"LAS rejects invalid {name} before parsing points", rejected, "");
             }
             File.WriteAllBytes(file, Fixture(0, 2, 20));
+            using (var reader = new LasReader(file))
+            using (var cancellation = new CancellationTokenSource())
+            {
+                bool preCancelled = false, midCancelled = false;
+                try { PointCloudLoader.Load(reader, 0, cancellation: new CancellationToken(true)); }
+                catch (OperationCanceledException) { preCancelled = true; }
+                try { PointCloudLoader.Load(reader, 0, new CancellationProgress(_ => cancellation.Cancel()), cancellation.Token); }
+                catch (OperationCanceledException) { midCancelled = true; }
+                check("LAS honours pre-cancellation and cancellation during import", preCancelled && midCancelled, "");
+            }
             string existingOutput = Path.Combine(directory, "existing.las");
             File.WriteAllText(existingOutput, "original destination");
             bool classRejected = false;

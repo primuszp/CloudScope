@@ -18,21 +18,13 @@ public sealed partial class ViewerController
     /// </summary>
     public event Action<string>? BackgroundMessage;
 
-    /// <summary>Percentage of a load in progress, or -1 when nothing is loading.</summary>
-    private int _loadProgress = -1;
-    private int _loadGeneration;
+    private readonly BackgroundOperation<LoadedPointCloud> _loadOperation;
     private bool _disposed;
-    public int LoadProgress
-    {
-        get => Volatile.Read(ref _loadProgress);
-        private set => Volatile.Write(ref _loadProgress, value);
-    }
 
-    private void InvalidatePendingLoad()
-    {
-        Interlocked.Increment(ref _loadGeneration);
-        LoadProgress = -1;
-    }
+    /// <summary>Progress of the current load, or -1 after cancellation/publication.</summary>
+    public int LoadProgress => _loadOperation.Progress;
+
+    private void InvalidatePendingLoad() => _loadOperation.Cancel();
 
     /// <summary>
     /// Reads an uncompressed LAS file and shows it. The read happens on a background thread and
@@ -40,10 +32,10 @@ public sealed partial class ViewerController
     /// own a loading path of its own to keep its window responsive.
     /// </summary>
     public string OpenPointCloud(string path, long maxPoints = 0)
-        => BeginResidentLoad(path, maxPoints, "OPEN", "LAS", (file, limit, progress) =>
+        => BeginResidentLoad(path, maxPoints, "OPEN", "LAS", (file, limit, progress, cancellation) =>
         {
             using var reader = new LasReader(file);
-            return PointCloudLoader.Load(reader, limit, progress);
+            return PointCloudLoader.Load(reader, limit, progress, cancellation);
         });
 
     /// <summary>Loads PLY vertices through the same resident-cloud rendering path as LAS.</summary>
@@ -65,51 +57,23 @@ public sealed partial class ViewerController
         => BeginResidentLoad(path, maxPoints, "OPENE57", "E57", E57PointCloudLoader.Load);
 
     private string BeginResidentLoad(string path, long maxPoints, string command,
-        string format, Func<string, long, IProgress<int>?, LoadedPointCloud> loader)
+        string format, Func<string, long, IProgress<int>?, CancellationToken, LoadedPointCloud> loader)
     {
         if (_disposed) return "The viewer is closed.";
         if (maxPoints < 0) return "Maximum point count must be zero (all) or positive.";
         if (string.IsNullOrWhiteSpace(path)) return $"{command} requires a file path.";
         if (!File.Exists(path)) return $"File not found: {path}";
-        if (LoadProgress >= 0) return "A point cloud is already loading.";
-
-        int generation = Interlocked.Increment(ref _loadGeneration);
-        LoadProgress = 0;
         string name = Path.GetFileName(path);
-        _ = Task.Run(() =>
+        var timer = Stopwatch.StartNew();
+        if (!_loadOperation.TryStart((cancellation, progress) => loader(path, maxPoints, progress, cancellation), cloud =>
         {
-            var sw = Stopwatch.StartNew();
-            try
-            {
-                var progress = new InlineProgress<int>(percent =>
-                {
-                    if (generation == Volatile.Read(ref _loadGeneration)) LoadProgress = percent;
-                });
-                LoadedPointCloud cloud = loader(path, maxPoints, progress);
-                PointCloudDataset dataset = cloud.ToDataset();
-                sw.Stop();
-                _pendingWork.Enqueue(() =>
-                {
-                    if (_disposed || generation != _loadGeneration) return;
-                    LoadPointCloud(dataset);
-                    _selection.SetSourceFilePath(path, supportsLasExport: format == "LAS");
-                    _sourceName = name;
-                    _sourcePath = Path.GetFullPath(path);
-                    LoadProgress = -1;
-                    BackgroundMessage?.Invoke($"Loaded {cloud.LoadedCount:N0} {format} points from {name} ({sw.Elapsed.TotalSeconds:0.0}s).");
-                });
-            }
-            catch (Exception ex)
-            {
-                _pendingWork.Enqueue(() =>
-                {
-                    if (_disposed || generation != _loadGeneration) return;
-                    LoadProgress = -1;
-                    BackgroundMessage?.Invoke($"{format} load failed: {ex.Message}");
-                });
-            }
-        });
+            LoadPointCloud(cloud.ToDataset());
+            _selection.SetSourceFilePath(path, supportsLasExport: format == "LAS");
+            _sourceName = name;
+            _sourcePath = Path.GetFullPath(path);
+            BackgroundMessage?.Invoke($"Loaded {cloud.LoadedCount:N0} {format} points from {name} ({timer.Elapsed.TotalSeconds:0.0}s).");
+        }, error => BackgroundMessage?.Invoke($"{format} load failed: {error.Message}")))
+            return "A point cloud is already loading.";
         return $"Reading {name}...";
     }
-
 }

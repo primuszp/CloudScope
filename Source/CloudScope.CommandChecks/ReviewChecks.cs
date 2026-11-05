@@ -150,7 +150,7 @@ public class NullRenderer : DispatchProxy
         ? null : method.ReturnType.IsValueType ? Activator.CreateInstance(method.ReturnType) : null;
 }
 
-internal sealed class HeadlessBackend : IRenderBackend
+internal sealed class HeadlessBackend(ISurfaceRenderer? surface = null) : IRenderBackend
 {
     public RenderBackendKind Kind => RenderBackendKind.OpenGL;
     public void Initialize() { }
@@ -161,7 +161,7 @@ internal sealed class HeadlessBackend : IRenderBackend
     public IPointTileCloudRenderer CreateStreamingPointCloudRenderer() => NullRenderer.Create<IPointTileCloudRenderer>();
     public IHighlightRenderer CreateHighlightRenderer() => NullRenderer.Create<IHighlightRenderer>();
     public IOverlayRenderer CreateOverlayRenderer() => NullRenderer.Create<IOverlayRenderer>();
-    public ISurfaceRenderer CreateSurfaceRenderer() => NullRenderer.Create<ISurfaceRenderer>();
+    public ISurfaceRenderer CreateSurfaceRenderer() => surface ?? NullRenderer.Create<ISurfaceRenderer>();
     public IDepthPicker CreateDepthPicker() => NullRenderer.Create<IDepthPicker>();
     public SelectionGizmoRenderers CreateSelectionGizmoRenderers() => new(NullRenderer.Create<IBoxSelectionGizmoRenderer>(), NullRenderer.Create<ISelectionGizmoRenderer>(), NullRenderer.Create<ISelectionGizmoRenderer>());
 }

@@ -12,12 +12,20 @@ internal sealed class PointCloudBuilder
             throw new InvalidDataException("Non-finite point coordinates.");
         _points.Add((x, y, z, r, g, b, intensity));
     }
-    public LoadedPointCloud Build()
+    public LoadedPointCloud Build(CancellationToken cancellation = default)
     {
+        cancellation.ThrowIfCancellationRequested();
         if (Count == 0) throw new InvalidDataException("File contains no valid points.");
-        double minX = _points.Min(p => p.X), maxX = _points.Max(p => p.X);
-        double minY = _points.Min(p => p.Y), maxY = _points.Max(p => p.Y);
-        double minZ = _points.Min(p => p.Z), maxZ = _points.Max(p => p.Z);
+        double minX = double.PositiveInfinity, minY = minX, minZ = minX;
+        double maxX = double.NegativeInfinity, maxY = maxX, maxZ = maxX;
+        for (int i = 0; i < Count; i++)
+        {
+            if ((i & 4095) == 0) cancellation.ThrowIfCancellationRequested();
+            var p = _points[i];
+            minX = Math.Min(minX, p.X); maxX = Math.Max(maxX, p.X);
+            minY = Math.Min(minY, p.Y); maxY = Math.Max(maxY, p.Y);
+            minZ = Math.Min(minZ, p.Z); maxZ = Math.Max(maxZ, p.Z);
+        }
         var frame = PointCloudFrame.FromBounds(minX, minY, minZ, maxX, maxY, maxZ);
         double cx = frame.X, cy = frame.Y, cz = frame.Z;
         var points = new PointData[Count];
@@ -25,6 +33,7 @@ internal sealed class PointCloudBuilder
         var z = new double[Count];
         for (int i = 0; i < Count; i++)
         {
+            if ((i & 4095) == 0) cancellation.ThrowIfCancellationRequested();
             var p = _points[i];
             points[i] = new PointData { X = PointCloudFrame.Local(p.X, cx), Y = PointCloudFrame.Local(p.Y, cy), Z = PointCloudFrame.Local(p.Z, cz), R = p.R, G = p.G, B = p.B };
             intensity[i] = p.I; z[i] = p.Z;

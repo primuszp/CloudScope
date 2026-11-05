@@ -8,8 +8,9 @@ namespace CloudScope.Loading
         private const int ColorSampleSize = 1000;
         private const int BatchSize = 1 << 17;
 
-        public static LoadedPointCloud Load(LasReader reader, long maxPoints, IProgress<int>? progress = null)
+        public static LoadedPointCloud Load(LasReader reader, long maxPoints, IProgress<int>? progress = null, CancellationToken cancellation = default)
         {
+            cancellation.ThrowIfCancellationRequested();
             var hdr = reader.Header;
             bool hasColor = hdr.PointDataFormatId is 2 or 3 or 5 or 7 or 8 or 10;
             long requested = maxPoints > 0 ? Math.Min(maxPoints, reader.PointCount) : reader.PointCount;
@@ -36,6 +37,7 @@ namespace CloudScope.Loading
 
             while (loaded < total)
             {
+                cancellation.ThrowIfCancellationRequested();
                 int read = reader.ReadBatch(loaded, batch, Math.Min(batch.Length, total - loaded), rawBatch);
                 if (read == 0) break;
 
@@ -57,6 +59,7 @@ namespace CloudScope.Loading
                 ReportProgress(loaded, total, progress, ref lastPct);
             }
 
+            cancellation.ThrowIfCancellationRequested();
             var attributes = new PointCloudAttributes(classes, intensity, returnNumber, z, hdr.MinZ, hdr.MaxZ);
             return new LoadedPointCloud(points, loaded, frame.Radius, hasColor, colorScale, cx, cy, cz, attributes);
         }

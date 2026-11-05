@@ -65,7 +65,7 @@ public sealed class ViewerCommandDispatcher : ICommandExecutor, ICommandOutputSo
         !command.Flags.HasFlag(CommandFlags.NoUndoMarker);
 
     private string? CheckAvailability(CommandDescriptor command) =>
-        CommandScopePolicy.ExplainUnavailable(command, viewerAvailable: true, _viewer.Status.HasCloud);
+        CommandScopePolicy.ExplainUnavailable(command, viewerAvailable: !_viewer.IsDisposed, _viewer.Status.HasCloud);
 
     public event EventHandler<CommandEventArgs>
         CommandStarted { add => _runtime.CommandStarted += value; remove => _runtime.CommandStarted -= value; }

@@ -7,11 +7,12 @@ public static class XyzPointCloudLoader
 {
     private readonly record struct Row(double X, double Y, double Z, double Intensity, double R, double G, double B);
 
-    public static LoadedPointCloud Load(string path, long maxPoints = 0, IProgress<int>? progress = null)
-        => LoadText(path, maxPoints, progress, pts: false);
+    public static LoadedPointCloud Load(string path, long maxPoints = 0, IProgress<int>? progress = null, CancellationToken cancellation = default)
+        => LoadText(path, maxPoints, progress, pts: false, cancellation);
 
-    internal static LoadedPointCloud LoadText(string path, long maxPoints, IProgress<int>? progress, bool pts)
+    internal static LoadedPointCloud LoadText(string path, long maxPoints, IProgress<int>? progress, bool pts, CancellationToken cancellation)
     {
+        cancellation.ThrowIfCancellationRequested();
         string format = pts ? "PTS" : "XYZ";
         long? declaredCount = null;
         bool firstDataLine = true;
@@ -32,6 +33,7 @@ public static class XyzPointCloudLoader
             int lineNumber = 0;
             while (rows.Count < limit && (line = reader.ReadLine()) != null)
             {
+                cancellation.ThrowIfCancellationRequested();
                 lineNumber++;
                 line = line.Trim();
                 if (line.Length == 0 || line.StartsWith('#') || line.StartsWith("//", StringComparison.Ordinal))
@@ -84,6 +86,7 @@ public static class XyzPointCloudLoader
             }
         }
 
+        cancellation.ThrowIfCancellationRequested();
         if (declaredCount.HasValue && rows.Count != Math.Min(declaredCount.Value, limit))
             throw new InvalidDataException($"PTS declares {declaredCount} points but {rows.Count} were read.");
         if (rows.Count == 0) throw new InvalidDataException($"{format} file contains no points.");
@@ -102,6 +105,7 @@ public static class XyzPointCloudLoader
         var heights = new double[rows.Count];
         for (int i = 0; i < rows.Count; i++)
         {
+            if ((i & 4095) == 0) cancellation.ThrowIfCancellationRequested();
             Row row = rows[i];
             points[i].X = PointCloudFrame.Local(row.X, cx);
             points[i].Y = PointCloudFrame.Local(row.Y, cy);

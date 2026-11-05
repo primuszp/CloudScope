@@ -139,7 +139,7 @@ void Check(string name, bool ok, string detail = "")
 
 // ---------- 1. Registration of the real command set ----------
 await ExchangeChecks.Run(Check);
-try { LasChecks.Run(Check); ReviewChecks.Run(Check); ViewerWorkflowChecks.Run(Check); }
+try { LasChecks.Run(Check); ImportCancellationChecks.Run(Check); ReviewChecks.Run(Check); ViewerWorkflowChecks.Run(Check); await BackgroundOperationChecks.Run(Check); }
 catch (Exception ex) { Check("Review regression checks", false, ex.ToString()); }
 try
 {

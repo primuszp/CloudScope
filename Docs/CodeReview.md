@@ -66,4 +66,21 @@ dotnet run --project Source/CloudScope.CommandChecks --no-build -- --write-inven
 - A CSF és a famagból növesztés szintetikus eseteken ellenőrzött. Új felméréstípusokra a paramétereket mérési adatokkal kell értékelni; univerzális szegmentálási pontosságot nem állítunk.
 - Az E57-olvasó dokumentált numerikus bitpack részhalmaza maradt támogatott. A mostani ellenőrzés nem helyettesít nagy, valódi felméréseken végzett memória-, teljesítmény- és többplatformos próbát.
 
-A módosítások helyben vannak; commit és push nem történt.
+Az első konszolidációs csomag commitja: `a0c59c5`. Push nem történt.
+
+
+## Folytatás: a háttérműveletek életciklusa
+
+Az első csomag után külön stabilizációs kör készült a betöltés és a felületrekonstrukció közös életciklusára.
+
+- A `BackgroundOperation<T>` egy helyen kezeli a futó munkát, a megszakítást, az előrehaladást, a hibákat és a viewer szálán végzett publikálást. A külön generációszámláló és a külön rekonstrukciós cancellation/progress mezők megszűntek.
+- A reset, a forráscsere, a felülettörlés és a viewer lezárása tényleges megszakítási jelzést ad. A hat resident importformátum ezt kooperatívan ellenőrzi a beolvasási/dekódolási fázisokban; LAS-nál a batch-ek között. Ez nem az operációs rendszer egy már blokkoló szinkron lemezműveletének megszakítását jelenti.
+- A megszakított munka nem küldhet késői százalékot, hibát vagy eredményt az új művelethez. A művelet helye azonnal felszabadul, ezért a törlés után új rekonstrukció indítható a régi UI-befejezési üzenetének bevárása nélkül.
+- A háttérmunka cancellation-forrása a worker kilépésekor felszabadul, akkor is, ha a viewer már nem dolgoz fel képkockákat. Egy publikálási/GPU-feltöltési kivétel a normál hibacsatornára kerül, nem hagyja beragadva a műveletet.
+- A lezárt viewer későn érkező képkocka-/átméretezési hívásai nem érintik a renderelő erőforrásait. A parancsfuttató a lezárt viewerre irányuló parancsokat már a belépési ponton elutasítja; a helyi API sem indítható újra lezárás után.
+
+A regressziók determinisztikus szinkronizációval vizsgálják a futás közbeni megszakítást, a már sorba állított régi eredmény lecserélését, a késői progresszt, a lezárást, a worker hibáját és a publikáló kivételét. A valódi ViewerController-próba mesterséges feltöltési hibát követő sikeres rekonstrukciót is ellenőriz. Az importpróbák a megszakítás előtti/utáni viselkedést és az inputfájl felszabadítását vizsgálják.
+
+Az új összesített eredmény: **420 sikeres CommandChecks-ellenőrzés**, a korábbi 385 helyett; a **17 UI-ellenőrzés** megmaradt. A teljes Debug/Release megoldás és az ImGui/SharpMetal nélküli konfiguráció figyelmeztetések hibaként kezelésével is sikeresen lefordult: mindhárom esetben 0 figyelmeztetés és 0 hiba. A 420 ellenőrzés Debug és Release módban is átment.
+
+A natív Avalonia-indítást újrapróbáltuk, a `-6661` hiba változatlanul jelentkezett. Ugyanezt a hibát az [Avalonia #18895 hibajegye](https://github.com/AvaloniaUI/Avalonia/issues/18895) a macOS kijelző-/DisplayLink-állapotához kapcsolja; a kapcsolódó [#21453 javítási javaslat](https://github.com/AvaloniaUI/Avalonia/pull/21453) az ellenőrzéskor nyitott volt. Ez támogatja a környezeti ok lehetőségét, de önmagában nem bizonyítja a helyi okot. Egyedi időzítős kerülőmegoldás és ellenőrizetlen függőségfrissítés nem került a projektbe. A natív GPU-próba továbbra is nyitott.

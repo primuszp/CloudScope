@@ -8,8 +8,9 @@ public static class PlyPointCloudLoader
 {
     private readonly record struct Property(string Name, string Type);
 
-    public static LoadedPointCloud Load(string path, long maxPoints = 0, IProgress<int>? progress = null)
+    public static LoadedPointCloud Load(string path, long maxPoints = 0, IProgress<int>? progress = null, CancellationToken cancellation = default)
     {
+        cancellation.ThrowIfCancellationRequested();
         using var stream = File.OpenRead(path);
         using var reader = new BinaryReader(stream, Encoding.ASCII, leaveOpen: true);
         if (ReadLine(reader) != "ply") throw new InvalidDataException("Not a PLY file.");
@@ -20,6 +21,7 @@ public static class PlyPointCloudLoader
         var properties = new List<Property>();
         for (int lines = 0; lines < 10000; lines++)
         {
+            cancellation.ThrowIfCancellationRequested();
             string line = ReadLine(reader) ?? throw new InvalidDataException("PLY header is incomplete.");
             if (line == "end_header") break;
             string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -66,6 +68,7 @@ public static class PlyPointCloudLoader
 
         for (int i = 0; i < count; i++)
         {
+            if ((i & 4095) == 0) cancellation.ThrowIfCancellationRequested();
             string[]? fields = null;
             if (format == "ascii")
             {
@@ -106,6 +109,7 @@ public static class PlyPointCloudLoader
             if (percent / 5 != lastPercent / 5) { lastPercent = percent; progress?.Report(percent); }
         }
 
+        cancellation.ThrowIfCancellationRequested();
         if (count == 0) throw new InvalidDataException("PLY contains no vertices.");
         var frame = PointCloudFrame.FromBounds(minX, minY, minZ, maxX, maxY, maxZ);
         double cx = frame.X, cy = frame.Y, cz = frame.Z;
@@ -116,6 +120,7 @@ public static class PlyPointCloudLoader
         var points = new PointData[count];
         for (int i = 0; i < count; i++)
         {
+            if ((i & 4095) == 0) cancellation.ThrowIfCancellationRequested();
             var xyz = coordinates[i];
             points[i].X = PointCloudFrame.Local(xyz.X, cx);
             points[i].Y = PointCloudFrame.Local(xyz.Y, cy);

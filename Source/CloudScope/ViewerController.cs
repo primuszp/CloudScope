@@ -24,9 +24,7 @@ namespace CloudScope
         private SurfaceMesh? _surface;
         private bool _surfaceVisible = true;
         private bool _residentVisible = true;
-        private CancellationTokenSource? _reconstruction;
-        private int _geometryVersion;
-        private int _surfaceProgress = -1;
+        private readonly BackgroundOperation<SurfaceMesh> _surfaceOperation;
         private LocalCommandServer? _api;
         internal ICommandExecutor? ApiCommands { get; set; }
         private readonly IHighlightRenderer _highlightRenderer;
@@ -108,6 +106,8 @@ namespace CloudScope
 
         public ViewerController(int width, int height, IRenderBackend renderBackend)
         {
+            _loadOperation = new BackgroundOperation<LoadedPointCloud>(_pendingWork.Enqueue);
+            _surfaceOperation = new BackgroundOperation<SurfaceMesh>(_pendingWork.Enqueue);
             _width = width;
             _height = height;
             _frameLifecycle = renderBackend;
@@ -140,6 +140,7 @@ namespace CloudScope
 
         /// <summary>Rendering backend this viewer was created with.</summary>
         public string RenderBackendName => _backendName;
+        internal bool IsDisposed => _disposed;
 
         /// <summary>
         /// The command surface driving this viewer, set by the dispatcher. It is consulted
@@ -253,6 +254,7 @@ namespace CloudScope
 
         public void Load()
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             _frameLifecycle.Initialize();
             _pointRenderer.Initialize();
             _streamingRenderer.Initialize();
@@ -277,6 +279,7 @@ namespace CloudScope
 
         public void LoadPointCloud(PointData[] pts, float cloudRadius = 50f)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             InvalidatePendingLoad();
             _selection.Reset();
             UndoHistory.Clear();
@@ -293,6 +296,7 @@ namespace CloudScope
 
         public void LoadPointCloud(PointCloudDataset dataset)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             InvalidatePendingLoad();
             _selection.Reset();
             UndoHistory.Clear();
@@ -558,7 +562,7 @@ namespace CloudScope
         {
             SourceName = _sourceName,
             Layers = _layers.Select(layer => new CloudLayerSnapshot(layer.Name, layer.PointCount, layer.Visible)).ToArray(),
-            SurfaceProgress = _surfaceProgress,
+            SurfaceProgress = _surfaceOperation.Progress,
             SurfaceTriangles = _surface?.Indices.Length / 3 ?? 0,
             LoadedCount = StoredPointCount ?? _dataset?.LoadedCount ?? _pointRenderer.PointCount,
             VisibleCount = StoredPointCount ?? _dataset?.VisibleCount ?? _pointRenderer.PointCount,
@@ -971,44 +975,28 @@ namespace CloudScope
 
         public string ReconstructSurface(int neighbors = 15, float maximumEdge = 0)
         {
+            if (_disposed) return "The viewer is closed.";
             if (_dataset == null) return "Reconstruction requires a resident point cloud.";
-            if (_reconstruction != null) return "A reconstruction is already running.";
-            int version = _geometryVersion;
+            if (_surfaceOperation.IsRunning) return "A reconstruction is already running.";
             var points = _dataset.ViewPoints.Take(_dataset.VisibleCount).ToArray();
             var snapshot = new PointCloudDataset(points, points.Length, _dataset.Radius, _dataset.HasColor, 1,
                 new PointCloudAttributes(new byte[points.Length], new ushort[points.Length], new byte[points.Length], new double[points.Length], 0, 0),
                 _dataset.OriginX, _dataset.OriginY, _dataset.OriginZ);
-            var cancellation = new CancellationTokenSource();
-            _reconstruction = cancellation;
-            _surfaceProgress = 0;
-            _ = Task.Run(() =>
+            _surfaceOperation.TryStart((cancellation, progress) =>
+                SurfaceReconstruction.Build(snapshot, neighbors, maximumEdge, cancellation, progress), mesh =>
             {
-                try
-                {
-                    var progress = new InlineProgress<int>(p => _surfaceProgress = p);
-                    SurfaceMesh mesh = SurfaceReconstruction.Build(snapshot, neighbors, maximumEdge, cancellation.Token, progress);
-                    _pendingWork.Enqueue(() =>
-                    {
-                        if (version != _geometryVersion || cancellation.IsCancellationRequested) return;
-                        _surface = mesh; _surfaceVisible = true; _surfaceRenderer.Upload(mesh);
-                        BackgroundMessage?.Invoke($"Reconstructed {mesh.Indices.Length / 3:N0} triangles. EXPORTOBJ saves the mesh.");
-                    });
-                }
-                catch (Exception ex)
-                {
-                    _pendingWork.Enqueue(() => BackgroundMessage?.Invoke(ex is OperationCanceledException ? "Reconstruction cancelled." : $"Reconstruction failed: {ex.Message}"));
-                }
-                finally
-                {
-                    _pendingWork.Enqueue(() => { if (_reconstruction == cancellation) { _reconstruction = null; _surfaceProgress = -1; } cancellation.Dispose(); });
-                }
-            });
+                _surfaceRenderer.Upload(mesh);
+                _surface = mesh;
+                _surfaceVisible = true;
+                BackgroundMessage?.Invoke($"Reconstructed {mesh.Indices.Length / 3:N0} triangles. EXPORTOBJ saves the mesh.");
+            }, error => BackgroundMessage?.Invoke($"Reconstruction failed: {error.Message}"));
             return "Reconstructing surface...";
         }
 
         public string SetSurfaceVisibility(bool visible) { _surfaceVisible = visible; return $"Surface {(visible ? "shown" : "hidden")}."; }
         public string ConfigureLocalApi(bool enabled, int port = 47830)
         {
+            if (_disposed) return "The viewer is closed.";
             if (!enabled) { _api?.StopAfterCurrentResponse(); _api = null; return "Local command API stopped."; }
             if (_api != null) return $"API already listening on 127.0.0.1:{_api.Port}.";
             _api = new LocalCommandServer(port, (command, token) =>
@@ -1027,7 +1015,9 @@ namespace CloudScope
         public string ClearSurface() { InvalidateSurface(); return "Surface cleared; reconstruction cancelled."; }
         private void InvalidateSurface()
         {
-            _geometryVersion++; _reconstruction?.Cancel(); _surface = null; _surfaceRenderer.Upload(null);
+            _surfaceOperation.Cancel();
+            _surface = null;
+            _surfaceRenderer.Upload(null);
         }
         public string ExportSurfaceObj(string path)
         {
@@ -1677,6 +1667,7 @@ namespace CloudScope
 
         public bool UpdateFrame(float dt, IViewerKeyboard keyboard)
         {
+            if (_disposed) return true;
             while (_pendingWork.TryDequeue(out Action? work))
                 work();
 
@@ -1918,6 +1909,7 @@ namespace CloudScope
 
         public void RenderFrame(double frameTime)
         {
+            if (_disposed) return;
             _frameTiming.BeginFrame();
             using var frame = _frameLifecycle.BeginFrame();
             var frameData = frame.FrameData;
@@ -2117,6 +2109,7 @@ namespace CloudScope
 
         public void Resize(int width, int height)
         {
+            if (_disposed) return;
             _width = width;
             _height = height;
             _frameLifecycle.Resize(width, height);
@@ -2145,9 +2138,9 @@ namespace CloudScope
         {
             if (_disposed) return;
             _disposed = true;
-            InvalidatePendingLoad();
+            _loadOperation.Dispose();
+            _surfaceOperation.Dispose();
             _api?.Dispose();
-            _reconstruction?.Cancel();
             _surfaceRenderer.Dispose();
             CloseLayers();
             _streamingRenderer.Dispose();
@@ -2795,10 +2788,6 @@ namespace CloudScope
         Front,
         Back,
         Isometric
-    }
-    internal sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
-    {
-        public void Report(T value) => report(value);
     }
 
 }
