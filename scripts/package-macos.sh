@@ -20,7 +20,7 @@ trap 'rm -rf "$staging"' EXIT
 app_bundle="$staging/CloudScope.app"
 mkdir -p "$app_bundle/Contents/MacOS"
 dotnet publish "$repo_root/Source/CloudScope.Avalonia/CloudScope.Avalonia.csproj" \
-  -c Release -r "$runtime_id" --self-contained false \
+  -c Release -r "$runtime_id" --self-contained false --artifacts-path "$staging/build" \
   -p:SelfContained=false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
   -p:DebugType=None -o "$staging/publish"
 # The single-file host contains its managed/native dependencies. Keep auxiliary

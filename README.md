@@ -86,6 +86,8 @@ The script removes each project's `bin`/`obj` directories and refuses to delete 
 
 To validate without filling the workspace again, build with `dotnet build Source/CloudScope.slnx --artifacts-path /absolute/temporary-build -warnaserror`. Run the resulting check executables from that output directory.
 
+The macOS packaging script builds in a temporary directory, removes its intermediate output on exit and retains only the finished app bundle under `artifacts/macos/`.
+
 ## Project structure
 
 - `CloudScope.Core`: formats, point data, spatial and forestry algorithms, selection geometry, labels, drawing and the command runtime.
