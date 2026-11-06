@@ -40,9 +40,9 @@ public sealed partial class ViewerController
     public string MeasurementDescription => Measurements.Count == 0 ? "No measurements."
         : string.Join(Environment.NewLine,Measurements.Select(Describe));
 
-    private static string Describe(Measurement m)
+    private string Describe(Measurement m)
     {
-        var r = m.Evaluate();
+        var r = _document.Measurements.Result(m.Id);
         return m.Kind == MeasurementKind.Area
             ? FormattableString.Invariant($"{m.Name}: area XY {r.Area:0.######}, plan perimeter {r.Horizontal:0.######} (survey units).")
             : FormattableString.Invariant($"{m.Name}: distance 3D {r.Spatial:0.######}, horizontal {r.Horizontal:0.######}, delta Z {r.DeltaZ:0.######}, slope {(r.SlopePercent is { } s ? s.ToString("0.######",System.Globalization.CultureInfo.InvariantCulture) + "%" : "undefined")}, angle {r.AngleDegrees:0.######} degrees (survey units).");

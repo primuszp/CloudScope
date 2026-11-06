@@ -64,6 +64,8 @@ var statusProgress = new ProgressBar();
 var statusPresenter = new ViewerStatusPresenter(statusText, new TextBlock(), statusProgress);
 statusPresenter.Update(new ViewerStatusSnapshot { SurfaceProgress = 20, ProcessingProgress = 80, ProcessingName = "Indexing" });
 Check("Progress text and bar describe the same active operation", statusProgress.Value == 20 && statusText.Text == "Reconstructing surface 20%");
+statusPresenter.Update(new ViewerStatusSnapshot { SurfaceProgress = 35, SurfaceWorkName = "Building terrain TIN" });
+Check("TIN progress identifies the terrain operation",statusProgress.Value == 35 && statusText.Text == "Building terrain TIN 35%");
 statusPresenter.Update(ViewerStatusSnapshot.Empty);
 Check("Completed background work returns the status to ready", !statusProgress.IsVisible && statusText.Text == "Ready");
 viewport.Focus();

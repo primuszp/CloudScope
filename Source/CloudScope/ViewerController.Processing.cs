@@ -12,6 +12,7 @@ public sealed partial class ViewerController
     {
         if (_document.Dataset is not { } dataset) return "TIN requires a resident point cloud.";
         if (_surfaceOperation.IsRunning) return "A surface operation is already running.";
+        _surfaceWorkName = "Building terrain TIN";
         var points = new ArraySegment<PointData>(dataset.SourcePoints,0,dataset.LoadedCount);
         var classes = dataset.Attributes.Class;
         var annotatedGround = _selection.Labels.AllAnnotations.Where(p =>

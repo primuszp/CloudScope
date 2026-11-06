@@ -36,9 +36,9 @@ For more detailed information please visit https://github.com/locationtech/jts/b
 `StreamTokenizer` and related classes are taken from __[RTools.Util - C# Library](https://www.codeproject.com/Articles/3143/RTools-Util-C-Library)__. The code was released to the public domain.
 
 >Copyright (C) 2003 Ryan Seghers
-This software is provided AS IS. No warranty is granted, 
+This software is provided AS IS. No warranty is granted,
 neither expressed nor implied. USE THIS SOFTWARE AT YOUR OWN RISK.
-NO REPRESENTATION OF MERCHANTABILITY or FITNESS FOR ANY 
+NO REPRESENTATION OF MERCHANTABILITY or FITNESS FOR ANY
 PURPOSE is given.
 License to use this software is limited by the following terms:
 >1) This code may be used in any program, including programs developed
@@ -48,7 +48,7 @@ updates available in some way, such as by sending your updates to the
 author.
 
 ### High Speed Priority Queue for C#
-`PriorityQueueNode` and `AlternativePriorityQueue` are derived from 
+`PriorityQueueNode` and `AlternativePriorityQueue` are derived from
 BlueRaja's __[High Speed Priority Queue for C#](https://github.com/BlueRaja/High-Speed-Priority-Queue-for-C-Sharp)__, released under MIT License (MIT)
 
 >Copyright (c) 2013 Daniel "BlueRaja" Pflughoeft

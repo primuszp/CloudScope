@@ -36,6 +36,8 @@ public readonly record struct ViewerStatusSnapshot
 
     /// <summary>Active cross-section description, empty when section display is off.</summary>
     public string CrossSection { get; init; } = "";
+    public IReadOnlyList<SectionSnapshot> Sections { get; init; } = [];
+    public IReadOnlyList<MeasurementSnapshot> Measurements { get; init; } = [];
 
     public InteractionMode Mode { get; init; } = InteractionMode.Navigate;
     public SelectionToolType ActiveTool { get; init; } = SelectionToolType.Box;
@@ -123,10 +125,11 @@ public readonly record struct ViewerStatusSnapshot
     public string ProcessingName { get; init; } = "";
     public int LoadProgress { get; init; } = -1;
     public int SurfaceProgress { get; init; } = -1;
+    public string SurfaceWorkName { get; init; } = "Reconstructing surface";
     public int SurfaceTriangles { get; init; }
 
     public int WorkProgress => IsLoading ? LoadProgress : SurfaceProgress >= 0 ? SurfaceProgress : ProcessingProgress;
-    public string WorkName => IsLoading ? "Loading" : SurfaceProgress >= 0 ? "Reconstructing surface" : ProcessingName;
+    public string WorkName => IsLoading ? "Loading" : SurfaceProgress >= 0 ? SurfaceWorkName : ProcessingName;
 
     public bool IsLoading => LoadProgress >= 0;
 
@@ -142,3 +145,5 @@ public readonly record struct ViewerStatusSnapshot
 }
 
 public sealed record CloudLayerSnapshot(string Name, long PointCount, bool Visible);
+public sealed record SectionSnapshot(int Id, string Name, float Length, float Width, bool Active);
+public sealed record MeasurementSnapshot(int Id, string Name, string Description);

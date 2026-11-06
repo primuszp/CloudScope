@@ -20,6 +20,7 @@ public enum ExplorerNodeKind
     Section,
     Surface,
     Polylines,
+    Measurement,
     Views,
     View
 }
@@ -76,7 +77,7 @@ public sealed class ExplorerPanel : UserControl
             status.SourceName, status.LoadedCount, status.VisibleCount, status.ResidentVisible, status.IsStreamed,
             string.Join(",", status.Layers.Select(l => $"{l.Name}/{l.PointCount}/{l.Visible}")),
             string.Join(",", labels.Select(l => $"{l.Name}/{l.Code}/{l.Color}")), activeLabel,
-            status.CrossSection, status.SurfaceTriangles, status.SurfaceVisible, status.SurfaceProgress,
+            status.CrossSection, string.Join(",",status.Sections), string.Join(",",status.Measurements), status.SurfaceTriangles, status.SurfaceVisible, status.SurfaceProgress,
             status.PolylineCount, string.Join(",", status.NamedViews), status.LoadProgress);
 
         if (signature == _signature)
@@ -169,9 +170,12 @@ public sealed class ExplorerPanel : UserControl
     {
         TreeViewItem group = Group(new ExplorerNode(ExplorerNodeKind.Scene), "Scene objects", RibbonIcons.Section, "");
 
-        if (status.CrossSection.Length > 0)
-            group.Items.Add(Leaf(new ExplorerNode(ExplorerNodeKind.Section, "section"), "Cross-section",
-                RibbonIcons.Section, status.CrossSection));
+        foreach (var section in status.Sections)
+            group.Items.Add(Leaf(new ExplorerNode(ExplorerNodeKind.Section,section.Name),section.Name,
+                RibbonIcons.Section,section.Active ? "active" : ""));
+        foreach (var measurement in status.Measurements)
+            group.Items.Add(Leaf(new ExplorerNode(ExplorerNodeKind.Measurement,measurement.Name),measurement.Name,
+                RibbonIcons.Scale,"measurement"));
 
         if (status.SurfaceProgress >= 0)
             group.Items.Add(Leaf(new ExplorerNode(ExplorerNodeKind.Surface, "surface"), "Surface",
@@ -290,7 +294,8 @@ public sealed class ExplorerPanel : UserControl
     {
         ExplorerNodeKind.Cloud or ExplorerNodeKind.Layer => "ZOOM Extents",
         ExplorerNodeKind.Label => $"LABEL {Quote(node.Name)}",
-        ExplorerNodeKind.Section => "XSECTION View",
+        ExplorerNodeKind.Section => $"XSECTION Activate {Quote(node.Name)}",
+        ExplorerNodeKind.Measurement => "MEASURE List",
         ExplorerNodeKind.View => $"VIEW Restore {Quote(node.Name)}",
         ExplorerNodeKind.Polylines => "PEDIT",
         _ => null
@@ -334,13 +339,18 @@ public sealed class ExplorerPanel : UserControl
         ],
         ExplorerNodeKind.Scene =>
         [
-            ("New cross-section...", "XSECTION"), ("Reconstruct surface...", "RECONSTRUCT"),
+            ("New cross-section...", "XSECTION"), ("Terrain TIN...", "TIN"), ("Reconstruct surface...", "RECONSTRUCT"),
+            ("Distance...", "MEASURE Distance"), ("Area XY...", "MEASURE Area"),
             ("Polyline", "PLINE"), ("3D polyline", "3DPOLY"), ("Load polylines...", "LOADPOLYLINES")
         ],
         ExplorerNodeKind.Section =>
         [
-            ("Show in active viewport", "XSECTION View"), ("Flip direction", "XSECTION Flip"),
-            ("Width...", "XSECTION Width"), ("", ""), ("Clear", "XSECTION CLear")
+            ("Activate section", $"XSECTION Activate {Quote(node.Name)}"), ("List sections", "XSECTION List")
+        ],
+        ExplorerNodeKind.Measurement =>
+        [
+            ("List measurements", "MEASURE List"), ("Export measurements...", "MEASURE Export"),
+            ("Remove", $"MEASURE Remove {Quote(node.Name)}")
         ],
         ExplorerNodeKind.Surface =>
         [

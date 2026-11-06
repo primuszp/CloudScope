@@ -55,7 +55,7 @@ public sealed class PropertiesPanel : UserControl
             status.VisibleCount, status.ResidentVisible, status.ColorSource, status.PointSize, status.Filter,
             status.KeepPercentage, status.IsPerspective, status.ViewName, status.ViewportLayout, status.Mode,
             status.ActiveTool, status.InteractionState, status.CurrentLabel, status.InstanceText, status.OrthoMode,
-            status.CrossSection, status.SurfaceTriangles, status.SurfaceVisible, status.PolylineCount,
+            status.CrossSection, string.Join(",",status.Sections), string.Join(",",status.Measurements), status.SurfaceProgress, status.SurfaceWorkName, status.SurfaceTriangles, status.SurfaceVisible, status.PolylineCount,
             status.LabelledPoints, status.HasColor, status.HasCloud,
             string.Join(",", status.Layers.Select(l => $"{l.Name}/{l.PointCount}/{l.Visible}")),
             string.Join(",", labels.Select(l => $"{l.Name}/{l.Code}/{l.Color}")), activeLabel);
@@ -78,7 +78,10 @@ public sealed class PropertiesPanel : UserControl
                 BuildLabel(node.Name, labels, activeLabel);
                 break;
             case ExplorerNodeKind.Section:
-                BuildSection(status);
+                BuildSection(node.Name,status);
+                break;
+            case ExplorerNodeKind.Measurement:
+                BuildMeasurement(node.Name,status);
                 break;
             case ExplorerNodeKind.Surface:
                 BuildSurface(status);
@@ -210,13 +213,29 @@ public sealed class PropertiesPanel : UserControl
         Actions(("Delete definition", $"LABELDEF DElete {ExplorerPanel.Quote(label.Name)}"));
     }
 
-    private void BuildSection(ViewerStatusSnapshot status)
+    private void BuildSection(string name, ViewerStatusSnapshot status)
     {
         Header("Cross-section", RibbonIcons.Section);
         Section("Section");
-        Row("Definition", Value(status.CrossSection.Length > 0 ? status.CrossSection : "none"));
-        Actions(("Show", "XSECTION View"), ("Flip", "XSECTION Flip"), ("Width…", "XSECTION Width"));
-        Actions(("Clear", "XSECTION CLear"));
+        var section = status.Sections.FirstOrDefault(s => s.Name == name);
+        if (section == null) return;
+        Row("Name",Value(section.Name)); Row("Length",Value($"{section.Length:0.###}")); Row("Width",Value($"{section.Width:0.###}"));
+        Row("Active",Value(section.Active ? "yes" : "no"));
+        if (!section.Active) Actions(("Activate", $"XSECTION Activate {ExplorerPanel.Quote(name)}"));
+        else
+        {
+            Actions(("Show", "XSECTION View"), ("Flip", "XSECTION Flip"), ("Width…", "XSECTION Width"));
+            Actions(("Rename…", "XSECTION Rename"), ("Export…", "XSECTION Export"), ("Remove", "XSECTION CLear"));
+        }
+    }
+
+    private void BuildMeasurement(string name, ViewerStatusSnapshot status)
+    {
+        Header(name,RibbonIcons.Scale); Section("Measurement");
+        var measurement = status.Measurements.FirstOrDefault(m => m.Name == name);
+        if (measurement == null) return;
+        Row("Result",Value(measurement.Description));
+        Actions(("Export…", "MEASURE Export"), ("Remove", $"MEASURE Remove {ExplorerPanel.Quote(name)}"));
     }
 
     private void BuildSurface(ViewerStatusSnapshot status)
@@ -225,7 +244,7 @@ public sealed class PropertiesPanel : UserControl
         Section("Surface");
         Row("Triangles", Value(status.SurfaceProgress >= 0 ? $"building {status.SurfaceProgress}%" : $"{status.SurfaceTriangles:N0}"));
         Row("Visible", Toggle(status.SurfaceVisible, on => on ? "SURFACE ON" : "SURFACE OFf"));
-        Actions(("Export OBJ…", "EXPORTOBJ"), ("Rebuild…", "RECONSTRUCT"), ("Clear", "SURFACE CLear"));
+        Actions(("Export OBJ…", "EXPORTOBJ"), ("Terrain TIN…", "TIN"), ("Reconstruct…", "RECONSTRUCT"), ("Clear", "SURFACE CLear"));
     }
 
     private void BuildPolylines(ViewerStatusSnapshot status)

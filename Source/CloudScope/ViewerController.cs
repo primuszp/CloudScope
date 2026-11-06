@@ -27,6 +27,7 @@ namespace CloudScope
         private bool _surfaceVisible = true;
         private bool _residentVisible = true;
         private readonly BackgroundOperation<SurfaceMesh> _surfaceOperation;
+        private string _surfaceWorkName = "Reconstructing surface";
         private LocalCommandServer? _api;
         internal ICommandExecutor? ApiCommands { get; set; }
         private readonly IHighlightRenderer _highlightRenderer;
@@ -566,6 +567,9 @@ namespace CloudScope
             SourceName = _document.SourceName,
             Layers = _document.Layers.Select(layer => new CloudLayerSnapshot(layer.Name, layer.PointCount, layer.Visible)).ToArray(),
             SurfaceProgress = _surfaceOperation.Progress,
+            SurfaceWorkName = _surfaceWorkName,
+            Sections = _document.Sections.Items.Select(s => new SectionSnapshot(s.Id,s.Name,s.Length,s.Width,s.Id == _document.Sections.ActiveId)).ToArray(),
+            Measurements = _document.Measurements.Items.Select(m => new MeasurementSnapshot(m.Id,m.Name,Describe(m))).ToArray(),
             ProcessingProgress = _processing.Progress,
             ProcessingName = _processing.Name,
             SurfaceTriangles = _document.Surface?.Indices.Length / 3 ?? 0,
@@ -877,6 +881,7 @@ namespace CloudScope
             if (_disposed) return "The viewer is closed.";
             if (_document.Dataset == null) return "Reconstruction requires a resident point cloud.";
             if (_surfaceOperation.IsRunning) return "A reconstruction is already running.";
+            _surfaceWorkName = "Reconstructing surface";
             var points = _document.Dataset.ViewPoints.Take(_document.Dataset.VisibleCount).ToArray();
             var snapshot = new PointCloudDataset(points, points.Length, _document.Dataset.Radius, _document.Dataset.HasColor, 1,
                 new PointCloudAttributes(new byte[points.Length], new ushort[points.Length], new byte[points.Length], new double[points.Length], 0, 0),

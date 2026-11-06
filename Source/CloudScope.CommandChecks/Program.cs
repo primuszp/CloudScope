@@ -45,6 +45,11 @@ if (args is ["--ground-reference",var referenceGround,var referenceOther,var ref
     catch (Exception error) { Console.Error.WriteLine(error); return 1; }
 }
 
+if (args is ["--write-native-fixture",var fixtureDirectory])
+{
+    NativeWorkflowFixture.Write(fixtureDirectory); return 0;
+}
+
 if (args is ["--benchmark"]) { PerformanceChecks.Benchmark(); return 0; }
 
 if (args is ["--metal-gpu"])
