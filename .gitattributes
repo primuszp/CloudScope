@@ -1,0 +1,10 @@
+# Keep shared source and generated command documentation stable across platforms.
+* text=auto eol=lf
+
+# Preserve reference documents, test fixtures and vendored archives byte for byte.
+*.pdf -text
+*.e57 -text
+*.gz -text
+*.png -text
+*.ico -text
+*.icns -text

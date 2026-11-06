@@ -9,9 +9,18 @@ obj/
 
 # Visual Studio
 .vscode/
+.idea/
 *.user
 *.userprefs
 *.sln.iml
+*.suo
+
+# Editor and merge leftovers
+*~
+*.swp
+*.swo
+*.orig
+*.rej
 
 # Test Results
 TestResults/

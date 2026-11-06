@@ -73,6 +73,19 @@ Real-survey CPU, memory and Metal measurements can be reproduced with the opt-in
 
 See [the code review and verification record](Docs/CodeReview.md) for the scope and remaining native checks.
 
+## Workspace housekeeping
+
+Remove regenerated project outputs and OS metadata with the repository's cleanup script (Bash, including Git Bash on Windows):
+
+```bash
+scripts/clean.sh --dry-run
+scripts/clean.sh
+```
+
+The script removes each project's `bin`/`obj` directories and refuses to delete tracked files. Packaged applications under `artifacts/` and local IDE preferences are retained. Rider's `.idea` files are local configuration; shared source formatting is defined in `.editorconfig`, with line endings enforced by `.gitattributes`.
+
+To validate without filling the workspace again, build with `dotnet build Source/CloudScope.slnx --artifacts-path /absolute/temporary-build -warnaserror`. Run the resulting check executables from that output directory.
+
 ## Project structure
 
 - `CloudScope.Core`: formats, point data, spatial and forestry algorithms, selection geometry, labels, drawing and the command runtime.
@@ -81,5 +94,7 @@ See [the code review and verification record](Docs/CodeReview.md) for the scope 
 - `CloudScope.Avalonia`: desktop shell and native viewport adapters.
 - `CloudScope.CommandChecks`, `CloudScope.UiChecks`: reproducible checks.
 - `MetalTriangleTest`, `MetalNetTriangle`: standalone graphics experiments.
+- `Native`, `ThirdParty`: native decoder integration and dependency source/licenses.
+- `Docs/Reference/LAS`: bundled LAS specification reference documents.
 
 CloudScope is licensed under the MIT License. The bundled [LASzip](https://github.com/LASzip/LASzip) decoder is Apache-2.0 licensed; source provenance and notices are under `ThirdParty/`.
