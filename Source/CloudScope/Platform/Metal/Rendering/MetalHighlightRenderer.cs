@@ -82,16 +82,16 @@ namespace CloudScope.Platform.Metal.Rendering
                 return;
 
             var device = _context.Device;
-            _pipeline    = MetalShaderLibrary.CreatePointPipeline(device, MTLPixelFormat.BGRA8Unorm, MTLPixelFormat.Depth32Float, _context.SampleCount);
-            _depthState  = MetalShaderLibrary.CreateDepthState(device, depthWrite: false);
+            _pipeline = MetalShaderLibrary.CreatePointPipeline(device, MTLPixelFormat.BGRA8Unorm, MTLPixelFormat.Depth32Float, _context.SampleCount);
+            _depthState = MetalShaderLibrary.CreateDepthState(device, depthWrite: false);
         }
 
         private void RebuildHighlightBuffer(PointData[] points, LabelManager labels, Func<PointAnnotation, Vector3> annotationColor)
         {
             var allAnnotations = labels.AllAnnotations;
-            var data  = RentScratch(allAnnotations.Count);
+            var data = RentScratch(allAnnotations.Count);
             int count = HighlightPointBuilder.FillAnnotations(points, allAnnotations, annotationColor, data);
-            _highlightCount  = count;
+            _highlightCount = count;
             BuildBuffer(ref _highlightBuffer, data, count);
         }
 
@@ -122,7 +122,7 @@ namespace CloudScope.Platform.Metal.Rendering
 
             // Published point data is immutable while any prior GPU frame can read it.
             MetalResources.Release(ref existingBuffer);
-            existingBuffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
+            existingBuffer = MetalResources.AllocateBuffer(device, byteSize, MTLResourceOptions.ResourceStorageModeManaged);
 
             fixed (PointData* src = data)
                 Buffer.MemoryCopy(src, existingBuffer.Contents.ToPointer(), byteSize, byteSize);

@@ -42,7 +42,7 @@ namespace CloudScope.Platform.Metal.Rendering
             _wideLinePipeline = MetalShaderLibrary.CreateWideLinePipeline(device, colorFmt, depthFmt, _context.SampleCount);
             _joinedSegmentPipeline = MetalShaderLibrary.CreateJoinedLineSegmentPipeline(device, colorFmt, depthFmt, _context.SampleCount);
             _joinedJoinPipeline = MetalShaderLibrary.CreateJoinedLineJoinPipeline(device, colorFmt, depthFmt, _context.SampleCount);
-            _depthOn  = MetalShaderLibrary.CreateDepthState(device, depthWrite: false);
+            _depthOn = MetalShaderLibrary.CreateDepthState(device, depthWrite: false);
             _depthWrite = MetalShaderLibrary.CreateDepthState(device, depthWrite: true);
             _depthBehind = MetalShaderLibrary.CreateDepthState(device, depthWrite: false, MTLCompareFunction.Greater);
             _depthOff = CreateDepthAlwaysState(device);
@@ -57,7 +57,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 return default;
 
             ulong byteSize = (ulong)(vertices.Length * sizeof(float));
-            var buf = _context.Device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
+            var buf = MetalResources.AllocateBuffer(_context.Device, byteSize, MTLResourceOptions.ResourceStorageModeManaged);
             fixed (float* src = vertices)
                 Buffer.MemoryCopy(src, buf.Contents.ToPointer(), byteSize, byteSize);
             buf.DidModifyRange(new NSRange { location = 0, length = buf.Length });

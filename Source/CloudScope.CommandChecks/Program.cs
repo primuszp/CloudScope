@@ -39,13 +39,13 @@ if (args is ["--survey-benchmark", var surveyInput, var surveyOutput])
     catch (Exception error) { Console.Error.WriteLine(error); return 1; }
 }
 
-if (args is ["--ground-reference",var referenceGround,var referenceOther,var referenceOutput])
+if (args is ["--ground-reference", var referenceGround, var referenceOther, var referenceOutput])
 {
-    try { GroundReferenceBenchmark.Run(referenceGround,referenceOther,referenceOutput); return 0; }
+    try { GroundReferenceBenchmark.Run(referenceGround, referenceOther, referenceOutput); return 0; }
     catch (Exception error) { Console.Error.WriteLine(error); return 1; }
 }
 
-if (args is ["--write-native-fixture",var fixtureDirectory])
+if (args is ["--write-native-fixture", var fixtureDirectory])
 {
     NativeWorkflowFixture.Write(fixtureDirectory); return 0;
 }
@@ -186,7 +186,7 @@ void Check(string name, bool ok, string detail = "")
 
 // ---------- 1. Registration of the real command set ----------
 await ExchangeChecks.Run(Check);
-try { PerformanceChecks.Run(Check); SurveyChecks.Run(Check); OwnershipChecks.Run(Check); ProjectChecks.Run(Check); EngineeringChecks.Run(Check); AlgorithmQualityChecks.Run(Check); ProcessingChecks.Run(Check); FrameResourceChecks.Run(Check); StreamingChecks.Run(Check); PersistenceChecks.Run(Check); LasChecks.Run(Check); LazChecks.Run(Check); ImportCancellationChecks.Run(Check); ReviewChecks.Run(Check); NativeInteractionChecks.Run(Check); ViewerWorkflowChecks.Run(Check); await BackgroundOperationChecks.Run(Check); }
+try { PerformanceChecks.Run(Check); SurveyChecks.Run(Check); OwnershipChecks.Run(Check); ConsolidationChecks.Run(Check); ProjectChecks.Run(Check); EngineeringChecks.Run(Check); AlgorithmQualityChecks.Run(Check); ProcessingChecks.Run(Check); FrameResourceChecks.Run(Check); StreamingChecks.Run(Check); PersistenceChecks.Run(Check); LasChecks.Run(Check); LazChecks.Run(Check); ImportCancellationChecks.Run(Check); ReviewChecks.Run(Check); NativeInteractionChecks.Run(Check); ViewerWorkflowChecks.Run(Check); await BackgroundOperationChecks.Run(Check); }
 catch (Exception ex) { Check("Review regression checks", false, ex.ToString()); }
 try
 {

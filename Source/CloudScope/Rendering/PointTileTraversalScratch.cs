@@ -14,6 +14,17 @@ internal sealed class PointTileTraversalScratch
 {
     private PointTileHeapEntry[] _entries = new PointTileHeapEntry[1024];
     private int _count;
+    private Matrix4AndSection[] _layerViews = [];
+    internal Matrix4AndSection[] PrepareLayers(int count)
+    {
+        if (_layerViews.Length < count) Array.Resize(ref _layerViews, count);
+        return _layerViews;
+    }
+    internal struct Matrix4AndSection
+    {
+        public OpenTK.Mathematics.Matrix4 Projection;
+        public CloudScope.Sections.SectionClip Section;
+    }
 
     public PointTileHeap Reset()
     {

@@ -129,10 +129,10 @@ namespace CloudScope.Platform.Metal.Rendering
             for (int chunk = 0; chunk < chunkCount; chunk++)
             {
                 int chunkPoints = Math.Min(PagesPerChunk, pageCount - chunk * PagesPerChunk) * PageSizeInPoints;
-                _pointChunks[chunk] = device.NewBuffer((ulong)chunkPoints * GpuPointVertex.Stride, storage);
+                _pointChunks[chunk] = MetalResources.AllocateBuffer(device, (ulong)chunkPoints * GpuPointVertex.Stride, storage);
                 if (_hasAttributes)
                 {
-                    _attributeChunks[chunk] = device.NewBuffer(
+                    _attributeChunks[chunk] = MetalResources.AllocateBuffer(device,
                         (ulong)chunkPoints * GpuPointAttribute.Stride, storage);
                 }
             }
@@ -148,13 +148,8 @@ namespace CloudScope.Platform.Metal.Rendering
             IReadOnlyList<PointTileLayer> layers, bool hasAttributes, MTLDevice device)
         {
             int bytesPerPoint = GpuPointVertex.Stride + (hasAttributes ? GpuPointAttribute.Stride : 0);
-            long totalPoints = layers.Sum(layer => layer.Store.Header.PointCount);
-            long residentPoints = Math.Min(
-                totalPoints,
-                Limits.ResolveResidentLimit((long)device.RecommendedMaxWorkingSetSize, bytesPerPoint));
-            int pageCount = (int)Math.Max(1, residentPoints / PageSizeInPoints);
-            // The final buffer is partial: rounding this up would exceed the requested cap.
-            return pageCount;
+            return PointTileWorkingSet.Pages(layers,
+                Math.Max(PageSizeInPoints, Limits.ResolveResidentLimit((long)device.RecommendedMaxWorkingSetSize, bytesPerPoint)), PageSizeInPoints);
         }
 
         public void Close() => Release();
@@ -236,20 +231,23 @@ namespace CloudScope.Platform.Metal.Rendering
             for (int batch = 0; batch < batchCount; batch++)
             {
                 PointTileLayerBatch layerBatch = _batches[batch];
-                Vector3 tint = _layers[layerBatch.LayerIndex].Tint;
+                var layer = _layers[layerBatch.LayerIndex];
+                var localView = layer.LocalView(renderView);
+                Matrix4 localMatrix = localView.View;
+                Vector3 tint = layer.Tint;
 
                 if (useAttributePipeline)
                 {
                     MetalDrawUniforms.Vertex(encoder,
                         new MetalAttributePointUniforms(
-                            view, projection, renderView.PointSize,
-                            PointRenderAttributeBuilder.MapColorSource(_colorSource), tint, renderView.Section));
+                            localMatrix, projection, renderView.PointSize,
+                            PointRenderAttributeBuilder.MapColorSource(_colorSource), tint, localView.Section));
                     encoder.SetVertexBuffer(_classPaletteBuffer, 0, 3);
                 }
                 else
                 {
                     MetalDrawUniforms.Vertex(encoder,
-                        new MetalPointUniforms(view, projection, renderView.PointSize, 1f, tint, renderView.Section));
+                        new MetalPointUniforms(localMatrix, projection, renderView.PointSize, 1f, tint, localView.Section));
                 }
 
                 // A range never straddles two buffers, and the pages of one cell usually share
@@ -333,7 +331,7 @@ namespace CloudScope.Platform.Metal.Rendering
         {
             const int PaletteSize = 256;
             ulong byteSize = (ulong)(PaletteSize * Unsafe.SizeOf<MetalPaletteColor>());
-            _classPaletteBuffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
+            _classPaletteBuffer = MetalResources.AllocateBuffer(device, byteSize, MTLResourceOptions.ResourceStorageModeManaged);
             var destination = (MetalPaletteColor*)_classPaletteBuffer.Contents.ToPointer();
             for (int i = 0; i < PaletteSize; i++)
             {

@@ -14,7 +14,9 @@ public sealed record ProjectState
     [JsonRequired]
     public string Format { get; init; } = "CloudScope.Project";
     [JsonRequired]
-    public int Version { get; init; } = 2;
+    public int Version { get; init; } = 3;
+    [JsonRequired]
+    public CoordinateFrame Frame { get; init; }
     [JsonRequired]
     public ProjectSource? Source { get; init; }
     [JsonRequired]
@@ -81,8 +83,10 @@ public sealed record ProjectFilter(string Kind, byte[] Values, double Min = 0, d
     public static ProjectFilter? Capture(PointFilter? filter) => filter switch
     {
         null => null,
-        ClassFilter f => new("Class", f.Values), ReturnFilter f => new("Return", f.Values),
-        IntensityFilter f => new("Intensity", [], f.Min, f.Max), ZFilter f => new("Z", [], f.Min, f.Max),
+        ClassFilter f => new("Class", f.Values),
+        ReturnFilter f => new("Return", f.Values),
+        IntensityFilter f => new("Intensity", [], f.Min, f.Max),
+        ZFilter f => new("Z", [], f.Min, f.Max),
         _ => throw new InvalidDataException("This filter cannot be saved in a project.")
     };
     public PointFilter Restore() => Kind switch

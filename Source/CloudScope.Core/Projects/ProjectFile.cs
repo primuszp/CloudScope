@@ -67,6 +67,7 @@ public static class ProjectFile
         using var zip = ZipFile.OpenRead(path);
         var entry = Required(zip, "project.json");
         if (entry.Length > 256L * 1024 * 1024) throw new InvalidDataException("Project metadata exceeds 256 MiB.");
+        string directory = Path.GetDirectoryName(Path.GetFullPath(path))!;
         ProjectState state;
         using (var input = entry.Open())
         {
@@ -81,10 +82,38 @@ public static class ProjectFile
                 metadata.AsObject().Remove("Section");
                 metadata["Version"] = 2;
             }
+            if (metadata["Version"]?.GetValue<int>() == 2)
+            {
+                CoordinateFrame frame = default;
+                if (metadata["Source"]?["Identity"] is { } identity)
+                    frame = new(identity["OriginX"]!.GetValue<double>(), identity["OriginY"]!.GetValue<double>(), identity["OriginZ"]!.GetValue<double>());
+                else if (metadata["Layers"] is JsonArray { Count: > 0 } layers)
+                {
+                    CoordinateFrame ReadOrigin(JsonNode layer)
+                    {
+                        string store = Path.GetFullPath(layer["Path"]!.GetValue<string>(), directory);
+                        using var index = File.OpenRead(Path.Combine(store, CloudScope.Store.PointTileStore.IndexFileName));
+                        Span<byte> header = stackalloc byte[CloudScope.Store.PointTileStoreHeader.Stride]; index.ReadExactly(header);
+                        var h = CloudScope.Store.PointTileStoreHeader.Read(header);
+                        return new(h.OriginX, h.OriginY, h.OriginZ);
+                    }
+                    var origins = layers.Select(layer => ReadOrigin(layer!)).ToArray();
+                    frame = origins[0];
+                    // Versions 1–2 stored sparse label positions in each store's own
+                    // frame. Their durable layer/point identities make this migration exact.
+                    if (metadata["Annotations"] is JsonArray annotations)
+                        foreach (var annotation in annotations)
+                            if (annotation?["Layer"]?.GetValue<int>() is int layer && layer >= 0 && layer < origins.Length
+                                && annotation["Position"] is { } position)
+                                annotation["Position"] = JsonSerializer.SerializeToNode(
+                                    position.Deserialize<Vector3>(Json) + origins[layer].OffsetFrom(frame), Json);
+                }
+                metadata["Frame"] = JsonSerializer.SerializeToNode(frame, Json);
+                metadata["Version"] = 3;
+            }
             state = metadata.Deserialize<ProjectState>(Json) ?? throw new InvalidDataException("The project is empty.");
         }
         ProjectValidation.Validate(state);
-        string directory = Path.GetDirectoryName(Path.GetFullPath(path))!;
         state = state with
         {
             Source = state.Source is { Path.Length: > 0 } source ? source with { Path = Path.GetFullPath(source.Path, directory) } : state.Source,
@@ -167,7 +196,7 @@ public static class ProjectFile
             if (reader.TokenType != JsonTokenType.StartArray) throw new JsonException("Expected a 3D vector.");
             reader.Read(); float x = reader.GetSingle(); reader.Read(); float y = reader.GetSingle(); reader.Read(); float z = reader.GetSingle();
             reader.Read(); if (reader.TokenType != JsonTokenType.EndArray) throw new JsonException("Expected three coordinates.");
-            var v = new Vector3(x,y,z); ProjectValidation.Finite(v); return v;
+            var v = new Vector3(x, y, z); ProjectValidation.Finite(v); return v;
         }
         public override void Write(Utf8JsonWriter writer, Vector3 value, JsonSerializerOptions options)
         { ProjectValidation.Finite(value); writer.WriteStartArray(); writer.WriteNumberValue(value.X); writer.WriteNumberValue(value.Y); writer.WriteNumberValue(value.Z); writer.WriteEndArray(); }
@@ -179,7 +208,7 @@ public static class ProjectFile
             if (reader.TokenType != JsonTokenType.StartArray) throw new JsonException("Expected a 2D vector.");
             reader.Read(); float x = reader.GetSingle(); reader.Read(); float y = reader.GetSingle(); reader.Read();
             if (reader.TokenType != JsonTokenType.EndArray || !float.IsFinite(x) || !float.IsFinite(y)) throw new JsonException("Invalid 2D vector.");
-            return new(x,y);
+            return new(x, y);
         }
         public override void Write(Utf8JsonWriter writer, Vector2 value, JsonSerializerOptions options)
         { writer.WriteStartArray(); writer.WriteNumberValue(value.X); writer.WriteNumberValue(value.Y); writer.WriteEndArray(); }

@@ -240,7 +240,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 int count = PointRenderUploadBuilder.GetChunkPointCount(residentCount, chunk, PointsPerChunk);
                 ulong byteSize = (ulong)(count * PointStride);
 
-                var buffer = device.NewBuffer(byteSize, CloudStorageMode(device));
+                var buffer = MetalResources.AllocateBuffer(device, byteSize, CloudStorageMode(device));
                 var destination = new Span<GpuPointVertex>(buffer.Contents.ToPointer(), count);
                 PointRenderUploadBuilder.FillPoints(data, destination, pointOffset, uploadOrder);
                 MarkUploaded(device, buffer, byteSize);
@@ -265,7 +265,7 @@ namespace CloudScope.Platform.Metal.Rendering
                 int count = PointRenderUploadBuilder.GetChunkPointCount(residentCount, chunk, PointsPerChunk);
                 ulong byteSize = (ulong)(count * AttributeStride);
 
-                var buffer = device.NewBuffer(byteSize, CloudStorageMode(device));
+                var buffer = MetalResources.AllocateBuffer(device, byteSize, CloudStorageMode(device));
                 var dst = (GpuPointAttribute*)buffer.Contents.ToPointer();
                 PointRenderAttributeBuilder.Fill(
                     data, new Span<GpuPointAttribute>(dst, count), pointOffset, uploadOrder);
@@ -279,7 +279,7 @@ namespace CloudScope.Platform.Metal.Rendering
         {
             const int PaletteSize = 256;
             ulong byteSize = (ulong)(PaletteSize * Unsafe.SizeOf<MetalPaletteColor>());
-            _classPaletteBuffer = device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
+            _classPaletteBuffer = MetalResources.AllocateBuffer(device, byteSize, MTLResourceOptions.ResourceStorageModeManaged);
             var dst = (MetalPaletteColor*)_classPaletteBuffer.Contents.ToPointer();
             for (int i = 0; i < PaletteSize; i++)
             {

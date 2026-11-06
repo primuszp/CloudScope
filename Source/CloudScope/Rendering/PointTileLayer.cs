@@ -28,6 +28,17 @@ public sealed class PointTileLayer
     internal string ProjectIdentity => _projectIdentity ??= CloudScope.Projects.ProjectStoreIdentity.Create(Store);
 
     public PointTileStore Store { get; }
+    /// <summary>Store-local to the stable document frame. Used by rendering, queries and labels alike.</summary>
+    internal Vector3 Offset { get; private set; }
+    internal void SetDocumentFrame(CloudScope.Loading.CoordinateFrame frame) =>
+        Offset = new CloudScope.Loading.CoordinateFrame(Store.Header.OriginX, Store.Header.OriginY, Store.Header.OriginZ).OffsetFrom(frame);
+    internal PointRenderView LocalView(in PointRenderView document) => document with
+    {
+        View = Matrix4.CreateTranslation(Offset) * document.View,
+        Section = document.Section with { Center = document.Section.Center - Offset }
+    };
+    internal CloudScope.Selection.IPointSelectionQuery LocalQuery(CloudScope.Selection.IPointSelectionQuery document) =>
+        new CloudScope.Selection.TranslatedSelectionQuery(document, Offset);
 
     /// <summary>Where a traversal of this layer starts.</summary>
     internal int[] Roots { get; }

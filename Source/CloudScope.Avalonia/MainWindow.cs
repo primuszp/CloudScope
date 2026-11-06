@@ -107,26 +107,26 @@ public sealed partial class MainWindow : Window
 
     private void ResolveControls()
     {
-        _workspaceGrid         = Find<Grid>("WorkspaceGrid");
-        _mainMenuControl       = Find<Menu>("MainMenuBar");
-        _contentGrid           = Find<Grid>("ContentGrid");
-        _paletteGrid           = Find<Grid>("PaletteGrid");
-        _paletteColumn         = Find<Border>("PaletteColumn");
+        _workspaceGrid = Find<Grid>("WorkspaceGrid");
+        _mainMenuControl = Find<Menu>("MainMenuBar");
+        _contentGrid = Find<Grid>("ContentGrid");
+        _paletteGrid = Find<Grid>("PaletteGrid");
+        _paletteColumn = Find<Border>("PaletteColumn");
         _paletteColumnSplitter = Find<GridSplitter>("PaletteColumnSplitter");
-        _viewportColumn        = Find<DockPanel>("ViewportColumn");
-        _commandLineHost       = Find<ContentControl>("CommandLineHost");
-        _commandLineBorder     = Find<Border>("CommandLineBorder");
-        _commandSplitter       = Find<GridSplitter>("CommandLineSplitter");
-        _viewportContainer     = Find<ContentControl>("ViewportHost");
-        _viewportControls      = Find<StackPanel>("ViewportControls");
-        _documentTitle         = Find<TextBlock>("DocumentTitle");
-        _documentDetail        = Find<TextBlock>("DocumentDetail");
-        _statusText            = Find<TextBlock>("StatusText");
-        _statusPoints          = Find<TextBlock>("StatusPoints");
-        _statusMode            = Find<TextBlock>("StatusMode");
-        _statusLabel           = Find<TextBlock>("StatusLabel");
+        _viewportColumn = Find<DockPanel>("ViewportColumn");
+        _commandLineHost = Find<ContentControl>("CommandLineHost");
+        _commandLineBorder = Find<Border>("CommandLineBorder");
+        _commandSplitter = Find<GridSplitter>("CommandLineSplitter");
+        _viewportContainer = Find<ContentControl>("ViewportHost");
+        _viewportControls = Find<StackPanel>("ViewportControls");
+        _documentTitle = Find<TextBlock>("DocumentTitle");
+        _documentDetail = Find<TextBlock>("DocumentDetail");
+        _statusText = Find<TextBlock>("StatusText");
+        _statusPoints = Find<TextBlock>("StatusPoints");
+        _statusMode = Find<TextBlock>("StatusMode");
+        _statusLabel = Find<TextBlock>("StatusLabel");
         _statusPresenter = new ViewerStatusPresenter(_statusText, Find<TextBlock>("StatusFps"), Find<ProgressBar>("StatusProgress"));
-        _statusTogglePanel     = Find<StackPanel>("StatusToggles");
+        _statusTogglePanel = Find<StackPanel>("StatusToggles");
     }
 
     private T Find<T>(string name) where T : Control =>

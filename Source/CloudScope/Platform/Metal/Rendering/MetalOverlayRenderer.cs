@@ -80,9 +80,9 @@ namespace CloudScope.Platform.Metal.Rendering
             float alpha = System.Math.Clamp(fade + flash, 0f, 1f);
             if (alpha <= 0.01f) return;
 
-            float  scale = camera.PivotIndicatorScaleAt(pivot);
+            float scale = camera.PivotIndicatorScaleAt(pivot);
             Matrix4 model = Matrix4.CreateScale(scale) * Matrix4.CreateTranslation(pivot);
-            Matrix4 mvp   = model * view * proj;
+            Matrix4 mvp = model * view * proj;
             for (int i = 0; i < _pivotBatches.Length; i++)
             {
                 PivotLineBatch batch = _pivotBatches[i];
@@ -287,7 +287,7 @@ namespace CloudScope.Platform.Metal.Rendering
         {
             var point = new PointData { R = 1f, G = 0.92f, B = 0.2f };
             ulong byteSize = (ulong)Unsafe.SizeOf<PointData>();
-            MTLBuffer buffer = _context.Device.NewBuffer(byteSize, MTLResourceOptions.ResourceStorageModeManaged);
+            MTLBuffer buffer = MetalResources.AllocateBuffer(_context.Device, byteSize, MTLResourceOptions.ResourceStorageModeManaged);
             Buffer.MemoryCopy(&point, buffer.Contents.ToPointer(), byteSize, byteSize);
             buffer.DidModifyRange(new SharpMetal.Foundation.NSRange { location = 0, length = byteSize });
             return buffer;

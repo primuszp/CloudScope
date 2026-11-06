@@ -12,7 +12,7 @@ public sealed partial class ViewerCommands
         var path = context.Editor.GetFileNameForOpen("Enter E57 file path:").Filtering("e57").Requiring();
         yield return path;
         if (!path.IsOk) yield break;
-        var limit = context.Editor.GetInteger("Maximum point count <all>:").WithRange(1, int.MaxValue).WithDefault(0);
+        var limit = PointCountLimit(context.Editor);
         yield return limit;
         if (!limit.IsOk) yield break;
         var approval = new ProjectChangeApproval();
@@ -28,7 +28,7 @@ public sealed partial class ViewerCommands
         var path = context.Editor.GetFileNameForOpen("Enter PTX file path:").Filtering("ptx").Requiring();
         yield return path;
         if (!path.IsOk) yield break;
-        var limit = context.Editor.GetInteger("Maximum point count <all>:").WithRange(1, int.MaxValue).WithDefault(0);
+        var limit = PointCountLimit(context.Editor);
         yield return limit;
         if (!limit.IsOk) yield break;
         var approval = new ProjectChangeApproval();

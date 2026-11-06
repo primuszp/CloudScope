@@ -18,18 +18,19 @@ internal static class ProjectChecks
         try
         {
             string source = Path.Combine(directory, "source.xyz"), project = Path.Combine(directory, "work.cloudscope");
-            File.WriteAllLines(source, from y in Enumerable.Range(0, 5) from x in Enumerable.Range(0, 5)
-                select $"{1000 + x} {2000 + y} 3 128 64 255");
+            File.WriteAllLines(source, from y in Enumerable.Range(0, 5)
+                                       from x in Enumerable.Range(0, 5)
+                                       select $"{1000 + x} {2000 + y} 3 128 64 255");
             using var viewer = NewViewer();
             var commands = new ViewerCommandDispatcher(viewer);
             commands.Execute($"OPENXYZ \"{source}\" 20"); Pump(viewer, () => viewer.LoadProgress < 0);
             commands.Execute("3DPOLY 0,0,0 1,1,1 2,1,0 Close");
             commands.Execute("PLINE 0,0,0 2,0,0 2,2,0 Close");
-            viewer.CreateCrossSection(new(-1,0,0), new(2,0,0), 1.5f);
+            viewer.CreateCrossSection(new(-1, 0, 0), new(2, 0, 0), 1.5f);
             viewer.SetViewportLayout(ViewportLayoutKind.Four, ViewportViewKind.Top);
             viewer.OrbitBy(13, 7); viewer.SaveNamedView("Inspection");
             viewer.SetPointSize(3); viewer.SetOrthoMode(true);
-            viewer.LabelRegistry.Define("Survey", 42, new(.2f,.4f,.6f));
+            viewer.LabelRegistry.Define("Survey", 42, new(.2f, .4f, .6f));
             string labels = Path.Combine(directory, "labels.json");
             File.WriteAllText(labels, "{\"labels\":{\"Survey\":[0,2]},\"instances\":{\"Survey\":{\"7\":[2]}}}");
             commands.Execute($"LOADLABELS Transfer \"{labels}\"");
@@ -118,7 +119,7 @@ internal static class ProjectChecks
         finally { Directory.Delete(directory, recursive: true); }
     }
 
-    private static void EmbeddedAndRecovery(string directory, Action<string,bool,string> check)
+    private static void EmbeddedAndRecovery(string directory, Action<string, bool, string> check)
     {
         using var viewer = NewViewer();
         viewer.LoadPointCloud([new PointData { X = 1, R = 1 }, new PointData { Z = 3, B = .5f }], 4);
@@ -145,7 +146,7 @@ internal static class ProjectChecks
         check("Explicit project save can clear the obsolete recovery snapshot", !File.Exists(recovery.PathName), "");
     }
 
-    private static void Streaming(string directory, Action<string,bool,string> check)
+    private static void Streaming(string directory, Action<string, bool, string> check)
     {
         string las = Path.Combine(directory, "source.las"); File.WriteAllBytes(las, LasChecks.Fixture(0, 2, 20));
         string first = Path.Combine(directory, "store a"), second = Path.Combine(directory, "store b");
@@ -154,7 +155,7 @@ internal static class ProjectChecks
         using (var viewer = NewViewer())
         {
             viewer.OpenPointTileStore(first);
-            PointTileLabelFile.Save(first, [new PointRef(0,0)], new Dictionary<int,PointAnnotation> { [0] = new("Tree", 4) });
+            PointTileLabelFile.Save(first, [new PointRef(0, 0)], new Dictionary<int, PointAnnotation> { [0] = new("Tree", 4) });
             viewer.LoadLabels();
             viewer.OpenPointTileStore(second, replace: false);
             check("Adding a streamed layer preserves existing annotation references", viewer.CaptureProject().Annotations is [{ Layer: 0, Point: 0, Instance: 4 }], "");
@@ -168,7 +169,7 @@ internal static class ProjectChecks
         check("Removing a layer removes its annotations without rebinding them to another survey", restored.LabelledPointCount == 0 && restored.CaptureProject().Layers.Length == 1 && restored.CaptureProject().Annotations.Length == 0, "");
     }
 
-    private static void Cancellation(string directory, Action<string,bool,string> check)
+    private static void Cancellation(string directory, Action<string, bool, string> check)
     {
         string embedded = Path.Combine(directory, "embedded.cloudscope");
         using var viewer = NewViewer();
@@ -195,7 +196,7 @@ internal static class ProjectChecks
         check("Cancelled project results dispose unpublished mapped tile stores", disposed && abandoned.Layers.Count == 0, "");
     }
 
-    private static void GpuFailure(string directory, Action<string,bool,string> check)
+    private static void GpuFailure(string directory, Action<string, bool, string> check)
     {
         var surface = new FailingSurface();
         using var viewer = new ViewerController(1280, 720, new HeadlessBackend(surface)); viewer.Load();
@@ -206,7 +207,7 @@ internal static class ProjectChecks
         check("GPU publication failure restores the previous render data and preserves document state", message?.Contains("Injected GPU") == true && ProjectFile.Serialize(viewer.CaptureProject()) == before, message ?? "");
     }
 
-    private static void Relocation(string directory, Action<string,bool,string> check)
+    private static void Relocation(string directory, Action<string, bool, string> check)
     {
         string original = Path.Combine(directory, "portable"), moved = Path.Combine(directory, "relocated"); Directory.CreateDirectory(original);
         string source = Path.Combine(original, "survey.xyz"), path = Path.Combine(original, "project.cloudscope");

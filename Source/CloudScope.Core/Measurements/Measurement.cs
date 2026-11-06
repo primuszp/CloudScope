@@ -47,10 +47,10 @@ public sealed record Measurement(int Id, string Name, MeasurementKind Kind, Vect
     {
         static double Side(Vector3 p, Vector3 q, Vector3 r) =>
             ((double)q.X - p.X) * ((double)r.Y - p.Y) - ((double)q.Y - p.Y) * ((double)r.X - p.X);
-        static bool On(Vector3 p, Vector3 q, Vector3 r) => r.X >= Math.Min(p.X,q.X) && r.X <= Math.Max(p.X,q.X)
-            && r.Y >= Math.Min(p.Y,q.Y) && r.Y <= Math.Max(p.Y,q.Y);
-        double s1 = Side(a,b,c), s2 = Side(a,b,d), s3 = Side(c,d,a), s4 = Side(c,d,b);
-        return s1 == 0 && On(a,b,c) || s2 == 0 && On(a,b,d) || s3 == 0 && On(c,d,a) || s4 == 0 && On(c,d,b)
+        static bool On(Vector3 p, Vector3 q, Vector3 r) => r.X >= Math.Min(p.X, q.X) && r.X <= Math.Max(p.X, q.X)
+            && r.Y >= Math.Min(p.Y, q.Y) && r.Y <= Math.Max(p.Y, q.Y);
+        double s1 = Side(a, b, c), s2 = Side(a, b, d), s3 = Side(c, d, a), s4 = Side(c, d, b);
+        return s1 == 0 && On(a, b, c) || s2 == 0 && On(a, b, d) || s3 == 0 && On(c, d, a) || s4 == 0 && On(c, d, b)
             || s1 * s2 < 0 && s3 * s4 < 0;
     }
 }

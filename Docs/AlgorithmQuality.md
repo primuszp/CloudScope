@@ -18,7 +18,7 @@ A CSF új regressziója ugyanazt a pontkészletet fordított sorrendben is feldo
 
 ## Jeli referencia-összevetés, 2026-11-06
 
-A felhasználó helyi `jeli_ground.las` és `jeli_off_ground.las` fájljának közös 100×100 koordinátaegységes kivágatából egyenletes forrásindex-mintavétellel 358 910 talaj- és 299 777 egyéb pont került az összevetésbe. Az eredmények a megadott fájlfelosztással való egyezést mutatják; a fájlok címkézését nem ellenőriztük független terepi referenciával. A környezet megegyezik a [teljesítménymérésével](Performance.md).
+A felhasználó helyi `jeli_ground.las` és `jeli_off_ground.las` fájljának közös 100×100 koordinátaegységes kivágatából egyenletes forrásindex-mintavétellel 358 910 talaj- és 299 777 egyéb pont került az összevetésbe. A forrásindex-lépés fájlonként 39, illetve 61; a precision/F1 a létrejött minta osztályarányára vonatkozik, nem a teljes kivágatra súlyozott becslés. Az eredmények a megadott fájlfelosztással való egyezést mutatják; a fájlok címkézését nem ellenőriztük független terepi referenciával. A környezet megegyezik a [teljesítménymérésével](Performance.md).
 
 | Ruhafelbontás | Precision | Recall | F1 | Feldolgozás |
 | --- | ---: | ---: | ---: | ---: |

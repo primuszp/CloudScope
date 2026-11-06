@@ -77,7 +77,7 @@ public sealed class ExplorerPanel : UserControl
             status.SourceName, status.LoadedCount, status.VisibleCount, status.ResidentVisible, status.IsStreamed,
             string.Join(",", status.Layers.Select(l => $"{l.Name}/{l.PointCount}/{l.Visible}")),
             string.Join(",", labels.Select(l => $"{l.Name}/{l.Code}/{l.Color}")), activeLabel,
-            status.CrossSection, string.Join(",",status.Sections), string.Join(",",status.Measurements), status.SurfaceTriangles, status.SurfaceVisible, status.SurfaceProgress,
+            status.CrossSection, string.Join(",", status.Sections), string.Join(",", status.Measurements), status.SurfaceTriangles, status.SurfaceVisible, status.SurfaceProgress,
             status.PolylineCount, string.Join(",", status.NamedViews), status.LoadProgress);
 
         if (signature == _signature)
@@ -171,11 +171,11 @@ public sealed class ExplorerPanel : UserControl
         TreeViewItem group = Group(new ExplorerNode(ExplorerNodeKind.Scene), "Scene objects", RibbonIcons.Section, "");
 
         foreach (var section in status.Sections)
-            group.Items.Add(Leaf(new ExplorerNode(ExplorerNodeKind.Section,section.Name),section.Name,
-                RibbonIcons.Section,section.Active ? "active" : ""));
+            group.Items.Add(Leaf(new ExplorerNode(ExplorerNodeKind.Section, section.Name), section.Name,
+                RibbonIcons.Section, section.Active ? "active" : ""));
         foreach (var measurement in status.Measurements)
-            group.Items.Add(Leaf(new ExplorerNode(ExplorerNodeKind.Measurement,measurement.Name),measurement.Name,
-                RibbonIcons.Scale,"measurement"));
+            group.Items.Add(Leaf(new ExplorerNode(ExplorerNodeKind.Measurement, measurement.Name), measurement.Name,
+                RibbonIcons.Scale, "measurement"));
 
         if (status.SurfaceProgress >= 0)
             group.Items.Add(Leaf(new ExplorerNode(ExplorerNodeKind.Surface, "surface"), "Surface",
@@ -191,7 +191,7 @@ public sealed class ExplorerPanel : UserControl
                 RibbonIcons.Polyline, status.PolylineCount.ToString()));
 
         if (group.Items.Count == 0)
-            group.Items.Add(Hint("Sections, surfaces and polylines appear here"));
+            group.Items.Add(Hint("Sections, measurements, surfaces and polylines appear here"));
 
         return group;
     }
@@ -228,8 +228,12 @@ public sealed class ExplorerPanel : UserControl
         Control glyph = swatch is Color color
             ? new Border
             {
-                Width = 10, Height = 10, CornerRadius = new CornerRadius(2), Margin = new Thickness(3, 0),
-                Background = new SolidColorBrush(color), VerticalAlignment = VerticalAlignment.Center
+                Width = 10,
+                Height = 10,
+                CornerRadius = new CornerRadius(2),
+                Margin = new Thickness(3, 0),
+                Background = new SolidColorBrush(color),
+                VerticalAlignment = VerticalAlignment.Center
             }
             : Icons.Create(icon, 14);
         glyph.Margin = new Thickness(0, 0, 6, 0);

@@ -131,6 +131,7 @@ public readonly record struct PointTileStoreHeader(
 
     public static PointTileStoreHeader Read(ReadOnlySpan<byte> source)
     {
+        if (source.Length < Stride) throw new InvalidDataException("Truncated point tile store header.");
         uint magic = BinaryPrimitives.ReadUInt32LittleEndian(source);
         if (magic != Magic)
             throw new InvalidDataException("Not a CloudScope tile store.");
@@ -207,11 +208,17 @@ public sealed class PointTileStore : IDisposable
         Header = header;
         Nodes = nodes;
         _points = points;
-        _pointView = points.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
         _attributes = attributes;
-        _attributeView = attributes?.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
         _sourceIndices = sourceIndices;
-        _sourceIndexView = sourceIndices?.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
+        MemoryMappedViewAccessor? p = null, a = null, s = null;
+        try
+        {
+            p = points.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
+            a = attributes?.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
+            s = sourceIndices?.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
+        }
+        catch { p?.Dispose(); a?.Dispose(); s?.Dispose(); throw; }
+        _pointView = p; _attributeView = a; _sourceIndexView = s;
     }
 
     /// <summary>The LAS this store was built from, when it recorded one.</summary>
@@ -230,29 +237,37 @@ public sealed class PointTileStore : IDisposable
     {
         byte[] index = File.ReadAllBytes(Path.Combine(directory, IndexFileName));
         PointTileStoreHeader header = PointTileStoreHeader.Read(index);
+        if (header.NodeCount <= 0 || index.LongLength != PointTileStoreHeader.Stride + (long)header.NodeCount * PointTileNode.Stride)
+            throw new InvalidDataException("Invalid point tile store index length.");
 
         var nodes = new PointTileNode[header.NodeCount];
         MemoryMarshal.Cast<byte, PointTileNode>(
                 index.AsSpan(PointTileStoreHeader.Stride, header.NodeCount * PointTileNode.Stride))
             .CopyTo(nodes);
+        PointTileValidation.Validate(directory, header, nodes);
 
-        MemoryMappedFile points = MemoryMappedFile.CreateFromFile(
-            Path.Combine(directory, PointFileName), FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        string attributePath = Path.Combine(directory, AttributeFileName);
-        MemoryMappedFile? attributes = header.HasAttributes && File.Exists(attributePath)
-            ? MemoryMappedFile.CreateFromFile(attributePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read)
-            : null;
+        MemoryMappedFile? points = null, attributes = null, sourceIndices = null;
+        try
+        {
+            points = MemoryMappedFile.CreateFromFile(
+                Path.Combine(directory, PointFileName), FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+            string attributePath = Path.Combine(directory, AttributeFileName);
+            attributes = header.HasAttributes && File.Exists(attributePath)
+                ? MemoryMappedFile.CreateFromFile(attributePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read)
+                : null;
 
-        string sourceIndexPath = Path.Combine(directory, SourceIndexFileName);
-        MemoryMappedFile? sourceIndices = header.HasSourceIndices && File.Exists(sourceIndexPath)
-            ? MemoryMappedFile.CreateFromFile(
-                sourceIndexPath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read)
-            : null;
+            string sourceIndexPath = Path.Combine(directory, SourceIndexFileName);
+            sourceIndices = header.HasSourceIndices && File.Exists(sourceIndexPath)
+                ? MemoryMappedFile.CreateFromFile(
+                    sourceIndexPath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read)
+                : null;
 
-        string sourcePathFile = Path.Combine(directory, SourcePathFileName);
-        string? sourcePath = File.Exists(sourcePathFile) ? File.ReadAllText(sourcePathFile).Trim() : null;
+            string sourcePathFile = Path.Combine(directory, SourcePathFileName);
+            string? sourcePath = File.Exists(sourcePathFile) ? File.ReadAllText(sourcePathFile).Trim() : null;
 
-        return new PointTileStore(directory, header, nodes, points, attributes, sourceIndices, sourcePath);
+            return new PointTileStore(directory, header, nodes, points, attributes, sourceIndices, sourcePath);
+        }
+        catch { points?.Dispose(); attributes?.Dispose(); sourceIndices?.Dispose(); throw; }
     }
 
     /// <summary>Copies one cell's vertices out of the mapped point file.</summary>

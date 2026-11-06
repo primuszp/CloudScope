@@ -69,7 +69,10 @@ internal sealed class ProjectRecovery : IDisposable
         _disposed = true;
         // An orderly close has already passed the document guard. A process crash leaves this file for RECOVER.
         try { Clear(); }
-        finally { _cancellation?.Dispose(); _lock?.Dispose(); try { if (File.Exists(_path + ".lock")) File.Delete(_path + ".lock"); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { } }
+        finally
+        {
+            _cancellation?.Dispose(); _lock?.Dispose(); try { if (File.Exists(_path + ".lock")) File.Delete(_path + ".lock"); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
     }
 }

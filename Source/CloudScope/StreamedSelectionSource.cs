@@ -114,10 +114,10 @@ namespace CloudScope
                     continue;
 
                 List<PointRef> hits = PointTileVolumeQuery.Resolve(
-                    layer.Store, query, layerIndex, cancellationToken);
+                    layer.Store, layer.LocalQuery(query), layerIndex, cancellationToken);
                 Vector3[] positions = PointTileVolumeQuery.ReadPositions(layer.Store, hits, cancellationToken);
                 for (int i = 0; i < hits.Count; i++)
-                    yield return (hits[i], positions[i]);
+                    yield return (hits[i], positions[i] + layer.Offset);
             }
         }
 
@@ -152,7 +152,8 @@ namespace CloudScope
                     _layers[reference.LayerIndex].Store.ReadPoints(reference.PointIndex, single);
                     index = _points.Count;
                     _known[reference] = index;
-                    _points.Add(new PointData { X = single[0].X, Y = single[0].Y, Z = single[0].Z });
+                    var offset = _layers[reference.LayerIndex].Offset;
+                    _points.Add(new PointData { X = single[0].X + offset.X, Y = single[0].Y + offset.Y, Z = single[0].Z + offset.Z });
                     _refs.Add(reference);
                 }
 

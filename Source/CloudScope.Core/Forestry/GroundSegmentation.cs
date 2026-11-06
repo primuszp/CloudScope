@@ -197,19 +197,19 @@ public static class GroundSegmentation
         double single = rigidness > 14 ? 1 : SingleMove[rigidness];
         double paired = rigidness > 14 ? .5 : DoubleMove[rigidness];
         for (int y = 0; y < height; y++)
-        for (int x = 0; x < width; x++)
-        {
-            if ((x & 255) == 0) cancellation.ThrowIfCancellationRequested();
-            int node = Index(x, y, width);
-            Relax(node, x + 1, y, width, height, position, movable, single, paired);
-            Relax(node, x, y + 1, width, height, position, movable, single, paired);
-            Relax(node, x + 1, y + 1, width, height, position, movable, single, paired);
-            Relax(node, x - 1, y + 1, width, height, position, movable, single, paired);
-            Relax(node, x + 2, y, width, height, position, movable, single, paired);
-            Relax(node, x, y + 2, width, height, position, movable, single, paired);
-            Relax(node, x + 2, y + 2, width, height, position, movable, single, paired);
-            Relax(node, x - 2, y + 2, width, height, position, movable, single, paired);
-        }
+            for (int x = 0; x < width; x++)
+            {
+                if ((x & 255) == 0) cancellation.ThrowIfCancellationRequested();
+                int node = Index(x, y, width);
+                Relax(node, x + 1, y, width, height, position, movable, single, paired);
+                Relax(node, x, y + 1, width, height, position, movable, single, paired);
+                Relax(node, x + 1, y + 1, width, height, position, movable, single, paired);
+                Relax(node, x - 1, y + 1, width, height, position, movable, single, paired);
+                Relax(node, x + 2, y, width, height, position, movable, single, paired);
+                Relax(node, x, y + 2, width, height, position, movable, single, paired);
+                Relax(node, x + 2, y + 2, width, height, position, movable, single, paired);
+                Relax(node, x - 2, y + 2, width, height, position, movable, single, paired);
+            }
     }
 
     private static void Relax(int first, int x, int y, int width, int height, double[] position, bool[] movable, double single, double paired)

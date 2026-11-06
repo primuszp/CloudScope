@@ -9,14 +9,14 @@ public sealed partial class ViewerCommands
         Syntax = "TIN [Ground/All] <cell size; 0 = exact XY> <maximum edge length>")]
     public IEnumerable<PromptStep> Terrain(CommandContext context)
     {
-        var source = context.Editor.GetKeywords("TIN source [Ground/All] <Ground>:",new Keyword("GROUND","Ground"),new Keyword("ALL","All"))
+        var source = context.Editor.GetKeywords("TIN source [Ground/All] <Ground>:", new Keyword("GROUND", "Ground"), new Keyword("ALL", "All"))
             .WithDefaultKeyword("GROUND");
         yield return source; if (source.Status != PromptStatus.Keyword) yield break;
-        var cell = context.Editor.GetDouble("TIN grid cell size; 0 keeps exact XY <1>:").WithRange(0,double.MaxValue).WithDefault(1);
+        var cell = context.Editor.GetDouble("TIN grid cell size; 0 keeps exact XY <1>:").WithRange(0, double.MaxValue).WithDefault(1);
         yield return cell; if (!cell.IsOk) yield break;
-        var edge = context.Editor.GetDouble("Maximum triangle edge in plan <5>:").WithRange(.001,double.MaxValue).WithDefault(5);
+        var edge = context.Editor.GetDouble("Maximum triangle edge in plan <5>:").WithRange(.001, double.MaxValue).WithDefault(5);
         yield return edge; if (!edge.IsOk) yield break;
-        context.Editor.WriteMessage(context.GetTarget<ViewerController>().BuildTerrain(source.Is("GROUND"),new(cell.Value,edge.Value)));
+        context.Editor.WriteMessage(context.GetTarget<ViewerController>().BuildTerrain(source.Is("GROUND"), new(cell.Value, edge.Value)));
     }
 
     [CommandMethod("RECONSTRUCT", Flags = CommandFlags.NoUndoMarker, Group = CommandGroup.Utility, Scope = CommandScope.Document,

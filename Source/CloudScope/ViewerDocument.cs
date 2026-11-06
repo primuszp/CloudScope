@@ -8,18 +8,22 @@ namespace CloudScope;
 /// <summary>Owns source identity and resident/streamed document data, independently of any window.</summary>
 internal sealed class ViewerDocument
 {
-    public CloudScope.Sections.SectionCatalog Sections { get; } = new();
-    public CloudScope.Measurements.MeasurementCatalog Measurements { get; } = new();
+    public CloudScope.Drawing.SceneEditor Editor { get; } = new();
+    public CloudScope.Sections.SectionCatalog Sections => Editor.Sections;
+    public CloudScope.Measurements.MeasurementCatalog Measurements => Editor.Measurements;
     public PointCloudDataset? Dataset { get; private set; }
     public SurfaceMesh? Surface { get; private set; }
     public List<PointTileLayer> Layers { get; } = [];
     public string SourceName { get; private set; } = "";
     public string SourcePath { get; private set; } = "";
     public string SourceFormat { get; private set; } = "Embedded";
+    public CoordinateFrame Frame { get; private set; }
+    public void SetFrame(CoordinateFrame frame) { frame.Validate(); Frame = frame; }
 
     public void ReplaceResident(PointCloudDataset? dataset)
     {
         Dataset = dataset;
+        Frame = dataset == null ? default : new(dataset.OriginX, dataset.OriginY, dataset.OriginZ);
         Surface = null;
         SourceName = SourcePath = "";
         SourceFormat = "Embedded";

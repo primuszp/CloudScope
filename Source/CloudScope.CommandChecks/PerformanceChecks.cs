@@ -12,18 +12,18 @@ internal static class PerformanceChecks
     public static void Run(Action<string, bool, string> check)
     {
         const int pointCount = 100_000, selectedCount = pointCount / 2;
-        var source = Enumerable.Range(0,pointCount).Select(i => new PointData { Z = i }).ToArray();
-        var data = new PointCloudDataset(source,pointCount,pointCount,false,1,
-            new PointCloudAttributes(new byte[pointCount],new ushort[pointCount],new byte[pointCount],
-                Enumerable.Range(0,pointCount).Select(i => (double)i).ToArray(),0,pointCount-1));
+        var source = Enumerable.Range(0, pointCount).Select(i => new PointData { Z = i }).ToArray();
+        var data = new PointCloudDataset(source, pointCount, pointCount, false, 1,
+            new PointCloudAttributes(new byte[pointCount], new ushort[pointCount], new byte[pointCount],
+                Enumerable.Range(0, pointCount).Select(i => (double)i).ToArray(), 0, pointCount - 1));
         long filterBefore = GC.GetAllocatedBytesForCurrentThread();
-        data.ApplyFilter(new ZFilter(0,selectedCount-1),recolor:false);
-        long filterBytes = GC.GetAllocatedBytesForCurrentThread()-filterBefore;
+        data.ApplyFilter(new ZFilter(0, selectedCount - 1), recolor: false);
+        long filterBytes = GC.GetAllocatedBytesForCurrentThread() - filterBefore;
         check("Filtered views allocate their final point and source-map arrays without growing temporary lists",
-            filterBytes <= selectedCount * (24L+sizeof(int)) + 8192, filterBytes.ToString());
+            filterBytes <= selectedCount * (24L + sizeof(int)) + 8192, filterBytes.ToString());
         check("Exact-sized filtered views preserve stable source indices and source geometry", data.VisibleCount == selectedCount
-            && data.ViewToSource!.Length == selectedCount && data.ViewToSource[0] == 0 && data.ViewToSource[^1] == selectedCount-1
-            && data.ViewPoints[^1].Z == selectedCount-1 && source.Length == pointCount && source[^1].Z == pointCount-1, "");
+            && data.ViewToSource!.Length == selectedCount && data.ViewToSource[0] == 0 && data.ViewToSource[^1] == selectedCount - 1
+            && data.ViewPoints[^1].Z == selectedCount - 1 && source.Length == pointCount && source[^1].Z == pointCount - 1, "");
         int value = 0, notices = 0;
         var undo = new UndoManager(memoryBudgetBytes: 1024, maximumCommands: 10);
         undo.HistoryTrimmed += () => notices++;
@@ -36,7 +36,7 @@ internal static class PerformanceChecks
         check("Retained undo and redo remain coherent after eviction", undo.Undo(3) == 2 && value == 1 && undo.Redo(2) == 2 && value == 3, "");
         var labels = new CloudScope.Labeling.LabelManager(trackLocalHistory: false);
         labels.ActionRecorded += undo.Record;
-        labels.ApplyLabel([0,1,2], "Tree");
+        labels.ApplyLabel([0, 1, 2], "Tree");
         check("Viewer label changes use only the common bounded history", !labels.Undo(), "");
         int freed = 0;
         using (var pool = new FrameResourcePool<byte[]>(n => new byte[n], a => a.Length, _ => freed++, maximumCachedBytes: 64))
@@ -82,8 +82,14 @@ internal static class PerformanceChecks
             for (int frame = 0; frame < 30; frame++)
             { cache.BeginFrame(); for (int view = 0; view < 9; view++) cache.Get(line); }
         });
-        Console.WriteLine(JsonSerializer.Serialize(new { scenario = "500-vertex arc/width polyline, 30 frames, 9 viewports", baseline, cached,
-            geometryBuilds = cache.BuildCount, cacheBytes = cache.CachedBytes }, new JsonSerializerOptions { WriteIndented = true }));
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            scenario = "500-vertex arc/width polyline, 30 frames, 9 viewports",
+            baseline,
+            cached,
+            geometryBuilds = cache.BuildCount,
+            cacheBytes = cache.CachedBytes
+        }, new JsonSerializerOptions { WriteIndented = true }));
     }
     private static object Measure(Action action)
     {

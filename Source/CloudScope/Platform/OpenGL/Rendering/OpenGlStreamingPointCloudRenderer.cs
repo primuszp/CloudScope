@@ -75,13 +75,11 @@ namespace CloudScope.Platform.OpenGL.Rendering
             // buffer and one vertex layout. A layer without them falls back to stored color.
             _hasAttributes = layers.All(layer => layer.Store.Header.HasAttributes);
 
-            long totalPoints = layers.Sum(layer => layer.Store.Header.PointCount);
             int bytesPerPoint = GpuPointVertex.Stride + (_hasAttributes ? GpuPointAttribute.Stride : 0);
             // OpenGL has no portable way to ask how much memory the device has, so the working
             // set is bounded by CLOUDSCOPE_MAX_RESIDENT_POINTS, or by the clouds themselves
             // when together they are smaller than the default ceiling.
-            long residentPoints = Math.Min(totalPoints, Limits.ResolveResidentLimit(null, bytesPerPoint));
-            int pageCount = (int)Math.Max(1, residentPoints / PageSizeInPoints);
+            int pageCount = PointTileWorkingSet.Pages(layers, Math.Max(PageSizeInPoints, Limits.ResolveResidentLimit(null, bytesPerPoint)), PageSizeInPoints);
             _pages = new PointTilePageTable(PageSizeInPoints, pageCount);
 
             int cellCount = layers.Sum(layer => layer.Store.Nodes.Length);
@@ -173,7 +171,6 @@ namespace CloudScope.Platform.OpenGL.Rendering
             if (batchCount == 0)
                 return 0;
 
-            _program.Use(in renderView, _colorSource, _hasAttributes);
             GL.BindVertexArray(_vao);
 
             for (int batch = 0; batch < batchCount; batch++)
@@ -189,6 +186,8 @@ namespace CloudScope.Platform.OpenGL.Rendering
                 // One MultiDrawArrays per layer instead of one per cell: a large cloud plans a
                 // couple of thousand ranges every frame, and that many driver round trips shows
                 // up in the frame time on its own.
+                var localView = _layers[layerBatch.LayerIndex].LocalView(renderView);
+                _program.Use(in localView, _colorSource, _hasAttributes);
                 _program.SetLayerTint(_layers[layerBatch.LayerIndex].Tint);
                 GL.MultiDrawArrays(
                     PrimitiveType.Points, _multiDrawFirst, _multiDrawCount, layerBatch.RangeCount);

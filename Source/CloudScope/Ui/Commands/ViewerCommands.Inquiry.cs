@@ -342,7 +342,7 @@ public sealed partial class ViewerCommands
             ed.WriteMessage(
                 viewer.Variables.Read("PTMAX")
                 + Environment.NewLine + viewer.Variables.Read("PTRESIDENT")
-                + Environment.NewLine + "PTRESIDENT = 0 means the environment's own limit.");
+                + Environment.NewLine + "PTRESIDENT = 0 means the environment's own limit. Residency applies at the next source open/upload; streaming has a 65,536-point page minimum.");
             yield break;
         }
 
@@ -354,6 +354,7 @@ public sealed partial class ViewerCommands
         if (!value.IsOk) yield break;
 
         ed.WriteMessage(viewer.Variables.Write(variable, value.Value.ToString()));
+        if (option.Is("RESIDENT")) ed.WriteMessage("Residency applies at the next source open/upload; streaming has a 65,536-point page minimum.");
     }
 
     [CommandMethod("SCRIPT", "SCR", Flags = CommandFlags.NoUndoMarker,

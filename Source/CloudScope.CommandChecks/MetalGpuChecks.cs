@@ -6,6 +6,13 @@ using CloudScope.Platform.Metal.Rendering;
 using OpenTK.Mathematics;
 using SharpMetal.Metal;
 using SharpMetal.ObjectiveCCore;
+using CloudScope;
+using CloudScope.Loading;
+using CloudScope.IO;
+using CloudScope.Rendering;
+using CloudScope.Sections;
+using CloudScope.Store;
+using System.Runtime.InteropServices;
 
 [SupportedOSPlatform("macos")]
 internal static class MetalGpuChecks
@@ -54,8 +61,8 @@ internal static class MetalGpuChecks
                 {
                     float x0 = -1f + 2f * (i % columns) / columns, x1 = x0 + 2f / columns;
                     float y1 = 1f - 2f * (i / columns) / rows, y0 = y1 - 2f / rows;
-                    var buffer = renderer.CreateFrameBuffer([x0,y0,0.5f, x1,y0,0.5f, x1,y1,0.5f, x0,y0,0.5f, x1,y1,0.5f, x0,y1,0.5f]);
-                    Vector4 tint = ((i + pass) % 3) switch { 0 => new(1,0,0,1), 1 => new(0,1,0,1), _ => new(0,0,1,1) };
+                    var buffer = renderer.CreateFrameBuffer([x0, y0, 0.5f, x1, y0, 0.5f, x1, y1, 0.5f, x0, y0, 0.5f, x1, y1, 0.5f, x0, y1, 0.5f]);
+                    Vector4 tint = ((i + pass) % 3) switch { 0 => new(1, 0, 0, 1), 1 => new(0, 1, 0, 1), _ => new(0, 0, 1, 1) };
                     renderer.Draw(buffer, 6, MTLPrimitiveType.Triangle, Matrix4.Identity, tint, depthTest: true, writeDepth: true);
                 }
                 encoder.EndEncoding();
@@ -80,6 +87,7 @@ internal static class MetalGpuChecks
                 Console.WriteLine($"  ok  Metal frame {pass + 1}: all 600 independent draws verified by color and depth readback");
                 MetalResources.Release(descriptor.NativePtr);
             }
+            VerifyLayerFrames(context, queue, color, depth, width, height);
         }
         finally
         {
@@ -88,5 +96,70 @@ internal static class MetalGpuChecks
             MetalResources.Release(depth.NativePtr);
             MetalResources.Release(queue.NativePtr);
         }
+    }
+
+    private static unsafe void VerifyLayerFrames(MetalRenderContext context, MTLCommandQueue queue,
+        MTLTexture color, MTLTexture depth, int width, int height)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "cloudscope-metal-layers-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        PointTileStore Make(string name, double origin)
+        {
+            string path = Path.Combine(directory, name); Directory.CreateDirectory(path);
+            var header = new PointTileStoreHeader(1, 1, 0, false, false, origin, 0, 0, origin, 0, 0, origin, 0, 0);
+            var index = new byte[PointTileStoreHeader.Stride + PointTileNode.Stride]; header.Write(index);
+            var node = new PointTileNode(0, 0, 0, 0, 0, 0, 0, 1, -1, 0, 0);
+            MemoryMarshal.Write(index.AsSpan(PointTileStoreHeader.Stride), in node);
+            File.WriteAllBytes(Path.Combine(path, PointTileStore.IndexFileName), index);
+            File.WriteAllBytes(Path.Combine(path, PointTileStore.PointFileName), MemoryMarshal.AsBytes(new GpuPointVertex[] { new(0, 0, 0, 1, 1, 1) }.AsSpan()).ToArray());
+            return PointTileStore.Open(path);
+        }
+        var oldResident = PointRenderBudget.MaxResidentPoints;
+        try
+        {
+            using var a = Make("left", -.5); using var b = Make("right", .5);
+            var left = new PointTileLayer("Left", a) { Tint = Vector3.UnitX }; left.SetDocumentFrame(default);
+            var right = new PointTileLayer("Right", b) { Tint = Vector3.UnitZ }; right.SetDocumentFrame(default);
+            PointRenderBudget.MaxResidentPoints = 2 * 65536;
+            using var renderer = new MetalStreamingPointCloudRenderer(context); renderer.Initialize(); renderer.Open([left, right]);
+            foreach (bool section in new[] { false, true })
+            {
+                var view = new PointRenderView(Matrix4.Identity, Matrix4.Identity, width, height, 8,
+                    section ? new SectionClip(new(.5f, 0, 0), Vector3.UnitY, Vector3.UnitX, 1, .1f, true) : default);
+                var timer = System.Diagnostics.Stopwatch.StartNew();
+                do
+                {
+                    using var pool = new MetalTestAutoreleasePool();
+                    var descriptor = new MTLRenderPassDescriptor();
+                    var attachment = descriptor.ColorAttachments.Object(0); attachment.Texture = color;
+                    attachment.LoadAction = MTLLoadAction.Clear; attachment.StoreAction = MTLStoreAction.Store;
+                    attachment.ClearColor = new MTLClearColor { alpha = 1 };
+                    var da = descriptor.DepthAttachment; da.Texture = depth; da.LoadAction = MTLLoadAction.Clear; da.StoreAction = MTLStoreAction.Store; da.ClearDepth = 1;
+                    context.SetDepthTexture(depth);
+                    var command = queue.CommandBuffer(); context.BeginFrame(descriptor, default, command);
+                    var encoder = command.RenderCommandEncoder(descriptor); context.SetRenderCommandEncoder(encoder);
+                    encoder.SetViewport(new MTLViewport { width = (ulong)width, height = (ulong)height, zfar = 1 });
+                    renderer.BeginFrame(context.CurrentFrame!); renderer.Render(context.CurrentFrame!, view);
+                    encoder.EndEncoding(); command.Commit(); context.EndFrame(submitted: true); command.WaitUntilCompleted();
+                    if (command.Status == MTLCommandBufferStatus.Error || renderer.LoadError != null) throw new InvalidOperationException("Layer GPU rendering failed.");
+                    MetalResources.Release(descriptor.NativePtr);
+                    if (timer.Elapsed > TimeSpan.FromSeconds(5)) throw new TimeoutException("Layer GPU residency did not settle.");
+                    Thread.Sleep(1);
+                } while (renderer.DrawnPointCount != (section ? 1 : 2) || renderer.PendingCellCount > 0);
+                var bytes = new byte[width * height * 4];
+                fixed (byte* p = bytes) color.GetBytes((IntPtr)p, (ulong)width * 4, new MTLRegion { size = new MTLSize { width = (ulong)width, height = (ulong)height, depth = 1 } }, 0);
+                int redLeft = 0, redRight = 0, blueLeft = 0, blueRight = 0;
+                for (int y = 0; y < height; y++) for (int x = 0; x < width; x++)
+                {
+                    int offset = (y * width + x) * 4;
+                    if (bytes[offset + 2] > 200) { if (x < width / 2) redLeft++; else redRight++; }
+                    if (bytes[offset] > 200) { if (x < width / 2) blueLeft++; else blueRight++; }
+                }
+                if (redRight != 0 || blueLeft != 0 || blueRight == 0 || (section ? redLeft != 0 : redLeft == 0))
+                    throw new InvalidOperationException($"Layer origin/section mismatch: red {redLeft}/{redRight}, blue {blueLeft}/{blueRight}.");
+                Console.WriteLine($"  ok  Metal translated layers {(section ? "with section clipping" : "with separate pages")}: independent pixel readback verified");
+            }
+        }
+        finally { PointRenderBudget.MaxResidentPoints = oldResident; Directory.Delete(directory, true); }
     }
 }

@@ -273,9 +273,9 @@ internal sealed class ChunkPlan
         long total = 0;
         int originX = x * span, originY = y * span, originZ = z * span;
         for (int cz = 0; cz < span; cz++)
-        for (int cy = 0; cy < span; cy++)
-        for (int cx = 0; cx < span; cx++)
-            total += counts[CellIndex(originX + cx, originY + cy, originZ + cz)];
+            for (int cy = 0; cy < span; cy++)
+                for (int cx = 0; cx < span; cx++)
+                    total += counts[CellIndex(originX + cx, originY + cy, originZ + cz)];
 
         if (total == 0)
             return 0;
@@ -287,9 +287,9 @@ internal sealed class ChunkPlan
             int chunkIndex = regions.Count;
             regions.Add(new ChunkRegion(level, x, y, z));
             for (int cz = 0; cz < span; cz++)
-            for (int cy = 0; cy < span; cy++)
-            for (int cx = 0; cx < span; cx++)
-                chunkOfCell[CellIndex(originX + cx, originY + cy, originZ + cz)] = chunkIndex;
+                for (int cy = 0; cy < span; cy++)
+                    for (int cx = 0; cx < span; cx++)
+                        chunkOfCell[CellIndex(originX + cx, originY + cy, originZ + cz)] = chunkIndex;
             return total;
         }
 

@@ -56,9 +56,12 @@ public sealed partial class ViewerController
         if (!_loadOperation.TryStart((cancellation, progress) =>
         {
             LoadedPointCloud cloud = ResidentPointCloudReader.Load(path, format, maxPoints, progress, cancellation);
-            return cloud with { SourceIdentity = CloudScope.Labeling.LabelSourceIdentity.Create(cloud.Points,
+            return cloud with
+            {
+                SourceIdentity = CloudScope.Labeling.LabelSourceIdentity.Create(cloud.Points,
                 checked((int)cloud.LoadedCount), cloud.CenterX, cloud.CenterY, cloud.CenterZ, cancellation),
-                SourcePayloadSha256 = CloudScope.Projects.ProjectSourceFingerprint.Create(cloud.ToDataset(), cancellation) };
+                SourcePayloadSha256 = CloudScope.Projects.ProjectSourceFingerprint.Create(cloud.ToDataset(), cancellation)
+            };
         }, cloud =>
         {
             if (requestedState != ProjectSignature()) throw new InvalidOperationException("The document changed while the cloud was loading. Its current work was preserved; retry the import.");
@@ -67,7 +70,7 @@ public sealed partial class ViewerController
             _selection.SetSourceFilePath(path, supportsLasExport: sourceFormat == "LAS");
             _document.SetSource(Path.GetFullPath(path), sourceFormat);
             StartNewProject();
-            BackgroundMessage?.Invoke($"Loaded {cloud.LoadedCount:N0} {format} points from {name} ({timer.Elapsed.TotalSeconds:0.0}s).");
+            BackgroundMessage?.Invoke($"Loaded {cloud.LoadedCount:N0} {cloud.SourceFormat ?? format} points from {name} ({timer.Elapsed.TotalSeconds:0.0}s).");
         }, error => BackgroundMessage?.Invoke($"{format} load failed: {error.Message}")))
             return "A point cloud is already loading.";
         return $"Reading {name}...";

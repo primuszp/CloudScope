@@ -13,13 +13,13 @@ public sealed partial class ViewerCommands
     {
         var viewer = context.GetTarget<ViewerController>(); var ed = context.Editor;
         var option = ed.GetKeywords("Measure [Distance/Area/List/Remove/Export] <Distance>:",
-            new Keyword("DISTANCE","Distance"),new Keyword("AREA","Area"),new Keyword("LIST","List"),
-            new Keyword("REMOVE","Remove"),new Keyword("EXPORT","Export")).WithDefaultKeyword("DISTANCE");
+            new Keyword("DISTANCE", "Distance"), new Keyword("AREA", "Area"), new Keyword("LIST", "List"),
+            new Keyword("REMOVE", "Remove"), new Keyword("EXPORT", "Export")).WithDefaultKeyword("DISTANCE");
         yield return option; if (option.Status != PromptStatus.Keyword) yield break;
         if (option.Keyword == "LIST") { ed.WriteMessage(viewer.MeasurementDescription); yield break; }
         if (option.Keyword == "EXPORT")
         {
-            foreach (var prompt in ExportEngineering(context,false)) yield return prompt;
+            foreach (var prompt in ExportEngineering(context, false)) yield return prompt;
             yield break;
         }
         var name = ed.GetString("Measurement name:");
@@ -34,7 +34,7 @@ public sealed partial class ViewerCommands
             while (true)
             {
                 var next = ed.GetPoint(area ? "Specify next boundary point or [Close]:" : "Specify second point:");
-                if (area) next.WithKeywords(new Keyword("CLOSE","Close"));
+                if (area) next.WithKeywords(new Keyword("CLOSE", "Close"));
                 yield return next;
                 if (next.Status == PromptStatus.Keyword && next.Keyword == "CLOSE")
                 {
@@ -45,7 +45,7 @@ public sealed partial class ViewerCommands
                 points.Add(next.Value); viewer.AddPolylineDraftVertex(next.Value);
                 if (!area) break;
             }
-            ed.WriteMessage(viewer.AddMeasurement(name.Value,area ? MeasurementKind.Area : MeasurementKind.Distance,points.ToArray()));
+            ed.WriteMessage(viewer.AddMeasurement(name.Value, area ? MeasurementKind.Area : MeasurementKind.Distance, points.ToArray()));
         }
         finally { viewer.ClearPolylineDraft(); }
     }
@@ -53,14 +53,14 @@ public sealed partial class ViewerCommands
     private static IEnumerable<PromptStep> ExportEngineering(CommandContext context, bool section)
     {
         var ed = context.Editor;
-        var format = ed.GetKeywords("Export format [Csv/Dxf] <Csv>:",new Keyword("CSV","Csv"),new Keyword("DXF","Dxf"))
+        var format = ed.GetKeywords("Export format [Csv/Dxf] <Csv>:", new Keyword("CSV", "Csv"), new Keyword("DXF", "Dxf"))
             .WithDefaultKeyword("CSV");
         yield return format; if (format.Status != PromptStatus.Keyword) yield break;
         bool dxf = format.Keyword == "DXF";
         var path = ed.GetFileNameForSave("Export destination:").Filtering(dxf ? "dxf" : "csv").Requiring();
         yield return path; if (!path.IsOk) yield break;
         var viewer = context.GetTarget<ViewerController>();
-        ed.WriteMessage(section ? viewer.ExportCrossSection(path.Value,dxf ? EngineeringExportFormat.Dxf : EngineeringExportFormat.Csv)
-            : viewer.ExportMeasurements(path.Value,dxf ? EngineeringExportFormat.Dxf : EngineeringExportFormat.Csv));
+        ed.WriteMessage(section ? viewer.ExportCrossSection(path.Value, dxf ? EngineeringExportFormat.Dxf : EngineeringExportFormat.Csv)
+            : viewer.ExportMeasurements(path.Value, dxf ? EngineeringExportFormat.Dxf : EngineeringExportFormat.Csv));
     }
 }

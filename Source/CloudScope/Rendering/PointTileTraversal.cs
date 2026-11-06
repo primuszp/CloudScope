@@ -69,7 +69,7 @@ internal static class PointTileTraversal
         if (layers.Count == 0 || drawBudget <= 0 || residentPageBudget <= 0 || destination.IsEmpty)
             return 0;
 
-        Matrix4 viewProjection = view.View * view.Projection;
+        var layerViews = scratch.PrepareLayers(layers.Count);
         float pointArea = MathF.Max(view.PointSize * view.PointSize, 1f);
 
         // Breadth-first by depth: a nearer cell is both more valuable to draw and more urgent
@@ -82,10 +82,14 @@ internal static class PointTileTraversal
             if (!layer.Visible)
                 continue;
 
+            var local = layer.LocalView(view);
+            layerViews[layerIndex].Projection = local.View * local.Projection;
+            layerViews[layerIndex].Section = local.Section;
+            ref Matrix4 viewProjection = ref layerViews[layerIndex].Projection;
             PointTileNode[] layerNodes = layer.Store.Nodes;
             foreach (int root in layer.Roots)
             {
-                if (IntersectsSection(layerNodes[root], view.Section)
+                if (IntersectsSection(layerNodes[root], local.Section)
                     && TryProject(layerNodes[root], ref viewProjection, view.ViewportWidth, view.ViewportHeight,
                         out float rootArea, out float rootDepth))
                     heap.Push(layerIndex, root, rootDepth, rootArea);
@@ -96,6 +100,7 @@ internal static class PointTileTraversal
         while (count < destination.Length
             && heap.TryPop(out int layer, out int index, out float depth, out float screenArea))
         {
+            ref Matrix4 viewProjection = ref layerViews[layer].Projection;
             PointTileNode[] nodes = layers[layer].Store.Nodes;
             PointTileNode node = nodes[index];
             if (node.PointCount > 0)
@@ -124,7 +129,7 @@ internal static class PointTileTraversal
                 int childIndex = node.FirstChild + child;
                 if ((uint)childIndex >= (uint)nodes.Length)
                     continue;
-                if (IntersectsSection(nodes[childIndex], view.Section)
+                if (IntersectsSection(nodes[childIndex], layerViews[layer].Section)
                     && TryProject(nodes[childIndex], ref viewProjection, view.ViewportWidth, view.ViewportHeight,
                         out float childArea, out float childDepth))
                     heap.Push(layer, childIndex, childDepth, childArea);

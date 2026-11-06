@@ -31,6 +31,7 @@ public sealed partial class ViewerController
 
     internal ProjectState CaptureProject(bool includeAnnotations = true) => new()
     {
+        Frame = _document.Frame,
         Source = _document.Dataset is { } data ? new(_document.SourcePath, _document.SourceFormat, data.LoadedCount,
             data.SourceIdentity, data.Radius, data.HasColor, data.ColorScale, data.SourcePayloadSha256) : null,
         Layers = _document.Layers.Select(l => new ProjectLayer(l.ProjectId, Path.GetFullPath(l.Store.Directory), l.Name, l.Visible, l.Tint, l.ProjectIdentity)).ToArray(),
@@ -49,12 +50,25 @@ public sealed partial class ViewerController
         Workspace = new()
         {
             Viewports = _viewports.Select(v => new ProjectViewport(v.Camera.SaveState(), v.Input.PointSize, v.SectionMode)).ToArray(),
-            Layout = (int)_viewportLayout, PreviousLayout = (int)_previousViewportLayout, AuxiliaryView = (int)_auxiliaryViewportView,
-            ActiveViewport = _activeViewportIndex, ResidentVisible = _residentVisible, SurfaceVisible = _surfaceVisible,
-            Ortho = OrthoMode, Mode = Mode, Tool = ActiveToolType, CurrentLabel = CurrentLabel, CurrentInstance = CurrentInstanceId,
-            ExplorerVisible = ExplorerVisible, PropertiesVisible = PropertiesVisible, RibbonVisible = RibbonVisible,
-            PalettesOnRight = PalettesOnRight, CommandLineVisible = CommandLineVisible, CommandLineFloating = CommandLineFloating,
-            HistoryVisible = CommandHistoryVisible, LabelsVisible = LabelWindowVisible
+            Layout = (int)_viewportLayout,
+            PreviousLayout = (int)_previousViewportLayout,
+            AuxiliaryView = (int)_auxiliaryViewportView,
+            ActiveViewport = _activeViewportIndex,
+            ResidentVisible = _residentVisible,
+            SurfaceVisible = _surfaceVisible,
+            Ortho = OrthoMode,
+            Mode = Mode,
+            Tool = ActiveToolType,
+            CurrentLabel = CurrentLabel,
+            CurrentInstance = CurrentInstanceId,
+            ExplorerVisible = ExplorerVisible,
+            PropertiesVisible = PropertiesVisible,
+            RibbonVisible = RibbonVisible,
+            PalettesOnRight = PalettesOnRight,
+            CommandLineVisible = CommandLineVisible,
+            CommandLineFloating = CommandLineFloating,
+            HistoryVisible = CommandHistoryVisible,
+            LabelsVisible = LabelWindowVisible
         }
     };
 
@@ -134,6 +148,7 @@ public sealed partial class ViewerController
         foreach (var old in _document.Layers) old.Store.Dispose();
         _document.Layers.Clear();
         _document.ReplaceResident(prepared.Dataset);
+        _document.SetFrame(prepared.State.Frame);
         _document.Layers.AddRange(prepared.Layers);
         prepared.Adopted = true; // renderer and selection keep the staged list; mapped-file ownership moved to this document
         if (prepared.State.Source is { } source)
@@ -153,7 +168,6 @@ public sealed partial class ViewerController
         LabelRegistry.LoadFrom(prepared.State.Definitions);
         foreach (var line in prepared.State.Polylines) AddPolyline(line, select: false);
         foreach (var line in prepared.State.PlanarPolylines) AddPlanarPolyline(line, select: false);
-        _nextPolylineId = prepared.State.Polylines.Select(l => l.Id).Concat(prepared.State.PlanarPolylines.Select(l => l.Id)).DefaultIfEmpty(0).Max() + 1;
         _document.Sections.Replace(prepared.State.Sections, prepared.State.ActiveSectionId);
         _document.Measurements.Replace(prepared.State.Measurements);
         SetCrossSectionState(_document.Sections.Active);

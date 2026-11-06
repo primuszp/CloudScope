@@ -54,9 +54,9 @@ namespace CloudScope
         private ObjectSnapResult _pointSnapPreview;
         private int _pointSnapViewport = -1;
         private Vector3 _lastPointInputDirection;
-        private readonly List<PolylineGripTarget> _polylines = [];
-        private readonly List<PlanarPolylineGripTarget> _planarPolylines = [];
-        private readonly List<ITransactionalGripTarget> _gripTargets = [];
+        private IReadOnlyList<PolylineGripTarget> _polylines => _document.Editor.Polylines;
+        private IReadOnlyList<PlanarPolylineGripTarget> _planarPolylines => _document.Editor.PlanarPolylines;
+        private IReadOnlyList<ITransactionalGripTarget> _gripTargets => _document.Editor.Targets;
         private readonly List<Vector3> _polylineDraft = [];
         private Vector3? _polylineDraftCursor;
 
@@ -71,7 +71,6 @@ namespace CloudScope
 
         /// <summary>The pick box of the 3D cursor; the arms carry the axis colours instead.</summary>
         private static readonly Vector4 CursorCrosshairColor = new(0.94f, 0.94f, 0.98f, 0.92f);
-        private int _nextPolylineId = 1;
         private readonly List<PlanarPolylineVertex> _planarPolylineDraft = [];
         private Vector3 _planarDraftOrigin;
         private Vector3? _planarDraftCursor;
@@ -135,6 +134,7 @@ namespace CloudScope
             // One undo step per labelling command: the label manager reports each reversible
             // change, and the runtime's command marks decide where the steps begin and end.
             _selection.Labels.ActionRecorded += UndoHistory.Record;
+            _document.Editor.TargetRemoved += target => { if (ReferenceEquals(_selectedGripTarget, target)) SelectGripTarget(null); };
             UndoHistory.HistoryTrimmed += () => BackgroundMessage?.Invoke("Old undo history was released to stay within its memory/command limit.");
             _projectCheckpoint = ProjectSignature();
         }
@@ -176,7 +176,7 @@ namespace CloudScope
         public string ToggleOrthoMode() => SetOrthoMode(!OrthoMode);
 
         /// <summary>Command-level undo history; the runtime opens and closes its marks.</summary>
-        public UndoManager UndoHistory { get; } = new();
+        public UndoManager UndoHistory => _document.Editor.History;
 
         /// <summary>Named viewer state, readable and writable with SETVAR and GETVAR.</summary>
         public SystemVariableTable Variables { get; } = new();
@@ -228,7 +228,8 @@ namespace CloudScope
 
             Variables.Register(new SystemVariable
             {
-                Name = "CINSTANCE", Type = SystemVariableType.Int,
+                Name = "CINSTANCE",
+                Type = SystemVariableType.Int,
                 Description = "Instance id applied to new selections; NONE clears it.",
                 Getter = () => Status.InstanceText,
                 Setter = text => text.Equals("NONE", StringComparison.OrdinalIgnoreCase) || text.Equals("CLEAR", StringComparison.OrdinalIgnoreCase)
@@ -381,6 +382,8 @@ namespace CloudScope
                 // same site are otherwise impossible to tell from each other.
                 Tint = _document.Layers.Count == 0 ? Vector3.One : LayerTintPalette[_document.Layers.Count % LayerTintPalette.Length]
             };
+            if (replace || _document.Layers.Count == 0) _document.SetFrame(new(store.Header.OriginX, store.Header.OriginY, store.Header.OriginZ));
+            layer.SetDocumentFrame(_document.Frame);
             _document.Layers.Add(layer);
 
             _document.SetDisplayName(_document.Layers.Count == 1 ? name : $"{_document.Layers.Count} layers");
@@ -523,18 +526,18 @@ namespace CloudScope
                 PointTileStoreHeader header = layer.Store.Header;
                 // Bounds are absolute, but the points are stored relative to each store's own
                 // origin, so a layer's extent has to be measured where it will be drawn.
-                minX = Math.Min(minX, header.MinX - header.OriginX);
-                minY = Math.Min(minY, header.MinY - header.OriginY);
-                minZ = Math.Min(minZ, header.MinZ - header.OriginZ);
-                maxX = Math.Max(maxX, header.MaxX - header.OriginX);
-                maxY = Math.Max(maxY, header.MaxY - header.OriginY);
-                maxZ = Math.Max(maxZ, header.MaxZ - header.OriginZ);
+                minX = Math.Min(minX, header.MinX - _document.Frame.X);
+                minY = Math.Min(minY, header.MinY - _document.Frame.Y);
+                minZ = Math.Min(minZ, header.MinZ - _document.Frame.Z);
+                maxX = Math.Max(maxX, header.MaxX - _document.Frame.X);
+                maxY = Math.Max(maxY, header.MaxY - _document.Frame.Y);
+                maxZ = Math.Max(maxZ, header.MaxZ - _document.Frame.Z);
             }
 
-            float x = (float)(maxX - minX) * 0.5f;
-            float y = (float)(maxY - minY) * 0.5f;
-            float z = (float)(maxZ - minZ) * 0.5f;
-            float radius = MathF.Sqrt(x * x + y * y + z * z);
+            double x = Math.Max(Math.Abs(minX), Math.Abs(maxX));
+            double y = Math.Max(Math.Abs(minY), Math.Abs(maxY));
+            double z = Math.Max(Math.Abs(minZ), Math.Abs(maxZ));
+            float radius = (float)Math.Sqrt(x * x + y * y + z * z);
             return radius > 0f ? radius : 50f;
         }
 
@@ -568,8 +571,8 @@ namespace CloudScope
             Layers = _document.Layers.Select(layer => new CloudLayerSnapshot(layer.Name, layer.PointCount, layer.Visible)).ToArray(),
             SurfaceProgress = _surfaceOperation.Progress,
             SurfaceWorkName = _surfaceWorkName,
-            Sections = _document.Sections.Items.Select(s => new SectionSnapshot(s.Id,s.Name,s.Length,s.Width,s.Id == _document.Sections.ActiveId)).ToArray(),
-            Measurements = _document.Measurements.Items.Select(m => new MeasurementSnapshot(m.Id,m.Name,Describe(m))).ToArray(),
+            Sections = _document.Sections.Items.Select(s => new SectionSnapshot(s.Id, s.Name, s.Length, s.Width, s.Id == _document.Sections.ActiveId)).ToArray(),
+            Measurements = _document.Measurements.Items.Select(m => new MeasurementSnapshot(m.Id, m.Name, m.Kind, _document.Measurements.Result(m.Id))).ToArray(),
             ProcessingProgress = _processing.Progress,
             ProcessingName = _processing.Name,
             SurfaceTriangles = _document.Surface?.Indices.Length / 3 ?? 0,
@@ -1118,13 +1121,10 @@ namespace CloudScope
             if (closed && _polylineDraft.Count < 3)
                 return "A closed polyline needs at least three points.";
 
-            var polyline = new Polyline3D(
-                _nextPolylineId++, $"PL{_nextPolylineId - 1}", _polylineDraft.ToArray(), closed);
+            int id = _document.Editor.AllocatePolylineId();
+            var polyline = new Polyline3D(id, $"PL{id}", _polylineDraft.ToArray(), closed);
             AddPolyline(polyline, select: true);
-            UndoHistory.Record(new DelegateUndoAction(
-                "3D polyline",
-                () => RemovePolyline(polyline.Id),
-                () => AddPolyline(polyline, select: false), 256 + polyline.Vertices.LongLength * 12));
+            _document.Editor.RecordCreation(polyline);
             ClearPolylineDraft();
             return $"3D polyline {polyline.Name} created with {polyline.Vertices.Length} vertices"
                 + (closed ? ", closed." : ".");
@@ -1231,14 +1231,12 @@ namespace CloudScope
                 };
             }
 
-            var polyline = new PlanarPolyline(_nextPolylineId++, $"PL{_nextPolylineId - 1}",
+            int id = _document.Editor.AllocatePolylineId();
+            var polyline = new PlanarPolyline(id, $"PL{id}",
                 _planarDraftOrigin, Vector3.UnitX, Vector3.UnitY,
                 _planarPolylineDraft.ToArray(), closed);
             AddPlanarPolyline(polyline, select: true);
-            UndoHistory.Record(new DelegateUndoAction(
-                "Polyline",
-                () => RemovePlanarPolyline(polyline.Id),
-                () => AddPlanarPolyline(polyline, select: false), 256 + polyline.Vertices.LongLength * 20));
+            _document.Editor.RecordCreation(polyline);
             ClearPlanarPolylineDraft();
             return $"Polyline {polyline.Name} created with {polyline.Vertices.Length} vertices"
                 + (closed ? ", closed." : ".");
@@ -1266,51 +1264,8 @@ namespace CloudScope
             EditSelectedPlanarPolyline("Polyline width", target => target.SetUniformWidth(width),
                 $"Polyline width: {width:0.###}.");
 
-        public string JoinSelectedPlanarPolyline(float tolerance)
-        {
-            if (_selectedGripTarget is not PlanarPolylineGripTarget selected)
-                return "Select a planar polyline first.";
-            if (selected.Polyline.Closed)
-                return "A closed polyline cannot be joined at an endpoint.";
-
-            tolerance = MathF.Max(tolerance, 0f);
-            PlanarPolyline a = selected.Polyline.Copy();
-            PlanarPolylineGripTarget? otherTarget = null;
-            PlanarPolyline? joined = null;
-            foreach (PlanarPolylineGripTarget candidate in _planarPolylines)
-            {
-                if (ReferenceEquals(candidate, selected) || candidate.Polyline.Closed) continue;
-                if (MathF.Abs(Vector3.Dot(candidate.Polyline.Origin - a.Origin, a.Normal)) > tolerance)
-                    continue;
-
-                PlanarPolyline b = candidate.Polyline.Copy();
-                if (TryJoinPlanarPolylines(a, b, tolerance, out joined))
-                {
-                    otherTarget = candidate;
-                    break;
-                }
-            }
-            if (otherTarget == null || joined == null)
-                return "No open coplanar polyline endpoint is within the join tolerance.";
-
-            PlanarPolyline beforeSelected = selected.Polyline.Copy();
-            PlanarPolyline removed = otherTarget.Polyline.Copy();
-            selected.RestoreState(joined);
-            RemovePlanarPolyline(removed.Id);
-            UndoHistory.Record(new DelegateUndoAction(
-                "Join polylines",
-                () =>
-                {
-                    selected.RestoreState(beforeSelected);
-                    AddPlanarPolyline(removed, select: false);
-                },
-                () =>
-                {
-                    selected.RestoreState(joined);
-                    RemovePlanarPolyline(removed.Id);
-                }, 768 + (beforeSelected.Vertices.LongLength + removed.Vertices.LongLength + joined.Vertices.LongLength) * 20));
-            return $"Polyline {removed.Name} joined to {selected.Polyline.Name}.";
-        }
+        public string JoinSelectedPlanarPolyline(float tolerance) => _selectedGripTarget is PlanarPolylineGripTarget target
+            ? _document.Editor.Join(target, tolerance) : "Select a planar polyline first.";
 
         public string SavePlanarPolylines(string path)
         {
@@ -1320,85 +1275,8 @@ namespace CloudScope
 
         public string LoadPlanarPolylines(string path)
         {
-            PlanarPolyline[] loaded = PlanarPolylineFile.Load(path)
-                .Select(polyline => polyline with
-                {
-                    Id = _nextPolylineId++,
-                    Name = $"PL{_nextPolylineId - 1}"
-                }).ToArray();
-            foreach (PlanarPolyline polyline in loaded)
-                AddPlanarPolyline(polyline, select: false);
-            UndoHistory.Record(new DelegateUndoAction(
-                "Load polylines",
-                () =>
-                {
-                    foreach (PlanarPolyline polyline in loaded)
-                        RemovePlanarPolyline(polyline.Id);
-                },
-                () =>
-                {
-                    foreach (PlanarPolyline polyline in loaded)
-                        AddPlanarPolyline(polyline, select: false);
-                }, 256 + loaded.Sum(line => line.Vertices.LongLength * 20)));
+            PlanarPolyline[] loaded = _document.Editor.Import(PlanarPolylineFile.Load(path));
             return $"Loaded {loaded.Length} planar polylines from {Path.GetFullPath(path)}.";
-        }
-
-        private static bool TryJoinPlanarPolylines(
-            PlanarPolyline selected,
-            PlanarPolyline other,
-            float tolerance,
-            out PlanarPolyline? joined)
-        {
-            joined = null;
-            float toleranceSquared = tolerance * tolerance;
-            PlanarPolyline first = selected;
-            PlanarPolyline second = other;
-            bool reverseFirst = false;
-            bool reverseSecond = false;
-
-            Vector3 aStart = selected.ToWorld(selected.Vertices[0].Position);
-            Vector3 aEnd = selected.Endpoint;
-            Vector3 bStart = other.ToWorld(other.Vertices[0].Position);
-            Vector3 bEnd = other.Endpoint;
-            if (Vector3.DistanceSquared(aEnd, bStart) <= toleranceSquared) { }
-            else if (Vector3.DistanceSquared(aEnd, bEnd) <= toleranceSquared) reverseSecond = true;
-            else if (Vector3.DistanceSquared(aStart, bEnd) <= toleranceSquared)
-            {
-                first = other; second = selected;
-            }
-            else if (Vector3.DistanceSquared(aStart, bStart) <= toleranceSquared)
-            {
-                first = other; second = selected; reverseFirst = true;
-            }
-            else return false;
-
-            if (reverseFirst) first = ReversedCopy(first);
-            if (reverseSecond) second = ReversedCopy(second);
-
-            var vertices = new List<PlanarPolylineVertex>();
-            foreach (PlanarPolylineVertex vertex in first.Vertices)
-                vertices.Add(vertex with { Position = selected.ToPlane(first.ToWorld(vertex.Position)) });
-            PlanarPolylineVertex secondStart = second.Vertices[0];
-            vertices[^1] = vertices[^1] with
-            {
-                Bulge = secondStart.Bulge,
-                StartWidth = secondStart.StartWidth,
-                EndWidth = secondStart.EndWidth
-            };
-            for (int i = 1; i < second.Vertices.Length; i++)
-            {
-                PlanarPolylineVertex vertex = second.Vertices[i];
-                vertices.Add(vertex with { Position = selected.ToPlane(second.ToWorld(vertex.Position)) });
-            }
-            joined = selected with { Vertices = vertices.ToArray(), Closed = false };
-            return true;
-        }
-
-        private static PlanarPolyline ReversedCopy(PlanarPolyline polyline)
-        {
-            var target = new PlanarPolylineGripTarget(polyline);
-            target.Reverse();
-            return target.Polyline.Copy();
         }
 
         private string EditSelectedPlanarPolyline(
@@ -1408,13 +1286,7 @@ namespace CloudScope
         {
             if (_selectedGripTarget is not PlanarPolylineGripTarget target)
                 return "Select a planar polyline first.";
-            PlanarPolyline before = target.Polyline.Copy();
-            edit(target);
-            PlanarPolyline after = target.Polyline.Copy();
-            UndoHistory.Record(new DelegateUndoAction(
-                undoDescription,
-                () => target.RestoreState(before),
-                () => target.RestoreState(after), 512 + (before.Vertices.LongLength + after.Vertices.LongLength) * 20));
+            _document.Editor.Edit(target, undoDescription, edit);
             return message;
         }
 
@@ -1692,10 +1564,7 @@ namespace CloudScope
                     object after = edited.CaptureState();
                     string key = _gripEditKey;
                     if (!edited.StatesEqual(before, after))
-                        UndoHistory.Record(new DelegateUndoAction(
-                            edited.EditDescription,
-                            () => RestoreGripTargetState(key, before),
-                            () => RestoreGripTargetState(key, after), EstimateEditState(before) + EstimateEditState(after)));
+                        _document.Editor.RecordEdit(key, edited.EditDescription, before, after);
                 }
                 UndoHistory.Commit();
                 _gripEditBefore = null;
@@ -1804,7 +1673,7 @@ namespace CloudScope
             if (key == ViewerKey.Escape && _objectGripSession.Cancel())
             {
                 if (_gripEditBefore != null && _gripEditKey != null)
-                    RestoreGripTargetState(_gripEditKey, _gripEditBefore);
+                    _document.Editor.Restore(_gripEditKey, _gripEditBefore);
                 _gripEditBefore = null;
                 _gripEditKey = null;
                 _pointSnapPreview = default;
@@ -1882,7 +1751,7 @@ namespace CloudScope
                 foreach (var measurement in _document.Measurements.Items)
                     _overlayRenderer.RenderPolyline(frameData, ref view, ref proj, measurement.Points,
                         measurement.Kind == CloudScope.Measurements.MeasurementKind.Area,
-                        new Vector4(.24f,.88f,.72f,1),2f);
+                        new Vector4(.24f, .88f, .72f, 1), 2f);
 
                 foreach (PolylineGripTarget polylineTarget in _polylines)
                 {
@@ -2455,51 +2324,13 @@ namespace CloudScope
         }
 
         private void AddPolyline(Polyline3D polyline, bool select)
-        {
-            RemovePolyline(polyline.Id);
-            var target = new PolylineGripTarget(polyline);
-            _polylines.Add(target);
-            RegisterGripTarget(target);
-            if (select) SelectGripTarget(target);
-        }
-
+        { var target = _document.Editor.Add(polyline); if (select) SelectGripTarget(target); }
         private void AddPlanarPolyline(PlanarPolyline polyline, bool select)
-        {
-            RemovePlanarPolyline(polyline.Id);
-            var target = new PlanarPolylineGripTarget(polyline);
-            _planarPolylines.Add(target);
-            RegisterGripTarget(target);
-            if (select) SelectGripTarget(target);
-        }
-
-        private void RemovePlanarPolyline(int id)
-        {
-            PlanarPolylineGripTarget? target = _planarPolylines
-                .FirstOrDefault(item => item.Polyline.Id == id);
-            if (target == null) return;
-            UnregisterGripTarget(target);
-            _planarPolylines.Remove(target);
-        }
-
-        private void RemovePolyline(int id)
-        {
-            PolylineGripTarget? target = _polylines.FirstOrDefault(item => item.Polyline.Id == id);
-            if (target == null) return;
-            UnregisterGripTarget(target);
-            _polylines.Remove(target);
-        }
-
-        private void RegisterGripTarget(ITransactionalGripTarget target)
-        {
-            if (!_gripTargets.Contains(target)) _gripTargets.Add(target);
-        }
-
-        private void UnregisterGripTarget(ITransactionalGripTarget? target)
-        {
-            if (target == null) return;
-            if (ReferenceEquals(_selectedGripTarget, target)) SelectGripTarget(null);
-            _gripTargets.Remove(target);
-        }
+        { var target = _document.Editor.Add(polyline); if (select) SelectGripTarget(target); }
+        private void RemovePolyline(int id) => _document.Editor.RemovePolyline(id);
+        private void RemovePlanarPolyline(int id) => _document.Editor.RemovePlanar(id);
+        private void RegisterGripTarget(ITransactionalGripTarget target) => _document.Editor.Register(target);
+        private void UnregisterGripTarget(ITransactionalGripTarget? target) => _document.Editor.Unregister(target);
 
         private void SelectGripTarget(ITransactionalGripTarget? target)
         {
@@ -2523,20 +2354,6 @@ namespace CloudScope
             target is not CrossSectionGripTarget
             || viewport.SectionMode == SectionDisplayMode.PlanGuide;
 
-        private static long EstimateEditState(object state) => state switch
-        {
-            PlanarPolyline line => 256 + line.Vertices.LongLength * 20,
-            Polyline3D line => 256 + line.Vertices.LongLength * 12,
-            _ => 256
-        };
-
-        private void RestoreGripTargetState(string editKey, object state)
-        {
-            ITransactionalGripTarget? target = _gripTargets
-                .FirstOrDefault(item => item.EditKey == editKey);
-            target?.RestoreState(state);
-        }
-
         private void DiscardCrossSection()
         {
             SelectGripTarget(null);
@@ -2546,9 +2363,7 @@ namespace CloudScope
             ClearCrossSectionDraft();
             ClearPolylineDraft();
             ClearPlanarPolylineDraft();
-            _polylines.Clear();
-            _planarPolylines.Clear();
-            _gripTargets.Clear();
+            _document.Editor.Clear();
             foreach (ViewportState viewport in _viewports)
                 viewport.SectionMode = SectionDisplayMode.None;
             _selection.SetSectionClip(SectionClip.None);

@@ -8,7 +8,7 @@ public sealed class SectionPointQuery(SectionDefinition section) : IPointSelecti
 {
     private readonly SectionClip _clip = section.ToClip();
     public bool IsEmpty => false;
-    public bool Contains(float x, float y, float z) => _clip.Contains(new(x,y,z));
+    public bool Contains(float x, float y, float z) => _clip.Contains(new(x, y, z));
     public void GetBounds(out Vector3 min, out Vector3 max)
     {
         Vector3 extent = Vector3.ComponentMax(_clip.Along * _clip.HalfLength, -_clip.Along * _clip.HalfLength)
@@ -17,5 +17,5 @@ public sealed class SectionPointQuery(SectionDefinition section) : IPointSelecti
         min.Z = -float.MaxValue; max.Z = float.MaxValue;
     }
     public IReadOnlyList<int> Resolve(PointData[] points, CancellationToken cancellationToken = default) =>
-        PointSelectionQuery.Resolve(this,points,cancellationToken);
+        PointSelectionQuery.Resolve(this, points, cancellationToken);
 }

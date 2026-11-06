@@ -58,7 +58,7 @@ namespace CloudScope.Library
         private readonly VariableLengthRecordManager _vlrManager;
         private readonly LazPointReader? _laz;
         public bool IsCompressed { get; }
-        internal int PreferredBatchPoints(int maximum) => IsCompressed ? maximum : Math.Min(maximum,Math.Max(1,32*1024*1024/_header.PointDataRecordLength));
+        internal int PreferredBatchPoints(int maximum) => IsCompressed ? maximum : Math.Min(maximum, Math.Max(1, 32 * 1024 * 1024 / _header.PointDataRecordLength));
 
         public LasHeader Header => _header;
         public long PointCount => _pointCount;
@@ -108,7 +108,7 @@ namespace CloudScope.Library
 
                 _vlrManager = new VariableLengthRecordManager(_accessor,
                     _header.NumberOfVariableLengthRecords, _header.HeaderSize, _header.OffsetToPointData);
-                if (IsCompressed) _laz = new LazPointReader(path,_header);
+                if (IsCompressed) _laz = new LazPointReader(path, _header);
             }
             catch
             {
@@ -155,10 +155,10 @@ namespace CloudScope.Library
         {
             if (_laz != null)
             {
-                var decoded = new LasPoint[(int)Math.Min(PointCount,65536)];
+                var decoded = new LasPoint[(int)Math.Min(PointCount, 65536)];
                 for (long start = 0; start < PointCount;)
                 {
-                    int count = ReadBatch(start,decoded,decoded.Length);
+                    int count = ReadBatch(start, decoded, decoded.Length);
                     for (int i = 0; i < count; i++) yield return decoded[i];
                     start += count;
                 }
@@ -210,7 +210,7 @@ namespace CloudScope.Library
                 ? Math.Min(maxPoints, Math.Min(PointCount, (long)buffer.Length))
                 : Math.Min(PointCount, (long)buffer.Length);
 
-            if (_laz != null) return _laz.Read(0,buffer.AsSpan(0,checked((int)count)));
+            if (_laz != null) return _laz.Read(0, buffer.AsSpan(0, checked((int)count)));
 
             byte formatId = _header.PointDataFormatId;
             long dataOffset = _header.OffsetToPointData;
@@ -265,7 +265,7 @@ namespace CloudScope.Library
                 return 0;
 
             int actual = (int)Math.Min(Math.Min((long)PreferredBatchPoints(count), (long)buffer.Length), PointCount - startIndex);
-            if (_laz != null) return _laz.Read(startIndex,buffer.AsSpan(0,actual));
+            if (_laz != null) return _laz.Read(startIndex, buffer.AsSpan(0, actual));
             byte formatId = _header.PointDataFormatId;
             int stride = _header.PointDataRecordLength;
             long dataOffset = _header.OffsetToPointData + startIndex * stride;
@@ -314,20 +314,20 @@ namespace CloudScope.Library
         {
             // Byte 14: return info (3+3+1+1 bits)
             byte retByte = data[14];
-            p.ReturnNumber    = (byte)(retByte & 0x07);
+            p.ReturnNumber = (byte)(retByte & 0x07);
             p.NumberOfReturns = (byte)((retByte >> 3) & 0x07);
             p.ScanDirectionFlag = (sbyte)((retByte >> 6) & 0x01);
-            p.EdgeOfFlightLine  = (retByte & 0x80) != 0;
+            p.EdgeOfFlightLine = (retByte & 0x80) != 0;
 
             // Byte 15: classification byte (5b class + 3b flags)
             byte cls = data[15];
-            p.Classification          = (ClassificationType)(cls & 0x1F);
+            p.Classification = (ClassificationType)(cls & 0x1F);
             p.ClassificationSynthetic = (cls & 0x20) != 0;
-            p.ClassificationKeyPoint  = (cls & 0x40) != 0;
-            p.ClassificationWithheld  = (cls & 0x80) != 0;
+            p.ClassificationKeyPoint = (cls & 0x40) != 0;
+            p.ClassificationWithheld = (cls & 0x80) != 0;
 
             p.ScanAngleRank = (sbyte)data[16];
-            p.UserData      = data[17];
+            p.UserData = data[17];
             p.PointSourceId = MemoryMarshal.Read<ushort>(data.Slice(18));
 
             // Format 1, 3, 4, 5: GPS Time at byte 20
@@ -364,25 +364,25 @@ namespace CloudScope.Library
         {
             // Byte 14: return number (4b) + number of returns (4b)
             byte retByte = data[14];
-            p.ReturnNumber    = (byte)(retByte & 0x0F);
+            p.ReturnNumber = (byte)(retByte & 0x0F);
             p.NumberOfReturns = (byte)((retByte >> 4) & 0x0F);
 
             // Byte 15: classification flags (4b) + scanner channel (2b) + scan dir (1b) + edge (1b)
             byte flags = data[15];
             p.ClassificationSynthetic = (flags & 0x01) != 0;
-            p.ClassificationKeyPoint  = (flags & 0x02) != 0;
-            p.ClassificationWithheld  = (flags & 0x04) != 0;
-            p.ClassificationOverlap   = (flags & 0x08) != 0;
-            p.ScannerChannel          = (byte)((flags >> 4) & 0x03);
-            p.ScanDirectionFlag       = (sbyte)((flags >> 6) & 0x01);
-            p.EdgeOfFlightLine        = (flags & 0x80) != 0;
+            p.ClassificationKeyPoint = (flags & 0x02) != 0;
+            p.ClassificationWithheld = (flags & 0x04) != 0;
+            p.ClassificationOverlap = (flags & 0x08) != 0;
+            p.ScannerChannel = (byte)((flags >> 4) & 0x03);
+            p.ScanDirectionFlag = (sbyte)((flags >> 6) & 0x01);
+            p.EdgeOfFlightLine = (flags & 0x80) != 0;
 
             // Byte 16: classification (full byte = 0-255)
             p.Classification = (ClassificationType)data[16];
-            p.UserData       = data[17];
+            p.UserData = data[17];
 
             // Byte 18-19: scan angle (int16, 0.006 deg/unit, -30000..+30000)
-            p.ScanAngle     = MemoryMarshal.Read<short>(data.Slice(18));
+            p.ScanAngle = MemoryMarshal.Read<short>(data.Slice(18));
             p.PointSourceId = MemoryMarshal.Read<ushort>(data.Slice(20));
 
             // Byte 22-29: GPS Time (mandatory for all extended formats)
@@ -424,13 +424,13 @@ namespace CloudScope.Library
         //   [25-28] Z(t) (float)
         private static void ParseWaveform(ReadOnlySpan<byte> data, int offset, ref LasPoint p)
         {
-            p.WavePacketDescriptorIndex  = data[offset];
-            p.ByteOffsetToWaveformData   = MemoryMarshal.Read<ulong>(data.Slice(offset + 1));
-            p.WaveformPacketSize         = MemoryMarshal.Read<uint>(data.Slice(offset + 9));
+            p.WavePacketDescriptorIndex = data[offset];
+            p.ByteOffsetToWaveformData = MemoryMarshal.Read<ulong>(data.Slice(offset + 1));
+            p.WaveformPacketSize = MemoryMarshal.Read<uint>(data.Slice(offset + 9));
             p.ReturnPointWaveformLocation = MemoryMarshal.Read<float>(data.Slice(offset + 13));
-            p.WaveformParamX             = MemoryMarshal.Read<float>(data.Slice(offset + 17));
-            p.WaveformParamY             = MemoryMarshal.Read<float>(data.Slice(offset + 21));
-            p.WaveformParamZ             = MemoryMarshal.Read<float>(data.Slice(offset + 25));
+            p.WaveformParamX = MemoryMarshal.Read<float>(data.Slice(offset + 17));
+            p.WaveformParamY = MemoryMarshal.Read<float>(data.Slice(offset + 21));
+            p.WaveformParamZ = MemoryMarshal.Read<float>(data.Slice(offset + 25));
         }
 
         public void Dispose()

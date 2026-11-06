@@ -35,14 +35,11 @@ internal sealed class PreparedProject(ProjectState state, PointCloudDataset? dat
         }
         if (archive.Surface is { } mesh && dataset is { } cloud)
         {
-            if (mesh.Vertices.Length != cloud.VisibleCount || mesh.OriginX != cloud.OriginX || mesh.OriginY != cloud.OriginY || mesh.OriginZ != cloud.OriginZ)
-                throw new InvalidDataException("Project surface differs from its point cloud.");
-            for (int i = 0; i < mesh.Vertices.Length; i++)
-            {
-                if ((i & 4095) == 0) cancellation.ThrowIfCancellationRequested();
-                var p = cloud.ViewPoints[i];
-                if (mesh.Vertices[i] != new Vector3(p.X,p.Y,p.Z)) throw new InvalidDataException("Project surface geometry differs from its point cloud.");
-            }
+            // Derived terrain surfaces can select and reorder source sites. Point identity
+            // is already checked against the complete source payload; mesh topology and
+            // finite coordinates are validated by ProjectFile, and this verifies its frame.
+            if (mesh.OriginX != cloud.OriginX || mesh.OriginY != cloud.OriginY || mesh.OriginZ != cloud.OriginZ)
+                throw new InvalidDataException("Project surface differs from its coordinate frame.");
         }
         var prepared = new PreparedProject(state, dataset, archive.Surface);
         try
@@ -53,6 +50,7 @@ internal sealed class PreparedProject(ProjectState state, PointCloudDataset? dat
                 var store = PointTileStore.Open(spec.Path);
                 var layer = new PointTileLayer(spec.Name, store) { Visible = spec.Visible, Tint = spec.Tint, ProjectId = spec.Id };
                 prepared.Layers.Add(layer);
+                layer.SetDocumentFrame(state.Frame);
                 if (layer.ProjectIdentity != spec.Identity) throw new InvalidDataException($"The layout of project layer '{spec.Name}' has changed.");
             }
             var point = new GpuPointVertex[1];
@@ -63,7 +61,7 @@ internal sealed class PreparedProject(ProjectState state, PointCloudDataset? dat
                 var store = prepared.Layers[a.Layer].Store;
                 if (a.Point >= store.Header.PointCount) throw new InvalidDataException("A project annotation lies outside its store.");
                 store.ReadPoints(a.Point, point);
-                if (new Vector3(point[0].X, point[0].Y, point[0].Z) != a.Position)
+                if (new Vector3(point[0].X, point[0].Y, point[0].Z) + prepared.Layers[a.Layer].Offset != a.Position)
                     throw new InvalidDataException("A project annotation's point has changed. The current document was preserved.");
             }
             if (prepared.Layers.Count > 0)

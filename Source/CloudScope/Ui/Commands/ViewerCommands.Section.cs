@@ -46,7 +46,7 @@ public sealed partial class ViewerCommands
                     ed.WriteMessage(first.Keyword == "ACTIVATE" ? viewer.ActivateCrossSection(name.Value) : viewer.RenameCrossSection(name.Value));
                     yield break;
                 case "EXPORT":
-                    foreach (var prompt in ExportEngineering(context,true)) yield return prompt;
+                    foreach (var prompt in ExportEngineering(context, true)) yield return prompt;
                     yield break;
                 case "CLEAR":
                     ed.WriteMessage(viewer.ClearCrossSection());

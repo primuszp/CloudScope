@@ -18,23 +18,23 @@ namespace CloudScope
 
         private readonly IReadOnlyDictionary<SelectionToolType, ISelectionTool> _tools;
         private readonly SelectionPreviewWorker _previewWorker = new();
-        private readonly LabelManager          _labelManager  = new(trackLocalHistory: false);
-        private readonly LabelRegistry         _registry      = new();
-        private readonly Action<string>        _log;
+        private readonly LabelManager _labelManager = new(trackLocalHistory: false);
+        private readonly LabelRegistry _registry = new();
+        private readonly Action<string> _log;
         private readonly GripInteractionSession _gripSession = new();
 
-        private SelectionToolType        _activeToolType = SelectionToolType.Box;
-        private EditAction               _pendingAction    = EditAction.None;
+        private SelectionToolType _activeToolType = SelectionToolType.Box;
+        private EditAction _pendingAction = EditAction.None;
         private SelectionInteractionState _interactionState = SelectionInteractionState.Navigate;
-        private float  _previewTimer    = 999f;
-        private bool   _previewWasActive;
-        private string _currentLabel   = "Ground";
-        private int?   _currentInstanceId;
+        private float _previewTimer = 999f;
+        private bool _previewWasActive;
+        private string _currentLabel = "Ground";
+        private int? _currentInstanceId;
         private PointData[]? _points;            // visible (ViewPoints) — selection geometry + preview
         private PointData[]? _sourcePoints;      // full source-order array — highlight + fitting
         private int[]? _viewToSource;            // visible index → source index
         private PointCloudAttributes? _attributes;
-        private string _sourceFilePath    = "";
+        private string _sourceFilePath = "";
         private bool _supportsLasExport;
         private SectionClip _sectionClip;
 
@@ -252,29 +252,29 @@ namespace CloudScope
             switch (ActiveTool)
             {
                 case BoxSelectionTool box:
-                {
-                    ShapeFitter.FitBox(pts, out Vector3 center, out Vector3 half, out Quaternion rot);
-                    float footprint = MathF.Max(half.X, half.Y) * 1.1f;
-                    (center.Z, half.Z, note) = ResolveHeight(useGround, center.X, center.Y, footprint, center.Z, half.Z, clusterMaxZ);
-                    box.Center = center; box.HalfExtents = half; box.Rotation = rot;
-                    break;
-                }
+                    {
+                        ShapeFitter.FitBox(pts, out Vector3 center, out Vector3 half, out Quaternion rot);
+                        float footprint = MathF.Max(half.X, half.Y) * 1.1f;
+                        (center.Z, half.Z, note) = ResolveHeight(useGround, center.X, center.Y, footprint, center.Z, half.Z, clusterMaxZ);
+                        box.Center = center; box.HalfExtents = half; box.Rotation = rot;
+                        break;
+                    }
                 case CylinderSelectionTool cyl:
-                {
-                    ShapeFitter.FitCylinder(pts, out Vector3 center, out float radius, out float halfHeight);
-                    float centerZ;
-                    (centerZ, halfHeight, note) = ResolveHeight(useGround, center.X, center.Y, radius * 1.1f, center.Z, halfHeight, clusterMaxZ);
-                    cyl.Center = new Vector3(center.X, center.Y, centerZ);
-                    cyl.Radius = radius; cyl.HalfHeight = halfHeight; cyl.Rotation = Quaternion.Identity;
-                    break;
-                }
+                    {
+                        ShapeFitter.FitCylinder(pts, out Vector3 center, out float radius, out float halfHeight);
+                        float centerZ;
+                        (centerZ, halfHeight, note) = ResolveHeight(useGround, center.X, center.Y, radius * 1.1f, center.Z, halfHeight, clusterMaxZ);
+                        cyl.Center = new Vector3(center.X, center.Y, centerZ);
+                        cyl.Radius = radius; cyl.HalfHeight = halfHeight; cyl.Rotation = Quaternion.Identity;
+                        break;
+                    }
                 case SphereSelectionTool sphere:
-                {
-                    ShapeFitter.FitSphere(pts, out Vector3 center, out float radius);
-                    sphere.Center = center; sphere.Radius = radius;
-                    note = useGround ? "OBB height (sphere ignores ground)" : "OBB height";
-                    break;
-                }
+                    {
+                        ShapeFitter.FitSphere(pts, out Vector3 center, out float radius);
+                        sphere.Center = center; sphere.Radius = radius;
+                        note = useGround ? "OBB height (sphere ignores ground)" : "OBB height";
+                        break;
+                    }
                 default:
                     return "Active tool does not support fitting.";
             }
@@ -622,8 +622,8 @@ namespace CloudScope
             {
                 InteractionMode.Navigate => SelectionInteractionState.Navigate,
                 _ when ActiveTool.IsEditing => SelectionInteractionState.Editing,
-                _ when ActiveTool.IsActive  => SelectionInteractionState.Placing,
-                _                           => SelectionInteractionState.ReadyToPlace
+                _ when ActiveTool.IsActive => SelectionInteractionState.Placing,
+                _ => SelectionInteractionState.ReadyToPlace
             };
         }
 
@@ -642,8 +642,8 @@ namespace CloudScope
 
             switch (_pendingAction)
             {
-                case EditAction.Grab:   tool.BeginGrab(x, y, camera);   break;
-                case EditAction.Scale:  tool.BeginScale(x, y, camera);  break;
+                case EditAction.Grab: tool.BeginGrab(x, y, camera); break;
+                case EditAction.Scale: tool.BeginScale(x, y, camera); break;
                 case EditAction.Rotate: tool.BeginRotate(x, y, camera); break;
             }
 

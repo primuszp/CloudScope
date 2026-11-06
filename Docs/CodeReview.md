@@ -206,3 +206,15 @@ Az automatizált próbák független 3–4–12 távolságot, függőleges és n
 ## Algoritmusminőség és terepmodell — 2026-11-06
 
 Az 5. csomag külön, robusztus Delaunay-topológiára épülő TIN-útvonalat ad explicit talajforrással, cellamérettel, élhossz- és méretkorláttal. A meglévő közelítő térbeli rekonstrukció nem kapott terepmodellként félrevezető szerepet. A numerikus/topológiai referenciapróbák és osztályozási hibamátrixok külön modult kaptak. A fordított pontsorrend regressziója javította a CSF egyenlő XY-távolságú találatainak sorrendfüggő magasságválasztását. A 658 687 pontos valós Jeli-minta összevetése és az értelmezési határok az [AlgorithmQuality.md](AlgorithmQuality.md) dokumentumban szerepelnek.
+
+## Natív munkafolyamat és szerkezeti konszolidálás — 2026-11-06
+
+A 6. csomagban a névvel tárolt szelvények és mérések önálló explorer-/properties-objektumok. A mérési értékek külön olvasható mezőket kapnak, a háttérmunka neve a TIN-t és a rekonstrukciót is helyesen jelzi. Az újragenerálható LAS/LAZ próbaadat és a tényleges natív mentés/visszanyitás eredménye a [NativeWorkflow.md](NativeWorkflow.md) dokumentumban szerepel.
+
+A 7. csomag tényleges tulajdonost ad a rajzi állapotnak: a `SceneEditor` birtokolja az entitásokat, fogópont-célokat, azonosítókat, méréseket, szelvényeket és a közös historyt. A létrehozás, import, síkbeli szerkesztés/összefűzés és állapot-visszaállítás a dokumentum szolgáltatása; a controller a nézet/fókusz adaptere. A geometriaművelet külön, renderelőtől független kód. A history az entitás stabil azonosságát használja, így létrehozás visszavonása/újraalkalmazása után egy későbbi szerkesztés nem az eldobott fogópont-objektumot módosítja.
+
+A közös dokumentumkeret a különböző origójú store-ok rajzolásának, cellatervezésének, kijelölésének, címkéinek és szelvényexportjának ugyanazt az eltolását adja. Ez az origó a projekt része, az első réteg bezárásakor sem változik meg. A két backend közös fizikai lapigényt számít: két apró réteg is két lapot igényelhet, bár az összes pontjuk beleférne egybe. A memóriakeret ilyenkor is korlátoz; nincs csendes, pontszám miatti alulfoglalás. Az üres/egypontos nézet nem teszi láthatóvá egy nagyobb forráspuffer maradékát. A TIN kiválasztott/átrendezett pontjait a teljes projekt helyesen visszaállítja.
+
+A store megnyitása még memóriatérképezés előtt ellenőrzi a fájlhosszakat, a tartományokat, a véges cellahatárokat, az egyértelmű szülőket, a növekvő szinteket és az egymást átfedés nélkül lefedő pontfájlt. A részben megnyitott térképek/nézetek hiba esetén felszabadulnak. Minden CPU által írt Metal-puffer közös allokációs ellenőrzésen megy át, így a sikertelen natív foglalás kezelt hiba, nem nullmutatóra másolás.
+
+A végső célzott regresszió **669 parancsellenőrzést** tartalmaz. Külön eset a régi 1–2. projektverzió migrációja, eltérő layer-origó, első réteg eltávolítása, dokumentumkeretben exportált szelvény, ritkított TIN-projekt visszaállítása, hibás/ciklikus/csonka store és újra létrehozott entitás szerkesztési redo-ja. A forrásfájlok formázása a mostani feladatban érintett C#-kódra korlátozódott.

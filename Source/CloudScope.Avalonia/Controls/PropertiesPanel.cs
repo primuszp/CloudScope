@@ -55,7 +55,7 @@ public sealed class PropertiesPanel : UserControl
             status.VisibleCount, status.ResidentVisible, status.ColorSource, status.PointSize, status.Filter,
             status.KeepPercentage, status.IsPerspective, status.ViewName, status.ViewportLayout, status.Mode,
             status.ActiveTool, status.InteractionState, status.CurrentLabel, status.InstanceText, status.OrthoMode,
-            status.CrossSection, string.Join(",",status.Sections), string.Join(",",status.Measurements), status.SurfaceProgress, status.SurfaceWorkName, status.SurfaceTriangles, status.SurfaceVisible, status.PolylineCount,
+            status.CrossSection, string.Join(",", status.Sections), string.Join(",", status.Measurements), status.SurfaceProgress, status.SurfaceWorkName, status.SurfaceTriangles, status.SurfaceVisible, status.PolylineCount,
             status.LabelledPoints, status.HasColor, status.HasCloud,
             string.Join(",", status.Layers.Select(l => $"{l.Name}/{l.PointCount}/{l.Visible}")),
             string.Join(",", labels.Select(l => $"{l.Name}/{l.Code}/{l.Color}")), activeLabel);
@@ -78,10 +78,10 @@ public sealed class PropertiesPanel : UserControl
                 BuildLabel(node.Name, labels, activeLabel);
                 break;
             case ExplorerNodeKind.Section:
-                BuildSection(node.Name,status);
+                BuildSection(node.Name, status);
                 break;
             case ExplorerNodeKind.Measurement:
-                BuildMeasurement(node.Name,status);
+                BuildMeasurement(node.Name, status);
                 break;
             case ExplorerNodeKind.Surface:
                 BuildSurface(status);
@@ -219,8 +219,8 @@ public sealed class PropertiesPanel : UserControl
         Section("Section");
         var section = status.Sections.FirstOrDefault(s => s.Name == name);
         if (section == null) return;
-        Row("Name",Value(section.Name)); Row("Length",Value($"{section.Length:0.###}")); Row("Width",Value($"{section.Width:0.###}"));
-        Row("Active",Value(section.Active ? "yes" : "no"));
+        Row("Name", Value(section.Name)); Row("Length", Value($"{section.Length:0.###}")); Row("Width", Value($"{section.Width:0.###}"));
+        Row("Active", Value(section.Active ? "yes" : "no"));
         if (!section.Active) Actions(("Activate", $"XSECTION Activate {ExplorerPanel.Quote(name)}"));
         else
         {
@@ -231,10 +231,24 @@ public sealed class PropertiesPanel : UserControl
 
     private void BuildMeasurement(string name, ViewerStatusSnapshot status)
     {
-        Header(name,RibbonIcons.Scale); Section("Measurement");
+        Header(name, RibbonIcons.Scale); Section("Measurement");
         var measurement = status.Measurements.FirstOrDefault(m => m.Name == name);
         if (measurement == null) return;
-        Row("Result",Value(measurement.Description));
+        var result = measurement.Result;
+        if (measurement.Kind == CloudScope.Measurements.MeasurementKind.Area)
+        {
+            Row("Area XY", Value($"{result.Area:0.######}"));
+            Row("Perimeter XY", Value($"{result.Horizontal:0.######}"));
+        }
+        else
+        {
+            Row("Distance 3D", Value($"{result.Spatial:0.######}"));
+            Row("Horizontal", Value($"{result.Horizontal:0.######}"));
+            Row("Delta Z", Value($"{result.DeltaZ:0.######}"));
+            Row("Slope", Value(result.SlopePercent is { } slope ? $"{slope:0.######}%" : "undefined"));
+            Row("Angle", Value($"{result.AngleDegrees:0.######}°"));
+        }
+        Row("Units", Value("survey coordinates"));
         Actions(("Export…", "MEASURE Export"), ("Remove", $"MEASURE Remove {ExplorerPanel.Quote(name)}"));
     }
 

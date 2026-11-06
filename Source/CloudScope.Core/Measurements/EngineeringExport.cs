@@ -36,17 +36,17 @@ public static class EngineeringExport
                 var dxf = new Dxf(writer);
                 foreach (var m in measurements)
                 {
-                    dxf.Group(0,"POLYLINE"); dxf.Group(8,"MEASUREMENTS"); dxf.Group(66,1);
-                    dxf.Group(70,m.Kind == MeasurementKind.Area ? 9 : 8); dxf.Position(0,0,0);
+                    dxf.Group(0, "POLYLINE"); dxf.Group(8, "MEASUREMENTS"); dxf.Group(66, 1);
+                    dxf.Group(70, m.Kind == MeasurementKind.Area ? 9 : 8); dxf.Position(0, 0, 0);
                     foreach (var p in m.Points)
                     {
-                        dxf.Group(0,"VERTEX"); dxf.Group(8,"MEASUREMENTS"); dxf.Group(70,32);
-                        dxf.Position(p.X + origin.X,p.Y + origin.Y,p.Z + origin.Z);
+                        dxf.Group(0, "VERTEX"); dxf.Group(8, "MEASUREMENTS"); dxf.Group(70, 32);
+                        dxf.Position(p.X + origin.X, p.Y + origin.Y, p.Z + origin.Z);
                     }
-                    dxf.Group(0,"SEQEND"); dxf.Group(8,"MEASUREMENTS");
+                    dxf.Group(0, "SEQEND"); dxf.Group(8, "MEASUREMENTS");
                     var r = m.Evaluate(); var first = m.Points[0];
                     dxf.Text(m.Name + (m.Kind == MeasurementKind.Area ? " area XY=" + N(r.Area) : " distance=" + N(r.Spatial)),
-                        first.X + origin.X,first.Y + origin.Y,first.Z + origin.Z);
+                        first.X + origin.X, first.Y + origin.Y, first.Z + origin.Z);
                 }
                 dxf.End();
             }
@@ -70,10 +70,10 @@ public static class EngineeringExport
                 double offset = (double)delta.X * section.Normal.X + (double)delta.Y * section.Normal.Y;
                 if (dxf == null)
                     writer.WriteLine($"{Csv(section.Name)},{p.Layer},{p.Index},{N(station)},{N(p.Z)},{N(offset)},{N(p.X)},{N(p.Y)},{N(p.Z)}");
-                else { dxf.Group(0,"POINT"); dxf.Group(8,"SECTION_POINTS"); dxf.Position(station,p.Z,0); }
+                else { dxf.Group(0, "POINT"); dxf.Group(8, "SECTION_POINTS"); dxf.Position(station, p.Z, 0); }
                 count++;
             }
-            if (dxf != null) { dxf.Text(section.Name,0,section.Start.Z,0); dxf.End(); }
+            if (dxf != null) { dxf.Text(section.Name, 0, section.Start.Z, 0); dxf.End(); }
             cancellation.ThrowIfCancellationRequested();
         });
         return count;
@@ -86,16 +86,16 @@ public static class EngineeringExport
         public Dxf(TextWriter writer)
         {
             _writer = writer;
-            Group(0,"SECTION"); Group(2,"HEADER"); Group(9,"$ACADVER"); Group(1,"AC1009");
-            Group(0,"ENDSEC"); Group(0,"SECTION"); Group(2,"ENTITIES");
+            Group(0, "SECTION"); Group(2, "HEADER"); Group(9, "$ACADVER"); Group(1, "AC1009");
+            Group(0, "ENDSEC"); Group(0, "SECTION"); Group(2, "ENTITIES");
         }
         public void Group(int code, object value) { _writer.WriteLine(code.ToString(CultureInfo.InvariantCulture)); _writer.WriteLine(value); }
-        public void Position(double x, double y, double z) { Group(10,N(x)); Group(20,N(y)); Group(30,N(z)); }
+        public void Position(double x, double y, double z) { Group(10, N(x)); Group(20, N(y)); Group(30, N(z)); }
         public void Text(string value, double x, double y, double z)
         {
-            Group(0,"TEXT"); Group(8,"ANNOTATIONS"); Position(x,y,z); Group(40,"1");
-            Group(1,string.Concat(value.Select(c => c is >= ' ' and <= '~' ? c : '_')));
+            Group(0, "TEXT"); Group(8, "ANNOTATIONS"); Position(x, y, z); Group(40, "1");
+            Group(1, string.Concat(value.Select(c => c is >= ' ' and <= '~' ? c : '_')));
         }
-        public void End() { Group(0,"ENDSEC"); Group(0,"EOF"); }
+        public void End() { Group(0, "ENDSEC"); Group(0, "EOF"); }
     }
 }

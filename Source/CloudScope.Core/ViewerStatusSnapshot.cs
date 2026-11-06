@@ -146,4 +146,5 @@ public readonly record struct ViewerStatusSnapshot
 
 public sealed record CloudLayerSnapshot(string Name, long PointCount, bool Visible);
 public sealed record SectionSnapshot(int Id, string Name, float Length, float Width, bool Active);
-public sealed record MeasurementSnapshot(int Id, string Name, string Description);
+public sealed record MeasurementSnapshot(int Id, string Name, CloudScope.Measurements.MeasurementKind Kind,
+    CloudScope.Measurements.MeasurementResult Result);

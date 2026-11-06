@@ -39,7 +39,7 @@ namespace CloudScope.Loading
             if (!float.IsFinite(radius) || radius < 0) throw new ArgumentOutOfRangeException(nameof(radius));
             if (!double.IsFinite(originX) || !double.IsFinite(originY) || !double.IsFinite(originZ))
                 throw new ArgumentException("The world origin must be finite.");
-            _sourcePoints = sourcePoints;
+            _sourcePoints = sourcePoints.Length == loadedCount ? sourcePoints : sourcePoints.AsSpan(0, loadedCount).ToArray();
             _sourceIdentity = sourceIdentity;
             _sourcePayloadSha256 = sourcePayloadSha256;
             LoadedCount = loadedCount;
@@ -49,7 +49,7 @@ namespace CloudScope.Loading
             Attributes = attributes;
             OriginX = originX; OriginY = originY; OriginZ = originZ;
             _colorSource = hasColor ? ColorSource.Rgb : ColorSource.Height;
-            ViewPoints = sourcePoints;
+            ViewPoints = _sourcePoints;
             VisibleCount = loadedCount;
             ViewToSource = null;
             RenderOrder = BuildProgressiveRenderOrder(loadedCount, RenderOrderSeed);

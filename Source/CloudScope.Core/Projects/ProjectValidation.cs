@@ -13,7 +13,8 @@ internal static class ProjectValidation
     private static bool Name(string? s) => !string.IsNullOrWhiteSpace(s);
     public static void Validate(ProjectState s)
     {
-        Require(s.Format == "CloudScope.Project" && s.Version == 2, "format/version");
+        Require(s.Format == "CloudScope.Project" && s.Version == 3, "format/version");
+        s.Frame.Validate();
         Require(s.Layers != null && s.Polylines != null && s.PlanarPolylines != null && s.Annotations != null
             && s.Definitions != null && s.NamedViews != null && s.Workspace != null, "collections");
         if (s.Source is { } source)
@@ -21,6 +22,7 @@ internal static class ProjectValidation
             Require(source.Identity != null && source.PointCount >= 0 && source.PointCount == source.Identity.PointCount, "source identity");
             Require(source.Format is "LAS" or "LAZ" or "PLY" or "XYZ" or "PTS" or "PTX" or "E57" or "Embedded", "source format");
             Require(source.Format == "Embedded" ? source.Path == "" : Name(source.Path), "source path");
+            Require(s.Frame == new CoordinateFrame(source.Identity.OriginX, source.Identity.OriginY, source.Identity.OriginZ), "source coordinate frame");
             Require(float.IsFinite(source.Radius) && source.Radius >= 0 && float.IsFinite(source.ColorScale) && source.ColorScale > 0, "source scale");
             Require(double.IsFinite(source.Identity.OriginX) && double.IsFinite(source.Identity.OriginY) && double.IsFinite(source.Identity.OriginZ)
                 && source.Identity.GeometrySha256 is { Length: 64 } && source.Identity.GeometrySha256.All(Uri.IsHexDigit) && source.PayloadSha256 is { Length: 64 } && source.PayloadSha256.All(Uri.IsHexDigit), "source digest");
@@ -51,10 +53,10 @@ internal static class ProjectValidation
         new CloudScope.Measurements.MeasurementCatalog().Replace(s.Measurements!);
         Require(s.Definitions!.All(d => Name(d.Name)) && s.Definitions.Select(d => d.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count() == s.Definitions.Length, "label definitions");
         foreach (var d in s.Definitions) { Finite(d.Color); Require(d.Color.X >= 0 && d.Color.X <= 1 && d.Color.Y >= 0 && d.Color.Y <= 1 && d.Color.Z >= 0 && d.Color.Z <= 1, "label color"); }
-        var refs = new HashSet<(int,long)>();
+        var refs = new HashSet<(int, long)>();
         foreach (var a in s.Annotations!)
         {
-            Require(a != null && Name(a.Name) && a.Instance is not < 0 && a.Point >= 0 && refs.Add((a.Layer,a.Point)), "annotation");
+            Require(a != null && Name(a.Name) && a.Instance is not < 0 && a.Point >= 0 && refs.Add((a.Layer, a.Point)), "annotation");
             Require(s.Source != null ? a!.Layer == -1 && a.Point < s.Source.PointCount
                 : a!.Layer >= 0 && a.Layer < s.Layers.Length && a.Position.HasValue, "annotation source");
             if (a.Position is { } position) Finite(position);
