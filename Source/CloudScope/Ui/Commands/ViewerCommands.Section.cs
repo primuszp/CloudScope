@@ -12,6 +12,9 @@ public sealed partial class ViewerCommands
         new("FLIP", "Flip"),
         new("VIEW", "View"),
         new("LIST", "List"),
+        new("ACTIVATE", "Activate"),
+        new("RENAME", "Rename"),
+        new("EXPORT", "Export"),
         new("CLEAR", "CLear")
     ];
 
@@ -20,14 +23,14 @@ public sealed partial class ViewerCommands
     [CommandMethod("XSECTION", "XS",
         Group = CommandGroup.View, Scope = CommandScope.Document,
         Summary = "Creates and displays a finite vertical point-cloud cross-section.",
-        Syntax = "XSECTION <first point> <second point> [width] | [New/Width/Flip/View/List/CLear]")]
+        Syntax = "XSECTION <first point> <second point> [width] | [New/Width/Flip/View/List/Activate/Rename/Export/CLear]")]
     public IEnumerable<PromptStep> CrossSection(CommandContext context)
     {
         var viewer = context.GetTarget<ViewerController>();
         Editor ed = context.Editor;
 
         PromptPointStep first = ed
-            .GetPoint("Specify section start point or [New/Width/Flip/View/List/CLear] <New>:")
+            .GetPoint("Specify section start point or [New/Width/Flip/View/List/Activate/Rename/Export/CLear] <New>:")
             .WithKeywords(CrossSectionKeywords)
             .WithDefaultKeyword("NEW");
         yield return first;
@@ -36,6 +39,15 @@ public sealed partial class ViewerCommands
         {
             switch (first.Keyword)
             {
+                case "ACTIVATE":
+                case "RENAME":
+                    var name = ed.GetString("Section name:");
+                    yield return name; if (!name.IsOk) yield break;
+                    ed.WriteMessage(first.Keyword == "ACTIVATE" ? viewer.ActivateCrossSection(name.Value) : viewer.RenameCrossSection(name.Value));
+                    yield break;
+                case "EXPORT":
+                    foreach (var prompt in ExportEngineering(context,true)) yield return prompt;
+                    yield break;
                 case "CLEAR":
                     ed.WriteMessage(viewer.ClearCrossSection());
                     yield break;

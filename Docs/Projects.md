@@ -1,6 +1,6 @@
 # Teljes projektek
 
-A `.cloudscope` projekt egy verziózott ZIP-dokumentum. Együtt menti a resident felhő vagy a streaming rétegek hivatkozásait, a címkéket és példányazonosítókat, a címkeosztályok színeit/kódjait, a 3D és síkbeli vonalakat (ívekkel és szélességekkel), a szelvényt, a kilenc kamera állapotát, a névvel mentett nézeteket, az elrendezést, a szűrést/ritkítást, a színezést, a pontméretet és a paletták láthatóságát. A rekonstruált felület geometriáját is tartalmazza.
+A `.cloudscope` projekt egy verziózott ZIP-dokumentum. Együtt menti a resident felhő vagy a streaming rétegek hivatkozásait, a címkéket és példányazonosítókat, a címkeosztályok színeit/kódjait, a 3D és síkbeli vonalakat (ívekkel és szélességekkel), a névvel tárolt szelvényeket és az aktív szelvény azonosítóját, a távolság-/területméréseket, a kilenc kamera állapotát, a névvel mentett nézeteket, az elrendezést, a szűrést/ritkítást, a színezést, a pontméretet és a paletták láthatóságát. A rekonstruált felület geometriáját is tartalmazza.
 
 ## Használat
 
@@ -35,3 +35,5 @@ A projekt a befejezett dokumentumállapotot tárolja. Az undo-lista, a parancsel
 ## Ellenőrzés
 
 A ProjectChecks tényleges parancsfuttatón ellenőrzi a teljes mentés/visszanyitás azonosságát, a részleges forrásbetöltést, az attribútum- és forrásváltozások felismerését, a generált adat beágyazását, a relatív útvonalak áthelyezhetőségét, az undo/redo checkpointot, a több réteg címkéit és láthatóságát, a helyreállítási fájlt, a megszakítást és késői eredményt, a hiányos/ismeretlen verziójú dokumentum elutasítását, valamint egy befecskendezett GPU-feltöltési hibát. A natív fájlválasztó és valamennyi operációs rendszer grafikus illesztőprogramja ettől külön ellenőrzési terület.
+
+A 2. formátumverzió a teljes szelvénygyűjteményt és a mérési geometriát tárolja. Az 1. verzió egyetlen szelvénye betöltéskor veszteség nélkül a gyűjteménybe kerül; a beágyazott pont- és felületadatok formátuma változatlan.

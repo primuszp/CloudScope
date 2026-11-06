@@ -6,7 +6,7 @@ Ez a fájl a futásidejű parancstáblából készül. Újragenerálás a repó 
 dotnet run --project Source/CloudScope.CommandChecks -- --write-inventory Docs/CommandInventory.md
 ```
 
-Összesen **78 parancs**, aliasokkal együtt **98 név**.
+Összesen **79 parancs**, aliasokkal együtt **100 név**.
 A `COMMANDS` és a `HELP` ugyanebből a regisztrációból dolgozik. A `COVERAGE` a viewer API statikus elérhetőségét méri; a működés ellenőrzését a CommandChecks végzi.
 
 Az argumentumokat szóköz választja el. A szóközt tartalmazó útvonalat vagy egy argumentumként kezelt nevet idézőjelbe kell tenni, például `OPENXYZ "scan one.xyz" 5000` vagy `LABEL "Tree 1" 7`. Külön útvonalbekéréskor a teljes begépelt válasz az útvonal.
@@ -71,12 +71,13 @@ A parancsok és a szkriptek közös futtatót használnak. A szkript üres sora 
 | `TREESEG` | – | Document | `TREESEG <seed point>` | Segments one terrestrial/SLAM tree from a picked trunk seed. |
 | `UNLABEL` | – | Document | `UNLABEL` | Removes the labels of every point inside the active selection volume. |
 
-## View (14)
+## View (15)
 
 | Parancs | Alias | Hatókör | Szintaxis | Művelet |
 | --- | --- | --- | --- | --- |
 | `COLORBY` | – | Document | `COLORBY [Rgb/Height/Class/Intensity/ReTurn/CLear]` | Colours the cloud by one of its attributes. |
 | `FILTER` | – | Document | `FILTER [Class/Intensity/Return/Z/CLear] <values>` | Shows only the points matching an attribute filter. |
+| `MEASURE` | MEAS | Document | `MEASURE [Distance/Area/List/Remove/Export] <name> <points...> [Close]` | Stores named distance, height, slope or horizontal area measurements; exports CSV/DXF. |
 | `ORBIT` | OR | Viewer | `ORBIT <azimuth,elevation> \| Reset` | Orbits the camera by an angle, or resets the orbit. |
 | `PAN` | P | Viewer | `PAN <base point> <second point> \| Displacement <dx,dy>` | Repositions the view in the active viewport. |
 | `PIVOT` | – | Viewer | `PIVOT <x,y,z> \| Screen <x,y> \| Extents` | Sets the point the view orbits around. |
@@ -87,7 +88,7 @@ A parancsok és a szkriptek közös futtatót használnak. A szkript üres sora 
 | `THIN` | – | Document | `THIN <keep percentage 1..100>` | Shows a repeatable sample of the filtered resident cloud; 100 restores all points. |
 | `VIEW` | V | Viewer | `VIEW [Front/BAck/Left/Right/Top/Bottom/Isometric/Save/Restore/LIst/DElete]` | Sets a standard view, or saves and restores a named one. |
 | `VPORTS` | VP | Viewer | `VPORTS [Single/2/3/4/5/6/7/8/9/Plan/PRevious] [Vertical/Horizontal] [view]` | Splits the drawing area into viewports. |
-| `XSECTION` | XS | Document | `XSECTION <first point> <second point> [width] \| [New/Width/Flip/View/List/CLear]` | Creates and displays a finite vertical point-cloud cross-section. |
+| `XSECTION` | XS | Document | `XSECTION <first point> <second point> [width] \| [New/Width/Flip/View/List/Activate/Rename/Export/CLear]` | Creates and displays a finite vertical point-cloud cross-section. |
 | `ZOOM` | Z | Viewer | `ZOOM [All/Center/Dynamic/Extents/Object/PRevious/RealTime/Scale/Window] \| <corner>` | Changes magnification in the active viewport. |
 
 ## Inquiry (10)

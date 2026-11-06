@@ -36,7 +36,9 @@ public sealed partial class ViewerController
         Layers = _document.Layers.Select(l => new ProjectLayer(l.ProjectId, Path.GetFullPath(l.Store.Directory), l.Name, l.Visible, l.Tint, l.ProjectIdentity)).ToArray(),
         Polylines = _polylines.Select(t => t.Polyline).ToArray(),
         PlanarPolylines = _planarPolylines.Select(t => t.Polyline).ToArray(),
-        Section = _crossSection,
+        Sections = _document.Sections.Items.ToArray(),
+        ActiveSectionId = _document.Sections.ActiveId,
+        Measurements = _document.Measurements.Items.ToArray(),
         Definitions = LabelRegistry.Definitions.OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToArray(),
         Annotations = includeAnnotations ? _selection.CaptureProjectAnnotations() : [],
         NamedViews = _navigation.Capture(),
@@ -152,8 +154,9 @@ public sealed partial class ViewerController
         foreach (var line in prepared.State.Polylines) AddPolyline(line, select: false);
         foreach (var line in prepared.State.PlanarPolylines) AddPlanarPolyline(line, select: false);
         _nextPolylineId = prepared.State.Polylines.Select(l => l.Id).Concat(prepared.State.PlanarPolylines.Select(l => l.Id)).DefaultIfEmpty(0).Max() + 1;
-        SetCrossSectionState(prepared.State.Section);
-        _nextSectionId = (prepared.State.Section?.Id ?? 0) + 1;
+        _document.Sections.Replace(prepared.State.Sections, prepared.State.ActiveSectionId);
+        _document.Measurements.Replace(prepared.State.Measurements);
+        SetCrossSectionState(_document.Sections.Active);
         _navigation.Replace(prepared.State.NamedViews);
         _document.SetSurface(prepared.Surface);
         RestoreWorkspace(prepared.State.Workspace);

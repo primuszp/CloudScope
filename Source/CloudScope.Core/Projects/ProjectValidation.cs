@@ -13,7 +13,7 @@ internal static class ProjectValidation
     private static bool Name(string? s) => !string.IsNullOrWhiteSpace(s);
     public static void Validate(ProjectState s)
     {
-        Require(s.Format == "CloudScope.Project" && s.Version == 1, "format/version");
+        Require(s.Format == "CloudScope.Project" && s.Version == 2, "format/version");
         Require(s.Layers != null && s.Polylines != null && s.PlanarPolylines != null && s.Annotations != null
             && s.Definitions != null && s.NamedViews != null && s.Workspace != null, "collections");
         if (s.Source is { } source)
@@ -46,12 +46,9 @@ internal static class ProjectValidation
             foreach (var v in line.Vertices) Require(float.IsFinite(v.Position.X) && float.IsFinite(v.Position.Y)
                 && float.IsFinite(v.Bulge) && float.IsFinite(v.StartWidth) && v.StartWidth >= 0 && float.IsFinite(v.EndWidth) && v.EndWidth >= 0, "polyline vertex");
         }
-        if (s.Section is { } section)
-        {
-            Finite(section.Start); Finite(section.End);
-            Require(section.Id > 0 && section.Id < int.MaxValue && Name(section.Name) && section.Length > 0
-                && float.IsFinite(section.Width) && section.Width > 0, "section");
-        }
+        Require(s.Sections != null && s.Measurements != null, "engineering collections");
+        new SectionCatalog().Replace(s.Sections!, s.ActiveSectionId);
+        new CloudScope.Measurements.MeasurementCatalog().Replace(s.Measurements!);
         Require(s.Definitions!.All(d => Name(d.Name)) && s.Definitions.Select(d => d.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count() == s.Definitions.Length, "label definitions");
         foreach (var d in s.Definitions) { Finite(d.Color); Require(d.Color.X >= 0 && d.Color.X <= 1 && d.Color.Y >= 0 && d.Color.Y <= 1 && d.Color.Z >= 0 && d.Color.Z <= 1, "label color"); }
         var refs = new HashSet<(int,long)>();
@@ -73,7 +70,7 @@ internal static class ProjectValidation
         foreach (var viewport in w.Viewports!)
         {
             Require(viewport != null && float.IsFinite(viewport.PointSize) && viewport.PointSize >= 0.5f && viewport.PointSize <= 20
-                && Enum.IsDefined(viewport.SectionMode) && (s.Section.HasValue || viewport.SectionMode == SectionDisplayMode.None), "viewport");
+                && Enum.IsDefined(viewport.SectionMode) && (s.ActiveSectionId.HasValue || viewport.SectionMode == SectionDisplayMode.None), "viewport");
             Camera(viewport!.Camera);
         }
         Require(s.NamedViews!.Keys.All(Name) && s.NamedViews.Keys.Distinct(StringComparer.OrdinalIgnoreCase).Count() == s.NamedViews.Count, "named views");

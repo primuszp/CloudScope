@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Nodes;
 using CloudScope.IO;
 using CloudScope.Loading;
 using OpenTK.Mathematics;
@@ -67,8 +68,21 @@ public static class ProjectFile
         var entry = Required(zip, "project.json");
         if (entry.Length > 256L * 1024 * 1024) throw new InvalidDataException("Project metadata exceeds 256 MiB.");
         ProjectState state;
-        using (var input = entry.Open()) state = JsonSerializer.Deserialize<ProjectState>(input, Json)
-            ?? throw new InvalidDataException("The project is empty.");
+        using (var input = entry.Open())
+        {
+            var metadata = JsonNode.Parse(input) ?? throw new InvalidDataException("The project is empty.");
+            if (metadata["Version"]?.GetValue<int>() == 1)
+            {
+                if (!metadata.AsObject().ContainsKey("Section")) throw new InvalidDataException("Missing required project section state.");
+                var legacy = metadata["Section"]?.DeepClone();
+                metadata["Sections"] = legacy == null ? new JsonArray() : new JsonArray(legacy);
+                metadata["ActiveSectionId"] = legacy?["Id"]?.DeepClone();
+                metadata["Measurements"] = new JsonArray();
+                metadata.AsObject().Remove("Section");
+                metadata["Version"] = 2;
+            }
+            state = metadata.Deserialize<ProjectState>(Json) ?? throw new InvalidDataException("The project is empty.");
+        }
         ProjectValidation.Validate(state);
         string directory = Path.GetDirectoryName(Path.GetFullPath(path))!;
         state = state with

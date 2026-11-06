@@ -37,7 +37,7 @@ internal static class ProjectChecks
             viewer.ReconstructSurface(6, 4); Pump(viewer, () => viewer.Status.SurfaceProgress < 0);
             var expected = viewer.CaptureProject();
             check("Project fixture contains both drawing types, a section, annotations, views and a surface",
-                expected.Polylines.Length == 1 && expected.PlanarPolylines.Length == 1 && expected.Section != null
+                expected.Polylines.Length == 1 && expected.PlanarPolylines.Length == 1 && expected.Sections.Length == 1
                 && expected.Annotations.Length == 2 && expected.NamedViews.Count == 1 && expected.HasSurface, "");
             var result = commands.Execute($"SAVEPROJECT \"{project}\"");
             check("SAVEPROJECT atomically saves the complete document and checkpoint", result.Status == CommandStatus.Ended && File.Exists(project) && !viewer.HasUnsavedProject, result.Message);

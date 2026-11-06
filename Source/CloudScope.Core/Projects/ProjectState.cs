@@ -14,7 +14,7 @@ public sealed record ProjectState
     [JsonRequired]
     public string Format { get; init; } = "CloudScope.Project";
     [JsonRequired]
-    public int Version { get; init; } = 1;
+    public int Version { get; init; } = 2;
     [JsonRequired]
     public ProjectSource? Source { get; init; }
     [JsonRequired]
@@ -24,7 +24,11 @@ public sealed record ProjectState
     [JsonRequired]
     public PlanarPolyline[] PlanarPolylines { get; init; } = [];
     [JsonRequired]
-    public SectionDefinition? Section { get; init; }
+    public SectionDefinition[] Sections { get; init; } = [];
+    [JsonRequired]
+    public int? ActiveSectionId { get; init; }
+    [JsonRequired]
+    public CloudScope.Measurements.Measurement[] Measurements { get; init; } = [];
     [JsonRequired]
     public LabelDefinition[] Definitions { get; init; } = [];
     [JsonRequired]

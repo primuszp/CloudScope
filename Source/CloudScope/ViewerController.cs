@@ -42,7 +42,7 @@ namespace CloudScope
         private ViewportViewKind _auxiliaryViewportView = ViewportViewKind.Top;
         private bool _forceAuxiliaryViewRefresh;
         private float _cloudRadius = 50f;
-        private SectionDefinition? _crossSection;
+        private SectionDefinition? _crossSection => _document.Sections.Active;
         private SectionDefinition? _crossSectionDraft;
         private CrossSectionGripTarget? _crossSectionGripTarget;
         private readonly GripInteractionSession _objectGripSession = new();
@@ -79,7 +79,6 @@ namespace CloudScope
         private float _planarDraftEndWidth;
         private int _crossSectionDraftViewport = -1;
         private bool _crossSectionDraftChoosingWidth;
-        private int _nextSectionId = 1;
 
         /// <summary>
         /// The on-disk clouds being streamed, empty when the resident path is drawing.
@@ -1431,9 +1430,9 @@ namespace CloudScope
             return tangent.LengthSquared > 1e-10f ? tangent.Normalized() : Vector2.UnitX;
         }
 
-        public string CrossSectionDescription => _crossSection is { } section
-            ? $"{section.Name}: length {section.Length:0.###}, width {section.Width:0.###}"
-            : "No cross-section.";
+        public string CrossSectionDescription => _document.Sections.Items.Count == 0 ? "No cross-section."
+            : string.Join(Environment.NewLine, _document.Sections.Items.Select(section =>
+                $"{(_document.Sections.ActiveId == section.Id ? "* " : "  ")}{section.Name}: length {section.Length:0.###}, width {section.Width:0.###}"));
 
         public void BeginCrossSectionDraft(Vector3 start, float width)
         {
@@ -1461,7 +1460,7 @@ namespace CloudScope
         public string CreateCrossSection(Vector3 start, Vector3 end, float width)
         {
             float length = new Vector2(end.X - start.X, end.Y - start.Y).Length;
-            if (length < 0.001f)
+            if (!float.IsFinite(length) || !float.IsFinite(start.Z) || !float.IsFinite(end.Z) || length < 0.001f)
                 return "Cross-section baseline is too short.";
             if (!float.IsFinite(width) || width < 0.001f)
                 return "Cross-section width must be positive.";
@@ -1473,7 +1472,8 @@ namespace CloudScope
             end.Z = baselineZ;
 
             SectionStateSnapshot before = CaptureSectionState();
-            var section = new SectionDefinition(_nextSectionId++, $"XS{_nextSectionId - 1}", start, end, width);
+            int id = _document.Sections.NextId;
+            var section = new SectionDefinition(id, $"XS{id}", start, end, width);
             SetCrossSectionState(section);
             SelectGripTarget(_crossSectionGripTarget);
 
@@ -1511,11 +1511,13 @@ namespace CloudScope
                 return "No cross-section to clear.";
 
             SectionStateSnapshot before = CaptureSectionState();
-            SetCrossSectionState(null);
+            _document.Sections.RemoveActive();
+            SetCrossSectionState(_document.Sections.Active);
             foreach (ViewportState viewport in _viewports)
-                viewport.SectionMode = SectionDisplayMode.None;
+                if (_crossSection == null) viewport.SectionMode = SectionDisplayMode.None;
+            ApplySectionCameras();
             RecordSectionChange(before, CaptureSectionState());
-            return "Cross-section cleared.";
+            return "Cross-section removed.";
         }
 
         public string FlipCrossSection()
@@ -1871,6 +1873,11 @@ namespace CloudScope
 
                 if (_selection.Mode == InteractionMode.Label)
                     _overlayRenderer.RenderModeIndicator(frameData, viewport.Bounds.Width, viewport.Bounds.Height, _selection.ActiveTool.ToolType);
+
+                foreach (var measurement in _document.Measurements.Items)
+                    _overlayRenderer.RenderPolyline(frameData, ref view, ref proj, measurement.Points,
+                        measurement.Kind == CloudScope.Measurements.MeasurementKind.Area,
+                        new Vector4(.24f,.88f,.72f,1),2f);
 
                 foreach (PolylineGripTarget polylineTarget in _polylines)
                 {
@@ -2385,7 +2392,8 @@ namespace CloudScope
         }
 
         private SectionStateSnapshot CaptureSectionState() => new(
-            _crossSection,
+            _document.Sections.Items.ToArray(),
+            _document.Sections.ActiveId,
             _viewportLayout,
             _previousViewportLayout,
             _activeViewportIndex,
@@ -2393,7 +2401,8 @@ namespace CloudScope
 
         private void RestoreSectionState(SectionStateSnapshot snapshot)
         {
-            SetCrossSectionState(snapshot.Section);
+            _document.Sections.Replace(snapshot.Sections, snapshot.ActiveId);
+            SetCrossSectionState(_document.Sections.Active);
             _viewportLayout = snapshot.Layout;
             _previousViewportLayout = snapshot.PreviousLayout;
             _activeViewportIndex = snapshot.ActiveViewportIndex;
@@ -2414,7 +2423,7 @@ namespace CloudScope
 
         private void SetCrossSectionState(SectionDefinition? section)
         {
-            _crossSection = section;
+            _document.Sections.SetActive(section);
             if (section is not { } value)
             {
                 UnregisterGripTarget(_crossSectionGripTarget);
@@ -2436,7 +2445,7 @@ namespace CloudScope
 
         private void OnCrossSectionGripChanged(SectionDefinition section)
         {
-            _crossSection = section;
+            _document.Sections.SetActive(section);
             ApplySectionCameras();
         }
 
@@ -2526,6 +2535,8 @@ namespace CloudScope
         private void DiscardCrossSection()
         {
             SelectGripTarget(null);
+            _document.Sections.Replace([], null);
+            _document.Measurements.Replace([]);
             SetCrossSectionState(null);
             ClearCrossSectionDraft();
             ClearPolylineDraft();
@@ -2628,7 +2639,8 @@ namespace CloudScope
         }
 
         private readonly record struct SectionStateSnapshot(
-            SectionDefinition? Section,
+            SectionDefinition[] Sections,
+            int? ActiveId,
             ViewportLayoutKind Layout,
             ViewportLayoutKind PreviousLayout,
             int ActiveViewportIndex,

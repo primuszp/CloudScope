@@ -8,6 +8,8 @@ namespace CloudScope;
 /// <summary>Owns source identity and resident/streamed document data, independently of any window.</summary>
 internal sealed class ViewerDocument
 {
+    public CloudScope.Sections.SectionCatalog Sections { get; } = new();
+    public CloudScope.Measurements.MeasurementCatalog Measurements { get; } = new();
     public PointCloudDataset? Dataset { get; private set; }
     public SurfaceMesh? Surface { get; private set; }
     public List<PointTileLayer> Layers { get; } = [];

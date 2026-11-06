@@ -113,6 +113,15 @@ public static class CommandMenu
             CommandMenuEntry.Separator,
             CommandMenuEntry.Action("Erase labels in selection", "UNLABEL", requiresCloud: true)),
 
+        CommandMenuEntry.Submenu("Measure",
+            CommandMenuEntry.Action("Distance / height / slope...", "MEASURE Distance"),
+            CommandMenuEntry.Action("Horizontal area...", "MEASURE Area"),
+            CommandMenuEntry.Action("List measurements", "MEASURE List"),
+            CommandMenuEntry.Action("Export measurements...", "MEASURE Export"),
+            CommandMenuEntry.Action("Activate section...", "XSECTION Activate", requiresCloud: true),
+            CommandMenuEntry.Action("Rename section...", "XSECTION Rename", requiresCloud: true),
+            CommandMenuEntry.Action("Export section...", "XSECTION Export", requiresCloud: true)),
+
         CommandMenuEntry.Submenu("View",
             CommandMenuEntry.Action("Zoom extents", "ZOOM Extents", "Mod+0"),
             CommandMenuEntry.Action("Zoom to object", "ZOOM Center"),
