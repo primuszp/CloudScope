@@ -19,7 +19,7 @@ internal static class ProjectValidation
         if (s.Source is { } source)
         {
             Require(source.Identity != null && source.PointCount >= 0 && source.PointCount == source.Identity.PointCount, "source identity");
-            Require(source.Format is "LAS" or "PLY" or "XYZ" or "PTS" or "PTX" or "E57" or "Embedded", "source format");
+            Require(source.Format is "LAS" or "LAZ" or "PLY" or "XYZ" or "PTS" or "PTX" or "E57" or "Embedded", "source format");
             Require(source.Format == "Embedded" ? source.Path == "" : Name(source.Path), "source path");
             Require(float.IsFinite(source.Radius) && source.Radius >= 0 && float.IsFinite(source.ColorScale) && source.ColorScale > 0, "source scale");
             Require(double.IsFinite(source.Identity.OriginX) && double.IsFinite(source.Identity.OriginY) && double.IsFinite(source.Identity.OriginZ)

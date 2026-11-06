@@ -13,6 +13,7 @@ namespace CloudScope.Loading
     {
         public CloudScope.Labeling.LabelSourceIdentity? SourceIdentity { get; init; }
         public string? SourcePayloadSha256 { get; init; }
+        public string? SourceFormat { get; init; }
 
         public PointCloudDataset ToDataset()
         {

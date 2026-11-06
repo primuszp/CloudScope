@@ -21,6 +21,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Update="Fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../ThirdParty/LASzip-3.5.0.tar.gz" Link="Fixtures/laszip-source.tar.gz" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

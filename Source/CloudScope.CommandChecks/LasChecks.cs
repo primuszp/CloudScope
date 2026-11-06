@@ -38,7 +38,7 @@ internal static class LasChecks
             foreach ((string name, Action<byte[]> mutate) in new (string, Action<byte[]>)[]
             {
                 ("signature", bytes => bytes[0] = 0),
-                ("compressed LAZ", bytes => bytes[104] |= 128),
+                ("compression flag without a codec VLR", bytes => bytes[104] |= 128),
                 ("record stride", bytes => BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(105), 1)),
                 ("point data offset", bytes => BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(96), 1)),
                 ("point count", bytes => BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(107), 100)),

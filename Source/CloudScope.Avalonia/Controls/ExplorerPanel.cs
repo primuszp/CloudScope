@@ -301,7 +301,7 @@ public sealed class ExplorerPanel : UserControl
     {
         ExplorerNodeKind.Clouds =>
         [
-            ("Open LAS...", "OPEN"), ("Import PLY...", "OPENPLY"), ("Import XYZ...", "OPENXYZ"),
+            ("Open LAS/LAZ...", "OPEN"), ("Import PLY...", "OPENPLY"), ("Import XYZ...", "OPENXYZ"),
             ("Import PTS...", "OPENPTS"), ("Import PTX...", "OPENPTX"), ("Import E57...", "OPENE57"),
             ("", ""), ("Open tile store...", "OPENSTORE"), ("Add tile store...", "ADDSTORE"),
             ("", ""), ("List layers", "LAYER List"), ("Store info", "STOREINFO")

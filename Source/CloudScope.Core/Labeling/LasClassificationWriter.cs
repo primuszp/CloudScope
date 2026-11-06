@@ -31,6 +31,7 @@ namespace CloudScope.Labeling
             long pointCount;
             using (var reader = new LasReader(sourcePath))
             {
+                if (reader.IsCompressed) throw new InvalidOperationException("Classification patch export requires an uncompressed LAS source. LAZ annotations can be saved in the project or as JSON.");
                 formatId = reader.Header.PointDataFormatId;
                 pointDataOffset = reader.Header.OffsetToPointData;
                 stride = reader.Header.PointDataRecordLength;

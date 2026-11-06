@@ -5,11 +5,12 @@ using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
 using CloudScope.Library.Data;
 using CloudScope.Library.Enums;
+using CloudScope.Loading;
 
 namespace CloudScope.Library
 {
     /// <summary>
-    /// LAS file reader with full support for all Point Data Record Formats (0-10),
+    /// LAS/LAZ record reader with support for all Point Data Record Formats (0-10),
     /// LAS versions 1.0-1.4, Variable Length Records (VLRs), and Extended VLRs.
     ///
     /// Point Data Record Format byte layout (LAS 1.4 spec):
@@ -55,6 +56,9 @@ namespace CloudScope.Library
         private readonly long _fileSize;
         private readonly long _pointCount;
         private readonly VariableLengthRecordManager _vlrManager;
+        private readonly LazPointReader? _laz;
+        public bool IsCompressed { get; }
+        internal int PreferredBatchPoints(int maximum) => IsCompressed ? maximum : Math.Min(maximum,Math.Max(1,32*1024*1024/_header.PointDataRecordLength));
 
         public LasHeader Header => _header;
         public long PointCount => _pointCount;
@@ -85,6 +89,8 @@ namespace CloudScope.Library
                     throw new InvalidDataException("Invalid LAS header size.");
                 if (headerSize > 227)
                     _accessor.ReadArray(227, bytes, 227, Math.Min(headerSize, bytes.Length) - 227);
+                IsCompressed = (bytes[104] & 128) != 0;
+                bytes[104] &= 0x7f;
                 _header = new LasHeader(MemoryMarshal.Read<HeaderBlock>(bytes));
                 ValidateHeader();
 
@@ -97,11 +103,12 @@ namespace CloudScope.Library
                     // In 1.4 the extended count is authoritative, including an empty cloud.
                     _pointCount = (long)extendedCount;
                 }
-                if (_pointCount > (_fileSize - _header.OffsetToPointData) / _header.PointDataRecordLength)
+                if (!IsCompressed && _pointCount > (_fileSize - _header.OffsetToPointData) / _header.PointDataRecordLength)
                     throw new InvalidDataException("LAS point records are truncated or the declared count is invalid.");
 
                 _vlrManager = new VariableLengthRecordManager(_accessor,
                     _header.NumberOfVariableLengthRecords, _header.HeaderSize, _header.OffsetToPointData);
+                if (IsCompressed) _laz = new LazPointReader(path,_header);
             }
             catch
             {
@@ -122,7 +129,7 @@ namespace CloudScope.Library
                 throw new InvalidDataException("Invalid LAS header size or point data offset.");
             byte format = _header.PointDataFormatId;
             if ((format & 0xC0) != 0)
-                throw new InvalidDataException("Compressed LAZ is not supported. Decompress the file to LAS before opening it.");
+                throw new InvalidDataException("Unsupported LAS point encoding flags.");
             int[] lengths = [20, 28, 26, 34, 57, 63, 30, 36, 38, 59, 67];
             if (format >= lengths.Length || _header.PointDataRecordLength < lengths[format])
                 throw new InvalidDataException("Invalid LAS point format or record length.");
@@ -146,6 +153,17 @@ namespace CloudScope.Library
         /// </summary>
         public IEnumerable<LasPoint> GetPoints()
         {
+            if (_laz != null)
+            {
+                var decoded = new LasPoint[(int)Math.Min(PointCount,65536)];
+                for (long start = 0; start < PointCount;)
+                {
+                    int count = ReadBatch(start,decoded,decoded.Length);
+                    for (int i = 0; i < count; i++) yield return decoded[i];
+                    start += count;
+                }
+                yield break;
+            }
             byte formatId = _header.PointDataFormatId;
             long offset = _header.OffsetToPointData;
             int stride = _header.PointDataRecordLength;
@@ -155,7 +173,7 @@ namespace CloudScope.Library
             double sy = _header.YScaleFactor, oy = _header.YOffset;
             double sz = _header.ZScaleFactor, oz = _header.ZOffset;
 
-            int chunkPts = (int)Math.Min(total, 65536);
+            int chunkPts = (int)Math.Min(total, PreferredBatchPoints(65536));
             byte[] buffer = new byte[chunkPts * stride];
             long loaded = 0;
 
@@ -192,6 +210,8 @@ namespace CloudScope.Library
                 ? Math.Min(maxPoints, Math.Min(PointCount, (long)buffer.Length))
                 : Math.Min(PointCount, (long)buffer.Length);
 
+            if (_laz != null) return _laz.Read(0,buffer.AsSpan(0,checked((int)count)));
+
             byte formatId = _header.PointDataFormatId;
             long dataOffset = _header.OffsetToPointData;
             int stride = _header.PointDataRecordLength;
@@ -201,7 +221,7 @@ namespace CloudScope.Library
 
             // 128 K points per chunk — large enough for parallel parse to amortise overhead,
             // small enough to stay in L3 cache and keep sequential I/O read-ahead happy.
-            const int ChunkPts = 1 << 17;
+            int ChunkPts = PreferredBatchPoints(1 << 17);
             int rawSize = (int)Math.Min(ChunkPts, count) * stride;
             byte[] raw = new byte[rawSize];
             long processed = 0;
@@ -244,7 +264,8 @@ namespace CloudScope.Library
             if (startIndex < 0 || startIndex >= PointCount || count <= 0 || buffer.Length == 0)
                 return 0;
 
-            int actual = (int)Math.Min(Math.Min((long)count, (long)buffer.Length), PointCount - startIndex);
+            int actual = (int)Math.Min(Math.Min((long)PreferredBatchPoints(count), (long)buffer.Length), PointCount - startIndex);
+            if (_laz != null) return _laz.Read(startIndex,buffer.AsSpan(0,actual));
             byte formatId = _header.PointDataFormatId;
             int stride = _header.PointDataRecordLength;
             long dataOffset = _header.OffsetToPointData + startIndex * stride;
@@ -414,6 +435,7 @@ namespace CloudScope.Library
 
         public void Dispose()
         {
+            _laz?.Dispose();
             _accessor?.Dispose();
             _mmf?.Dispose();
         }

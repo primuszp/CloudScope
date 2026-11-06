@@ -1,0 +1,9 @@
+<Project>
+  <!-- .NET removes RuntimeIdentifier when building portable project references.
+       Preserve the outer application's native architecture explicitly. -->
+  <ItemGroup Condition="'$(CloudScopeNativeRuntimeIdentifier)' != ''">
+    <ProjectReference Update="@(ProjectReference)">
+      <AdditionalProperties>%(ProjectReference.AdditionalProperties);CloudScopeNativeRuntimeIdentifier=$(CloudScopeNativeRuntimeIdentifier)</AdditionalProperties>
+    </ProjectReference>
+  </ItemGroup>
+</Project>

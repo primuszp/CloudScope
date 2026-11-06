@@ -20,11 +20,11 @@ A parancsok és a szkriptek közös futtatót használnak. A szkript üres sora 
 | `ADDSTORE` | – | Viewer | `ADDSTORE <store directory>` | Adds another point tile store as a layer beside the open ones. |
 | `EXPORT` | – | Document | `EXPORT [PlyBinary/PlyAscii/Xyz/Pts/Csv] <path>` | Exports the filtered resident sample in its original coordinate frame. |
 | `EXPORTOBJ` | – | Document | `EXPORTOBJ <path>` | Saves the reconstructed surface in the original coordinate frame. |
-| `INDEX` | – | Application | `INDEX <las> [directory] [Source] [CHunk n] [Grid n] [MinPoints n] [SCratch dir]` | Indexes a LAS file into a point tile store of any size. |
+| `INDEX` | – | Application | `INDEX <las> [directory] [Source] [CHunk n] [Grid n] [MinPoints n] [SCratch dir]` | Indexes a LAS or LAZ file into a point tile store. |
 | `LAYER` | LA | Viewer | `LAYER [List/ON/OFf/Close] <name>` | Lists the open point clouds and layers, or turns one on, off or closed. |
 | `LOADLABELS` | – | Document | `LOADLABELS [Transfer] [path]` | Loads labels from a JSON file. |
 | `LOADPOLYLINES` | – | Viewer | `LOADPOLYLINES <path>` | Loads planar polylines from a versioned JSON document. |
-| `OPEN` | – | Viewer | `OPEN <path> [max points]` | Loads a uncompressed LAS point cloud into memory. |
+| `OPEN` | – | Viewer | `OPEN <path> [max points]` | Loads a LAS or compressed LAZ point cloud into memory. |
 | `OPENE57` | – | Viewer | `OPENE57 <path> [max points]` | Loads E57 numeric bitpack scans with pose transforms and checksum validation. |
 | `OPENPLY` | – | Viewer | `OPENPLY <path> [max points]` | Loads ASCII or little-endian binary PLY vertices into memory. |
 | `OPENPROJECT` | – | Viewer | `OPENPROJECT <path>` | Restores a complete project after validating its sources. |

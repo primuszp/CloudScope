@@ -29,8 +29,8 @@ namespace CloudScope.Loading
             double spanZ = hdr.MaxZ - hdr.MinZ;
 
             float colorScale = 1.0f / 65535.0f;
-            var batch = new LasPoint[(int)Math.Min(BatchSize, Math.Max(total, 1))];
-            var rawBatch = new byte[batch.Length * hdr.PointDataRecordLength];
+            var batch = new LasPoint[(int)Math.Min(reader.PreferredBatchPoints(BatchSize), Math.Max(total, 1))];
+            var rawBatch = reader.IsCompressed ? Array.Empty<byte>() : new byte[checked(batch.Length * hdr.PointDataRecordLength)];
 
             int loaded = 0;
             int lastPct = -1;

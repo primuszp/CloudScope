@@ -1,0 +1,11 @@
+CloudScope includes LASzip, developed by rapidlasso GmbH and its contributors.
+LASzip is distributed under the Apache License, Version 2.0.
+See LASzip-LICENSE.txt for the complete license.
+
+Upstream: https://github.com/LASzip/LASzip
+Source ref: 3.5.0
+Pinned commit: fa089bd8b2b4ca5631e199d257374c32a125f73f
+Archive SHA-256: 8166649112f128085d0ef58a49ee927f4df398136e68a25efd03f0758ab2b499
+
+The source archive is unmodified. CloudScope's ABI verification function and
+build integration are maintained separately under Native/LASzip.

@@ -12,4 +12,5 @@
     <InternalsVisibleTo Include="CloudScope.CommandChecks" />
   </ItemGroup>
 
+  <Import Project="NativeDecoder.targets" />
 </Project>

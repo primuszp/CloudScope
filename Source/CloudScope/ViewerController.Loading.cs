@@ -63,8 +63,9 @@ public sealed partial class ViewerController
         {
             if (requestedState != ProjectSignature()) throw new InvalidOperationException("The document changed while the cloud was loading. Its current work was preserved; retry the import.");
             LoadPointCloud(cloud.ToDataset());
-            _selection.SetSourceFilePath(path, supportsLasExport: format == "LAS");
-            _document.SetSource(Path.GetFullPath(path), format);
+            string sourceFormat = cloud.SourceFormat ?? format;
+            _selection.SetSourceFilePath(path, supportsLasExport: sourceFormat == "LAS");
+            _document.SetSource(Path.GetFullPath(path), sourceFormat);
             StartNewProject();
             BackgroundMessage?.Invoke($"Loaded {cloud.LoadedCount:N0} {format} points from {name} ({timer.Elapsed.TotalSeconds:0.0}s).");
         }, error => BackgroundMessage?.Invoke($"{format} load failed: {error.Message}")))

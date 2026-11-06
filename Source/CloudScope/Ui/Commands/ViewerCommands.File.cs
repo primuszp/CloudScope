@@ -21,12 +21,12 @@ public sealed partial class ViewerCommands
 
     [CommandMethod("OPEN", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.File, Scope = CommandScope.Viewer,
-        Summary = "Loads a uncompressed LAS point cloud into memory.",
+        Summary = "Loads a LAS or compressed LAZ point cloud into memory.",
         Syntax = "OPEN <path> [max points]")]
     public IEnumerable<PromptStep> Open(CommandContext context)
     {
         Editor ed = context.Editor;
-        PromptFileStep path = ed.GetFileNameForOpen("Enter LAS file path:").Filtering("las").Requiring();
+        PromptFileStep path = ed.GetFileNameForOpen("Enter LAS/LAZ file path:").Filtering("las;laz").Requiring();
         yield return path;
         if (!path.IsOk) yield break;
 
@@ -187,13 +187,13 @@ public sealed partial class ViewerCommands
 
     [CommandMethod("INDEX", Flags = CommandFlags.NoUndoMarker,
         Group = CommandGroup.File, Scope = CommandScope.Application,
-        Summary = "Indexes a LAS file into a point tile store of any size.",
+        Summary = "Indexes a LAS or LAZ file into a point tile store.",
         Syntax = "INDEX <las> [directory] [Source] [CHunk n] [Grid n] [MinPoints n] [SCratch dir]")]
     public IEnumerable<PromptStep> Index(CommandContext context)
     {
         Editor ed = context.Editor;
 
-        PromptFileStep source = ed.GetFileNameForOpen("Enter LAS file to index:").Filtering("las").Requiring();
+        PromptFileStep source = ed.GetFileNameForOpen("Enter LAS/LAZ file to index:").Filtering("las;laz").Requiring();
         yield return source;
         if (!source.IsOk) yield break;
 

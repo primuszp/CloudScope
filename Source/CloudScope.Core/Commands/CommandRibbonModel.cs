@@ -55,7 +55,7 @@ public static class CommandRibbon
                 Small("Save", "SAVEPROJECT", RibbonIcons.Save),
                 Small("Save as", "SAVEAS", RibbonIcons.Save)),
             Panel("Cloud",
-                Large("Open", "OPEN", RibbonIcons.Open, tooltip: "Open a LAS point cloud"),
+                Large("Open", "OPEN", RibbonIcons.Open, tooltip: "Open a LAS or LAZ point cloud"),
                 Small("PLY", "OPENPLY", RibbonIcons.Import, tooltip: "Import PLY vertices"),
                 Small("E57", "OPENE57", RibbonIcons.Scanner, tooltip: "Import E57 scans"),
                 Small("Tile store", "ADDSTORE", RibbonIcons.Layers, tooltip: "Add a point tile store as a layer")),

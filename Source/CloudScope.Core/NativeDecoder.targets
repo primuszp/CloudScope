@@ -1,0 +1,40 @@
+<Project>
+  <PropertyGroup>
+    <_LazRid Condition="'$(CloudScopeNativeRuntimeIdentifier)' != ''">$(CloudScopeNativeRuntimeIdentifier)</_LazRid>
+    <_LazRid Condition="'$(_LazRid)' == '' and '$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</_LazRid>
+    <_LazRid Condition="'$(_LazRid)' == ''">$(NETCoreSdkRuntimeIdentifier)</_LazRid>
+    <_LazObj>$([System.IO.Path]::GetFullPath('$(BaseIntermediateOutputPath)', '$(MSBuildProjectDirectory)'))</_LazObj>
+    <_LazBuild>$([System.IO.Path]::GetFullPath('$(_LazObj)/native/$(Configuration)/$(_LazRid)'))</_LazBuild>
+    <_LazSource>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../Native/LASzip'))</_LazSource>
+    <_LazArchive>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../ThirdParty/LASzip-3.5.0.tar.gz'))</_LazArchive>
+    <_LazName Condition="$([MSBuild]::IsOSPlatform('OSX'))">libcloudscope_laz.dylib</_LazName>
+    <_LazName Condition="$([MSBuild]::IsOSPlatform('Linux'))">libcloudscope_laz.so</_LazName>
+    <_LazName Condition="$([MSBuild]::IsOSPlatform('Windows'))">cloudscope_laz.dll</_LazName>
+    <_LazTarget Condition="$([MSBuild]::IsOSPlatform('Windows'))">laszip3</_LazTarget>
+    <_LazTarget Condition="'$(_LazTarget)' == ''">laszip</_LazTarget>
+    <_LazArch Condition="'$(_LazRid)' == 'osx-arm64'">-DCMAKE_OSX_ARCHITECTURES=arm64</_LazArch>
+    <_LazArch Condition="'$(_LazRid)' == 'osx-x64'">-DCMAKE_OSX_ARCHITECTURES=x86_64</_LazArch>
+    <_LazArch Condition="$([MSBuild]::IsOSPlatform('Windows')) and '$(_LazRid)' == 'win-x64'">-A x64</_LazArch>
+    <_LazArch Condition="$([MSBuild]::IsOSPlatform('Windows')) and '$(_LazRid)' == 'win-arm64'">-A ARM64</_LazArch>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="$(_LazBuild)/out/$(_LazName)" Link="$(_LazName)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../ThirdParty/LASzip-LICENSE.txt" Link="Licenses/LASzip-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../ThirdParty/LASzip-NOTICE.txt" Link="Licenses/LASzip-NOTICE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="BuildLazDecoder" BeforeTargets="PrepareForBuild;GetCopyToOutputDirectoryItems;GetCopyToPublishDirectoryItems"
+          Condition="'$(DesignTimeBuild)' != 'true'"
+          Inputs="$(_LazSource)/CMakeLists.txt;$(_LazSource)/abi.cpp;$(_LazArchive);$(MSBuildThisFileFullPath)"
+          Outputs="$(_LazBuild)/out/$(_LazName)">
+    <Error Condition="'$(_LazName)' == ''" Text="The LAZ decoder currently supports Windows, macOS and Linux desktop builds." />
+    <Error Condition="$([MSBuild]::IsOSPlatform('OSX')) and !$([System.String]::Copy('$(_LazRid)').StartsWith('osx-'))"
+           Text="Build the native LAZ decoder on the target operating system. macOS publishing supports osx-arm64 and osx-x64." />
+    <Error Condition="$([MSBuild]::IsOSPlatform('Windows')) and !$([System.String]::Copy('$(_LazRid)').StartsWith('win-'))"
+           Text="Build the native LAZ decoder on the target operating system." />
+    <Error Condition="$([MSBuild]::IsOSPlatform('Linux')) and '$(_LazRid)' != '$(NETCoreSdkRuntimeIdentifier)'"
+           Text="Build the native LAZ decoder with the target Linux SDK/toolchain." />
+    <MakeDir Directories="$(_LazBuild)" />
+    <Exec Command="cmake -S &quot;$(_LazSource)&quot; -B &quot;$(_LazBuild)&quot; -DCMAKE_BUILD_TYPE=Release $(_LazArch)" IgnoreStandardErrorWarningFormat="true" />
+    <Exec Command="cmake --build &quot;$(_LazBuild)&quot; --config Release --target $(_LazTarget) --parallel 4" IgnoreStandardErrorWarningFormat="true" />
+  </Target>
+</Project>

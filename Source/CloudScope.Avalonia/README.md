@@ -20,8 +20,8 @@ dotnet run --project Source/CloudScope.Avalonia/CloudScope.Avalonia.csproj
 ```
 
 The app uses `Hosting/HostController.cs` to keep renderer lifecycle, point-cloud
-upload, and command handling outside the Avalonia window. Use `File > Open LAS...`,
-the ribbon's **Open** button, or type `OPEN` to load a `.las` file.
+upload, and command handling outside the Avalonia window. Use `File > Open LAS/LAZ...`,
+the ribbon's **Open** button, or type `OPEN` to load a `.las` or `.laz` file.
 
 Workspace layout (see `Docs/UiRedesign.md` §11):
 

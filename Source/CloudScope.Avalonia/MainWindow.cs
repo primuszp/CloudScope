@@ -665,14 +665,15 @@ public sealed partial class MainWindow : Window
 
         FilePickerFileType type = filter.Length == 0
             ? FilePickerFileTypes.All
-            : new FilePickerFileType(filter.ToUpperInvariant() + " files") { Patterns = [$"*.{filter}"] };
+            : new FilePickerFileType(filter.Replace(";", "/").ToUpperInvariant() + " files")
+            { Patterns = filter.Split(';', StringSplitOptions.RemoveEmptyEntries).Select(extension => $"*.{extension}").ToArray() };
 
         if (save)
         {
             IStorageFile? file = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
             {
                 Title = "Save file",
-                DefaultExtension = filter.Length == 0 ? null : filter,
+                DefaultExtension = filter.Length == 0 ? null : filter.Split(';')[0],
                 FileTypeChoices = [type, FilePickerFileTypes.All]
             });
 

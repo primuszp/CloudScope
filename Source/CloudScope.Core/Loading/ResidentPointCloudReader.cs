@@ -9,7 +9,7 @@ public static class ResidentPointCloudReader
     {
         return format switch
         {
-            "LAS" => Las(path, limit, progress, cancellation),
+            "LAS" or "LAZ" => Las(path, limit, progress, cancellation),
             "PLY" => PlyPointCloudLoader.Load(path, limit, progress, cancellation),
             "XYZ" => XyzPointCloudLoader.Load(path, limit, progress, cancellation),
             "PTS" => PtsPointCloudLoader.Load(path, limit, progress, cancellation),
@@ -19,5 +19,5 @@ public static class ResidentPointCloudReader
         };
     }
     private static LoadedPointCloud Las(string path, long limit, IProgress<int>? progress, CancellationToken cancellation)
-    { using var reader = new LasReader(path); return PointCloudLoader.Load(reader, limit, progress, cancellation); }
+    { using var reader = new LasReader(path); return PointCloudLoader.Load(reader, limit, progress, cancellation) with { SourceFormat = reader.IsCompressed ? "LAZ" : "LAS" }; }
 }

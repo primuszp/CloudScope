@@ -96,8 +96,8 @@ internal sealed class LasPointStream
         LasHeader header = reader.Header;
         HasAttributes = true;
         HasColor = header.PointDataFormatId is 2 or 3 or 5 or 7 or 8 or 10;
-        _batch = new LasPoint[1 << 18];
-        _raw = new byte[_batch.Length * header.PointDataRecordLength];
+        _batch = new LasPoint[reader.PreferredBatchPoints(1 << 18)];
+        _raw = reader.IsCompressed ? Array.Empty<byte>() : new byte[checked(_batch.Length * header.PointDataRecordLength)];
         _colorScale = 1f / 65535f;
         _zSpan = bounds.MaxZ - bounds.MinZ;
 

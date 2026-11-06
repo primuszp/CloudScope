@@ -4,6 +4,8 @@ A .NET 10 point-cloud viewer with a shared command system, OpenGL and macOS Meta
 
 ## Build and run
 
+Building also requires CMake 3.24+ and a C++ toolchain (Xcode Command Line Tools on macOS, Visual C++ Build Tools on Windows, or GCC/Clang on Linux). The pinned LASzip source is included, so native decoder builds require no additional download. Published applications include the decoder and do not require these build tools.
+
 The SDK selection is recorded in `global.json`; package versions and shared build settings live in `Source/Directory.Packages.props` and `Source/Directory.Build.props`.
 
 ```bash
@@ -33,8 +35,8 @@ The optional point limit is zero for all points; resident clouds must fit memory
 ## Workflows
 
 - Save and reopen the complete workspace with `SAVEPROJECT` (`SAVE`), `SAVEAS` and `OPENPROJECT`. Projects retain labels, drawings, cross-sections, cameras, layers, display settings and reconstructed surfaces; source surveys remain relative external references. `RECOVER` restores an abandoned automatic recovery snapshot. Cmd/Ctrl+S saves the project. See [project persistence](Docs/Projects.md).
-- Import uncompressed LAS 1.0–1.4 (point formats 0–10), PLY, XYZ, PTS, PTX and supported E57 numeric scans. **Compressed LAZ is not decoded**; decompress it to LAS first.
-- Index LAS into streaming tile stores with `INDEX`, then use `OPENSTORE`, `ADDSTORE` and `LAYER` for large surveys.
+- Import LAS/LAZ 1.0–1.4 (point formats 0–10), PLY, XYZ, PTS, PTX and supported E57 numeric scans. LASzip decodes compressed records directly, through the same resident and streaming-index workflows.
+- Index LAS/LAZ into streaming tile stores with `INDEX`, then use `OPENSTORE`, `ADDSTORE` and `LAYER` for large surveys.
 - Filter attributes, choose RGB/height/class/intensity/return colouring, and thin a repeatable sample with `THIN` while preserving source indices.
 - Create selection volumes, annotations and tree instances; run CSF ground filtering and seed-assisted terrestrial/SLAM tree segmentation. Save/load JSON labels for every resident import format; LAS classification export requires a LAS source. New label files include an ordered-geometry checksum, point count and coordinate frame. Ordinary loading verifies that identity; use `LOADLABELS Transfer "old-labels.json"` only for an intentional index-based transfer or legacy migration.
 - Draw 3D and planar polylines, work with cross-sections and split viewports, reconstruct a visualization surface, and export points or OBJ meshes.
@@ -79,4 +81,4 @@ See [the code review and verification record](Docs/CodeReview.md) for the scope 
 - `CloudScope.CommandChecks`, `CloudScope.UiChecks`: reproducible checks.
 - `MetalTriangleTest`, `MetalNetTriangle`: standalone graphics experiments.
 
-Licensed under the MIT License.
+CloudScope is licensed under the MIT License. The bundled [LASzip](https://github.com/LASzip/LASzip) decoder is Apache-2.0 licensed; source provenance and notices are under `ThirdParty/`.
