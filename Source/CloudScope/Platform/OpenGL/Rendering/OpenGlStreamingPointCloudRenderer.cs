@@ -163,7 +163,7 @@ namespace CloudScope.Platform.OpenGL.Rendering
 
             int drawBudget = Limits.GetFrameBudget((int)Math.Min(totalPoints, int.MaxValue));
             int visitCount = PointTileTraversal.Collect(
-                _layers, in renderView, drawBudget, _visits, _scratch, out _);
+                _layers, in renderView, drawBudget, _visits, _scratch, out _, _pages.PageCount, _pages.PageSizeInPoints);
 
             // Uploads happen inside BeginFrame, so it runs even when nothing is visible: that
             // is what lets a cloud finish streaming in while the camera sits still.

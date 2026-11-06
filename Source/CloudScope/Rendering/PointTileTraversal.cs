@@ -60,10 +60,13 @@ internal static class PointTileTraversal
         int drawBudget,
         Span<PointTileVisit> destination,
         PointTileTraversalScratch scratch,
-        out long plannedPointCount)
+        out long plannedPointCount,
+        int residentPageBudget = int.MaxValue,
+        int pageSizeInPoints = 65536)
     {
         plannedPointCount = 0;
-        if (layers.Count == 0 || drawBudget <= 0 || destination.IsEmpty)
+        if (pageSizeInPoints <= 0) throw new ArgumentOutOfRangeException(nameof(pageSizeInPoints));
+        if (layers.Count == 0 || drawBudget <= 0 || residentPageBudget <= 0 || destination.IsEmpty)
             return 0;
 
         Matrix4 viewProjection = view.View * view.Projection;
@@ -89,7 +92,7 @@ internal static class PointTileTraversal
             }
         }
 
-        int count = 0;
+        int count = 0, plannedPages = 0;
         while (count < destination.Length
             && heap.TryPop(out int layer, out int index, out float depth, out float screenArea))
         {
@@ -97,11 +100,15 @@ internal static class PointTileTraversal
             PointTileNode node = nodes[index];
             if (node.PointCount > 0)
             {
-                if (plannedPointCount + node.PointCount > drawBudget)
+                // Small cells still occupy whole pages. A point-only budget can ask for
+                // more cells than can ever coexist, causing endless load/evict/reload churn.
+                int pages = (int)(((long)node.PointCount + pageSizeInPoints - 1) / pageSizeInPoints);
+                if (plannedPointCount + node.PointCount > drawBudget || pages > residentPageBudget - plannedPages)
                     break;
 
                 destination[count++] = new PointTileVisit(layer, index, depth);
                 plannedPointCount += node.PointCount;
+                plannedPages += pages;
             }
 
             // Descend only where the screen can still show more than this cell holds. A cell

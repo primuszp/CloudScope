@@ -128,11 +128,12 @@ namespace CloudScope.Platform.Metal.Rendering
             MTLResourceOptions storage = CloudStorageMode(device);
             for (int chunk = 0; chunk < chunkCount; chunk++)
             {
-                _pointChunks[chunk] = device.NewBuffer((ulong)PointsPerChunk * GpuPointVertex.Stride, storage);
+                int chunkPoints = Math.Min(PagesPerChunk, pageCount - chunk * PagesPerChunk) * PageSizeInPoints;
+                _pointChunks[chunk] = device.NewBuffer((ulong)chunkPoints * GpuPointVertex.Stride, storage);
                 if (_hasAttributes)
                 {
                     _attributeChunks[chunk] = device.NewBuffer(
-                        (ulong)PointsPerChunk * GpuPointAttribute.Stride, storage);
+                        (ulong)chunkPoints * GpuPointAttribute.Stride, storage);
                 }
             }
 
@@ -152,9 +153,8 @@ namespace CloudScope.Platform.Metal.Rendering
                 totalPoints,
                 Limits.ResolveResidentLimit((long)device.RecommendedMaxWorkingSetSize, bytesPerPoint));
             int pageCount = (int)Math.Max(1, residentPoints / PageSizeInPoints);
-            // Buffers are allocated whole, so the table is rounded up to fill the last one
-            // rather than leaving part of an allocation unusable.
-            return (pageCount + PagesPerChunk - 1) / PagesPerChunk * PagesPerChunk;
+            // The final buffer is partial: rounding this up would exceed the requested cap.
+            return pageCount;
         }
 
         public void Close() => Release();
@@ -211,7 +211,7 @@ namespace CloudScope.Platform.Metal.Rendering
 
             int drawBudget = Limits.GetFrameBudget((int)Math.Min(totalPoints, int.MaxValue));
             int visitCount = PointTileTraversal.Collect(
-                _layers, in renderView, drawBudget, _visits, _scratch, out _);
+                _layers, in renderView, drawBudget, _visits, _scratch, out _, _pages.PageCount, _pages.PageSizeInPoints);
 
             // Page writes happen inside BeginFrame, so it runs even when nothing is visible:
             // that is what lets a cloud finish streaming in while the camera sits still.

@@ -66,6 +66,8 @@ CommandChecks covers registration, all command/alias startup paths on a headless
 
 The ordinary GitHub Actions workflow builds Debug/Release and runs the command/UI checks on Linux, Windows and macOS, checks the generated command inventory, records the allocation benchmark and builds the portable viewer. The separate manual Metal workflow requires a self-hosted Apple Silicon Mac with the `cloudscope-gpu` runner label. Adding the workflows does not register a runner or execute a remote run.
 
+Real-survey CPU, memory and Metal measurements can be reproduced with the opt-in [survey benchmarks](Docs/Performance.md).
+
 See [the code review and verification record](Docs/CodeReview.md) for the scope and remaining native checks.
 
 ## Project structure

@@ -4,12 +4,26 @@ using CloudScope;
 using CloudScope.Commands;
 using CloudScope.Drawing;
 using CloudScope.Rendering;
+using CloudScope.Loading;
 using OpenTK.Mathematics;
 
 internal static class PerformanceChecks
 {
     public static void Run(Action<string, bool, string> check)
     {
+        const int pointCount = 100_000, selectedCount = pointCount / 2;
+        var source = Enumerable.Range(0,pointCount).Select(i => new PointData { Z = i }).ToArray();
+        var data = new PointCloudDataset(source,pointCount,pointCount,false,1,
+            new PointCloudAttributes(new byte[pointCount],new ushort[pointCount],new byte[pointCount],
+                Enumerable.Range(0,pointCount).Select(i => (double)i).ToArray(),0,pointCount-1));
+        long filterBefore = GC.GetAllocatedBytesForCurrentThread();
+        data.ApplyFilter(new ZFilter(0,selectedCount-1),recolor:false);
+        long filterBytes = GC.GetAllocatedBytesForCurrentThread()-filterBefore;
+        check("Filtered views allocate their final point and source-map arrays without growing temporary lists",
+            filterBytes <= selectedCount * (24L+sizeof(int)) + 8192, filterBytes.ToString());
+        check("Exact-sized filtered views preserve stable source indices and source geometry", data.VisibleCount == selectedCount
+            && data.ViewToSource!.Length == selectedCount && data.ViewToSource[0] == 0 && data.ViewToSource[^1] == selectedCount-1
+            && data.ViewPoints[^1].Z == selectedCount-1 && source.Length == pointCount && source[^1].Z == pointCount-1, "");
         int value = 0, notices = 0;
         var undo = new UndoManager(memoryBudgetBytes: 1024, maximumCommands: 10);
         undo.HistoryTrimmed += () => notices++;

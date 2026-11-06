@@ -116,22 +116,31 @@ public static class PointTileVolumeQuery
     /// <summary>Reads back the positions of points named by <paramref name="refs"/>.</summary>
     /// <remarks>
     /// A label is stored as a reference, not a position, so anything that has to draw the
-    /// labelled points asks for them here. The references are sorted, so this walks the point
-    /// file forwards rather than seeking about in it.
+    /// labelled points asks for them here. Adjacent references are read in bounded runs;
+    /// caller order and duplicates are preserved even when references are not sorted.
     /// </remarks>
-    public static Vector3[] ReadPositions(PointTileStore store, IReadOnlyList<PointRef> refs)
+    public static Vector3[] ReadPositions(PointTileStore store, IReadOnlyList<PointRef> refs, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var positions = new Vector3[refs.Count];
         if (refs.Count == 0)
             return positions;
 
-        GpuPointVertex[] buffer = ArrayPool<GpuPointVertex>.Shared.Rent(1);
+        GpuPointVertex[] buffer = ArrayPool<GpuPointVertex>.Shared.Rent(Math.Min(refs.Count, 65536));
         try
         {
-            for (int i = 0; i < refs.Count; i++)
+            for (int i = 0; i < refs.Count;)
             {
-                store.ReadPoints(refs[i].PointIndex, buffer.AsSpan(0, 1));
-                positions[i] = new Vector3(buffer[0].X, buffer[0].Y, buffer[0].Z);
+                cancellationToken.ThrowIfCancellationRequested();
+                PointRef first = refs[i];
+                int count = 1;
+                while (count < buffer.Length && i + count < refs.Count
+                    && refs[i + count].LayerIndex == first.LayerIndex
+                    && first.PointIndex <= long.MaxValue - count && refs[i + count].PointIndex == first.PointIndex + count)
+                    count++;
+                store.ReadPoints(first.PointIndex, buffer.AsSpan(0, count));
+                for (int j = 0; j < count; j++) positions[i + j] = new Vector3(buffer[j].X, buffer[j].Y, buffer[j].Z);
+                i += count;
             }
         }
         finally

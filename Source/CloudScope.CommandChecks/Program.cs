@@ -16,6 +16,29 @@ using CloudScope.Forestry;
 using CloudScope.Loading;
 using OpenTK.Mathematics;
 
+if (args is ["--survey-gpu", var gpuStore, var gpuOutput])
+{
+#if ENABLE_SHARPMETAL
+    if (!OperatingSystem.IsMacOS()) { Console.Error.WriteLine("Survey GPU measurement requires macOS Metal."); return 2; }
+    try { SurveyMetalBenchmark.Run(gpuStore, gpuOutput); return 0; }
+    catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+#else
+    Console.Error.WriteLine("This build has no Metal backend."); return 2;
+#endif
+}
+
+if (args is ["--survey-resident", var residentInput, var residentOutput])
+{
+    try { SurveyBenchmark.ResidentOnly(residentInput, residentOutput); return 0; }
+    catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+}
+
+if (args is ["--survey-benchmark", var surveyInput, var surveyOutput])
+{
+    try { var report = SurveyBenchmark.Run(surveyInput, surveyOutput); Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(report)); return 0; }
+    catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+}
+
 if (args is ["--benchmark"]) { PerformanceChecks.Benchmark(); return 0; }
 
 if (args is ["--metal-gpu"])
@@ -152,7 +175,7 @@ void Check(string name, bool ok, string detail = "")
 
 // ---------- 1. Registration of the real command set ----------
 await ExchangeChecks.Run(Check);
-try { PerformanceChecks.Run(Check); OwnershipChecks.Run(Check); ProjectChecks.Run(Check); ProcessingChecks.Run(Check); FrameResourceChecks.Run(Check); StreamingChecks.Run(Check); PersistenceChecks.Run(Check); LasChecks.Run(Check); ImportCancellationChecks.Run(Check); ReviewChecks.Run(Check); NativeInteractionChecks.Run(Check); ViewerWorkflowChecks.Run(Check); await BackgroundOperationChecks.Run(Check); }
+try { PerformanceChecks.Run(Check); SurveyChecks.Run(Check); OwnershipChecks.Run(Check); ProjectChecks.Run(Check); ProcessingChecks.Run(Check); FrameResourceChecks.Run(Check); StreamingChecks.Run(Check); PersistenceChecks.Run(Check); LasChecks.Run(Check); ImportCancellationChecks.Run(Check); ReviewChecks.Run(Check); NativeInteractionChecks.Run(Check); ViewerWorkflowChecks.Run(Check); await BackgroundOperationChecks.Run(Check); }
 catch (Exception ex) { Check("Review regression checks", false, ex.ToString()); }
 try
 {

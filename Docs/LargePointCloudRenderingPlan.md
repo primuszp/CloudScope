@@ -51,7 +51,9 @@
    Examples: coarse blue-noise sample, medium voxel representatives, full points. Use projected screen size and point budget to choose LOD.
 3. Traverse visible chunks each frame.
    Frustum-cull nodes, estimate projected density, and enqueue draw commands until the frame budget is filled.
-4. Add GPU residency management.
+4. Started: GPU residency management exists for indexed tile stores.
+   The shared tile traversal now budgets whole resident pages as well as drawn points, preventing endless churn when many small cells exceed page capacity. Metal allocates a partial final buffer to honor the configured capacity. See `Performance.md` for the measured 61.6M-point case.
+   Resident-array spatial streaming remains a separate next step.
    Keep visible/near chunks in an LRU cache; stream chunk buffers asynchronously; render lower LOD while full chunks upload.
 5. Use local chunk coordinates.
    Store chunk origin plus quantized 16-bit or 24-bit local positions where quality allows, reducing VRAM and upload bandwidth.

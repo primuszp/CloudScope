@@ -261,8 +261,7 @@ public sealed class PointTileStore : IDisposable
         if (destination.Length < node.PointCount)
             throw new ArgumentException("Destination is smaller than the cell.", nameof(destination));
 
-        ReadInto(_pointView, node.PointOffset * GpuPointVertex.Stride,
-            MemoryMarshal.AsBytes(destination[..node.PointCount]));
+        ReadPoints(node.PointOffset, destination[..node.PointCount]);
     }
 
     /// <summary>Copies a run of the point file starting at an absolute point index.</summary>
@@ -273,10 +272,10 @@ public sealed class PointTileStore : IDisposable
     /// </remarks>
     public void ReadPoints(long firstPoint, Span<GpuPointVertex> destination)
     {
-        if (firstPoint < 0 || firstPoint + destination.Length > Header.PointCount)
+        if (firstPoint < 0 || firstPoint > Header.PointCount || destination.Length > Header.PointCount - firstPoint)
             throw new ArgumentOutOfRangeException(nameof(firstPoint));
 
-        ReadInto(_pointView, firstPoint * GpuPointVertex.Stride, MemoryMarshal.AsBytes(destination));
+        ReadInto(_pointView, checked(firstPoint * GpuPointVertex.Stride), MemoryMarshal.AsBytes(destination));
     }
 
     /// <summary>Copies one cell's attributes, when the store carries them.</summary>
@@ -287,7 +286,7 @@ public sealed class PointTileStore : IDisposable
         if (destination.Length < node.PointCount)
             throw new ArgumentException("Destination is smaller than the cell.", nameof(destination));
 
-        ReadInto(_attributeView, node.PointOffset * GpuPointAttribute.Stride,
+        ReadInto(_attributeView, checked(node.PointOffset * GpuPointAttribute.Stride),
             MemoryMarshal.AsBytes(destination[..node.PointCount]));
         return true;
     }
@@ -299,15 +298,17 @@ public sealed class PointTileStore : IDisposable
     {
         if (_sourceIndexView is null)
             return false;
-        if (firstPoint < 0 || firstPoint + destination.Length > Header.PointCount)
+        if (firstPoint < 0 || firstPoint > Header.PointCount || destination.Length > Header.PointCount - firstPoint)
             throw new ArgumentOutOfRangeException(nameof(firstPoint));
 
-        ReadInto(_sourceIndexView, firstPoint * sizeof(long), MemoryMarshal.AsBytes(destination));
+        ReadInto(_sourceIndexView, checked(firstPoint * sizeof(long)), MemoryMarshal.AsBytes(destination));
         return true;
     }
 
     private static unsafe void ReadInto(MemoryMappedViewAccessor view, long byteOffset, Span<byte> destination)
     {
+        if (byteOffset < 0 || byteOffset > view.Capacity || destination.Length > view.Capacity - byteOffset)
+            throw new InvalidDataException("Point tile data is truncated or has invalid offsets.");
         byte* source = null;
         view.SafeMemoryMappedViewHandle.AcquirePointer(ref source);
         try

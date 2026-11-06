@@ -115,7 +115,7 @@ namespace CloudScope
 
                 List<PointRef> hits = PointTileVolumeQuery.Resolve(
                     layer.Store, query, layerIndex, cancellationToken);
-                Vector3[] positions = PointTileVolumeQuery.ReadPositions(layer.Store, hits);
+                Vector3[] positions = PointTileVolumeQuery.ReadPositions(layer.Store, hits, cancellationToken);
                 for (int i = 0; i < hits.Count; i++)
                     yield return (hits[i], positions[i]);
             }

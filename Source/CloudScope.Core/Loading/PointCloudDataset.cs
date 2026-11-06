@@ -141,23 +141,22 @@ namespace CloudScope.Loading
                 return;
             }
 
-            var points = new List<PointData>(Math.Min(LoadedCount, 1_000_000));
-            var map = new List<int>(points.Capacity);
+            int count = 0;
             for (int i = 0; i < LoadedCount; i++)
+                if (MatchesView(i)) count++;
+            var points = new PointData[count];
+            var map = new int[count];
+            for (int i = 0, target = 0; i < LoadedCount; i++)
             {
-                if (!MatchesView(i))
-                    continue;
-
+                if (!MatchesView(i)) continue;
                 PointData point = _sourcePoints[i];
-                if (recolor)
-                    ApplyColor(ref point, i);
-                points.Add(point);
-                map.Add(i);
+                if (recolor) ApplyColor(ref point, i);
+                points[target] = point;
+                map[target++] = i;
             }
-
-            ViewPoints = points.ToArray();
-            ViewToSource = map.ToArray();
-            VisibleCount = ViewPoints.Length;
+            ViewPoints = points;
+            ViewToSource = map;
+            VisibleCount = count;
             RenderOrder = BuildProgressiveRenderOrder(VisibleCount, RenderOrderSeed);
         }
 
