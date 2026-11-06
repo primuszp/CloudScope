@@ -10,7 +10,7 @@ internal static unsafe class LazNative
     [DllImport(Library, CallingConvention=CallingConvention.Cdecl, EntryPoint="cloudscope_laz_abi")] private static extern int Abi(int field);
     [DllImport(Library, CallingConvention=CallingConvention.Cdecl, EntryPoint="laszip_create")] private static extern int Create(out IntPtr handle);
     [DllImport(Library, CallingConvention=CallingConvention.Cdecl, EntryPoint="laszip_destroy")] private static extern int Destroy(IntPtr handle);
-    [DllImport(Library, CallingConvention=CallingConvention.Cdecl, EntryPoint="laszip_open_reader")] internal static extern int OpenReader(Handle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, out int compressed);
+    [DllImport(Library, CallingConvention=CallingConvention.Cdecl, EntryPoint="cloudscope_laz_open_reader")] private static extern int OpenReaderCore(Handle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, out int compressed, out IntPtr owner);
     [DllImport(Library, CallingConvention=CallingConvention.Cdecl, EntryPoint="laszip_close_reader")] private static extern int CloseReader(IntPtr handle);
     [DllImport(Library, CallingConvention=CallingConvention.Cdecl, EntryPoint="laszip_read_point")] internal static extern int ReadPoint(Handle handle);
     [DllImport(Library, CallingConvention=CallingConvention.Cdecl, EntryPoint="laszip_seek_point")] internal static extern int Seek(Handle handle, long index);
@@ -18,7 +18,8 @@ internal static unsafe class LazNative
     [DllImport(Library, CallingConvention=CallingConvention.Cdecl, EntryPoint="laszip_get_header_pointer")] internal static extern int GetHeader(Handle handle, out IntPtr header);
     [DllImport(Library, CallingConvention=CallingConvention.Cdecl, EntryPoint="laszip_set_header")] internal static extern int SetHeader(Handle handle, IntPtr header);
     [DllImport(Library, CallingConvention=CallingConvention.Cdecl, EntryPoint="laszip_set_point")] internal static extern int SetPoint(Handle handle, IntPtr point);
-    [DllImport(Library, CallingConvention=CallingConvention.Cdecl, EntryPoint="laszip_open_writer")] internal static extern int OpenWriter(Handle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, int compress);
+    [DllImport(Library, CallingConvention=CallingConvention.Cdecl, EntryPoint="cloudscope_laz_open_writer")] private static extern int OpenWriterCore(Handle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, int compress, out IntPtr owner);
+    [DllImport(Library, CallingConvention=CallingConvention.Cdecl, EntryPoint="cloudscope_laz_release_stream")] private static extern void ReleaseStream(IntPtr owner, int writer);
     [DllImport(Library, CallingConvention=CallingConvention.Cdecl, EntryPoint="laszip_write_point")] internal static extern int WritePoint(Handle handle);
     [DllImport(Library, CallingConvention=CallingConvention.Cdecl, EntryPoint="laszip_close_writer")] private static extern int CloseWriter(IntPtr handle);
     [DllImport(Library, CallingConvention=CallingConvention.Cdecl, EntryPoint="laszip_get_error")] private static extern int GetError(Handle handle, out IntPtr text);
@@ -31,6 +32,10 @@ internal static unsafe class LazNative
             if (Abi(i) != expected[i]) throw new InvalidDataException("The packaged LAZ decoder has an incompatible point layout.");
     }
     private static int Offset(string name) => (int)Marshal.OffsetOf<Point>(name);
+    internal static int OpenReader(Handle handle, string path, out int compressed) =>
+        OpenReaderCore(handle,path,out compressed,out handle.Stream);
+    internal static int OpenWriter(Handle handle, string path, int compress) =>
+        OpenWriterCore(handle,path,compress,out handle.Stream);
     internal static void Check(int result, Handle handle)
     {
         if (result == 0) return;
@@ -41,6 +46,8 @@ internal static unsafe class LazNative
     internal sealed class Handle : SafeHandleZeroOrMinusOneIsInvalid
     {
         internal bool ReaderOpen, WriterOpen;
+        internal IntPtr Stream;
+        internal bool WriterStream;
         internal Handle() : base(ownsHandle:true)
         {
             int result = Create(out var value); SetHandle(value);
@@ -50,7 +57,9 @@ internal static unsafe class LazNative
         {
             if (ReaderOpen) CloseReader(handle);
             if (WriterOpen) CloseWriter(handle);
-            return Destroy(handle) == 0;
+            bool result = Destroy(handle) == 0;
+            if (Stream != IntPtr.Zero) ReleaseStream(Stream,WriterStream ? 1 : 0);
+            return result;
         }
     }
 
@@ -82,7 +91,7 @@ internal static unsafe class LazNative
         Check(OpenReader(input,source,out _),input); input.ReaderOpen = true;
         Check(GetHeader(input,out var header),input); Check(SetHeader(output,header),output);
         Check(GetPoint(input,out var point),input);
-        Check(OpenWriter(output,destination,compressed ? 1 : 0),output); output.WriterOpen = true;
+        Check(OpenWriter(output,destination,compressed ? 1 : 0),output); output.WriterOpen = true; output.WriterStream = true;
         for (long i = 0; i < pointCount; i++)
         { Check(ReadPoint(input),input); Check(SetPoint(output,point),output); Check(WritePoint(output),output); }
         Check(CloseWriter(output.DangerousGetHandle()),output); output.WriterOpen = false;

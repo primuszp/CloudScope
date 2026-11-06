@@ -17,6 +17,7 @@ else()
     set(decoder_target laszip)
 endif()
 target_sources(${decoder_target} PRIVATE "${CMAKE_CURRENT_LIST_DIR}/abi.cpp")
+target_compile_features(${decoder_target} PRIVATE cxx_std_17)
 target_include_directories(${decoder_target} PRIVATE "${laszip_source_SOURCE_DIR}/dll" "${laszip_source_SOURCE_DIR}/include/laszip")
 set_target_properties(${decoder_target} PROPERTIES
     OUTPUT_NAME cloudscope_laz
