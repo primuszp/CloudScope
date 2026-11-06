@@ -192,6 +192,7 @@ public static class CommandMenu
                 CommandMenuEntry.Action("List", "XSECTION List", requiresCloud: true),
                 CommandMenuEntry.Action("Clear", "XSECTION CLear", requiresCloud: true)),
             CommandMenuEntry.Submenu("Surface",
+                CommandMenuEntry.Action("Terrain TIN...", "TIN", requiresCloud: true),
                 CommandMenuEntry.Action("Reconstruct...", "RECONSTRUCT", requiresCloud: true),
                 CommandMenuEntry.Action("Show", "SURFACE ON", "", CheckStates.Surface),
                 CommandMenuEntry.Action("Hide", "SURFACE OFf"),

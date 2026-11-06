@@ -6,7 +6,7 @@ Ez a fájl a futásidejű parancstáblából készül. Újragenerálás a repó 
 dotnet run --project Source/CloudScope.CommandChecks -- --write-inventory Docs/CommandInventory.md
 ```
 
-Összesen **79 parancs**, aliasokkal együtt **100 név**.
+Összesen **80 parancs**, aliasokkal együtt **101 név**.
 A `COMMANDS` és a `HELP` ugyanebből a regisztrációból dolgozik. A `COVERAGE` a viewer API statikus elérhetőségét méri; a működés ellenőrzését a CommandChecks végzi.
 
 Az argumentumokat szóköz választja el. A szóközt tartalmazó útvonalat vagy egy argumentumként kezelt nevet idézőjelbe kell tenni, például `OPENXYZ "scan one.xyz" 5000` vagy `LABEL "Tree 1" 7`. Külön útvonalbekéréskor a teljes begépelt válasz az útvonal.
@@ -115,7 +115,7 @@ A parancsok és a szkriptek közös futtatót használnak. A szkript üres sora 
 | `POINTCLOUDCONFIG` | – | Viewer | `POINTCLOUDCONFIG [Frame <points>/Resident <points>/Show]` | Shows or sets the per-frame and resident point budgets. |
 | `SETVAR` | – | Viewer | `SETVAR <name> <value> \| ? [pattern]` | Lists or changes a system variable. |
 
-## Utility (7)
+## Utility (8)
 
 | Parancs | Alias | Hatókör | Szintaxis | Művelet |
 | --- | --- | --- | --- | --- |
@@ -126,5 +126,6 @@ A parancsok és a szkriptek közös futtatót használnak. A szkript üres sora 
 | `QUIT` | – | Application | `QUIT` | Closes the viewer. |
 | `RECONSTRUCT` | – | Document | `RECONSTRUCT <neighbors >= 3> <maximum edge length; 0 = auto>` | Builds an approximate surface using PCA normals and greedy projection. |
 | `SCRIPT` | SCR | Application | `SCRIPT <path>` | Runs a file of commands, one per line. |
+| `TIN` | – | Document | `TIN [Ground/All] <cell size; 0 = exact XY> <maximum edge length>` | Builds a terrain Delaunay TIN with lowest-per-cell sites and an explicit gap limit. |
 
 A folyamatos egér- és billentyűgesztusok bemeneti események; a megfelelő műveletek parancsból is elérhetők. A rendszer részletei: [CommandSystem.md](CommandSystem.md).

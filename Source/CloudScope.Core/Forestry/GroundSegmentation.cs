@@ -96,7 +96,10 @@ public static class GroundSegmentation
             double dx = point.X - (originX + x * resolution);
             double dy = point.Y - (originY + y * resolution);
             double distance = dx * dx + dy * dy;
-            if (distance >= nearestDistance[node])
+            // Equal XY distances must not make classification depend on source order.
+            // The lower normal-Z return is the upper collision surface in inverted Z.
+            if (distance > nearestDistance[node]
+                || distance == nearestDistance[node] && !double.IsNaN(terrain[node]) && -point.Z <= terrain[node])
                 continue;
 
             nearestDistance[node] = distance;

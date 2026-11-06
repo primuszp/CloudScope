@@ -6,6 +6,8 @@
 
   <ItemGroup>
     <PackageReference Include="OpenTK.Mathematics" />
+    <PackageReference Include="NetTopologySuite" />
+    <Content Include="../../ThirdParty/NetTopologySuite-LICENSE.txt" Link="Licenses/NetTopologySuite-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

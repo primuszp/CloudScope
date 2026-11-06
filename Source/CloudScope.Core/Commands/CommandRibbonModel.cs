@@ -185,6 +185,7 @@ public static class CommandRibbon
                 Small("Export", "XSECTION Export", RibbonIcons.Export, requiresCloud: true),
                 Small("Clear", "XSECTION CLear", RibbonIcons.Cancel, requiresCloud: true)),
             Panel("Surface",
+                Large("Terrain TIN", "TIN", RibbonIcons.Ground, requiresCloud: true),
                 Large("Reconstruct", "RECONSTRUCT", RibbonIcons.Mesh, requiresCloud: true),
                 Small("Show", "SURFACE ON", RibbonIcons.Visible, CommandMenu.CheckStates.Surface),
                 Small("Hide", "SURFACE OFf", RibbonIcons.Hidden),

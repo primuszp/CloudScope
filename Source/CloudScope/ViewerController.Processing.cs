@@ -8,6 +8,24 @@ namespace CloudScope;
 
 public sealed partial class ViewerController
 {
+    public string BuildTerrain(bool groundOnly, CloudScope.Terrain.TerrainOptions options)
+    {
+        if (_document.Dataset is not { } dataset) return "TIN requires a resident point cloud.";
+        if (_surfaceOperation.IsRunning) return "A surface operation is already running.";
+        var points = new ArraySegment<PointData>(dataset.SourcePoints,0,dataset.LoadedCount);
+        var classes = dataset.Attributes.Class;
+        var annotatedGround = _selection.Labels.AllAnnotations.Where(p =>
+            string.Equals(p.Value.LabelName,"Ground",StringComparison.OrdinalIgnoreCase)).Select(p => p.Key).ToHashSet();
+        _surfaceOperation.TryStart((cancellation,progress) => CloudScope.Terrain.TerrainTriangulation.Build(points,options,
+            (dataset.OriginX,dataset.OriginY,dataset.OriginZ),cancellation,progress,
+            groundOnly ? i => classes[i] == (byte)ClassificationType.Ground || annotatedGround.Contains(i) : null), mesh =>
+        {
+            _surfaceRenderer.Upload(mesh); _document.SetSurface(mesh); _surfaceVisible = true;
+            BackgroundMessage?.Invoke($"Terrain TIN: {mesh.Vertices.Length:N0} sites, {mesh.Indices.Length/3:N0} triangles. EXPORTOBJ saves the mesh.");
+        },error => BackgroundMessage?.Invoke($"TIN failed: {error.Message}"));
+        return "Building terrain TIN...";
+    }
+
     private readonly ViewerProcessingService _processing;
     public int ProcessingProgress => _processing.Progress;
     internal Task ProcessingCompletion => _processing.Completion;

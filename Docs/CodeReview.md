@@ -202,3 +202,7 @@ A 11 pontformátumot a hivatalos dekóderrel tömörített és a meglévő nyers
 A 4. csomagban a dokumentum saját `SectionCatalog` és `MeasurementCatalog` objektumot kapott. A parancsok és nézetek ezek adapterei: több szelvény, egy aktív azonosság, közös geometriai ellenőrzés, tranzakciós visszaállítás. A projekt 2. verziója ezeket teljesen menti, az 1. verzió automatikusan migrálódik. A MEASURE számol és megjelenít; a mérés- és szelvényexport CSV/DXF-be atomikus. A szelvénypontok keresése nincs a renderelő LOD-jához kötve. Részletes használat és egység-/formátumhatárok: [Engineering.md](Engineering.md).
 
 Az automatizált próbák független 3–4–12 távolságot, függőleges és negatív magasságkülönbséget, nagy koordinátákra eltolt és konkáv területet, hibás poligonokat, teljes parancsfolyamatot, undo/redo/checkpointot, több szelvényt, projektmigrációt, CSV/DXF-tartalmat és megszakított export régi fájljának megmaradását ellenőrzik.
+
+## Algoritmusminőség és terepmodell — 2026-11-06
+
+Az 5. csomag külön, robusztus Delaunay-topológiára épülő TIN-útvonalat ad explicit talajforrással, cellamérettel, élhossz- és méretkorláttal. A meglévő közelítő térbeli rekonstrukció nem kapott terepmodellként félrevezető szerepet. A numerikus/topológiai referenciapróbák és osztályozási hibamátrixok külön modult kaptak. A fordított pontsorrend regressziója javította a CSF egyenlő XY-távolságú találatainak sorrendfüggő magasságválasztását. A 658 687 pontos valós Jeli-minta összevetése és az értelmezési határok az [AlgorithmQuality.md](AlgorithmQuality.md) dokumentumban szerepelnek.
