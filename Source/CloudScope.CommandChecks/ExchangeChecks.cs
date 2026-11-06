@@ -109,11 +109,12 @@ internal static class ExchangeChecks
             int port;
             var socket = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0); socket.Start();
             port = ((IPEndPoint)socket.LocalEndpoint).Port; socket.Stop();
+            string stopPayload = new string('x', 256 * 1024) + " Árvíztűrő tükörfúrógép";
             LocalCommandServer? server = null;
             using var api = server = new LocalCommandServer(port, (command, token) =>
             {
                 if (command == "STOP") server!.StopAfterCurrentResponse();
-                return Task.FromResult<object>(new { command, ready = true });
+                return Task.FromResult<object>(new { command, ready = true, detail = command == "STOP" ? stopPayload : "" });
             });
             using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}"), Timeout = TimeSpan.FromSeconds(5) };
             var unauthorized = await client.GetAsync("/health");
@@ -128,8 +129,18 @@ internal static class ExchangeChecks
                 check($"Local API rejects malformed command payload {malformed}", invalid.StatusCode == HttpStatusCode.BadRequest, "");
             }
             check("Local API remains healthy after malformed requests", (await client.GetAsync("/health")).IsSuccessStatusCode, "");
-            using var stopped = await client.PostAsync("/exec", new StringContent("{\"command\":\"STOP\"}", Encoding.UTF8, "application/json"));
-            check("Local API stop command receives a complete response", stopped.IsSuccessStatusCode && (await stopped.Content.ReadAsStringAsync()).Contains("STOP"), "");
+            using var stopRequest = new HttpRequestMessage(HttpMethod.Post, "/exec")
+            { Content = new StringContent("{\"command\":\"STOP\"}", Encoding.UTF8, "application/json") };
+            // Read headers first, so shutdown must also preserve a body the client has not consumed yet.
+            using var stopped = await client.SendAsync(stopRequest, HttpCompletionOption.ResponseHeadersRead);
+            check("Local API stop response closes the connection gracefully", stopped.Headers.ConnectionClose == true, "");
+            long? declaredLength = stopped.Content.Headers.ContentLength;
+            byte[] stopBody = await stopped.Content.ReadAsByteArrayAsync();
+            check("Local API stop response declares its complete UTF-8 byte length", declaredLength == stopBody.Length, "");
+            using var stopResult = JsonDocument.Parse(stopBody);
+            check("Local API stop command receives a complete large response", stopped.IsSuccessStatusCode &&
+                stopResult.RootElement.GetProperty("command").GetString() == "STOP" &&
+                stopResult.RootElement.GetProperty("detail").GetString() == stopPayload, "");
         }
         catch (Exception ex) { check("Exchange integration checks", false, ex.ToString()); }
         finally { Directory.Delete(dir, true); }

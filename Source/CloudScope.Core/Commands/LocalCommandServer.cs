@@ -95,14 +95,21 @@ public sealed class LocalCommandServer : IDisposable
                 context.Response.StatusCode = ex is OperationCanceledException ? 503 : 400;
                 await Reply(new { error = ex.Message });
             }
-            catch (Exception) { /* The API OFF command may already have closed this response. */ }
+            catch (Exception) { /* The client disconnected or the viewer disposed the server. */ }
         }
         finally { try { context.Response.Close(); } catch (ObjectDisposedException) { } }
 
         async Task Reply(object value)
         {
+            byte[] body = JsonSerializer.SerializeToUtf8Bytes(value);
             context.Response.ContentType = "application/json";
-            await JsonSerializer.SerializeAsync(context.Response.OutputStream, value);
+            context.Response.ContentLength64 = body.Length;
+            // Complete the body in the final write instead of relying on a chunk terminator
+            // that closing the listener can abort on Windows. Signal a graceful disconnect
+            // with this response when API OFF is shutting the listener down.
+            lock (_lifecycle)
+                if (_stopAfterResponse) context.Response.KeepAlive = false;
+            await context.Response.OutputStream.WriteAsync(body, _stop.Token);
         }
     }
     /// <summary>Lets an API OFF request receive its result before closing the listener.</summary>
